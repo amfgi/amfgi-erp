@@ -5,9 +5,10 @@ import type { ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { StatusBadge } from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
+import { cn } from '@/lib/utils';
 import JobConsumptionCostingSection from '@/components/jobs/JobConsumptionCostingSection';
 import JobScopeFilter, { type JobScopeOption } from '@/components/jobs/JobScopeFilter';
 import TransactionLedger from '@/components/transactions/TransactionLedger';
@@ -86,10 +87,10 @@ function safeContacts(value: unknown): JobContact[] {
 
 function InfoCard({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <div className="mt-1 text-base font-semibold text-slate-950 dark:text-white">{value}</div>
-      {note ? <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{note}</div> : null}
+    <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="mt-1 text-base font-semibold text-foreground">{value}</div>
+      {note ? <div className="mt-1 text-xs text-muted-foreground">{note}</div> : null}
     </div>
   );
 }
@@ -185,108 +186,116 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
   }
 
   if (!job) {
-    return <div className="py-12 text-center text-slate-500 dark:text-slate-400">Job not found.</div>;
+    return <div className="py-12 text-center text-sm text-muted-foreground">Job not found.</div>;
   }
 
   const showScopeCard =
     !isVariation && variationCount > 0 && TABS_REQUIRING_SCOPE.includes(activeTab);
 
   return (
-    <div className="-mx-4 -my-4 min-h-[calc(100dvh-4rem)] bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_42%,#f8fafc_100%)] px-4 py-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_55%,#020617_100%)] sm:-mx-5 sm:-my-5 sm:px-5 sm:py-5 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6">
-      <section className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_34%),linear-gradient(135deg,#0f172a,#020617)] sm:px-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-4xl">
-              <Link href="/customers/jobs" className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-700 dark:text-sky-300">
-                Customers / Jobs / Ledger
-              </Link>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h1 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{job.jobNumber}</h1>
-                <StatusBadge status={job.status} />
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  {isVariation ? 'Variation' : 'Parent job'}
-                </span>
-              </div>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                {job.description || 'No work process details added yet.'}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {isVariation ? (
-                <Button variant="secondary" onClick={() => router.push(`/stock/job-budget/${id}`)}>
-                  Costing & Budget
-                </Button>
-              ) : (
-                <Button variant="secondary" onClick={() => router.push(`/customers/jobs/form?mode=variation&parentJobId=${id}&customerId=${job.customerId}`)}>
-                  Create Variation
-                </Button>
-              )}
-            </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 max-w-4xl space-y-1">
+          <Link
+            href="/customers/jobs"
+            className={cn(
+              buttonVariants({ variant: 'link', size: 'sm' }),
+              'h-auto p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+            )}
+          >
+            Customers / Jobs / Ledger
+          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">{job.jobNumber}</h1>
+            <StatusBadge status={job.status} />
+            <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {isVariation ? 'Variation' : 'Parent job'}
+            </span>
           </div>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            {job.description || 'No work process details added yet.'}
+          </p>
         </div>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Customer</p>
-            <p className="mt-1 truncate text-lg font-semibold text-slate-950 dark:text-white">{customerName}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{job.site || 'Site not set'}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{isVariation ? 'Parent job' : 'Variations'}</p>
-            <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{isVariation ? parentJob?.jobNumber ?? '-' : variationCount}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{isVariation ? 'Reporting container' : 'Linked costing scopes'}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Material movement</p>
-            <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{formatQty(totalConsumed)}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{formatQty(totalDispatched)} dispatched across {summary.length} items</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Commercial value</p>
-            <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{formatMoney((job as { jobWorkValue?: number | string | null }).jobWorkValue)}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">LPO {String((job as { lpoNumber?: string | null }).lpoNumber ?? '-')}</p>
-          </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {isVariation ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/stock/job-budget/${id}`)}>
+              Costing & Budget
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                router.push(`/customers/jobs/form?mode=variation&parentJobId=${id}&customerId=${job.customerId}`)
+              }
+            >
+              Create Variation
+            </Button>
+          )}
         </div>
-      </section>
+      </header>
 
-      <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Customer</p>
+          <p className="mt-1 truncate text-lg font-semibold text-foreground">{customerName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{job.site || 'Site not set'}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isVariation ? 'Parent job' : 'Variations'}</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{isVariation ? parentJob?.jobNumber ?? '-' : variationCount}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{isVariation ? 'Reporting container' : 'Linked costing scopes'}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Material movement</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{formatQty(totalConsumed)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatQty(totalDispatched)} dispatched across {summary.length} items
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Commercial value</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{formatMoney((job as { jobWorkValue?: number | string | null }).jobWorkValue)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">LPO {String((job as { lpoNumber?: string | null }).lpoNumber ?? '-')}</p>
+        </div>
+      </div>
+
+      <section className="rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4">
         <div className="flex flex-wrap gap-2">
           {LEDGER_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-2xl border px-4 py-3 text-left transition ${
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left text-sm transition-colors',
                 activeTab === tab.id
-                  ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900/60'
-              }`}
+                  ? 'border-primary bg-primary/10 shadow-sm'
+                  : 'border-border bg-card hover:bg-muted/50',
+              )}
             >
-              <div className="text-sm font-semibold">{tab.label}</div>
-              <div className="mt-1 text-xs text-current/70">{tab.description}</div>
+              <div className={cn('font-semibold', activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground')}>{tab.label}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{tab.description}</div>
             </button>
           ))}
         </div>
       </section>
 
       {showScopeCard ? (
-        <section className="mt-5 flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/75 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Reporting scope</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <section className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reporting scope</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Switch which jobs feed this tab. Defaults to the parent and all {variationCount} variation{variationCount === 1 ? '' : 's'}.
             </p>
           </div>
-          <JobScopeFilter
-            options={scopeOptions}
-            selectedIds={selectedJobIds}
-            onChange={setSelectedJobIds}
-          />
+          <JobScopeFilter options={scopeOptions} selectedIds={selectedJobIds} onChange={setSelectedJobIds} />
         </section>
       ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="space-y-5">
           {activeTab === 'costing' ? (
             <JobConsumptionCostingSection
@@ -297,21 +306,21 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
           ) : null}
 
           {activeTab === 'materials' ? (
-            <section className="rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-              <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Material summary</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <section className="rounded-lg border border-border bg-card shadow-sm">
+              <div className="border-b border-border px-4 py-4 sm:px-5">
+                <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Material summary</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
                   Dispatched, returned, net consumed, and returnable stock for the selected scope.
                 </p>
                 {isFilterActive ? (
-                  <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">
+                  <p className="mt-2 text-xs text-primary">
                     Showing {selectedJobIds.length} of {totalSelectableJobCount} jobs.
                   </p>
                 ) : null}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
+                  <thead className="bg-muted/40 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3">Material</th>
                       <th className="px-4 py-3 text-right">Dispatched</th>
@@ -322,20 +331,20 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
                   </thead>
                   <tbody>
                     {summary.map((mat: MaterialSummary) => (
-                      <tr key={mat.materialId} className="border-t border-slate-200 dark:border-slate-800">
+                      <tr key={mat.materialId} className="border-t border-border">
                         <td className="px-4 py-3">
-                          <div className="font-medium text-slate-950 dark:text-white">{mat.materialName}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-500">{mat.unit}</div>
+                          <div className="font-medium text-foreground">{mat.materialName}</div>
+                          <div className="text-xs text-muted-foreground">{mat.unit}</div>
                         </td>
-                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.dispatched)}</td>
-                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.returned)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-emerald-700 dark:text-emerald-300">{formatQty(mat.netConsumed)}</td>
-                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.availableToReturn)}</td>
+                        <td className="px-4 py-3 text-right text-foreground">{formatQty(mat.dispatched)}</td>
+                        <td className="px-4 py-3 text-right text-foreground">{formatQty(mat.returned)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">{formatQty(mat.netConsumed)}</td>
+                        <td className="px-4 py-3 text-right text-foreground">{formatQty(mat.availableToReturn)}</td>
                       </tr>
                     ))}
                     {summary.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
                           No materials dispatched yet.
                         </td>
                       </tr>
@@ -347,17 +356,17 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
           ) : null}
 
           {activeTab === 'transactions' ? (
-            <section className="rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-              <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Transaction ledger</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Stock movements recorded against the selected scope.</p>
+            <section className="rounded-lg border border-border bg-card shadow-sm">
+              <div className="border-b border-border px-4 py-4 sm:px-5">
+                <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Transaction ledger</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Stock movements recorded against the selected scope.</p>
                 {isFilterActive ? (
-                  <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">
+                  <p className="mt-2 text-xs text-primary">
                     Showing {selectedJobIds.length} of {totalSelectableJobCount} jobs.
                   </p>
                 ) : null}
               </div>
-              <div className="px-5 py-4">
+              <div className="px-4 py-4 sm:px-5">
                 <TransactionLedger
                   jobId={id}
                   jobIds={!isVariation && selectedJobIds.length > 0 ? selectedJobIds : undefined}
@@ -377,27 +386,27 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
           <InfoCard label="Quotation" value={(job as { quotationNumber?: string | null }).quotationNumber || '-'} note={`Date ${formatDate((job as { quotationDate?: string | Date | null }).quotationDate)}`} />
           <InfoCard label="LPO" value={(job as { lpoNumber?: string | null }).lpoNumber || '-'} note={`Value ${formatMoney((job as { lpoValue?: number | string | null }).lpoValue)} · ${formatDate((job as { lpoDate?: string | Date | null }).lpoDate)}`} />
 
-          <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Location</p>
-            <p className="mt-2 text-sm font-medium text-slate-950 dark:text-white">{(job as { address?: string | null }).address || '-'}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+          <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Location</p>
+            <p className="mt-2 text-sm font-medium text-foreground">{(job as { address?: string | null }).address || '-'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               {(job as { locationName?: string | null }).locationName || '-'} · {(job as { locationLat?: number | null }).locationLat ?? '-'}, {(job as { locationLng?: number | null }).locationLng ?? '-'}
             </p>
           </section>
 
-          <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Contacts</p>
-            <p className="mt-2 text-sm font-medium text-slate-950 dark:text-white">{(job as { contactPerson?: string | null }).contactPerson || '-'}</p>
+          <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Contacts</p>
+            <p className="mt-2 text-sm font-medium text-foreground">{(job as { contactPerson?: string | null }).contactPerson || '-'}</p>
             <div className="mt-3 space-y-2">
               {contacts.map((contact, index) => (
-                <div key={`${contact.name ?? 'contact'}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
-                  <p className="text-sm font-medium text-slate-950 dark:text-white">{contact.name || '-'}</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                <div key={`${contact.name ?? 'contact'}-${index}`} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+                  <p className="text-sm font-medium text-foreground">{contact.name || '-'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {contact.label ? `[${contact.label}] ` : ''}{contact.number || '-'} · {contact.email || '-'} · {contact.designation || '-'}
                   </p>
                 </div>
               ))}
-              {contacts.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">No additional contacts.</p> : null}
+              {contacts.length === 0 ? <p className="text-sm text-muted-foreground">No additional contacts.</p> : null}
             </div>
           </section>
         </aside>

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import SearchSelect from '@/components/ui/SearchSelect';
 import type { Material } from '@/store/api/endpoints/materials';
 import {

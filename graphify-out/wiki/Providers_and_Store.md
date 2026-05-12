@@ -13,7 +13,7 @@
 
 ## Relationships
 
-- [[Reports Stock Exceptions and Stock Adjustments]] (2 shared connections)
+- [[Admin, Components, and Settings]] (2 shared connections)
 - [[Components Company Switcher, Ui, and Sidebar Nav User]] (1 shared connections)
 
 ## Source Files

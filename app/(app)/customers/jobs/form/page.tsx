@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { cn } from '@/lib/utils';
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { emptyJobContactRow, jobContactsToRows, primaryJobContactPersonFromRows, rowsToJobContactsPayload, type JobContactRow } from '@/lib/jobContactFormUi';
 import { WORKFORCE_EXPERTISE_OPTIONS } from '@/lib/hr/workforceProfile';
@@ -63,8 +64,8 @@ type JobFormState = {
 };
 
 const INPUT_CLASS =
-  'mt-1.5 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-600 dark:disabled:bg-slate-900';
-const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500';
+  'mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
+const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
 
 function emptyForm(): JobFormState {
   return {
@@ -176,13 +177,13 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-      <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/55">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">{eyebrow}</p>
-        <h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p> : null}
+    <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</p>
+        <h2 className="mt-1 text-lg font-semibold text-foreground">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
-      <div className="space-y-4 p-5">{children}</div>
+      <div className="space-y-4 p-4 sm:p-5">{children}</div>
     </section>
   );
 }
@@ -370,10 +371,12 @@ export default function CustomerJobFormPage() {
 
   if ((mode === 'edit' && !canEdit) || (mode !== 'edit' && !canCreate)) {
     return (
-      <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+      <div className="flex w-full min-w-0 flex-col gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center text-destructive">
         You do not have permission to perform this action.
-        <div className="mt-4">
-          <Button onClick={() => router.back()}>Go Back</Button>
+        <div>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Go Back
+          </Button>
         </div>
       </div>
     );
@@ -381,12 +384,12 @@ export default function CustomerJobFormPage() {
 
   if (mode === 'create' && jobSourceMode === 'EXTERNAL_ONLY') {
     return (
-      <div className="mx-auto max-w-2xl rounded-3xl border border-amber-300 bg-amber-50 p-6 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-        <h2 className="text-lg font-semibold">Parent job creation disabled</h2>
-        <p className="mt-2 text-sm">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 rounded-lg border border-border bg-card p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-foreground">Parent job creation disabled</h2>
+        <p className="text-sm text-muted-foreground">
           This company is set to external-only parent jobs. Create parent jobs from the Project Management API, then add local variations from the customer jobs list.
         </p>
-        <Button className="mt-4" onClick={() => router.push('/customers/jobs')}>
+        <Button type="button" variant="secondary" onClick={() => router.push('/customers/jobs')}>
           Back to Customer Jobs
         </Button>
       </div>
@@ -394,56 +397,58 @@ export default function CustomerJobFormPage() {
   }
 
   if (mode === 'edit' && jobsLoading && !currentJob) {
-    return <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading job...</div>;
+    return <div className="py-12 text-center text-sm text-muted-foreground">Loading job...</div>;
   }
 
   return (
-    <form id="job-form" onSubmit={handleSubmit} className="-mx-4 -my-4 min-h-[calc(100dvh-4rem)] bg-[linear-gradient(180deg,#f8fafc_0%,#ecfeff_45%,#f8fafc_100%)] px-4 py-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_55%,#020617_100%)] sm:-mx-5 sm:-my-5 sm:px-5 sm:py-5 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6">
-      <section className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_34%),linear-gradient(135deg,#0f172a,#020617)] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <Link href="/customers/jobs" className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-700 dark:text-sky-300">
-                Customers / Jobs
-              </Link>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{pageTitle}</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Capture the customer scope, commercial references, site contacts, and worker expertise. Material finished goods now live in the budget engine, where formula items can calculate brand-sensitive costing.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {mode === 'edit' && currentJob?.parentJobId ? (
-                <Button type="button" variant="secondary" onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
-                  View Budget
-                </Button>
-              ) : null}
-              <Button type="button" variant="ghost" onClick={() => router.back()}>
-                Cancel
-              </Button>
-              <Button type="submit" loading={saving}>
-                {primaryActionLabel}
-              </Button>
-            </div>
+    <form id="job-form" onSubmit={handleSubmit} className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 max-w-3xl space-y-1">
+          <Link
+            href="/customers/jobs"
+            className={cn(
+              buttonVariants({ variant: 'link', size: 'sm' }),
+              'h-auto p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+            )}
+          >
+            Customers / Jobs
+          </Link>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Capture the customer scope, commercial references, site contacts, and worker expertise. Material finished goods now live in the budget engine, where formula items can calculate brand-sensitive costing.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {mode === 'edit' && currentJob?.parentJobId ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
+              View Budget
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving ? 'Saving…' : primaryActionLabel}
+          </Button>
+        </div>
+      </header>
+
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Mode', value: mode === 'variation' ? 'Variation' : mode === 'edit' ? 'Edit' : 'Parent job', note: isVariation ? 'Budget-ready scope' : 'Reporting container' },
+          { label: 'Customer', value: selectedCustomerName, note: form.customerId ? 'Linked customer ledger' : 'Required before save' },
+          { label: 'Budget flow', value: isVariation ? 'Enabled' : 'By variation', note: 'Formula items are issued from budget page' },
+          { label: 'Expertise', value: String(requiredExpertises.length), note: 'Skills for costing schedule checks' },
+        ].map((item) => (
+          <div key={item.label} className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+            <p className="mt-1 truncate text-lg font-semibold text-foreground">{item.value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
           </div>
-        </div>
+        ))}
+      </div>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 md:grid-cols-4">
-          {[
-            { label: 'Mode', value: mode === 'variation' ? 'Variation' : mode === 'edit' ? 'Edit' : 'Parent job', note: isVariation ? 'Budget-ready scope' : 'Reporting container' },
-            { label: 'Customer', value: selectedCustomerName, note: form.customerId ? 'Linked customer ledger' : 'Required before save' },
-            { label: 'Budget flow', value: isVariation ? 'Enabled' : 'By variation', note: 'Formula items are issued from budget page' },
-            { label: 'Expertise', value: String(requiredExpertises.length), note: 'Skills for costing schedule checks' },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-950/80">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-              <p className="mt-1 truncate text-lg font-semibold text-slate-950 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
         <main className="space-y-5">
           <Section
             eyebrow={mode === 'variation' ? 'Variation setup' : 'Job identity'}
@@ -458,8 +463,8 @@ export default function CustomerJobFormPage() {
                 </label>
                 <label className={LABEL_CLASS}>
                   Variation suffix
-                  <div className="mt-1.5 flex overflow-hidden rounded-2xl border border-slate-200 bg-white focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-950">
-                    <span className="border-r border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                  <div className="mt-1.5 flex overflow-hidden rounded-md border border-border bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+                    <span className="border-r border-border bg-muted px-4 py-3 text-sm font-medium text-muted-foreground">
                       {parentJob?.jobNumber ?? 'Parent'}
                     </span>
                     <input
@@ -467,10 +472,10 @@ export default function CustomerJobFormPage() {
                       value={form.variationSuffix}
                       onChange={(event) => updateField('variationSuffix', event.target.value)}
                       placeholder={nextVariationSuffix || '1'}
-                      className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-slate-900 outline-none dark:text-white"
+                      className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-foreground outline-none"
                     />
                   </div>
-                  <p className="mt-2 text-xs normal-case tracking-normal text-slate-500">
+                  <p className="mt-2 text-xs normal-case tracking-normal text-muted-foreground">
                     Full number: {parentJob?.jobNumber}{form.variationSuffix.trim() ? `-${form.variationSuffix.trim()}` : ''}. Next suffix is based on existing variations.
                   </p>
                 </label>
@@ -618,9 +623,9 @@ export default function CustomerJobFormPage() {
           <Section eyebrow="Contacts" title="Site and project contacts" description="The first contact name becomes the primary contact for job summaries and print templates.">
             <div className="space-y-3">
               {jobContacts.map((row, index) => (
-                <div key={index} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
+                <div key={index} className="rounded-lg border border-border bg-muted/30 p-3">
                   <div className="mb-3 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Contact {index + 1}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact {index + 1}</p>
                     {jobContacts.length > 1 ? (
                       <button
                         type="button"
@@ -630,7 +635,7 @@ export default function CustomerJobFormPage() {
                             return rows.filter((_, rowIndex) => rowIndex !== index);
                           })
                         }
-                        className="text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-300"
+                        className="text-xs font-semibold text-destructive hover:underline"
                       >
                         Remove
                       </button>
@@ -649,6 +654,7 @@ export default function CustomerJobFormPage() {
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               onClick={() => setJobContactsDraft((current) => [...(current ?? baseContacts), emptyJobContactRow()])}
             >
               Add Contact
@@ -657,35 +663,39 @@ export default function CustomerJobFormPage() {
         </main>
 
         <aside className="space-y-4 xl:sticky xl:top-5 xl:self-start">
-          <div className="rounded-[1.75rem] border border-sky-200 bg-sky-50 p-5 text-sky-950 shadow-sm dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">Budget flow</p>
-            <h2 className="mt-2 text-lg font-semibold">Finished goods moved to budget</h2>
-            <p className="mt-2 text-sm leading-6 text-sky-800/80 dark:text-sky-100/75">
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm sm:p-5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Budget flow</p>
+            <h2 className="mt-2 text-lg font-semibold text-foreground">Finished goods moved to budget</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               Use this page for customer, site, commercial, and workforce setup. Add material formulas, brand selections, and finished-good costing from the budget page.
             </p>
-            <div className="mt-4 grid gap-2 text-sm">
-              <div className="rounded-2xl bg-white/70 px-3 py-2 dark:bg-slate-950/45">1. Save variation job</div>
-              <div className="rounded-2xl bg-white/70 px-3 py-2 dark:bg-slate-950/45">2. Open material budget</div>
-              <div className="rounded-2xl bg-white/70 px-3 py-2 dark:bg-slate-950/45">3. Add formula items and costing</div>
+            <div className="mt-4 grid gap-2 text-sm text-foreground">
+              <div className="rounded-md border border-border bg-card px-3 py-2">1. Save variation job</div>
+              <div className="rounded-md border border-border bg-card px-3 py-2">2. Open material budget</div>
+              <div className="rounded-md border border-border bg-card px-3 py-2">3. Add formula items and costing</div>
             </div>
             {mode === 'edit' && currentJob?.parentJobId ? (
-              <Button type="button" className="mt-4" fullWidth onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
+              <Button type="button" className="mt-4 w-full" variant="secondary" onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
                 Open Budget
               </Button>
             ) : null}
           </div>
 
-          <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Save checklist</p>
-            <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-400">
-              <p className="flex justify-between gap-3"><span>Customer selected</span><span>{form.customerId ? 'Yes' : 'Missing'}</span></p>
-              <p className="flex justify-between gap-3"><span>Job number</span><span>{mode === 'variation' ? (form.variationSuffix ? 'Ready' : 'Missing') : (form.jobNumber ? 'Ready' : 'Missing')}</span></p>
-              <p className="flex justify-between gap-3"><span>Budget page</span><span>{isVariation ? 'Available' : 'Use variation'}</span></p>
-              <p className="flex justify-between gap-3"><span>Expertise tags</span><span>{requiredExpertises.length}</span></p>
+          <div className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Save checklist</p>
+            <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+              <p className="flex justify-between gap-3"><span>Customer selected</span><span className="text-foreground">{form.customerId ? 'Yes' : 'Missing'}</span></p>
+              <p className="flex justify-between gap-3"><span>Job number</span><span className="text-foreground">{mode === 'variation' ? (form.variationSuffix ? 'Ready' : 'Missing') : (form.jobNumber ? 'Ready' : 'Missing')}</span></p>
+              <p className="flex justify-between gap-3"><span>Budget page</span><span className="text-foreground">{isVariation ? 'Available' : 'Use variation'}</span></p>
+              <p className="flex justify-between gap-3"><span>Expertise tags</span><span className="text-foreground">{requiredExpertises.length}</span></p>
             </div>
             <div className="mt-5 flex flex-col gap-2">
-              <Button type="submit" loading={saving} fullWidth>{primaryActionLabel}</Button>
-              <Button type="button" variant="ghost" fullWidth onClick={() => router.push('/customers/jobs')}>Back to Jobs</Button>
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? 'Saving…' : primaryActionLabel}
+              </Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => router.push('/customers/jobs')}>
+                Back to Jobs
+              </Button>
             </div>
           </div>
         </aside>

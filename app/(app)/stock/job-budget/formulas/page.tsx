@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import Spinner from '@/components/ui/Spinner';
+import { cn } from '@/lib/utils';
 import { useDeleteFormulaLibraryMutation, useGetFormulaLibrariesQuery } from '@/store/hooks';
 
 type FormulaRuleCounts = {
@@ -101,90 +104,130 @@ export default function StockFormulaLibraryPage() {
 
   if (!canView) {
     return (
-      <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-        You need job.view and material.view permission to view formulas.
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>You need job.view and material.view permission to view formulas.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <Link href="/stock/job-budget" className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-300">
-              Job Budget
-            </Link>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Formula library</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-              Manage formula templates used by variation job budgets. Create and edit formulas on dedicated pages.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/stock/job-budget">
-              <Button variant="secondary">Back</Button>
-            </Link>
-            {canManage ? (
-              <Link href="/stock/job-budget/formulas/new">
-                <Button>New formula</Button>
-              </Link>
-            ) : null}
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <Link
+            href="/stock/job-budget"
+            className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            ← Job budget
+          </Link>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Formula library</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Manage formula templates used by variation job budgets. Create and edit formulas on dedicated pages.
+          </p>
         </div>
-      </section>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <Link href="/stock/job-budget" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+            Back
+          </Link>
+          {canManage ? (
+            <Link href="/stock/job-budget/formulas/new" className={cn(buttonVariants({ size: 'sm' }))}>
+              New formula
+            </Link>
+          ) : null}
+        </div>
+      </header>
+
+      {!isLoading && grouped.length > 0 ? (
+        <section className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Templates</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{formulas.length}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Saved formula libraries</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Fabrication scopes</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{grouped.length}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Distinct fabrication groupings</p>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {isLoading ? (
-        <div className="flex h-64 items-center justify-center">
+        <div className="flex h-64 items-center justify-center rounded-lg border border-border bg-card">
           <Spinner size="lg" />
         </div>
       ) : grouped.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-950/70">
+        <div className="rounded-lg border border-dashed border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           No formulas yet.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {grouped.map(([fabricationType, items]) => (
-            <section key={fabricationType} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+            <section key={fabricationType} className="rounded-lg border border-border bg-card p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{fabricationType}</h2>
-                  <p className="text-sm text-slate-500">{items.length} formula{items.length === 1 ? '' : 's'}</p>
+                  <h2 className="text-lg font-semibold text-foreground">{fabricationType}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {items.length} formula{items.length === 1 ? '' : 's'}
+                  </p>
                 </div>
               </div>
               <div className="grid gap-3 lg:grid-cols-2">
                 {items.map((formula) => {
                   const counts = countRules(formula.formulaConfig);
                   return (
-                    <div key={formula.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div
+                      key={formula.id}
+                      className="rounded-lg border border-border bg-muted/30 p-4 dark:bg-muted/15"
+                    >
                       <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-semibold text-slate-900 dark:text-white">{formula.name}</h3>
-                          <p className="mt-1 font-mono text-xs text-slate-500">{formula.slug}</p>
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-foreground">{formula.name}</h3>
+                          <p className="mt-1 font-mono text-xs text-muted-foreground">{formula.slug}</p>
                         </div>
                         {canManage ? (
-                          <div className="flex gap-2">
-                            <Link href={`/stock/job-budget/formulas/${formula.id}/edit`}>
-                              <Button size="sm" variant="secondary">Edit</Button>
+                          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                            <Link
+                              href={`/stock/job-budget/formulas/${formula.id}/edit`}
+                              className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
+                            >
+                              Edit
                             </Link>
-                            <Button size="sm" variant="ghost" disabled={deleting} onClick={() => remove(formula.id, formula.name)}>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={deleting}
+                              onClick={() => remove(formula.id, formula.name)}
+                            >
                               Delete
                             </Button>
                           </div>
                         ) : null}
                       </div>
-                      <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">{formula.description || 'No description yet.'}</p>
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {formula.description || 'No description yet.'}
+                      </p>
                       <div className="mt-4 grid grid-cols-3 gap-2">
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
-                          <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Areas</p>
-                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{counts.areas}</p>
+                        <div className="rounded-md border border-border bg-background px-3 py-2">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Areas</p>
+                          <p className="mt-1 font-semibold tabular-nums text-foreground">{counts.areas}</p>
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
-                          <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Materials</p>
-                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{counts.materials}</p>
+                        <div className="rounded-md border border-border bg-background px-3 py-2">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Materials
+                          </p>
+                          <p className="mt-1 font-semibold tabular-nums text-foreground">{counts.materials}</p>
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950/70">
-                          <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Labor</p>
-                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{counts.labor}</p>
+                        <div className="rounded-md border border-border bg-background px-3 py-2">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Labor</p>
+                          <p className="mt-1 font-semibold tabular-nums text-foreground">{counts.labor}</p>
                         </div>
                       </div>
                     </div>

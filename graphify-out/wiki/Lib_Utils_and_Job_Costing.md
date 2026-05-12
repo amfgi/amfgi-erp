@@ -31,8 +31,9 @@
 - [[API Reports, Materials, and HR]] (8 shared connections)
 - [[API HR, Materials, and Upload]] (8 shared connections)
 - [[API HR, Jobs, and Materials]] (4 shared connections)
-- [[API Companies, Settings, and Materials]] (2 shared connections)
 - [[Lib Utils, Job Costing, and Stock]] (1 shared connections)
+- [[Lib, API, and Auth]] (1 shared connections)
+- [[API Media, Companies, and Materials]] (1 shared connections)
 
 ## Source Files
 

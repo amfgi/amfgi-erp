@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import type { Column } from '@/components/ui/DataTable';
+import { cn } from '@/lib/utils';
 import { useGetTransferLedgerQuery } from '@/store/hooks';
 import type { TransferLedgerItem } from '@/store/api/endpoints/transactions';
 
@@ -55,12 +58,12 @@ export default function InterCompanyTransfersPage() {
       sortable: true,
       render: (transfer) => (
         <span
-          className={[
-            'inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em]',
+          className={cn(
+            'inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide',
             transfer.direction === 'IN'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'
               : 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300',
-          ].join(' ')}
+          )}
         >
           {transfer.direction === 'IN' ? 'Inbound' : 'Outbound'}
         </span>
@@ -72,8 +75,8 @@ export default function InterCompanyTransfersPage() {
       sortable: true,
       render: (transfer) => (
         <div className="min-w-[220px]">
-          <div className="font-medium text-slate-900 dark:text-white">{transfer.materialName}</div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{transfer.unit}</div>
+          <div className="font-medium text-foreground">{transfer.materialName}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{transfer.unit}</div>
         </div>
       ),
     },
@@ -82,9 +85,7 @@ export default function InterCompanyTransfersPage() {
       header: 'Qty',
       sortable: true,
       render: (transfer) => (
-        <div className="min-w-[110px] text-right font-mono text-sm text-slate-900 dark:text-white">
-          {formatQty(transfer.quantity)}
-        </div>
+        <div className="min-w-[110px] text-right font-mono text-sm text-foreground">{formatQty(transfer.quantity)}</div>
       ),
     },
     {
@@ -92,7 +93,7 @@ export default function InterCompanyTransfersPage() {
       header: 'Counterpart',
       sortable: true,
       render: (transfer) => (
-        <div className="min-w-[180px] text-sm text-slate-700 dark:text-slate-300">
+        <div className="min-w-[180px] text-sm text-foreground">
           {transfer.counterpartCompanyName || transfer.counterpartCompanySlug || '-'}
         </div>
       ),
@@ -102,89 +103,80 @@ export default function InterCompanyTransfersPage() {
       header: 'Date',
       sortable: true,
       render: (transfer) => (
-        <div className="min-w-[120px] text-sm text-slate-700 dark:text-slate-300">
-          {formatDate(transfer.date)}
-        </div>
+        <div className="min-w-[120px] text-sm text-foreground">{formatDate(transfer.date)}</div>
       ),
     },
     {
       key: 'notes',
       header: 'Notes',
       render: (transfer) => (
-        <div className="max-w-[320px] truncate text-sm text-slate-500 dark:text-slate-400">
-          {transfer.notes || 'No note'}
-        </div>
+        <div className="max-w-[320px] truncate text-sm text-muted-foreground">{transfer.notes || 'No note'}</div>
       ),
     },
   ];
 
   if (!canView) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Inter-company transfers</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">
-            You do not have permission to view inter-company transfers.
-          </p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <header className="border-b border-border pb-4">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Inter-company transfers</h1>
+        </header>
+        <Alert>
+          <AlertDescription>You do not have permission to view inter-company transfers.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.08),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-700 dark:text-blue-300/80">
-                Transfer Ledger
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Inter-company stock movement
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review incoming and outgoing company-to-company stock movement with material, quantity, counterpart, and date in one ledger.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stock/inter-company-transfers/new">
-                <Button>New multi transfer</Button>
-              </Link>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Transfer ledger</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Inter-company stock movement</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Review incoming and outgoing company-to-company stock movement with material, quantity, counterpart, and date
+            in one ledger.
+          </p>
         </div>
+        <Link
+          href="/stock/inter-company-transfers/new"
+          className={cn(buttonVariants({ size: 'sm' }), 'shrink-0')}
+        >
+          New multi transfer
+        </Link>
+      </header>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: 'Transfers logged', value: String(transfers.length), note: 'Inbound and outbound rows' },
-            { label: 'Inbound rows', value: String(inboundCount), note: 'Received from other companies' },
-            { label: 'Outbound rows', value: String(outboundCount), note: 'Sent to other companies' },
-            { label: 'Counterpart companies', value: String(counterpartCoverage), note: `${formatQty(movedQty)} total units moved` },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-950/80">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">{item.label}</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: 'Transfers logged', value: String(transfers.length), note: 'Inbound and outbound rows' },
+          { label: 'Inbound rows', value: String(inboundCount), note: 'Received from other companies' },
+          { label: 'Outbound rows', value: String(outboundCount), note: 'Sent to other companies' },
+          {
+            label: 'Counterpart companies',
+            value: String(counterpartCoverage),
+            note: `${formatQty(movedQty)} total units moved`,
+          },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{item.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
-        <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-col gap-2 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-              Transfer rows
-            </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Transfer rows</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Each row reflects one transfer transaction recorded for the active company.
             </p>
           </div>
-          <div className="text-xs text-slate-500 dark:text-slate-500">
-            {isFetching ? 'Refreshing...' : `${transfers.length} rows`}
-          </div>
+          <div className="text-xs text-muted-foreground">{isFetching ? 'Refreshing…' : `${transfers.length} rows`}</div>
         </div>
 
         <DataTable

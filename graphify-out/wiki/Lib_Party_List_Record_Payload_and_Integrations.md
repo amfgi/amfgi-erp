@@ -18,8 +18,9 @@
 
 ## Relationships
 
-- [[API Companies, Settings, and Materials]] (10 shared connections)
+- [[Lib, API, and Auth]] (6 shared connections)
 - [[Lib, Integrations, and Party Upsert Service]] (6 shared connections)
+- [[API Media, Companies, and Materials]] (4 shared connections)
 - [[Lib and Party Contacts]] (2 shared connections)
 - [[HR Schedule and Settings]] (2 shared connections)
 - [[API HR, Materials, and Upload]] (2 shared connections)

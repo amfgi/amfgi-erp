@@ -20,12 +20,12 @@
 
 ## Relationships
 
-- [[Stock Goods Receipt, Stock Batches, and Inter Company Transfers]] (11 shared connections)
+- [[Stock, Customers, and Store]] (10 shared connections)
 - [[Jobs, Id, and Cost Engine]] (6 shared connections)
-- [[HR, Reports, and Components]] (4 shared connections)
+- [[Reports Stock Exceptions, Stock Adjustments, and Stock Count Sessions]] (4 shared connections)
+- [[Components, Reports, and HR]] (3 shared connections)
 - [[Stock Count Session and Manual Adjustments]] (2 shared connections)
 - [[Stock, Daily Quantity Log, and Work Date]] (2 shared connections)
-- [[Reports Stock Exceptions and Stock Adjustments]] (2 shared connections)
 
 ## Source Files
 

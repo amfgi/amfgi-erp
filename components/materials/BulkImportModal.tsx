@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import { useBulkCreateMaterialsMutation, useGetWarehousesQuery, type Material } from '@/store/hooks';
 
@@ -486,10 +486,10 @@ export default function BulkImportModal({ isOpen, onClose, existingMaterials }: 
             ) : null}
 
             <div className="flex gap-3 border-t border-slate-700 pt-2">
-              <Button type="button" variant="ghost" onClick={resetState} fullWidth>
+              <Button type="button" variant="ghost" onClick={resetState} className="flex-1">
                 Back
               </Button>
-              <Button type="button" onClick={handlePreview} disabled={!canAdvanceFromMapping()} fullWidth>
+              <Button type="button" onClick={handlePreview} disabled={!canAdvanceFromMapping()} className="flex-1">
                 Preview
               </Button>
             </div>
@@ -721,17 +721,16 @@ export default function BulkImportModal({ isOpen, onClose, existingMaterials }: 
             </div>
 
             <div className="flex gap-3 border-t border-slate-700 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setStep(1)} fullWidth>
+              <Button type="button" variant="ghost" onClick={() => setStep(1)} className="flex-1">
                 Back
               </Button>
               <Button
                 type="button"
                 onClick={handleSubmit}
-                loading={isSubmitting}
-                disabled={newRows.length === 0 && selectedForUpdate.length === 0}
-                fullWidth
+                disabled={isSubmitting || (newRows.length === 0 && selectedForUpdate.length === 0)}
+                className="flex-1"
               >
-                Import {newRows.length + selectedForUpdate.length} rows
+                {isSubmitting ? 'Importing…' : `Import ${newRows.length + selectedForUpdate.length} rows`}
               </Button>
             </div>
           </div>

@@ -1,13 +1,16 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import { Badge } from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
+import { cn } from '@/lib/utils';
 import type { Column } from '@/components/ui/DataTable';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
@@ -61,6 +64,12 @@ function transactionBadgeVariant(type: string) {
   return 'green';
 }
 
+function periodFilterLabel(filterType: 'day' | 'month' | 'all'): string {
+  if (filterType === 'all') return 'All history';
+  if (filterType === 'month') return 'Calendar month';
+  return 'Single day';
+}
+
 function SectionShell({
   title,
   description,
@@ -71,14 +80,10 @@ function SectionShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">{description}</p>
-        ) : null}
+    <section className="rounded-lg border border-border bg-card shadow-sm">
+      <div className="border-b border-border px-5 py-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
       <div className="p-5">{children}</div>
     </section>
@@ -87,6 +92,7 @@ function SectionShell({
 
 export default function GoodsReceiptPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const { openMenu: openContextMenu } = useGlobalContextMenu();
 
@@ -96,7 +102,10 @@ export default function GoodsReceiptPage() {
   const canDelete = isSA || perms.includes('transaction.stock_in');
 
   const [filterType, setFilterType] = useState<'day' | 'month' | 'all'>('month');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date().toISOString().split('T')[0];
+    return `${d.slice(0, 7)}-01`;
+  });
   const [viewEntry, setViewEntry] = useState<ReceiptEntry | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({
     open: false,
@@ -122,6 +131,69 @@ export default function GoodsReceiptPage() {
     data: null,
     reason: '',
   });
+
+  useEffect(() => {
+    const urlFilterType = searchParams.get('filterType') as 'day' | 'month' | 'all' | null;
+    const urlDate = searchParams.get('date');
+
+    if (urlFilterType && ['day', 'month', 'all'].includes(urlFilterType)) {
+      setFilterType(urlFilterType);
+    }
+    if (urlDate) {
+      if (urlDate.length === 7 && /^\d{4}-\d{2}$/.test(urlDate)) {
+        setSelectedDate(`${urlDate}-01`);
+      } else {
+        setSelectedDate(urlDate.slice(0, 10));
+      }
+    }
+  }, [searchParams]);
+
+  const handleFilterTypeChange = useCallback(
+    (newFilterType: 'day' | 'month' | 'all') => {
+      if (newFilterType === 'all') {
+        setFilterType('all');
+        const params = new URLSearchParams();
+        params.set('filterType', 'all');
+        router.push(`?${params.toString()}`);
+        return;
+      }
+
+      let nextDate = selectedDate;
+      if (newFilterType === 'month') {
+        const base =
+          selectedDate.length >= 10 ? selectedDate.slice(0, 10) : new Date().toISOString().split('T')[0];
+        nextDate = `${base.slice(0, 7)}-01`;
+      } else {
+        nextDate =
+          selectedDate.length >= 10 ? selectedDate.slice(0, 10) : new Date().toISOString().split('T')[0];
+      }
+
+      setFilterType(newFilterType);
+      setSelectedDate(nextDate);
+      const params = new URLSearchParams();
+      params.set('filterType', newFilterType);
+      params.set('date', nextDate);
+      router.push(`?${params.toString()}`);
+    },
+    [router, selectedDate],
+  );
+
+  const handleDateChange = useCallback(
+    (value: string) => {
+      const normalized =
+        filterType === 'month'
+          ? value.length === 7
+            ? `${value}-01`
+            : value.slice(0, 10)
+          : value.slice(0, 10);
+      setSelectedDate(normalized);
+      const params = new URLSearchParams();
+      params.set('filterType', filterType);
+      params.set('date', normalized);
+      router.push(`?${params.toString()}`);
+    },
+    [filterType, router],
+  );
 
   const { data: entries = [], isFetching } = useGetReceiptEntriesQuery(
     { filterType, date: selectedDate },
@@ -400,111 +472,122 @@ export default function GoodsReceiptPage() {
 
   if (!canView) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Goods receipts</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">
-            You do not have permission to view goods receipts.
-          </p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <header className="border-b border-border pb-4">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Goods receipts</h1>
+        </header>
+        <Alert>
+          <AlertDescription>You do not have permission to view goods receipts.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.08),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-                Receiving Ledger
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Goods receipt history
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review received stock, inspect supplier bills, and reopen any receipt for adjustment.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stock/goods-receipt/receive">
-                <Button>
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  New Receipt
-                </Button>
-              </Link>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Receiving ledger</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Goods receipt history</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Review received stock, inspect supplier bills, and reopen any receipt for adjustment.
+          </p>
         </div>
-
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: 'Receipts in view',
-              value: String(entries.length),
-              note: filterType === 'all' ? 'All available records' : `${filterType} filter active`,
-            },
-            {
-              label: 'Receipt value',
-              value: formatMoney(receiptValue, currencyCode),
-              note: 'Combined value of visible receipts',
-            },
-            {
-              label: 'Received lines',
-              value: String(totalLineItems),
-              note: 'Total material rows in scope',
-            },
-            {
-              label: 'Supplier coverage',
-              value: String(supplierCoverage),
-              note: 'Distinct suppliers represented',
-            },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-950/80">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                {item.label}
-              </p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <Link href="/stock/goods-receipt/receive" className={cn(buttonVariants({ size: 'sm' }))}>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New receipt
+          </Link>
         </div>
+      </header>
+
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Receipts in view',
+            value: String(entries.length),
+            note: filterType === 'all' ? 'All available records' : periodFilterLabel(filterType),
+          },
+          {
+            label: 'Receipt value',
+            value: formatMoney(receiptValue, currencyCode),
+            note: 'Combined value of visible receipts',
+          },
+          {
+            label: 'Received lines',
+            value: String(totalLineItems),
+            note: 'Total material rows in scope',
+          },
+          {
+            label: 'Supplier coverage',
+            value: String(supplierCoverage),
+            note: 'Distinct suppliers represented',
+          },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
+        ))}
       </section>
 
       <SectionShell
         title="Receipt ledger"
-        description="Use the date window to narrow the ledger, then right-click any row for quick actions."
+        description="Pick a period, then choose the month or day that defines the range. Use the table search for receipt number, supplier, or notes."
       >
-        <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {(['day', 'month', 'all'] as const).map((type) => (
-              <Button
-                key={type}
-                variant={filterType === type ? 'primary' : 'ghost'}
-                onClick={() => setFilterType(type)}
-                className="capitalize"
-              >
-                {type}
-              </Button>
-            ))}
+        <div className="mb-4 flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">Receipt date range</p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  { value: 'all' as const, label: 'All history' },
+                  { value: 'month' as const, label: 'Month' },
+                  { value: 'day' as const, label: 'Day' },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleFilterTypeChange(option.value)}
+                  className={cn(
+                    'rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors',
+                    filterType === option.value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'border border-border bg-muted/40 text-muted-foreground hover:bg-muted/60',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-2 sm:items-end">
             {filterType !== 'all' ? (
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-            ) : null}
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-transparent dark:text-slate-500">
-              Search by receipt, supplier, or notes
-            </span>
+              <>
+                <label className="text-xs font-medium text-muted-foreground sm:text-right" htmlFor="goods-receipt-period">
+                  {filterType === 'day' ? 'Select day' : 'Select month'}
+                </label>
+                <input
+                  id="goods-receipt-period"
+                  type={filterType === 'day' ? 'date' : 'month'}
+                  value={filterType === 'day' ? selectedDate.slice(0, 10) : selectedDate.slice(0, 7)}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  className="w-full min-w-0 max-w-44 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
+                />
+              </>
+            ) : (
+              <p className="max-w-sm text-xs text-muted-foreground sm:text-right">
+                Showing every receipt for this company. Narrow by month or day when you need a smaller window.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground sm:text-right">Table search filters the rows below.</p>
           </div>
         </div>
 
@@ -612,12 +695,16 @@ export default function GoodsReceiptPage() {
             </div>
 
             <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
-              <Button variant="ghost" onClick={() => setViewEntry(null)}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setViewEntry(null)}>
                 Close
               </Button>
               {viewEntry.status === 'active' ? (
-                <Button onClick={() => router.push(`/stock/goods-receipt/receive?edit=${viewEntry.receiptNumber}`)}>
-                  Edit Receipt
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => router.push(`/stock/goods-receipt/receive?edit=${viewEntry.receiptNumber}`)}
+                >
+                  Edit receipt
                 </Button>
               ) : null}
             </div>
@@ -715,11 +802,13 @@ export default function GoodsReceiptPage() {
                     </div>
                     <div className="mt-3 flex justify-end">
                       <Button
-                        variant="danger"
+                        type="button"
+                        variant="destructive"
+                        size="sm"
                         onClick={handleAdjustReceipt}
                         disabled={isAdjustingReceipt}
                       >
-                        {isAdjustingReceipt ? 'Posting Adjustment...' : 'Post Approved Adjustment'}
+                        {isAdjustingReceipt ? 'Posting adjustment…' : 'Post approved adjustment'}
                       </Button>
                     </div>
                   </div>
@@ -809,7 +898,9 @@ export default function GoodsReceiptPage() {
 
             <div className="mt-6 flex justify-end border-t border-slate-200 pt-4 dark:border-slate-700">
               <Button
+                type="button"
                 variant="ghost"
+                size="sm"
                 onClick={() => setAdjustmentImpactModal({ open: false, entry: null, data: null, reason: '' })}
               >
                 Close
@@ -855,14 +946,16 @@ export default function GoodsReceiptPage() {
 
             <div className="mt-6 flex justify-end gap-3">
               <Button
+                type="button"
                 variant="ghost"
+                size="sm"
                 onClick={() => setCancelModal({ open: false, entry: null, reason: '' })}
                 disabled={isCancelling}
               >
                 Close
               </Button>
-              <Button variant="danger" onClick={handleCancelReceipt} disabled={isCancelling}>
-                {isCancelling ? 'Cancelling...' : 'Cancel Receipt'}
+              <Button type="button" variant="destructive" size="sm" onClick={handleCancelReceipt} disabled={isCancelling}>
+                {isCancelling ? 'Cancelling…' : 'Cancel receipt'}
               </Button>
             </div>
           </div>
@@ -893,14 +986,16 @@ export default function GoodsReceiptPage() {
 
             <div className="mt-6 flex justify-end gap-3">
               <Button
+                type="button"
                 variant="ghost"
+                size="sm"
                 onClick={() => setDeleteModal({ open: false, entry: null })}
                 disabled={isDeleting}
               >
                 Cancel
               </Button>
-              <Button variant="danger" onClick={handleDelete} disabled={isDeleting}>
-                {isDeleting ? 'Deleting...' : 'Delete'}
+              <Button type="button" variant="destructive" size="sm" onClick={handleDelete} disabled={isDeleting}>
+                {isDeleting ? 'Deleting…' : 'Delete'}
               </Button>
             </div>
           </div>

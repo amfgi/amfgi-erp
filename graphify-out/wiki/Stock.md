@@ -23,14 +23,12 @@
 
 ## Relationships
 
-- [[Components, HR, and Admin]] (5 shared connections)
-- [[Stock Goods Receipt, Stock Batches, and Inter Company Transfers]] (2 shared connections)
-- [[Admin, Components, and Settings]] (2 shared connections)
+- [[Components, Reports, and HR]] (5 shared connections)
+- [[Admin, Components, and Settings]] (4 shared connections)
+- [[Stock, Customers, and Store]] (2 shared connections)
 - [[Reports, Settings, and HR]] (2 shared connections)
 - [[Components Ui and Materials]] (2 shared connections)
-- [[Reports Stock Exceptions and Stock Adjustments]] (1 shared connections)
-- [[HR, Reports, and Components]] (1 shared connections)
-- [[Customers, Stock, and Providers]] (1 shared connections)
+- [[HR, Stock, and Providers]] (1 shared connections)
 
 ## Source Files
 

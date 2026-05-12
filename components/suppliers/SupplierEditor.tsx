@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import {
   emptySupplierPartyFormState,
   supplierPartyFormToApiBody,
@@ -482,16 +482,10 @@ export default function SupplierEditor({
             </div>
 
             <div className="space-y-3">
-              <Button type="submit" loading={saving} fullWidth>
-                {isEdit ? 'Update Supplier' : 'Create Supplier'}
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? 'Saving…' : isEdit ? 'Update Supplier' : 'Create Supplier'}
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                fullWidth
-                onClick={() => router.push('/suppliers')}
-                disabled={saving}
-              >
+              <Button type="button" variant="ghost" className="w-full" onClick={() => router.push('/suppliers')} disabled={saving}>
                 Cancel
               </Button>
             </div>

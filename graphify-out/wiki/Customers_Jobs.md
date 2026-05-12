@@ -35,9 +35,9 @@
 
 - [[Customers Jobs]] (3 shared connections)
 - [[HR Schedule and Settings]] (3 shared connections)
-- [[Customers, Stock, and Providers]] (1 shared connections)
+- [[HR, Stock, and Providers]] (1 shared connections)
 - [[Lib, HR, and Workforce Profile]] (1 shared connections)
-- [[Reports Stock Exceptions and Stock Adjustments]] (1 shared connections)
+- [[Admin, Components, and Settings]] (1 shared connections)
 - [[Jobs, Id, and Cost Engine]] (1 shared connections)
 - [[API Reports, Materials, and HR]] (1 shared connections)
 

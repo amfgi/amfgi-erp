@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import type { Job } from '@/store/api/endpoints/jobs';
 
@@ -276,15 +276,17 @@ export default function JobVariationModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="button" variant="ghost" onClick={onClose} fullWidth>
+          <Button type="button" variant="ghost" onClick={onClose} className="flex-1">
             Cancel
           </Button>
-          <Button type="submit" loading={isLoading} fullWidth>
-            {editing
-              ? 'Update'
-              : mode === 'variation'
-              ? 'Create Variation'
-              : 'Create'}
+          <Button type="submit" disabled={isLoading} className="flex-1">
+            {isLoading
+              ? 'Saving…'
+              : editing
+                ? 'Update'
+                : mode === 'variation'
+                  ? 'Create Variation'
+                  : 'Create'}
           </Button>
         </div>
       </form>

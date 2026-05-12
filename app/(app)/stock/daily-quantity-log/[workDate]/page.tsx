@@ -6,9 +6,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Spinner from '@/components/ui/Spinner';
+import { cn } from '@/lib/utils';
 import {
   useAddJobItemProgressEntryMutation,
   useAddQuantityLogAdhocJobMutation,
@@ -597,17 +600,21 @@ export default function DailyQuantityLogEntryPage() {
 
   if (!canView) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-slate-500 dark:text-slate-400">You do not have permission to view jobs.</p>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>You do not have permission to view jobs.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   if (!workDateOk) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-slate-500 dark:text-slate-400">Invalid date in URL.</p>
-        <Button type="button" variant="secondary" className="mt-4" onClick={() => router.push('/stock/daily-quantity-log')}>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert variant="destructive">
+          <AlertDescription>Invalid date in URL.</AlertDescription>
+        </Alert>
+        <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => router.push('/stock/daily-quantity-log')}>
           Back to list
         </Button>
       </div>
@@ -640,122 +647,110 @@ export default function DailyQuantityLogEntryPage() {
   const saveDisabled = totalChangeCount === 0 || invalidQuantityCount > 0 || blockedQuantityCount > 0;
 
   return (
-    <div className="space-y-4 pb-12">
-      {/* Breadcrumb / back */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+    <div className="flex w-full min-w-0 flex-col gap-5 pb-12">
+      <nav className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <Link
           href="/stock/daily-quantity-log"
-          className="rounded-md px-2 py-1 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-8 px-2')}
         >
           Daily quantity log
         </Link>
         <span aria-hidden>/</span>
-        <span className="text-slate-700 dark:text-slate-200">{workDateParam}</span>
-      </div>
+        <span className="text-foreground">{workDateParam}</span>
+      </nav>
 
-      {/* Hero */}
-      <section className="rounded-3xl border border-slate-200 bg-linear-to-br from-white via-white to-emerald-50/40 p-5 shadow-sm dark:border-slate-800 dark:from-slate-950/70 dark:via-slate-950/70 dark:to-emerald-950/30 sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-300/80">
-                Quantity log entry
-              </p>
-              {isFinalized ? (
-                <Badge label="Finalized" variant="green" />
-              ) : (
-                <Badge label="Pending" variant="yellow" />
-              )}
-              {data?.schedule ? (
-                <Badge
-                  label={`Schedule ${data.schedule.status.toLowerCase()}`}
-                  variant={data.schedule.status === 'PUBLISHED' ? 'green' : data.schedule.status === 'LOCKED' ? 'gray' : 'yellow'}
-                />
-              ) : (
-                <Badge label="No HR schedule" variant="gray" />
-              )}
-            </div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[1.85rem]">
-              {displayDate}
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              {isFinalized
-                ? 'This day is finalized. Existing logged quantities can still be corrected, but adding jobs or new quantity rows requires unlocking the day first.'
-                : 'Enter quantities for each scheduled or ad-hoc job, then save once to log and finalize this calendar day.'}
-            </p>
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 max-w-3xl space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantity log entry</p>
+            {isFinalized ? (
+              <Badge label="Finalized" variant="green" />
+            ) : (
+              <Badge label="Pending" variant="yellow" />
+            )}
+            {data?.schedule ? (
+              <Badge
+                label={`Schedule ${data.schedule.status.toLowerCase()}`}
+                variant={data.schedule.status === 'PUBLISHED' ? 'green' : data.schedule.status === 'LOCKED' ? 'gray' : 'yellow'}
+              />
+            ) : (
+              <Badge label="No HR schedule" variant="gray" />
+            )}
           </div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{displayDate}</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {isFinalized
+              ? 'This day is finalized. Existing logged quantities can still be corrected, but adding jobs or new quantity rows requires unlocking the day first.'
+              : 'Enter quantities for each scheduled or ad-hoc job, then save once to log and finalize this calendar day.'}
+          </p>
+        </div>
 
-          {canEdit ? (
-            <div className="flex shrink-0 flex-col items-stretch gap-2 lg:items-end">
-              {isFinalized ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void handleUnlockDay()}
-                  loading={isUnlocking}
-                  className="lg:min-w-64"
-                >
-                  Unlock day
-                </Button>
-              ) : null}
+        {canEdit ? (
+          <div className="flex shrink-0 flex-col items-stretch gap-2 lg:items-end">
+            {isFinalized ? (
               <Button
                 type="button"
-                size="lg"
-                onClick={() => void handleSaveAll()}
-                loading={isSavingAll}
-                disabled={saveDisabled}
+                variant="secondary"
+                size="sm"
+                onClick={() => void handleUnlockDay()}
+                disabled={isUnlocking}
                 className="lg:min-w-64"
               >
-                {saveLabel}
+                {isUnlocking ? 'Unlocking…' : 'Unlock day'}
               </Button>
-              {totalChangeCount === 0 ? (
-                <p className="text-right text-[11px] text-slate-500 dark:text-slate-500">
-                  {isFinalized
-                    ? 'Edit an existing value to enable'
-                    : 'Enter at least one quantity to enable'}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => void handleSaveAll()}
+              disabled={saveDisabled || isSavingAll}
+              className="lg:min-w-64"
+            >
+              {isSavingAll ? 'Saving…' : saveLabel}
+            </Button>
+            {totalChangeCount === 0 ? (
+              <p className="text-right text-[11px] text-muted-foreground">
+                {isFinalized ? 'Edit an existing value to enable' : 'Enter at least one quantity to enable'}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </header>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Jobs on sheet" value={summary.totalAssignments} hint="Schedule + ad-hoc" />
-          <Stat label="Budget lines" value={summary.totalItems} hint="Tracking-enabled items" />
-          <Stat label="Trackables" value={summary.totalTrackables} hint="Quantity targets" />
-          <Stat label="Entries this date" value={summary.totalLoggedToday} hint="Posted rows" />
-        </div>
-      </section>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Jobs on sheet" value={summary.totalAssignments} hint="Schedule + ad-hoc" />
+        <Stat label="Budget lines" value={summary.totalItems} hint="Tracking-enabled items" />
+        <Stat label="Trackables" value={summary.totalTrackables} hint="Quantity targets" />
+        <Stat label="Entries this date" value={summary.totalLoggedToday} hint="Posted rows" />
+      </div>
 
       {errorMessage ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-700/40 dark:bg-red-950/30 dark:text-red-200">
-          {errorMessage}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
       ) : null}
 
       {/* Add ad-hoc job */}
       {canEdit ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
+        <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+            <h2 className="text-sm font-semibold text-foreground">
               {isFinalized ? 'Job list locked' : 'Add a job (not on schedule)'}
             </h2>
-            <span className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               {adhocJobOptions.length} available
             </span>
           </div>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             {isFinalized ? (
               <>
-                This day is finalized. Use <strong className="font-medium text-slate-700 dark:text-slate-300">Unlock day</strong> above before adding
-                or removing jobs.
+                This day is finalized. Use <strong className="font-medium text-foreground">Unlock day</strong> above before adding or
+                removing jobs.
               </>
             ) : (
               <>
                 Search by job number, customer, or site. Jobs already on this day are hidden. If a job has no trackable budget lines yet,
-                open <strong className="font-medium text-slate-700 dark:text-slate-300">Job costing</strong> from that job and add items
-                with quantity tracking.
+                open <strong className="font-medium text-foreground">Job costing</strong> from that job and add items with quantity tracking.
               </>
             )}
           </p>
@@ -780,13 +775,13 @@ export default function DailyQuantityLogEntryPage() {
                     ) : null}
                   </div>
                   {item.searchText ? (
-                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">{item.searchText}</div>
+                    <div className="truncate text-xs text-muted-foreground">{item.searchText}</div>
                   ) : null}
                 </div>
               )}
               disabled={isFinalized}
             />
-            <Button type="button" variant="secondary" onClick={() => void handleAddAdhoc()} disabled={!adhocJobId || isFinalized}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => void handleAddAdhoc()} disabled={!adhocJobId || isFinalized}>
               {isFinalized ? 'Locked' : 'Add to day'}
             </Button>
           </div>
@@ -794,7 +789,7 @@ export default function DailyQuantityLogEntryPage() {
       ) : null}
 
       {assignments.length > 0 ? (
-        <section className="sticky top-0 z-20 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:p-4">
+        <section className="sticky top-0 z-20 rounded-lg border border-border bg-card/95 p-3 shadow-sm backdrop-blur sm:p-4">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
             <label className="block">
               <span className="sr-only">Search jobs, teams, workers, or items</span>
@@ -803,7 +798,7 @@ export default function DailyQuantityLogEntryPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search job, customer, site, team, worker, or item..."
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
               />
             </label>
             <div className="flex flex-wrap gap-2">
@@ -813,13 +808,13 @@ export default function DailyQuantityLogEntryPage() {
               <QueueFilter label="Complete" count={viewCounts.complete} active={viewFilter === 'COMPLETE'} onClick={() => setViewFilter('COMPLETE')} />
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              Showing <strong className="font-semibold text-slate-800 dark:text-slate-100">{filteredAssignments.length}</strong> of{' '}
-              <strong className="font-semibold text-slate-800 dark:text-slate-100">{assignments.length}</strong> jobs
+              Showing <strong className="font-semibold text-foreground">{filteredAssignments.length}</strong> of{' '}
+              <strong className="font-semibold text-foreground">{assignments.length}</strong> jobs
             </span>
             {totalChangeCount > 0 || invalidQuantityCount > 0 || blockedQuantityCount > 0 ? (
-              <span className="font-medium text-slate-700 dark:text-slate-200">
+              <span className="font-medium text-foreground">
                 {totalChangeCount} pending change{totalChangeCount === 1 ? '' : 's'}
                 {invalidQuantityCount > 0 ? ` · ${invalidQuantityCount} invalid` : ''}
                 {blockedQuantityCount > 0 ? ` · ${blockedQuantityCount} over limit` : ''}
@@ -831,15 +826,15 @@ export default function DailyQuantityLogEntryPage() {
 
       {/* Body */}
       {(isLoading || isFetching) && !data ? (
-        <div className="flex h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/70">
+        <div className="flex h-64 items-center justify-center rounded-lg border border-border bg-card">
           <Spinner size="lg" />
         </div>
       ) : assignments.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-950/70">
-          <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center">
+          <p className="text-base font-semibold text-foreground">
             {isFinalized ? 'This day was finalized with no entries' : 'Nothing to log for this day'}
           </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             {isFinalized
               ? 'No progress entries were posted for this date.'
               : 'No published HR assignments and no eligible jobs to add ad-hoc — either no work happened, or the only jobs are already 100% complete.'}
@@ -849,21 +844,23 @@ export default function DailyQuantityLogEntryPage() {
               <Button
                 type="button"
                 variant="secondary"
+                size="sm"
                 onClick={() => void handleFinalizeEmpty()}
-                loading={isFinalizingEmpty}
+                disabled={isFinalizingEmpty}
               >
-                Mark day as finalized with no entries
+                {isFinalizingEmpty ? 'Finalizing…' : 'Mark day as finalized with no entries'}
               </Button>
-              <p className="max-w-md text-xs text-slate-500 dark:text-slate-500">
-                Closes this date in the quantity log so it stops appearing as pending. You can still re-open the day later if entries become possible (it will move to edit-only mode).
+              <p className="max-w-md text-xs text-muted-foreground">
+                Closes this date in the quantity log so it stops appearing as pending. You can still re-open the day later if entries become
+                possible (it will move to edit-only mode).
               </p>
             </div>
           ) : null}
         </div>
       ) : filteredAssignments.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-950/70">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No jobs match this view.</p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Clear the search or switch the filter to All.</p>
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-foreground">No jobs match this view.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Clear the search or switch the filter to All.</p>
           <Button
             type="button"
             variant="secondary"
@@ -935,13 +932,13 @@ export default function DailyQuantityLogEntryPage() {
 
 function Stat({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/40">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
-        {new Intl.NumberFormat('en-US').format(value)}
-      </p>
-      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">{hint}</p>
-    </div>
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{new Intl.NumberFormat('en-US').format(value)}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
+      </CardContent>
+    </Card>
   );
 }
 

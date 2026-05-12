@@ -36,15 +36,15 @@
 - [[API Reports, Materials, and HR]] (6 shared connections)
 - [[API HR, Materials, and Upload]] (4 shared connections)
 - [[Components Job Costing]] (3 shared connections)
-- [[API Companies, Settings, and Materials]] (3 shared connections)
 - [[API HR, Jobs, and Materials]] (3 shared connections)
 - [[API HR, User, and Jobs]] (2 shared connections)
 - [[Lib, Scripts, and Settings]] (2 shared connections)
+- [[API Media, Companies, and Materials]] (2 shared connections)
 - [[Lib Utils and Job Costing]] (1 shared connections)
 - [[Lib, Job Costing, and Settings]] (1 shared connections)
 - [[Lib, HR, and Work Date]] (1 shared connections)
 - [[HR Schedule and Settings]] (1 shared connections)
-- [[Lib Integrations, Party Lists API, and Party List Sync]] (1 shared connections)
+- [[Lib, API, and Auth]] (1 shared connections)
 
 ## Source Files
 

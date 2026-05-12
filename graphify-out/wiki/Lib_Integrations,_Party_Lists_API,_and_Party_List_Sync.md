@@ -36,7 +36,7 @@
 - [[API HR, Materials, and Upload]] (7 shared connections)
 - [[HR Schedule and Settings]] (3 shared connections)
 - [[Lib Party List Record Payload and Integrations]] (2 shared connections)
-- [[Lib Utils, Media, and HR]] (2 shared connections)
+- [[Lib, API, and Auth]] (2 shared connections)
 - [[Lib and Party Contacts]] (1 shared connections)
 - [[Lib Utils, Job Costing, and Stock]] (1 shared connections)
 - [[API Reports, Materials, and HR]] (1 shared connections)

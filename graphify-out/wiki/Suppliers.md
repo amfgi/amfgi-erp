@@ -30,16 +30,16 @@
 
 ## Relationships
 
-- [[HR, Reports, and Components]] (6 shared connections)
+- [[Admin, Components, and Settings]] (6 shared connections)
 - [[Dashboard]] (6 shared connections)
-- [[Admin, Components, and Settings]] (5 shared connections)
+- [[Components, Reports, and HR]] (5 shared connections)
 - [[Customers Jobs]] (5 shared connections)
-- [[Components, HR, and Admin]] (4 shared connections)
 - [[Stock Dispatch]] (4 shared connections)
+- [[HR Schedule and Attendance]] (3 shared connections)
 - [[Reports, Settings, and HR]] (3 shared connections)
-- [[Stock Goods Receipt, Stock Batches, and Inter Company Transfers]] (2 shared connections)
-- [[Customers, Stock, and Providers]] (2 shared connections)
-- [[Reports Stock Exceptions and Stock Adjustments]] (1 shared connections)
+- [[Stock, Customers, and Store]] (2 shared connections)
+- [[Reports Stock Exceptions, Stock Adjustments, and Stock Count Sessions]] (2 shared connections)
+- [[HR, Stock, and Providers]] (2 shared connections)
 - [[Settings API]] (1 shared connections)
 
 ## Source Files

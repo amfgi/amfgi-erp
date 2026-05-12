@@ -3,7 +3,7 @@
 import { type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
 import { useTheme } from '@/providers/ThemeProvider';

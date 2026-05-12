@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import toast from 'react-hot-toast';
 import {
   DEFAULT_ATTENDANCE_REPORT_COLUMNS,
@@ -311,9 +311,9 @@ export default function HrAttendanceReportPage() {
                   setDownloadingAll(false);
                 }
               }}
-              loading={downloadingAll}
+              disabled={downloadingAll}
             >
-              Download full workbook
+              {downloadingAll ? 'Downloading…' : 'Download full workbook'}
             </Button>
             <Button
               type="button"
@@ -331,10 +331,9 @@ export default function HrAttendanceReportPage() {
                   setDownloadingEmployee(false);
                 }
               }}
-              disabled={!selectedEmployeeId}
-              loading={downloadingEmployee}
+              disabled={!selectedEmployeeId || downloadingEmployee}
             >
-              Download selected employee
+              {downloadingEmployee ? 'Downloading…' : 'Download selected employee'}
             </Button>
           </div>
         </div>

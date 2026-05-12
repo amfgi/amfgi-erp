@@ -486,7 +486,7 @@ export default function CustomerJobsPage() {
                       </div>
 
                       <div className="flex items-center xl:border-l xl:border-border xl:pl-4">
-                        <Badge variant={statusBadgeVariant(job.status)} className="whitespace-nowrap">
+                        <Badge variant={statusBadgeVariant(job.status)} className="whitespace-nowrap text-[10px] uppercase tracking-wide">
                           {job.status.replace('_', ' ')}
                         </Badge>
                       </div>
