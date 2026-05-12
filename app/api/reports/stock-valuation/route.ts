@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { readCompanyOperationalSettings } from '@/lib/utils/companyOperationalSettings';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
@@ -17,6 +18,7 @@ export async function GET() {
         where: { id: companyId },
         select: {
           warehouseMode: true,
+          operationalSettings: true,
           stockFallbackWarehouse: {
             select: {
               id: true,
@@ -223,15 +225,20 @@ export async function GET() {
       }))
       .sort((a, b) => b.stockValue - a.stockValue);
 
+    const operationalSettings = readCompanyOperationalSettings(company?.operationalSettings);
+    const preferredMethod = 'FIFO' as const;
+    const preferredStockValue = fifoStockValue;
+
     return successResponse({
       summary: {
-        totalStockValue: fifoStockValue,
+        totalStockValue: preferredStockValue,
         fifoStockValue,
         movingAverageStockValue,
         currentStockValue,
-        preferredMethod: 'FIFO',
+        preferredMethod,
+        currencyCode: operationalSettings.currencyCode,
         prevMonthConsumptionValue: prevMonthValue,
-        warehouseMode: 'REQUIRED',
+        warehouseMode: company?.warehouseMode ?? 'REQUIRED',
         fallbackWarehouseName: company?.stockFallbackWarehouse?.name ?? null,
         warehouseCount: warehouseBreakdown.length,
       },

@@ -9,6 +9,7 @@ import {
   uploadToDrive,
 } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 function parseDeliveryNoteLabel(notes?: string | null): string {
   const match = notes?.match(/--- DELIVERY NOTE #(\d+)/);
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = await getEffectiveGoogleDriveRootFolderId();
 
     if (!folderId) return errorResponse('Google Drive folder not configured', 500);
 

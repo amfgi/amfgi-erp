@@ -20,6 +20,12 @@ export interface Material {
   companyId: string;
   name: string;
   description?: string;
+  imageUrl?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentMimeType?: string;
+  photoGallery?: Array<{ url: string; fileName: string; mimeType: string }>;
+  documentFiles?: Array<{ url: string; fileName: string; mimeType: string }>;
   unit: string;
   category?: string;
   categoryId?: string | null;

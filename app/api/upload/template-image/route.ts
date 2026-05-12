@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { uploadToDrive, deleteFromDrive } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 /**
  * Upload an image for a print template (e.g. letterhead block). Does not update Company;
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
       return errorResponse('File size must not exceed 5 MB', 400);
     }
 
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = await getEffectiveGoogleDriveRootFolderId();
     if (!folderId) return errorResponse('Google Drive folder not configured', 500);
 
     const oldDriveId = replaceDriveId || extractGoogleDriveFileId(replaceUrl ?? '');

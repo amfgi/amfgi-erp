@@ -1,6 +1,6 @@
 # applyDrafts()
 
-> God node · 17 connections · `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\schedule\[workDate]\page.tsx`
+> God node · 17 connections · `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\schedule\[workDate]\ScheduleDayClient.tsx`
 
 **Community:** [[Almuraqib Custom Application Amfgi]]
 
@@ -25,7 +25,7 @@
 - [[fillTimingTemplate()]] `EXTRACTED`
 
 ### contains
-- [[page.tsx]] `EXTRACTED`
+- [[ScheduleDayClient.tsx]] `EXTRACTED`
 
 ---
 

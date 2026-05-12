@@ -1,4 +1,4 @@
-# Community 21
+# Community 22
 
 > 13 nodes · cohesion 0.18
 

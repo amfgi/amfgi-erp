@@ -127,6 +127,16 @@ export async function processCustomerUpsert(params: {
   credentialId: string;
   payload: CustomerPayload;
 }) {
+  const company = await prisma.company.findUnique({
+    where: { id: params.companyId },
+    select: { customerSourceMode: true },
+  });
+  if (company?.customerSourceMode === 'INTERNAL_ONLY') {
+    throw new PartySyncConflictError(
+      'Customer source mode is internal only. Inbound customer integration API is disabled for this company.'
+    );
+  }
+
   const existing = await findCustomerForUpsert(params.companyId, params.payload);
   const data = basePartyData(params.payload);
   const customer = await prisma.$transaction(async (tx) => {
@@ -192,6 +202,16 @@ export async function processSupplierUpsert(params: {
   credentialId: string;
   payload: SupplierPayload;
 }) {
+  const company = await prisma.company.findUnique({
+    where: { id: params.companyId },
+    select: { supplierSourceMode: true },
+  });
+  if (company?.supplierSourceMode === 'INTERNAL_ONLY') {
+    throw new PartySyncConflictError(
+      'Supplier source mode is internal only. Inbound supplier integration API is disabled for this company.'
+    );
+  }
+
   const existing = await findSupplierForUpsert(params.companyId, params.payload);
   const data = {
     ...basePartyData(params.payload),

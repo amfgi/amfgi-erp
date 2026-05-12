@@ -5,7 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { cn } from '@/lib/utils';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Spinner from '@/components/ui/Spinner';
@@ -77,14 +79,23 @@ type BudgetItemForm = {
 };
 
 type ProgressForm = {
-  progressStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD';
   progressPercent: string;
-  plannedStartDate: string;
-  plannedEndDate: string;
   actualStartDate: string;
   actualEndDate: string;
   progressNote: string;
 };
+
+type JobItemProgressStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD';
+
+/** Map the job-level status to the JobItemProgressStatus that the cost engine tracks. */
+function mapJobStatusToProgressStatus(
+  jobStatus: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED' | undefined,
+  hasActualStart: boolean,
+): JobItemProgressStatus {
+  if (jobStatus === 'COMPLETED') return 'COMPLETED';
+  if (jobStatus === 'ON_HOLD' || jobStatus === 'CANCELLED') return 'ON_HOLD';
+  return hasActualStart ? 'IN_PROGRESS' : 'NOT_STARTED';
+}
 
 type ProgressEntryForm = {
   trackerId: string;
@@ -186,10 +197,7 @@ function issuePaceLabel(status?: 'NOT_DUE' | 'ON_PLAN' | 'UNDER_ISSUED' | 'OVER_
 
 function emptyProgressForm(): ProgressForm {
   return {
-    progressStatus: 'NOT_STARTED',
     progressPercent: '0',
-    plannedStartDate: '',
-    plannedEndDate: '',
     actualStartDate: '',
     actualEndDate: '',
     progressNote: '',
@@ -206,14 +214,11 @@ function isoDateInput(value: string | Date | null | undefined) {
 function jobToScheduleForm(job: Job | undefined): ProgressForm {
   if (!job) return emptyProgressForm();
   return {
-    progressStatus: job.executionProgressStatus ?? 'NOT_STARTED',
     progressPercent: String(
       job.executionProgressPercent !== undefined && job.executionProgressPercent !== null
         ? job.executionProgressPercent
         : 0
     ),
-    plannedStartDate: isoDateInput(job.executionPlannedStartDate),
-    plannedEndDate: isoDateInput(job.executionPlannedEndDate),
     actualStartDate: isoDateInput(job.executionActualStartDate),
     actualEndDate: isoDateInput(job.executionActualEndDate),
     progressNote: job.executionProgressNote ?? '',
@@ -241,41 +246,52 @@ function JobExecutionScheduleEditor({
         <div>
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Progress & schedule</h3>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            One set of fields for this variation job. The cost engine uses these dates and manual status for every budget line; trackables still drive line-level % from the quantity log.
+            Status and planned dates come from the job profile. Use this panel to record actual execution dates and manual progress for the cost engine.
           </p>
         </div>
         {canEdit ? (
-          <Button type="button" size="sm" onClick={() => void onPersist(form)} loading={saving}>
-            Save schedule
+          <Button type="button" size="sm" onClick={() => void onPersist(form)} disabled={saving}>
+            {saving ? 'Saving…' : 'Save schedule'}
           </Button>
         ) : null}
       </div>
       {hasAnyTrackedBudgetLine ? (
         <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100">
-          This job has trackables on one or more budget lines. Line-level % comes from dated entries; manual progress % is disabled while trackables exist.
+          This job has trackable on one or more budget lines. Line-level % comes from dated entries; manual progress % is disabled while trackable exist.
         </div>
       ) : null}
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-          Status
-          <select
-            value={form.progressStatus}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                progressStatus: event.target.value as ProgressForm['progressStatus'],
-                progressPercent: event.target.value === 'COMPLETED' ? '100' : current.progressPercent,
-              }))
-            }
-            disabled={!canEdit}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
-          >
-            <option value="NOT_STARTED">Not started</option>
-            <option value="IN_PROGRESS">In progress</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="ON_HOLD">On hold</option>
-          </select>
-        </label>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs dark:border-slate-700 dark:bg-slate-950">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Job profile values
+          </span>
+          <span className="text-[11px] font-normal normal-case tracking-normal text-slate-400 dark:text-slate-500">
+            Edit on the job profile to change.
+          </span>
+        </div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <div>
+            <span className="block font-medium text-slate-500 dark:text-slate-500">Status</span>
+            <span className="mt-1 inline-block rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              {progressStatusLabel(mapJobStatusToProgressStatus(job?.status, !!form.actualStartDate))}
+              {job?.status ? ` · ${job.status.replace('_', ' ').toLowerCase()}` : ''}
+            </span>
+          </div>
+          <div>
+            <span className="block font-medium text-slate-500 dark:text-slate-500">Planned start</span>
+            <span className="mt-1 block text-sm font-semibold text-slate-900 dark:text-white">
+              {job?.startDate ? new Date(job.startDate).toLocaleDateString() : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="block font-medium text-slate-500 dark:text-slate-500">Planned end</span>
+            <span className="mt-1 block text-sm font-semibold text-slate-900 dark:text-white">
+              {job?.endDate ? new Date(job.endDate).toLocaleDateString() : '—'}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
           Progress percent
           <div className="mt-1.5 flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-300 dark:border-slate-700 dark:bg-slate-950">
@@ -295,28 +311,6 @@ function JobExecutionScheduleEditor({
               %
             </span>
           </div>
-        </label>
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-          Planned start
-          <input
-            type="date"
-            value={form.plannedStartDate}
-            onChange={(event) => setForm((current) => ({ ...current, plannedStartDate: event.target.value }))}
-            disabled={!canEdit}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
-          />
-        </label>
-        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-          Planned end
-          <input
-            type="date"
-            value={form.plannedEndDate}
-            onChange={(event) => setForm((current) => ({ ...current, plannedEndDate: event.target.value }))}
-            disabled={!canEdit}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
-          />
         </label>
       </div>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -565,20 +559,33 @@ function isEmptyBudgetValue(field: BudgetField, value: string | undefined) {
   return !(value ?? '').trim();
 }
 
-export default function JobCostEnginePage() {
+interface JobCostEnginePageProps {
+  /** Force a specific tab and hide the tab bar + page header chrome. Used when this page is embedded inside another page. */
+  embeddedTab?: BudgetPageTab;
+  /** Hide the listed tabs from the tab bar (e.g. when delegating those tabs to another page). */
+  hiddenTabs?: BudgetPageTab[];
+}
+
+export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEnginePageProps = {}) {
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
   const jobId = params.id as string;
   const perms = (session?.user?.permissions ?? []) as string[];
-  const canView = (session?.user?.isSuperAdmin ?? false) || (perms.includes('job.view') && perms.includes('material.view'));
+  /** Matches APIs that only require JOB_VIEW (e.g. budget lines, quantity log). */
+  const canViewJob = (session?.user?.isSuperAdmin ?? false) || perms.includes('job.view');
+  /** Full costing UI: formulas, materials, live calculation, snapshots (matches cost-engine API checks). */
+  const canViewMaterialBudget =
+    (session?.user?.isSuperAdmin ?? false) || (perms.includes('job.view') && perms.includes('material.view'));
   const canEdit = (session?.user?.isSuperAdmin ?? false) || perms.includes('job.edit');
 
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(jobId, { skip: !jobId });
-  const { data: jobItemsData, isLoading: itemsLoading } = useGetJobItemsQuery(jobId, { skip: !jobId || !canView });
-  const { data: formulas = [] } = useGetFormulaLibrariesQuery(undefined, { skip: !canView });
-  const { data: materials = [] } = useGetMaterialsQuery(undefined, { skip: !canView });
-  const { data: costingSnapshots = [] } = useGetJobCostingSnapshotsQuery(jobId, { skip: !jobId || !canView });
+  const { data: jobItemsData, isLoading: itemsLoading } = useGetJobItemsQuery(jobId, { skip: !jobId || !canViewJob });
+  const { data: formulas = [] } = useGetFormulaLibrariesQuery(undefined, { skip: !canViewMaterialBudget });
+  const { data: materials = [] } = useGetMaterialsQuery(undefined, { skip: !canViewMaterialBudget });
+  const { data: costingSnapshots = [] } = useGetJobCostingSnapshotsQuery(jobId, {
+    skip: !jobId || !canViewMaterialBudget,
+  });
   const [addJobItem, { isLoading: addingItem }] = useAddJobItemMutation();
   const [updateJobItem, { isLoading: updatingItem }] = useUpdateJobItemMutation();
   const [deleteJobItem, { isLoading: deletingItem }] = useDeleteJobItemMutation();
@@ -596,7 +603,7 @@ export default function JobCostEnginePage() {
   const [customUnitCosts, setCustomUnitCosts] = useState<Record<string, string>>({});
   const [debouncedCustomUnitCosts, setDebouncedCustomUnitCosts] = useState<Record<string, number>>({});
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<BudgetPageTab>('overview');
+  const [activeTab, setActiveTab] = useState<BudgetPageTab>(embeddedTab ?? 'overview');
   const [showBudgetItemModal, setShowBudgetItemModal] = useState(false);
   const [budgetForm, setBudgetForm] = useState<BudgetItemForm>(emptyBudgetForm);
   const [editingBudgetItemId, setEditingBudgetItemId] = useState<string | null>(null);
@@ -619,11 +626,17 @@ export default function JobCostEnginePage() {
   );
   const { data: selectedSnapshotData } = useGetJobCostingSnapshotByIdQuery(
     { jobId, snapshotId: selectedSnapshotId ?? '' },
-    { skip: !jobId || !selectedSnapshotId || !canView }
+    { skip: !jobId || !selectedSnapshotId || !canViewMaterialBudget }
   );
   const { data: approvedBaselineData } = useGetJobCostingSnapshotByIdQuery(
     { jobId, snapshotId: approvedBaseline?.id ?? '' },
-    { skip: !jobId || !approvedBaseline?.id || approvedBaseline.id === selectedSnapshotId || !canView }
+    {
+      skip:
+        !jobId ||
+        !approvedBaseline?.id ||
+        approvedBaseline.id === selectedSnapshotId ||
+        !canViewMaterialBudget,
+    }
   );
   const selectedSchema = useMemo(() => parseBudgetSchema(selectedFormula), [selectedFormula]);
   const trackableSourceOptions = useMemo(() => buildTrackableSourceOptions(selectedSchema), [selectedSchema]);
@@ -647,7 +660,7 @@ export default function JobCostEnginePage() {
   const [entryFormJobItemId, setEntryFormJobItemId] = useState('');
   const { data: jobProgressEntries = [], isLoading: jobProgressEntriesLoading } = useGetJobProgressEntriesForJobQuery(
     jobId,
-    { skip: !jobId || activeTab !== 'entries' || !canView }
+    { skip: !jobId || activeTab !== 'entries' || !canViewJob }
   );
   const searchableFormulaItems = useMemo(
     () =>
@@ -660,7 +673,7 @@ export default function JobCostEnginePage() {
     [formulas]
   );
   const displayResult = selectedSnapshotData?.result ?? result;
-  const livePricingSnapshots = result?.pricingSnapshots ?? [];
+  const livePricingSnapshots = useMemo(() => result?.pricingSnapshots ?? [], [result?.pricingSnapshots]);
   const activePricingMode = selectedSnapshotData?.snapshot.pricingMode ?? pricingMode;
   const activePostingDate = selectedSnapshotData?.snapshot.postingDate ?? postingDate;
   const comparisonBaseline = selectedSnapshotData?.snapshot.status === 'APPROVED'
@@ -670,9 +683,26 @@ export default function JobCostEnginePage() {
     { id: 'overview', label: 'Overview', description: 'Budget setup and live costing' },
     { id: 'consumption', label: 'Consumption', description: 'Material budget and stock gap' },
     { id: 'progress', label: 'Progress', description: 'Job-wide roll-up and pace' },
-    { id: 'entries', label: 'Quantity log', description: 'All trackables and dated entries for this job' },
+    { id: 'entries', label: 'Quantity log', description: 'All trackable and dated entries for this job' },
     { id: 'snapshots', label: 'Snapshots', description: 'Saved versions and baseline drift' },
   ];
+  const visibleTabItems = useMemo(
+    () => tabItems.filter((tab) => !hiddenTabs?.includes(tab.id)),
+    [hiddenTabs, tabItems],
+  );
+
+  useEffect(() => {
+    if (embeddedTab && activeTab !== embeddedTab) {
+      setActiveTab(embeddedTab);
+    }
+  }, [embeddedTab, activeTab]);
+
+  useEffect(() => {
+    if (embeddedTab) return;
+    if (hiddenTabs && hiddenTabs.includes(activeTab) && visibleTabItems.length > 0) {
+      setActiveTab(visibleTabItems[0].id);
+    }
+  }, [embeddedTab, hiddenTabs, activeTab, visibleTabItems]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -696,11 +726,14 @@ export default function JobCostEnginePage() {
     if (Object.keys(customUnitCosts).length > 0) return;
     const sourceRows = livePricingSnapshots;
     if (sourceRows.length === 0) return;
-    setCustomUnitCosts(Object.fromEntries(sourceRows.map((row) => [row.materialId, String(row.baseUnitCost)])));
+    const timer = window.setTimeout(() => {
+      setCustomUnitCosts(Object.fromEntries(sourceRows.map((row) => [row.materialId, String(row.baseUnitCost)])));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [customUnitCosts, livePricingSnapshots, pricingMode]);
 
   useEffect(() => {
-    if (!canView || !jobId || selectedItemIds.length === 0) return;
+    if (!canViewMaterialBudget || !jobId || selectedItemIds.length === 0) return;
 
     let cancelled = false;
     void (async () => {
@@ -732,7 +765,16 @@ export default function JobCostEnginePage() {
     return () => {
       cancelled = true;
     };
-  }, [calculate, calculationRevision, canView, debouncedCustomUnitCosts, jobId, postingDate, pricingMode, selectedItemIds]);
+  }, [
+    calculate,
+    calculationRevision,
+    canViewMaterialBudget,
+    debouncedCustomUnitCosts,
+    jobId,
+    postingDate,
+    pricingMode,
+    selectedItemIds,
+  ]);
 
   const aggregatedMaterials = useMemo(() => {
     const map = new Map<string, JobCostEngineItem['materials'][number]>();
@@ -1104,8 +1146,9 @@ export default function JobCostEnginePage() {
   const persistJobSchedule = async (form: ProgressForm) => {
     if (!canEdit) return;
     const progressPercent = Number(form.progressPercent || '0');
-    if (!hasAnyTrackedBudgetLine && form.progressStatus === 'COMPLETED' && progressPercent < 100) {
-      toast.error('Completed jobs should be at 100% progress when there are no trackables.');
+    const derivedProgressStatus = mapJobStatusToProgressStatus(job?.status, !!form.actualStartDate);
+    if (!hasAnyTrackedBudgetLine && derivedProgressStatus === 'COMPLETED' && progressPercent < 100) {
+      toast.error('Job is marked completed on the profile. Set progress to 100% or move actuals forward before saving.');
       return;
     }
     if (!Number.isFinite(progressPercent) || progressPercent < 0 || progressPercent > 100) {
@@ -1116,11 +1159,11 @@ export default function JobCostEnginePage() {
       await updateJob({
         id: jobId,
         data: {
-          executionProgressStatus: form.progressStatus,
+          executionProgressStatus: derivedProgressStatus,
           executionProgressPercent:
-            !hasAnyTrackedBudgetLine && form.progressStatus === 'COMPLETED' ? 100 : progressPercent,
-          executionPlannedStartDate: form.plannedStartDate || null,
-          executionPlannedEndDate: form.plannedEndDate || null,
+            !hasAnyTrackedBudgetLine && derivedProgressStatus === 'COMPLETED' ? 100 : progressPercent,
+          executionPlannedStartDate: job?.startDate ? isoDateInput(job.startDate) : null,
+          executionPlannedEndDate: job?.endDate ? isoDateInput(job.endDate) : null,
           executionActualStartDate: form.actualStartDate || null,
           executionActualEndDate: form.actualEndDate || null,
           executionProgressNote: form.progressNote.trim() || null,
@@ -1261,10 +1304,10 @@ export default function JobCostEnginePage() {
     }
   };
 
-  if (!canView) {
+  if (!canViewJob) {
     return (
       <div className="py-12 text-center">
-        <p className="text-slate-500 dark:text-slate-400">You do not have permission to view job costing and material budget.</p>
+        <p className="text-slate-500 dark:text-slate-400">You do not have permission to view this job.</p>
       </div>
     );
   }
@@ -1282,76 +1325,94 @@ export default function JobCostEnginePage() {
   }
 
   return (
-    <div className="space-y-5">
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(5,150,105,0.11),_transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] px-5 py-6 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.15),_transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              {isChildJob && job.parentJobId ? (
-                <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-950/40 dark:text-sky-100">
-                  Budget lines and saved cost snapshots belong to the parent contract. Material dispatch on this variation (and siblings) rolls into consumption against that budget.
-                  <Link
-                    href={`/jobs/${job.parentJobId}/cost-engine`}
-                    className="mt-2 block text-xs font-semibold uppercase tracking-wide text-sky-800 underline hover:text-sky-950 dark:text-sky-200"
-                  >
-                    Open parent contract costing
-                  </Link>
-                </div>
-              ) : null}
-              <Link href={`/jobs/${jobId}`} className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 hover:text-emerald-800 dark:text-emerald-300/80 dark:hover:text-emerald-200">
-                {isChildJob ? 'Variation workspace' : 'Contract job'}
-              </Link>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2.15rem]">
-                Costing & material budget
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Build theoretical material budgets from formula-driven job items, price them from material costing methods, compare them against actual FIFO dispatch consumption, and review workforce readiness before site execution.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {canEdit ? (
-                <Button onClick={openBudgetItemModal}>
-                  Add Budget Item
-                </Button>
-              ) : null}
-              <Link href="/stock/job-budget/formulas">
-                <Button variant="secondary">Formula Library</Button>
-              </Link>
-              <Button variant="secondary" onClick={() => router.push(`/jobs/${jobId}`)}>
-                Back to Job
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      {!embeddedTab ? (
+      <>
+        <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 space-y-1">
+            {isChildJob && job.parentJobId ? (
+              <div className="mb-3 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-foreground">
+                Budget lines and saved cost snapshots belong to the parent contract. Material dispatch on this variation (and siblings) rolls into consumption against that budget.
+                <Link
+                  href={`/jobs/${job.parentJobId}/cost-engine`}
+                  className={cn(
+                    buttonVariants({ variant: 'link', size: 'sm' }),
+                    'mt-2 block h-auto min-h-0 justify-start p-0 text-xs font-semibold uppercase tracking-wide',
+                  )}
+                >
+                  Open parent contract costing
+                </Link>
+              </div>
+            ) : null}
+            <Link
+              href={`/jobs/${jobId}`}
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+            >
+              {isChildJob ? 'Variation workspace' : 'Contract job'}
+            </Link>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Costing & material budget</h1>
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              Build theoretical material budgets from formula-driven job items, price them from material costing methods, compare them against actual FIFO dispatch consumption, and review workforce readiness before site execution.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+            {canEdit ? (
+              <Button type="button" size="sm" onClick={openBudgetItemModal}>
+                Add Budget Item
               </Button>
-            </div>
+            ) : null}
+            <Link href="/stock/job-budget/formulas" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+              Formula Library
+            </Link>
+            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/jobs/${jobId}`)}>
+              Back to Job
+            </Button>
           </div>
-        </div>
+        </header>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 md:grid-cols-4">
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">{isChildJob ? 'This variation' : 'Contract job'}</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{job.jobNumber}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{job.description || 'No description'}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Job items</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{jobItemsData?.items?.length ?? 0}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{formatQty(overallProgress)}% weighted progress</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Estimated material cost</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{formatMoney(displayResult?.summary.totalQuotedMaterialCost ?? 0)}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{pricingModeLabel(activePricingMode)}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Estimated completion</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{formatDays(displayResult?.summary.totalEstimatedCompletionDays ?? 0)}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Sundays skipped by company setting</p>
-          </div>
-        </div>
-      </section>
+        <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {isChildJob ? 'This variation' : 'Contract job'}
+              </p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{job.jobNumber}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{job.description || 'No description'}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Job items</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{jobItemsData?.items?.length ?? 0}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{formatQty(overallProgress)}% weighted progress</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Estimated material cost</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+                {formatMoney(displayResult?.summary.totalQuotedMaterialCost ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{pricingModeLabel(activePricingMode)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Estimated completion</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+                {formatDays(displayResult?.summary.totalEstimatedCompletionDays ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Sundays skipped by company setting</p>
+            </CardContent>
+          </Card>
+        </section>
+      </>
+      ) : null}
 
+      {!embeddedTab && visibleTabItems.length > 0 ? (
       <section className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-4">
         <div className="flex flex-wrap gap-2">
-          {tabItems.map((tab) => (
+          {visibleTabItems.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -1368,6 +1429,7 @@ export default function JobCostEnginePage() {
           ))}
         </div>
       </section>
+      ) : null}
 
       {calculating ? (
         <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
@@ -1541,8 +1603,12 @@ export default function JobCostEnginePage() {
                 Save a frozen price snapshot so later material price changes do not overwrite what was calculated today.
               </p>
             </div>
-            <Button size="sm" onClick={saveCostVersion} loading={savingSnapshot} disabled={selectedItemIds.length === 0}>
-              Save Cost Version
+            <Button
+              size="sm"
+              onClick={saveCostVersion}
+              disabled={selectedItemIds.length === 0 || savingSnapshot}
+            >
+              {savingSnapshot ? 'Saving…' : 'Save Cost Version'}
             </Button>
           </div>
           <div className="mt-4 space-y-2">
@@ -1637,7 +1703,7 @@ export default function JobCostEnginePage() {
                   ) : null}
                   <span className="text-slate-500 dark:text-slate-400">
                     Manual / roll-up {formatQty(Number(job.executionProgressPercent ?? 0))}%
-                    {hasAnyTrackedBudgetLine ? ' · line % from trackables' : ''}
+                    {hasAnyTrackedBudgetLine ? ' · line % from trackable' : ''}
                   </span>
                 </div>
               </div>
@@ -2190,8 +2256,8 @@ export default function JobCostEnginePage() {
                   </label>
                 </div>
                 <div className="mt-3 flex justify-end">
-                  <Button type="button" size="sm" onClick={saveProgressEntry} loading={addingProgressEntry}>
-                    Add entry
+                  <Button type="button" size="sm" onClick={saveProgressEntry} disabled={addingProgressEntry}>
+                    {addingProgressEntry ? 'Adding…' : 'Add entry'}
                   </Button>
                 </div>
               </div>
@@ -2502,11 +2568,11 @@ export default function JobCostEnginePage() {
           )}
 
           <div className="flex gap-3">
-            <Button type="button" variant="ghost" fullWidth onClick={closeBudgetItemModal} disabled={itemSaving}>
+            <Button type="button" variant="ghost" className="w-full" onClick={closeBudgetItemModal} disabled={itemSaving}>
               Cancel
             </Button>
-            <Button type="button" fullWidth onClick={saveBudgetItem} loading={itemSaving}>
-              {editingBudgetItemId ? 'Update Budget Item' : 'Save Budget Item'}
+            <Button type="button" className="w-full" onClick={saveBudgetItem} disabled={itemSaving}>
+              {itemSaving ? 'Saving…' : editingBudgetItemId ? 'Update Budget Item' : 'Save Budget Item'}
             </Button>
           </div>
         </div>

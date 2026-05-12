@@ -1,384 +1,2222 @@
 {
-  "auth.ts": 1777300843.8001337,
-  "eslint.config.mjs": 1775464666.4787586,
-  "jest.config.js": 1777234413.8532186,
-  "next-env.d.ts": 1777104947.5102606,
-  "next.config.ts": 1777300843.7416189,
-  "postcss.config.mjs": 1775464833.1238594,
-  "prisma.config.ts": 1777279700.038014,
-  "proxy.ts": 1777300843.7325146,
-  "app\\layout.tsx": 1777300843.7325146,
-  "app\\page.tsx": 1776408010.4683626,
-  "app\\(app)\\layout.tsx": 1776022526.4216957,
-  "app\\(app)\\admin\\companies\\page.tsx": 1777300843.7346594,
-  "app\\(app)\\admin\\profiles\\page.tsx": 1775653426.12588,
-  "app\\(app)\\admin\\roles\\page.tsx": 1775653592.681372,
-  "app\\(app)\\admin\\users\\page.tsx": 1775653900.7462487,
-  "app\\(app)\\customers\\page.tsx": 1777300843.787251,
-  "app\\(app)\\customers\\jobs\\page.tsx": 1777133883.7879417,
-  "app\\(app)\\customers\\jobs\\form\\page.tsx": 1777099576.518514,
-  "app\\(app)\\customers\\jobs\\[id]\\page.tsx": 1777099068.863282,
-  "app\\(app)\\dashboard\\page.tsx": 1777107858.7952232,
-  "app\\(app)\\hr\\layout.tsx": 1776337510.556865,
-  "app\\(app)\\hr\\page.tsx": 1777300843.7410917,
-  "app\\(app)\\hr\\attendance\\page.tsx": 1777300843.5837667,
-  "app\\(app)\\hr\\attendance\\create\\page.tsx": 1777300843.886658,
-  "app\\(app)\\hr\\employees\\page.tsx": 1777300843.9472237,
-  "app\\(app)\\hr\\employees\\new\\page.tsx": 1777300843.9512565,
-  "app\\(app)\\hr\\employees\\[id]\\page.tsx": 1777300843.7416189,
-  "app\\(app)\\hr\\geofence\\page.tsx": 1776947765.8928552,
-  "app\\(app)\\hr\\reports\\attendance\\page.tsx": 1776410138.0707173,
-  "app\\(app)\\hr\\reports\\attendance\\builder\\page.tsx": 1776410142.4104023,
-  "app\\(app)\\hr\\schedule\\page.tsx": 1777300843.9512565,
-  "app\\(app)\\hr\\schedule\\[workDate]\\page.tsx": 1777300843.7410917,
-  "app\\(app)\\hr\\settings\\document-types\\page.tsx": 1777300843.7346594,
-  "app\\(app)\\hr\\settings\\employee-types\\page.tsx": 1777300843.7325146,
-  "app\\(app)\\hr\\settings\\expertises\\page.tsx": 1777300843.736671,
-  "app\\(app)\\jobs\\page.tsx": 1777300843.7325146,
-  "app\\(app)\\jobs\\form\\page.tsx": 1777300843.7346594,
-  "app\\(app)\\jobs\\formulas\\page.tsx": 1777016507.499127,
-  "app\\(app)\\jobs\\[id]\\page.tsx": 1777300843.5827117,
-  "app\\(app)\\jobs\\[id]\\budget\\page.tsx": 1777017748.0154996,
-  "app\\(app)\\jobs\\[id]\\consumption-costing\\page.tsx": 1775722290.5334795,
-  "app\\(app)\\jobs\\[id]\\cost-engine\\page.tsx": 1777058498.8476992,
-  "app\\(app)\\me\\layout.tsx": 1776408954.7696288,
-  "app\\(app)\\me\\page.tsx": 1777300843.787251,
-  "app\\(app)\\me\\attendance\\page.tsx": 1776408279.3298767,
-  "app\\(app)\\me\\profile\\page.tsx": 1776408273.7582371,
-  "app\\(app)\\profile\\page.tsx": 1777300843.9472237,
-  "app\\(app)\\reports\\job-consumption\\page.tsx": 1775652560.2619903,
-  "app\\(app)\\settings\\page.tsx": 1777300843.886658,
-  "app\\(app)\\settings\\api\\page.tsx": 1777103925.0063877,
-  "app\\(app)\\settings\\media\\page.tsx": 1777300843.7378855,
-  "app\\(app)\\stock\\page.tsx": 1777291792.203335,
-  "app\\(app)\\stock\\dispatch\\page.tsx": 1777292836.8021922,
-  "app\\(app)\\stock\\dispatch\\delivery-note\\page.tsx": 1776925563.5237362,
-  "app\\(app)\\stock\\dispatch\\entry\\page.tsx": 1777292163.669702,
-  "app\\(app)\\stock\\goods-receipt\\page.tsx": 1777292828.172558,
-  "app\\(app)\\stock\\goods-receipt\\receive\\page.tsx": 1777292069.081256,
-  "app\\(app)\\stock\\inter-company-transfers\\page.tsx": 1776887773.1926496,
-  "app\\(app)\\stock\\inter-company-transfers\\new\\page.tsx": 1777292306.7943294,
-  "app\\(app)\\stock\\issue-reconcile\\page.tsx": 1776947887.7036402,
-  "app\\(app)\\stock\\issue-reconcile\\new\\page.tsx": 1776927883.18485,
-  "app\\(app)\\stock\\job-budget\\page.tsx": 1777017751.4232244,
-  "app\\(app)\\stock\\job-budget\\formulas\\page.tsx": 1777030082.4417486,
-  "app\\(app)\\stock\\job-budget\\formulas\\new\\page.tsx": 1777016491.3561473,
-  "app\\(app)\\stock\\job-budget\\formulas\\[id]\\edit\\page.tsx": 1777016498.2740912,
-  "app\\(app)\\stock\\job-budget\\[id]\\page.tsx": 1777017743.9946477,
-  "app\\(app)\\stock\\materials\\page.tsx": 1776891125.8953981,
-  "app\\(app)\\stock\\materials\\dispatch\\page.tsx": 1776866066.8875544,
-  "app\\(app)\\stock\\materials\\dispatch-history\\page.tsx": 1776866067.023616,
-  "app\\(app)\\stock\\materials\\[id]\\page.tsx": 1776924229.745313,
-  "app\\(app)\\stock\\non-stock-reconcile\\page.tsx": 1776927883.3970106,
-  "app\\(app)\\stock\\stock-batches\\page.tsx": 1776866067.1892712,
-  "app\\(app)\\suppliers\\page.tsx": 1777107218.7985168,
-  "app\\(app)\\suppliers\\new\\page.tsx": 1777106234.2038615,
-  "app\\(app)\\suppliers\\[id]\\edit\\page.tsx": 1777106234.3150263,
-  "app\\(auth)\\login\\page.tsx": 1776707990.1183088,
-  "app\\(auth)\\select-company\\page.tsx": 1775654362.3330834,
-  "app\\(auth)\\select-profile\\page.tsx": 1775652560.4523165,
-  "app\\api\\auth\\[...nextauth]\\route.ts": 1777300843.7378855,
-  "app\\api\\categories\\route.ts": 1775647261.2720366,
-  "app\\api\\categories\\[id]\\route.ts": 1777268190.2207458,
-  "app\\api\\companies\\route.ts": 1777300843.7346594,
-  "app\\api\\companies\\[id]\\route.ts": 1777300843.7378855,
-  "app\\api\\company-profiles\\route.ts": 1775483017.8522334,
-  "app\\api\\customers\\route.ts": 1777227007.9611127,
-  "app\\api\\customers\\sync\\route.ts": 1777101599.3028314,
-  "app\\api\\customers\\[id]\\route.ts": 1777226960.4405823,
-  "app\\api\\customers\\[id]\\check-delete\\route.ts": 1776022526.4313202,
-  "app\\api\\delivery-notes\\next-number\\route.ts": 1775740171.7819455,
-  "app\\api\\hr\\attendance\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\attendance\\bulk-upsert\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\attendance\\monthly-report\\route.ts": 1776339292.4029887,
-  "app\\api\\hr\\attendance\\overview\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\attendance\\[id]\\route.ts": 1777300843.7325146,
-  "app\\api\\hr\\document-types\\route.ts": 1777300843.5837667,
-  "app\\api\\hr\\document-types\\[id]\\route.ts": 1777300843.7346594,
-  "app\\api\\hr\\documents\\expiring\\route.ts": 1777300843.5837667,
-  "app\\api\\hr\\documents\\[id]\\route.ts": 1777300843.736671,
-  "app\\api\\hr\\documents\\[id]\\upload-file\\route.ts": 1777300843.7346594,
-  "app\\api\\hr\\employee-type-settings\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\employees\\route.ts": 1777300843.7325146,
-  "app\\api\\hr\\employees\\[id]\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\employees\\[id]\\documents\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\employees\\[id]\\portal-link\\route.ts": 1777300843.7346594,
-  "app\\api\\hr\\employees\\[id]\\upload-photo\\route.ts": 1777300843.7859168,
-  "app\\api\\hr\\employees\\[id]\\visa-periods\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\expertises\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\expertises\\[id]\\route.ts": 1777300843.7346594,
-  "app\\api\\hr\\geofence\\events\\route.ts": 1776840074.4222264,
-  "app\\api\\hr\\geofence\\validate\\route.ts": 1776839422.2217953,
-  "app\\api\\hr\\geofence\\zones\\route.ts": 1776842387.3711286,
-  "app\\api\\hr\\geofence\\zones\\[id]\\route.ts": 1776842420.7042158,
-  "app\\api\\hr\\schedule\\route.ts": 1777300843.736671,
-  "app\\api\\hr\\schedule\\[id]\\route.ts": 1777300843.736671,
-  "app\\api\\hr\\schedule\\[id]\\absences\\route.ts": 1777300843.736671,
-  "app\\api\\hr\\schedule\\[id]\\assignments\\route.ts": 1777300843.7325146,
-  "app\\api\\hr\\schedule\\[id]\\driver-logs\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\schedule\\[id]\\generate-attendance\\route.ts": 1777300843.7346594,
-  "app\\api\\hr\\schedule\\[id]\\import-csv\\route.ts": 1777300843.7103262,
-  "app\\api\\hr\\schedule\\[id]\\import-xlsx\\route.ts": 1777300843.590194,
-  "app\\api\\hr\\schedule\\[id]\\lock\\route.ts": 1777300843.7378855,
-  "app\\api\\hr\\schedule\\[id]\\publish\\route.ts": 1777300843.7325146,
-  "app\\api\\hr\\visa-periods\\[id]\\route.ts": 1777300843.7378855,
-  "app\\api\\integrations\\customers\\upsert\\route.ts": 1777101670.4619062,
-  "app\\api\\integrations\\jobs\\upsert\\route.ts": 1777300843.7346594,
-  "app\\api\\integrations\\suppliers\\upsert\\route.ts": 1777101683.5202205,
-  "app\\api\\job-costing\\formulas\\route.ts": 1776952413.2228863,
-  "app\\api\\job-costing\\formulas\\[id]\\route.ts": 1776952331.3717723,
-  "app\\api\\jobs\\route.ts": 1777300843.6138299,
-  "app\\api\\jobs\\[id]\\route.ts": 1777300843.736671,
-  "app\\api\\jobs\\[id]\\check-delete\\route.ts": 1775647169.7898908,
-  "app\\api\\jobs\\[id]\\consumption-costing\\route.ts": 1777227439.6179464,
-  "app\\api\\jobs\\[id]\\cost-engine\\route.ts": 1777227485.449718,
-  "app\\api\\jobs\\[id]\\items\\route.ts": 1777225715.8833373,
-  "app\\api\\jobs\\[id]\\items\\[itemId]\\route.ts": 1777225733.0491285,
-  "app\\api\\jobs\\[id]\\materials\\route.ts": 1777217408.9834988,
-  "app\\api\\materials\\route.ts": 1777300843.6138299,
-  "app\\api\\materials\\bulk\\route.ts": 1777268161.257935,
-  "app\\api\\materials\\cross-company\\route.ts": 1777300843.7346594,
-  "app\\api\\materials\\dispatch-history\\route.ts": 1777217409.4145777,
-  "app\\api\\materials\\dispatch-history-entries\\route.ts": 1777300843.7403898,
-  "app\\api\\materials\\logs\\route.ts": 1775646573.2996025,
-  "app\\api\\materials\\price-logs\\route.ts": 1777217329.9945278,
-  "app\\api\\materials\\receipt-history-entries\\route.ts": 1777292615.862188,
-  "app\\api\\materials\\receipt-history-entries\\[receiptNumber]\\route.ts": 1777292631.5633543,
-  "app\\api\\materials\\[id]\\route.ts": 1777300843.7325146,
-  "app\\api\\materials\\[id]\\check-delete\\route.ts": 1775646608.723413,
-  "app\\api\\materials\\[id]\\logs\\route.ts": 1775646580.8541968,
-  "app\\api\\materials\\[id]\\price-logs\\route.ts": 1775646601.3608322,
-  "app\\api\\materials\\[id]\\uoms\\route.ts": 1777300843.590194,
-  "app\\api\\materials\\[id]\\uoms\\[uomId]\\route.ts": 1777300843.736671,
-  "app\\api\\me\\attendance\\route.ts": 1777300843.7325146,
-  "app\\api\\me\\employee\\route.ts": 1777300843.7346594,
-  "app\\api\\me\\geofence\\events\\route.ts": 1776840521.0403605,
-  "app\\api\\me\\geofence\\history\\route.ts": 1776840722.1377327,
-  "app\\api\\me\\geofence\\zones\\route.ts": 1776840511.937436,
-  "app\\api\\me\\mobile-auth\\login\\route.ts": 1776840499.3681662,
-  "app\\api\\me\\mobile-auth\\logout\\route.ts": 1776840505.0026026,
-  "app\\api\\me\\mobile-auth\\me\\route.ts": 1776840712.297699,
-  "app\\api\\me\\schedule\\route.ts": 1777300843.7346594,
-  "app\\api\\media\\route.ts": 1777300843.7410917,
-  "app\\api\\media\\cleanup\\route.ts": 1777300843.7269764,
-  "app\\api\\media\\drive\\[id]\\route.ts": 1777300843.7378855,
-  "app\\api\\media\\[id]\\route.ts": 1777300843.7859168,
-  "app\\api\\reports\\consumption\\route.ts": 1777227439.8479676,
-  "app\\api\\reports\\job-consumption\\route.ts": 1777217410.1624537,
-  "app\\api\\reports\\stock-valuation\\route.ts": 1777291778.8585305,
-  "app\\api\\roles\\route.ts": 1775648179.4298851,
-  "app\\api\\roles\\[id]\\route.ts": 1775648192.8430538,
-  "app\\api\\session\\switch-company\\route.ts": 1775648785.3106713,
-  "app\\api\\session\\switch-profile\\route.ts": 1775483028.5204644,
-  "app\\api\\settings\\google-drive\\oauth\\callback\\route.ts": 1776692378.7135358,
-  "app\\api\\settings\\google-drive\\oauth\\start\\route.ts": 1776692507.9521267,
-  "app\\api\\settings\\google-drive\\status\\route.ts": 1776692508.0103028,
-  "app\\api\\settings\\integration-logs\\route.ts": 1777300843.787251,
-  "app\\api\\settings\\integration-logs\\[id]\\retry\\route.ts": 1777300843.7859168,
-  "app\\api\\stock-batches\\route.ts": 1777291607.804738,
-  "app\\api\\suppliers\\route.ts": 1777226960.5582829,
-  "app\\api\\suppliers\\sync\\route.ts": 1777101607.6555028,
-  "app\\api\\suppliers\\[id]\\route.ts": 1777226960.7911117,
-  "app\\api\\suppliers\\[id]\\check-delete\\route.ts": 1776022526.3835304,
-  "app\\api\\transactions\\route.ts": 1777300843.7410917,
-  "app\\api\\transactions\\batch\\route.ts": 1777300843.7378855,
-  "app\\api\\transactions\\dispatch-entry\\route.ts": 1777292636.4230964,
-  "app\\api\\transactions\\non-stock-reconcile\\route.ts": 1777291519.7769156,
-  "app\\api\\transactions\\transfer\\route.ts": 1777300843.7378855,
-  "app\\api\\transactions\\transfers\\route.ts": 1777291558.051303,
-  "app\\api\\transactions\\[id]\\route.ts": 1777300843.7410917,
-  "app\\api\\units\\route.ts": 1775647253.6537423,
-  "app\\api\\units\\[id]\\route.ts": 1777300843.7346594,
-  "app\\api\\upload\\letterhead\\route.ts": 1776434893.667047,
-  "app\\api\\upload\\signed-copy\\route.ts": 1776775981.372531,
-  "app\\api\\upload\\template-image\\route.ts": 1776434893.6690454,
-  "app\\api\\upload\\user-profile-image\\route.ts": 1777300843.7410917,
-  "app\\api\\upload\\user-signature\\route.ts": 1777300843.7325146,
-  "app\\api\\user\\profile\\route.ts": 1777300843.7416189,
-  "app\\api\\users\\route.ts": 1775648153.923694,
-  "app\\api\\users\\[id]\\route.ts": 1775648168.9772656,
-  "app\\api\\warehouses\\route.ts": 1777290548.760825,
-  "app\\api\\warehouses\\[id]\\route.ts": 1777290556.6540883,
-  "app\\docs\\api\\page.tsx": 1777300843.7410917,
-  "app\\hr-schedule-print\\page.tsx": 1776521446.5782998,
-  "app\\print\\delivery-note\\page.tsx": 1777300843.7410917,
-  "app\\privacy-policy\\page.tsx": 1776691894.0383205,
-  "app\\settings\\print-template\\edit\\layout.tsx": 1777300843.787251,
-  "app\\settings\\print-template\\edit\\page.tsx": 1777300843.9472237,
-  "app\\terms-of-service\\page.tsx": 1776691894.1286008,
-  "app\\unauthorized\\page.tsx": 1776408907.8507314,
-  "components\\hr\\EmployeeProfileView.tsx": 1777300843.9472237,
-  "components\\hr\\HrPageChrome.tsx": 1776941757.024405,
-  "components\\hr\\geofence\\GeofenceMapEditor.tsx": 1776852666.5406344,
-  "components\\job-costing\\FormulaBuilderEditor.tsx": 1777057888.2977061,
-  "components\\jobs\\ConsumptionCostingModal.tsx": 1775719994.6075482,
-  "components\\jobs\\JobVariationModal.tsx": 1775725695.2374914,
-  "components\\layout\\AppShell.tsx": 1777300843.736671,
-  "components\\layout\\CompanySwitcher.tsx": 1776022526.4121773,
-  "components\\layout\\Header.tsx": 1776427192.3358407,
-  "components\\layout\\ProfileSwitcher.tsx": 1775483149.1552951,
-  "components\\layout\\Sidebar.tsx": 1777300843.7378855,
-  "components\\legal\\LegalPage.tsx": 1776691893.9581466,
-  "components\\materials\\BulkImportModal.tsx": 1775671878.4098403,
-  "components\\me\\EmployeePortalLayout.tsx": 1776409137.6136563,
-  "components\\me\\MeAttendancePage.tsx": 1776408967.4861054,
-  "components\\me\\MeProfilePage.tsx": 1776408960.8701663,
-  "components\\me\\shared.tsx": 1776408322.7966855,
-  "components\\print-builder\\CanvasPreview.tsx": 1776685985.043048,
-  "components\\print-builder\\DataFieldsExplorer.tsx": 1776362663.370148,
-  "components\\print-builder\\DocumentRenderer.tsx": 1777300843.7378855,
-  "components\\print-builder\\PageChromeEditor.tsx": 1777300843.9492407,
-  "components\\print-builder\\SearchableFieldSelect.tsx": 1776362881.7701757,
-  "components\\print-builder\\SectionAdvancedStyleEditor.tsx": 1776362727.33896,
-  "components\\print-builder\\SectionEditor.tsx": 1777300843.9512565,
-  "components\\print-builder\\sectionStyleWrap.tsx": 1776494804.437799,
-  "components\\print-builder\\TemplateBuilder.tsx": 1777300843.8001337,
-  "components\\reports\\JobConsumptionTable.tsx": 1775465548.5796177,
-  "components\\settings\\SettingsMediaPanel.tsx": 1776771695.4987917,
-  "components\\stock\\IssueReconcileForm.tsx": 1777292255.0624483,
-  "components\\suppliers\\SupplierEditor.tsx": 1777107025.512107,
-  "components\\transactions\\StockTransactionModal.tsx": 1777300843.7378855,
-  "components\\transactions\\TransactionLedger.tsx": 1775654402.2913973,
-  "components\\ui\\Badge.tsx": 1777300843.7120883,
-  "components\\ui\\Button.tsx": 1776853033.1201737,
-  "components\\ui\\ContextMenu.tsx": 1776427929.645664,
-  "components\\ui\\DataTable.tsx": 1776853267.74203,
-  "components\\ui\\HoverTooltip.tsx": 1776022526.512198,
-  "components\\ui\\Modal.tsx": 1776853067.687783,
-  "components\\ui\\MultiSelectDropdown.tsx": 1777300843.7403898,
-  "components\\ui\\SearchSelect.tsx": 1776854822.124857,
-  "components\\ui\\Spinner.tsx": 1775465040.7814934,
-  "components\\ui\\StatCard.tsx": 1775465051.699527,
-  "components\\ui\\skeleton\\CardGridSkeleton.tsx": 1775545081.1267514,
-  "components\\ui\\skeleton\\SkeletonBlock.tsx": 1775545068.5079134,
-  "components\\ui\\skeleton\\SkeletonLine.tsx": 1775545064.949411,
-  "components\\ui\\skeleton\\StatCardSkeleton.tsx": 1775545077.4502487,
-  "components\\ui\\skeleton\\TableSkeleton.tsx": 1775564654.1212053,
-  "lib\\jobContactFormUi.ts": 1777300843.7325146,
-  "lib\\materialMasterData.ts": 1777268098.979179,
-  "lib\\partyContacts.ts": 1777226816.6124225,
-  "lib\\partyFormUi.ts": 1777107025.4519713,
-  "lib\\partyListRecordPayload.ts": 1777226787.3895211,
-  "lib\\partyListsApi.ts": 1777295074.3857744,
-  "lib\\partyListSync.ts": 1777287715.9508338,
-  "lib\\permissions.ts": 1777300843.7346594,
-  "lib\\auth\\requireSession.ts": 1775645832.2966435,
-  "lib\\auth\\selfService.ts": 1776408885.3818946,
-  "lib\\db\\postgresAdapter.ts": 1777279699.6521087,
-  "lib\\db\\prisma.ts": 1777300843.7859168,
-  "lib\\docs\\apiEndpoints.ts": 1777300843.5837667,
-  "lib\\hooks\\useContextMenu.ts": 1775559367.329016,
-  "lib\\hr\\attendanceReportBuilder.ts": 1776329914.66133,
-  "lib\\hr\\attendanceReportFormatting.ts": 1776329245.3213737,
-  "lib\\hr\\attendanceReportPresets.ts": 1776334625.0017128,
-  "lib\\hr\\attendanceReports.ts": 1776705575.8465798,
-  "lib\\hr\\defaultDocumentTypes.ts": 1777300843.7410917,
-  "lib\\hr\\dubaiShift.ts": 1777300843.7859168,
-  "lib\\hr\\employeeMeta.ts": 1776342958.9701,
-  "lib\\hr\\employeeTypeSettings.ts": 1777300843.7410917,
-  "lib\\hr\\generateAttendanceFromSchedule.ts": 1777300843.7859168,
-  "lib\\hr\\geofence.ts": 1776839370.1185567,
-  "lib\\hr\\geofenceMobileContracts.ts": 1776840986.6484425,
-  "lib\\hr\\linkedEmployee.ts": 1777300843.736671,
-  "lib\\hr\\matchEmployee.ts": 1777300843.7346594,
-  "lib\\hr\\mobileAccess.ts": 1776840488.5650885,
-  "lib\\hr\\parseDailyWorkScheduleCsv.ts": 1777300843.7378855,
-  "lib\\hr\\provisionEmployeeUser.ts": 1777300843.7378855,
-  "lib\\hr\\requireCompanySession.ts": 1777300843.7120883,
-  "lib\\hr\\runScheduleCsvImport.ts": 1777300843.7403898,
-  "lib\\hr\\workDate.ts": 1777300843.7346594,
-  "lib\\hr\\workforceProfile.ts": 1777300843.7378855,
-  "lib\\integrations\\apiKeys.ts": 1777300843.736671,
-  "lib\\integrations\\domainAllowlist.ts": 1777300843.7346594,
-  "lib\\integrations\\integrationRoute.ts": 1777101655.8395097,
-  "lib\\integrations\\jobSyncService.ts": 1777300843.7120883,
-  "lib\\integrations\\partyUpsertService.ts": 1777226788.1740553,
-  "lib\\job-costing\\formulaEngine.ts": 1777056890.42564,
-  "lib\\job-costing\\jobItemAssignments.ts": 1777225123.8183951,
-  "lib\\job-costing\\pricing.ts": 1777029852.76554,
-  "lib\\job-costing\\settings.ts": 1776950372.184191,
-  "lib\\job-costing\\types.ts": 1777036798.364587,
-  "lib\\jobs\\jobContacts.ts": 1777227335.1052773,
-  "lib\\jobs\\jobRequiredExpertises.ts": 1777226158.9116256,
-  "lib\\media\\userScopedMedia.ts": 1777300843.7378855,
-  "lib\\navigation\\appNavigation.tsx": 1777016530.1883745,
-  "lib\\types\\documentTemplate.ts": 1777300843.7325146,
-  "lib\\utils\\apiResponse.ts": 1777215584.347417,
-  "lib\\utils\\auditActor.ts": 1777270559.7615,
-  "lib\\utils\\canvasLayout.ts": 1776456666.9080343,
-  "lib\\utils\\companyPrintTemplates.ts": 1776689683.5723796,
-  "lib\\utils\\decimal.ts": 1777217329.2239637,
-  "lib\\utils\\documentDefaults.ts": 1776666705.4426775,
-  "lib\\utils\\fifoConsumption.ts": 1775713454.1014855,
-  "lib\\utils\\formatters.ts": 1775464915.3657763,
-  "lib\\utils\\fuzzyMatch.ts": 1775498352.1476734,
-  "lib\\utils\\googleDrive.ts": 1776776028.393887,
-  "lib\\utils\\googleDriveUrl.ts": 1777300843.7378855,
-  "lib\\utils\\itemTypeFields.ts": 1777300843.7378855,
-  "lib\\utils\\materialUom.ts": 1777300843.7378855,
-  "lib\\utils\\materialUomDb.ts": 1777300843.7325146,
-  "lib\\utils\\migrateDocumentSections.ts": 1776022526.4293027,
-  "lib\\utils\\printTemplateSession.ts": 1776521401.1961017,
-  "lib\\utils\\requireActiveCompanyInDb.ts": 1776022526.463972,
-  "lib\\utils\\stockBatchManagement.ts": 1776022526.4002216,
-  "lib\\utils\\templateData.ts": 1777300843.7859168,
-  "lib\\utils\\unitConversion.ts": 1775566142.8702357,
-  "lib\\validations\\customer.schema.ts": 1775464928.2229965,
-  "lib\\validations\\job.schema.ts": 1775464923.918448,
-  "lib\\validations\\material.schema.ts": 1776923972.1647456,
-  "lib\\validations\\transaction.schema.ts": 1775464926.5737796,
-  "lib\\warehouses\\companyWarehouseMode.ts": 1777290523.248986,
-  "lib\\warehouses\\stockWarehouses.ts": 1777291471.366861,
-  "providers\\AppProviders.tsx": 1777300843.7120883,
-  "providers\\ContextMenuProvider.tsx": 1777104153.4786286,
-  "providers\\DoubleClickSelectionGuard.tsx": 1776022526.4506705,
-  "providers\\ReduxProvider.tsx": 1775465013.31007,
-  "providers\\SessionProvider.tsx": 1775465014.3221686,
-  "providers\\ThemeProvider.tsx": 1777300843.657112,
-  "scripts\\relabel_graphify_communities.py": 1777300296.3474658,
-  "scripts\\seed-print-templates.ts": 1777300843.7346594,
-  "scripts\\seed.ts": 1777300843.5827117,
-  "store\\hooks.ts": 1777300843.7859168,
-  "store\\store.ts": 1775654681.4872236,
-  "store\\api\\adminApi.ts": 1775652642.1770966,
-  "store\\api\\appApi.ts": 1776863984.5816019,
-  "store\\api\\adminEndpoints\\companies.ts": 1777292039.550547,
-  "store\\api\\adminEndpoints\\profiles.ts": 1775652805.6778135,
-  "store\\api\\adminEndpoints\\roles.ts": 1775652799.2206533,
-  "store\\api\\adminEndpoints\\users.ts": 1775652791.342808,
-  "store\\api\\endpoints\\categories.ts": 1775669870.741632,
-  "store\\api\\endpoints\\customers.ts": 1776022526.4206958,
-  "store\\api\\endpoints\\dispatch.ts": 1777292816.0207736,
-  "store\\api\\endpoints\\jobs.ts": 1777300843.7416189,
-  "store\\api\\endpoints\\materialLogs.ts": 1775652968.7187462,
-  "store\\api\\endpoints\\materials.ts": 1777300843.7346594,
-  "store\\api\\endpoints\\receipts.ts": 1777292810.9260073,
-  "store\\api\\endpoints\\reports.ts": 1777291766.3869743,
-  "store\\api\\endpoints\\stockBatches.ts": 1777291755.0782566,
-  "store\\api\\endpoints\\suppliers.ts": 1777106150.0273244,
-  "store\\api\\endpoints\\transactions.ts": 1777300843.7325146,
-  "store\\api\\endpoints\\units.ts": 1775669856.306487,
-  "store\\api\\endpoints\\warehouses.ts": 1777291751.7875247,
-  "store\\slices\\companySlice.ts": 1775652643.0208938,
-  "store\\slices\\uiSlice.ts": 1775652643.4673426,
-  "__tests__\\jest-globals.d.ts": 1777227557.655149,
-  "__tests__\\integration\\fifo-batch.test.ts": 1777234413.9287913,
-  "__tests__\\integration\\materials-crud.test.ts": 1777234414.013427,
-  "__tests__\\integration\\multi-tenancy.test.ts": 1777234414.0899315,
-  "__tests__\\integration\\setup.ts": 1777279699.8453465,
-  "__tests__\\integration\\transfers.test.ts": 1777234414.2325034,
-  "AGENTS.md": 1777295778.9534912,
-  "API-job-sync.md": 1777300843.603792,
-  "API-party-lists.md": 1776022526.4362907,
-  "DEVELOPER_GUIDE.md": 1775647675.7521274,
-  "README.md": 1775651558.486874,
-  "docs\\hr-geofence-expo-guide.md": 1776841012.0721374,
-  "graphify-out\\graph.html": 1777301828.1238167,
-  "graphify-out\\GRAPH_REPORT.md": 1777301821.3598466,
-  "__tests__\\README.md": 1775650733.2469275,
-  "public\\file.svg": 1775464833.1170905,
-  "public\\globe.svg": 1775464833.1108687,
-  "public\\next.svg": 1775464833.1143138,
-  "public\\vercel.svg": 1775464833.1170905,
-  "public\\window.svg": 1775464833.1098468
+  "C:\\almuraqib-custom-application\\AMFGI\\auth.ts": {
+    "mtime": 1777963216.8631735,
+    "hash": "97bb3622f898b699b208d55549718f33"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\eslint.config.mjs": {
+    "mtime": 1775464666.4787586,
+    "hash": "dfa1f5f6a7037bf39dc510f30b180002"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\jest.config.js": {
+    "mtime": 1777234413.8532186,
+    "hash": "cead4f8becbee52cb121c2722787caad"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\next-env.d.ts": {
+    "mtime": 1777459900.0063224,
+    "hash": "d0f8375ae1199dc7acd3977fc33b78b8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\next.config.ts": {
+    "mtime": 1778505163.1571834,
+    "hash": "71c127e9d8b136761b5a1326caaa6b15"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\postcss.config.mjs": {
+    "mtime": 1775464833.1238594,
+    "hash": "239f3ebf717465dc636818a1a619398d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma.config.ts": {
+    "mtime": 1777279700.038014,
+    "hash": "c268ea9e4fc72e0384db32bacca8a14a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\proxy.ts": {
+    "mtime": 1777300843.7325146,
+    "hash": "3b55ab3d6a5a61423d60751f6ae08261"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\layout.tsx": {
+    "mtime": 1777300843.7325146,
+    "hash": "91e8ff9d18b4953f7841f789b54ffbed"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\page.tsx": {
+    "mtime": 1776408010.4683626,
+    "hash": "35e3657f46e61904a94916786b410834"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\layout.tsx": {
+    "mtime": 1776022526.4216957,
+    "hash": "7b2719cf6008c864742095fb7f14959d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\admin\\companies\\page.tsx": {
+    "mtime": 1778505162.818688,
+    "hash": "cf10e98672a651145bdc36d31e334ff0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\admin\\companies\\company\\page.tsx": {
+    "mtime": 1778505162.8060267,
+    "hash": "a15fb78988dff73d33cdcb8b94d766ff"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\admin\\profiles\\page.tsx": {
+    "mtime": 1778505162.7869165,
+    "hash": "96718ce51c74c4acea6eec08e3a7c758"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\admin\\roles\\page.tsx": {
+    "mtime": 1778505162.894848,
+    "hash": "dc6241bf748c5922463e238a476e0ec3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\admin\\users\\page.tsx": {
+    "mtime": 1778505163.1444695,
+    "hash": "fd5c27d22147e165014eed9b96efb3b7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\customers\\page.tsx": {
+    "mtime": 1778505163.1892796,
+    "hash": "be115680166de3c23bf36145a45d98c7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\customers\\jobs\\page.tsx": {
+    "mtime": 1778505162.8060267,
+    "hash": "d3e6aae799c22e8d3b852814e20a2845"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\customers\\jobs\\form\\page.tsx": {
+    "mtime": 1778505163.136956,
+    "hash": "a74edef197e4bf7c9501945c084db77c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\customers\\jobs\\[id]\\page.tsx": {
+    "mtime": 1778505162.7869165,
+    "hash": "35f93c019d41d0abd8d4ff7bbd0137b1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\dashboard\\page.tsx": {
+    "mtime": 1778050005.0560026,
+    "hash": "2449dd49466bf15f0eb28f755e63c01d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\layout.tsx": {
+    "mtime": 1776337510.556865,
+    "hash": "f184802ad0fa19885a00ec3a5b45c327"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\page.tsx": {
+    "mtime": 1778137837.5271003,
+    "hash": "55966d12e2b6b1162be5b371344246b9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\attendance\\page.tsx": {
+    "mtime": 1777540043.799423,
+    "hash": "62327e896f4de53db22292919fd6f57b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\attendance\\create\\page.tsx": {
+    "mtime": 1777960264.143094,
+    "hash": "15c3de14c2b6d7141628d18bf449ff00"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\employees\\page.tsx": {
+    "mtime": 1778136773.8571205,
+    "hash": "e0555fdb540295f5b68e82ac3f0b0382"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\employees\\new\\page.tsx": {
+    "mtime": 1777300843.9512565,
+    "hash": "e13265d9f0f3e7b66200fe6962b7af59"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\employees\\[id]\\page.tsx": {
+    "mtime": 1777300843.7416189,
+    "hash": "173e43b8153f0f60445074284a940d10"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\reports\\attendance\\page.tsx": {
+    "mtime": 1778136858.9968238,
+    "hash": "1b9eb459c348f7d0c8cf3ee647d48fda"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\reports\\attendance\\builder\\page.tsx": {
+    "mtime": 1778136829.0053184,
+    "hash": "b58473c978103cef8bf9b64b892ee374"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\schedule\\page.tsx": {
+    "mtime": 1778137733.8003495,
+    "hash": "dc5abd51591c067969bb517033441576"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\schedule\\[workDate]\\page.tsx": {
+    "mtime": 1777876278.6048577,
+    "hash": "88459a49f347d872f314f24b3d35a3c3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\schedule\\[workDate]\\ScheduleDayClient.tsx": {
+    "mtime": 1778505163.1326146,
+    "hash": "4bbc614bf3c71bc54b94edf653d2a057"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\settings\\document-types\\page.tsx": {
+    "mtime": 1777468296.094928,
+    "hash": "17d8f1e84bdccde68e35f80162d0348b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\settings\\employee-types\\page.tsx": {
+    "mtime": 1778505162.8073258,
+    "hash": "527002d16d1ef26dc791084524fe4a9f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\settings\\expertises\\page.tsx": {
+    "mtime": 1777468296.2809012,
+    "hash": "78050c2826187758d6825e054dbdec1d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\page.tsx": {
+    "mtime": 1778505162.7891798,
+    "hash": "f69b770a8e7de4b2a92c2d6e66714d24"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\form\\page.tsx": {
+    "mtime": 1777300843.7346594,
+    "hash": "22ff28f3bcfa9a53a811c8f3197ffd64"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\formulas\\page.tsx": {
+    "mtime": 1777016507.499127,
+    "hash": "f98a96ef5e5bcad571dd274a22771a58"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\[id]\\page.tsx": {
+    "mtime": 1778505162.7775836,
+    "hash": "2332e4a74ef407889ac7800e5e2b0738"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\[id]\\budget\\page.tsx": {
+    "mtime": 1777017748.0154996,
+    "hash": "be725976745445fe5f42e72079625711"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\[id]\\consumption-costing\\page.tsx": {
+    "mtime": 1778505163.1592016,
+    "hash": "1d9d4718a03494330341027b4589ab36"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\jobs\\[id]\\cost-engine\\page.tsx": {
+    "mtime": 1778505162.8285027,
+    "hash": "a3c7cc7c67b16165b670247cd4456657"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\me\\layout.tsx": {
+    "mtime": 1776408954.7696288,
+    "hash": "62ea57b58c7f5a9388687fec08edc693"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\me\\page.tsx": {
+    "mtime": 1777300843.787251,
+    "hash": "4fc99aed4d1de9d2a2d8d145b8fc4bb3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\me\\attendance\\page.tsx": {
+    "mtime": 1776408279.3298767,
+    "hash": "bd79d7269de5255a7ac694a06d713d07"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\me\\profile\\page.tsx": {
+    "mtime": 1776408273.7582371,
+    "hash": "321edabbf6c97b7f7fe9cb2dc02e845b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\media\\page.tsx": {
+    "mtime": 1778505163.1531532,
+    "hash": "86dd765b8bbbdd8c130d86dab7d68cc4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\profile\\page.tsx": {
+    "mtime": 1777963187.1120157,
+    "hash": "87f62f80409b3421289fdbaa8875cc12"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\reports\\job-consumption\\page.tsx": {
+    "mtime": 1777474338.641195,
+    "hash": "095491d6ee2b44d273c0039cf2b972eb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\reports\\job-profitability\\page.tsx": {
+    "mtime": 1777486339.7333753,
+    "hash": "952cd688b853f8f1bdad5ac509f0be14"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\reports\\stock-adjustments\\page.tsx": {
+    "mtime": 1777486339.5282269,
+    "hash": "c16b78dd77e8dd57c55242e144dd02bf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\reports\\stock-count-sessions\\page.tsx": {
+    "mtime": 1777531711.5322368,
+    "hash": "ee43108339ac1c5cdb838590b29eccfa"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\reports\\stock-exceptions\\page.tsx": {
+    "mtime": 1777531053.695045,
+    "hash": "2220d70f07c849867ed2a1bd08d6f568"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\reports\\supplier-traceability\\page.tsx": {
+    "mtime": 1777476806.3664265,
+    "hash": "c4276e839a20461d130a88c5a095d3d1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\settings\\page.tsx": {
+    "mtime": 1778505163.203142,
+    "hash": "c189f80eff52565c5884bdae1bbe3dd1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\settings\\api\\page.tsx": {
+    "mtime": 1777103925.0063877,
+    "hash": "ac1b5f39855236a9d432a7f884a197e8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\settings\\media\\page.tsx": {
+    "mtime": 1778505162.8285027,
+    "hash": "bcec2813c194e9b98e7323c4e9c7b240"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\page.tsx": {
+    "mtime": 1778505162.8285027,
+    "hash": "97c934820e896c54270879d18ffe05e0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\count-session\\page.tsx": {
+    "mtime": 1777532005.6622221,
+    "hash": "0dd4b54f0676e89ac566bcb1cf599987"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\daily-quantity-log\\page.tsx": {
+    "mtime": 1778505163.0286052,
+    "hash": "fa6dca537fde3a37e1509429a948ea77"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\daily-quantity-log\\[workDate]\\page.tsx": {
+    "mtime": 1778505163.1531532,
+    "hash": "7c4e8cf6738f06e78dff86231327e382"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\dispatch\\page.tsx": {
+    "mtime": 1777540043.8124225,
+    "hash": "e994b1269091eac98f3f2935d8506b68"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\dispatch\\delivery-note\\page.tsx": {
+    "mtime": 1777540043.8094232,
+    "hash": "41bbb795b5ff29ede6182497609693db"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\dispatch\\entry\\page.tsx": {
+    "mtime": 1777540043.7136981,
+    "hash": "7267e372a95e6c6c3d448d5f8aa1fbe8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\goods-receipt\\page.tsx": {
+    "mtime": 1778505163.022556,
+    "hash": "9c52608c650f1eba15b2d29d28104e1d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\goods-receipt\\receive\\page.tsx": {
+    "mtime": 1777540043.7725527,
+    "hash": "78f262c663cdb553d16cba5da051f53c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\integrity\\page.tsx": {
+    "mtime": 1777482919.7559483,
+    "hash": "371c95b9333ca273207ff675b6338d93"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\inter-company-transfers\\page.tsx": {
+    "mtime": 1777540043.7854204,
+    "hash": "661b6987db3dcb60cd2b7345ea86adc3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\inter-company-transfers\\new\\page.tsx": {
+    "mtime": 1777540043.8214216,
+    "hash": "35b3e499363516a42eb40d83c34af09f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\inventory-by-warehouse\\page.tsx": {
+    "mtime": 1777540043.7715533,
+    "hash": "b3e6a2ab3e306657dd167f8eeefd055c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\issue-reconcile\\page.tsx": {
+    "mtime": 1776947887.7036402,
+    "hash": "8f91ee852b848d9fd0506a0eef0bb50b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\issue-reconcile\\new\\page.tsx": {
+    "mtime": 1776927883.18485,
+    "hash": "6be5b097642bcaedcc2819b25ae43631"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\job-budget\\page.tsx": {
+    "mtime": 1777960263.8727663,
+    "hash": "5ba3304aef781be6e6867bb9c3d195db"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\job-budget\\formulas\\page.tsx": {
+    "mtime": 1777546593.9972165,
+    "hash": "0e8a7eccd363dc9448267207934536cb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\job-budget\\formulas\\new\\page.tsx": {
+    "mtime": 1777016491.3561473,
+    "hash": "f3aef0f406a39319d53f24d38b5e457a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\job-budget\\formulas\\[id]\\edit\\page.tsx": {
+    "mtime": 1777016498.2740912,
+    "hash": "271d9a87304a8ee919b3a17a2645d79c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\job-budget\\[id]\\page.tsx": {
+    "mtime": 1778505163.0286052,
+    "hash": "8ad3460c77b1e305432262549bf7a562"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\manual-adjustments\\page.tsx": {
+    "mtime": 1777531988.839538,
+    "hash": "1f07b2ab535a686ea4873f2e1eb02f79"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\master-data\\page.tsx": {
+    "mtime": 1778505163.0265894,
+    "hash": "2b8905f9706c2f8dc54e804df1e9b6f3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\materials\\page.tsx": {
+    "mtime": 1778505162.7891798,
+    "hash": "1dca2914f20fabcebd10db083d54060b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\materials\\dispatch\\page.tsx": {
+    "mtime": 1776866066.8875544,
+    "hash": "4447f2cd7a9571a2e54cdbb4ef872978"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\materials\\dispatch-history\\page.tsx": {
+    "mtime": 1776866067.023616,
+    "hash": "804b893723bcbd2e4399f79c75356962"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\materials\\[id]\\page.tsx": {
+    "mtime": 1778505162.7869165,
+    "hash": "2f02682c82ae8c118246520f3eade292"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\non-stock-reconcile\\page.tsx": {
+    "mtime": 1776927883.3970106,
+    "hash": "fbb1a6ec0ff0dd84412690ea40bd318d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\stock-batches\\page.tsx": {
+    "mtime": 1777540043.791425,
+    "hash": "79a000f5f7cf54bacf124cc53dea31ab"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\suppliers\\page.tsx": {
+    "mtime": 1778505163.0640674,
+    "hash": "71389c28647d5ad84d4e6971892748cc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\suppliers\\new\\page.tsx": {
+    "mtime": 1777106234.2038615,
+    "hash": "3f5b2e1353d7d8aa879f2fa9370461c1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\suppliers\\[id]\\edit\\page.tsx": {
+    "mtime": 1777106234.3150263,
+    "hash": "78502634958e116bb400174f7ed8693f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(auth)\\login\\page.tsx": {
+    "mtime": 1776707990.1183088,
+    "hash": "529f5142c8dedf46cfdef9b6f0f43766"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(auth)\\select-company\\page.tsx": {
+    "mtime": 1778505163.022556,
+    "hash": "d04a689a0853110472c5f2d60ea235de"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\(auth)\\select-profile\\page.tsx": {
+    "mtime": 1775652560.4523165,
+    "hash": "113474236859a90205acf136aafb423a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\auth\\[...nextauth]\\route.ts": {
+    "mtime": 1778505163.0640674,
+    "hash": "ade9b3d645d08395ec99852416def2a9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\categories\\route.ts": {
+    "mtime": 1777465769.0240228,
+    "hash": "2573e7bd65f872bb61fc065823232c7f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\categories\\[id]\\route.ts": {
+    "mtime": 1777465769.087767,
+    "hash": "9719f55699b4a2c092cbf125b582dddc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\companies\\route.ts": {
+    "mtime": 1778505162.7869165,
+    "hash": "0eaabf442e55634a6ed376c1fc8bae48"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\companies\\[id]\\route.ts": {
+    "mtime": 1778505163.1406147,
+    "hash": "0ad71ed09ee50c588c7a84f715eba4ec"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\company-profiles\\route.ts": {
+    "mtime": 1775483017.8522334,
+    "hash": "060c0f479ead9a48dbb6319488d55258"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\customers\\route.ts": {
+    "mtime": 1778505162.8060267,
+    "hash": "b54fc537101849c3f81cfc24f1e1e30c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\customers\\sync\\route.ts": {
+    "mtime": 1777465730.9928875,
+    "hash": "25ca37691118713c4b953b622bd05397"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\customers\\[id]\\route.ts": {
+    "mtime": 1777465827.2463317,
+    "hash": "8374c11b77f8e67dac4a403987ad9fc0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\customers\\[id]\\check-delete\\route.ts": {
+    "mtime": 1776022526.4313202,
+    "hash": "3a8788f3cbb1dbc1e67155e6d74ffd97"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\delivery-notes\\next-number\\route.ts": {
+    "mtime": 1775740171.7819455,
+    "hash": "7fac514554b6633a6675febb0590b7ee"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\attendance\\route.ts": {
+    "mtime": 1777466969.6716824,
+    "hash": "5415086e7431078388920156b611e5f5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\attendance\\bulk-upsert\\route.ts": {
+    "mtime": 1777960263.986595,
+    "hash": "edcc15f3514add53ea9e9bf95803c1e1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\attendance\\monthly-report\\route.ts": {
+    "mtime": 1776339292.4029887,
+    "hash": "8cea1c41c3f666196389245dedc8ce77"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\attendance\\overview\\route.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "1f25ba8e13974a881115e32309697d22"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\attendance\\[id]\\route.ts": {
+    "mtime": 1777960263.986595,
+    "hash": "7caa58d6e25feb65d5d5edac28414efe"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\document-types\\route.ts": {
+    "mtime": 1777468260.1869533,
+    "hash": "8c975a0c5c92f2ba7271886bc86e36fe"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\document-types\\[id]\\route.ts": {
+    "mtime": 1777468260.259906,
+    "hash": "e38970eca3fb7b7764b9edb2dbc852c4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\documents\\expiring\\route.ts": {
+    "mtime": 1777300843.5837667,
+    "hash": "7d9f4f6410f6bedd03fc1ea802674f31"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\documents\\[id]\\route.ts": {
+    "mtime": 1777963248.045623,
+    "hash": "1ace6a6c19d2d2a6e9d5e0db234d8945"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\documents\\[id]\\upload-file\\route.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "52d5d45ac083fbfb1a0bed7a1b264123"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employee-type-settings\\route.ts": {
+    "mtime": 1777468260.3580883,
+    "hash": "4c4d8646b2a654425287372dbf3980b7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employees\\route.ts": {
+    "mtime": 1777963220.9578094,
+    "hash": "33a07778d5e39dc3662261560387ab07"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employees\\[id]\\route.ts": {
+    "mtime": 1777963229.5555658,
+    "hash": "a2b1a8618398266ba5071cbb179bde7e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employees\\[id]\\documents\\route.ts": {
+    "mtime": 1777963243.8842936,
+    "hash": "d1fc42c698ca79cb5343ce8d6b281d33"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employees\\[id]\\portal-link\\route.ts": {
+    "mtime": 1777300843.7346594,
+    "hash": "38d36f1d1b5490819e504344333e426b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employees\\[id]\\upload-photo\\route.ts": {
+    "mtime": 1778505162.835438,
+    "hash": "4f9a5ede9aafeb72a781de9300c6cf1e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\employees\\[id]\\visa-periods\\route.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "35f9192d437f8b663254e90a1046ac0f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\expertises\\route.ts": {
+    "mtime": 1777468260.5078166,
+    "hash": "d851f34fd508fa8681a773c4b1fdb3af"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\expertises\\[id]\\route.ts": {
+    "mtime": 1777468261.1090546,
+    "hash": "bf64ed6dd58fdc564b55ab56de33375e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\route.ts": {
+    "mtime": 1777466968.4228458,
+    "hash": "0998db4a78d2431cc420fb4b2013eb20"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\route.ts": {
+    "mtime": 1777466968.6113913,
+    "hash": "094aad05a65de9570ec109a8bc29b084"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\absences\\route.ts": {
+    "mtime": 1777300843.736671,
+    "hash": "62646f1987b57f2439124cdcd5741274"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\assignments\\route.ts": {
+    "mtime": 1777300843.7325146,
+    "hash": "5dc492d5c68739ce16b1edc78bbe8131"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\driver-logs\\route.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "9c45e2c9670ba609ed6bb5c0c215b684"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\generate-attendance\\route.ts": {
+    "mtime": 1777466969.4696634,
+    "hash": "f1be142fc8fc3e37b57cdf855ffdd5c4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\import-csv\\route.ts": {
+    "mtime": 1777300843.7103262,
+    "hash": "cd0b527125fb351972089b28dee2ac90"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\import-xlsx\\route.ts": {
+    "mtime": 1777300843.590194,
+    "hash": "8ba61ae9fac127a2e242cadae92f1334"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\lock\\route.ts": {
+    "mtime": 1777466969.123176,
+    "hash": "68aa8f27c43e36828bcf8d7069312e04"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\publish\\route.ts": {
+    "mtime": 1777466968.9139326,
+    "hash": "a1c4643dd9f8e7db04db874eb4987a42"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\visa-periods\\[id]\\route.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "20c3451085a7979216888b1e666f537d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\integrations\\customers\\upsert\\route.ts": {
+    "mtime": 1777101670.4619062,
+    "hash": "df278c8220fc047eab6cb387d8c45a82"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\integrations\\jobs\\upsert\\route.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "588858e2d9f37b320bf34000be28d42c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\integrations\\suppliers\\upsert\\route.ts": {
+    "mtime": 1777101683.5202205,
+    "hash": "96ff500ce9afd54693f99092d12bbcfe"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\job-costing\\formulas\\route.ts": {
+    "mtime": 1777960263.9132175,
+    "hash": "0f402fd66be6c149ea5f302f61fe5699"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\job-costing\\formulas\\_lib.ts": {
+    "mtime": 1777725763.8279395,
+    "hash": "74c64e975487d2b27caae31366508647"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\job-costing\\formulas\\[id]\\route.ts": {
+    "mtime": 1777643801.2593904,
+    "hash": "6bafe698c499aaa6451db94b4c87a89d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\job-costing\\formulas\\[id]\\restore-version\\route.ts": {
+    "mtime": 1777643825.5471752,
+    "hash": "8b12ed9e60dbb4f598eeb67adca202e5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\job-costing\\formulas\\[id]\\versions\\route.ts": {
+    "mtime": 1777643810.6932907,
+    "hash": "5f3cfdd0a17330b47a333b3f15de9224"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\route.ts": {
+    "mtime": 1777465751.515167,
+    "hash": "5206c70f1e4027fc144d53d70fc61ea3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\route.ts": {
+    "mtime": 1777960263.911201,
+    "hash": "161a8e7b06c1efa66e9298b43a7e334e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\check-delete\\route.ts": {
+    "mtime": 1775647169.7898908,
+    "hash": "6a37fbdc975b501355bcea74dc0a5aa0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\consumption-costing\\route.ts": {
+    "mtime": 1777227439.6179464,
+    "hash": "7c0f4a8a10b2df5d10653a13db2e9548"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\cost-engine\\route.ts": {
+    "mtime": 1777960263.9795902,
+    "hash": "1eab53a73cb1a77cf4683bb5b55fa897"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\cost-engine\\snapshots\\route.ts": {
+    "mtime": 1777960263.9881294,
+    "hash": "33c7305e2eb7368ae3ea88f37a9f885d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\cost-engine\\snapshots\\[snapshotId]\\route.ts": {
+    "mtime": 1777960263.9795902,
+    "hash": "2291cdb0e158499a457469026e7de66d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\dispatch-budget-warning\\route.ts": {
+    "mtime": 1777960263.9924934,
+    "hash": "705b872575d31ed0bb04992eaec9e8bc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\items\\route.ts": {
+    "mtime": 1777960263.969758,
+    "hash": "85e0a566348f40b0c8cbdd357b24c0c3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\items\\[itemId]\\route.ts": {
+    "mtime": 1777960263.8732772,
+    "hash": "589a8fed77a5d825062cc1a29776d477"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\items\\[itemId]\\progress-entries\\route.ts": {
+    "mtime": 1778505163.088916,
+    "hash": "84c839eb84305ba5ecb32e09cf7852da"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\items\\[itemId]\\progress-entries\\[entryId]\\route.ts": {
+    "mtime": 1777960263.995448,
+    "hash": "e59b93834f2dc5d0708a8fe5b9971aa8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\materials\\route.ts": {
+    "mtime": 1778505163.0808473,
+    "hash": "f292b1f89497267006c81ee179caa0a5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\jobs\\[id]\\progress-entries\\route.ts": {
+    "mtime": 1777960263.9924934,
+    "hash": "1ec801d1eedc00aee4978cecdb0b5685"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\live-updates\\route.ts": {
+    "mtime": 1777465601.62766,
+    "hash": "0beea0aa64a432272f7aa6fd1bd97949"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\route.ts": {
+    "mtime": 1778505669.7077477,
+    "hash": "9c7775fb075775b592f45df5cb441311"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\bulk\\route.ts": {
+    "mtime": 1777459713.2453203,
+    "hash": "e657eceb32f20aebcca273d5fba01740"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\cross-company\\route.ts": {
+    "mtime": 1778505162.8081868,
+    "hash": "732c1a030586a38b5388cda6b5070bd2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\dispatch-history\\route.ts": {
+    "mtime": 1777217409.4145777,
+    "hash": "b49d2789201d0df5ceaafca8e6a74451"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\dispatch-history-entries\\route.ts": {
+    "mtime": 1778505163.1221144,
+    "hash": "206bb2568f5cbcadab5ba00c9db7ff1c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\logs\\route.ts": {
+    "mtime": 1775646573.2996025,
+    "hash": "85a96ff9c18729606b979e4f355260ed"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\price-logs\\route.ts": {
+    "mtime": 1777217329.9945278,
+    "hash": "862c9c979ccfa5b3aa7aa0ab35d954d9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\receipt-history-entries\\route.ts": {
+    "mtime": 1777540043.7490845,
+    "hash": "5e9a5b4e9d87e3990fc7dcba8bde1e35"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\receipt-history-entries\\[receiptNumber]\\route.ts": {
+    "mtime": 1777540043.7046978,
+    "hash": "fdc0acd61e45116b66d63c8984fbb66b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\receipt-history-entries\\[receiptNumber]\\adjust\\route.ts": {
+    "mtime": 1777483571.0973022,
+    "hash": "9ee7ce94df996858c1d839475bb0d46a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\receipt-history-entries\\[receiptNumber]\\adjustment-impact\\route.ts": {
+    "mtime": 1777482596.6148608,
+    "hash": "08f66e6ad04b6294f064b32d1087f743"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\receipt-history-entries\\[receiptNumber]\\cancel\\route.ts": {
+    "mtime": 1777483561.126374,
+    "hash": "6df0661e176a8f89decf6f55ad06c4ce"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\route.ts": {
+    "mtime": 1778505162.7869165,
+    "hash": "fc3881ecf0dcafa4ac6b037410a039ac"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\assembly\\route.ts": {
+    "mtime": 1777971933.5995092,
+    "hash": "cd520f4f047badbec3659d710338f3cf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\check-delete\\route.ts": {
+    "mtime": 1775646608.723413,
+    "hash": "86576fc88c14b597858d596194651fea"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\logs\\route.ts": {
+    "mtime": 1775646580.8541968,
+    "hash": "300440f453b3306ffb825b4b51e4068d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\price-logs\\route.ts": {
+    "mtime": 1775646601.3608322,
+    "hash": "3b6670027a670771399eade4228b43d6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\uoms\\route.ts": {
+    "mtime": 1778505162.7869165,
+    "hash": "489d97b2ea647a6ce79268d1063e7ed2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\materials\\[id]\\uoms\\[uomId]\\route.ts": {
+    "mtime": 1778505162.835438,
+    "hash": "cc38a3c03b1e02ee48274d65bfe2f6e2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\attendance\\route.ts": {
+    "mtime": 1777300843.7325146,
+    "hash": "0e1d478b2740120fe1139b62cb475a6a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\employee\\route.ts": {
+    "mtime": 1777300843.7346594,
+    "hash": "bf5cb5b7e366afc4726b2ef3d9f20c98"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\mobile-auth\\login\\route.ts": {
+    "mtime": 1776840499.3681662,
+    "hash": "f7e0349b10e0f977de685678c372ccd7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\mobile-auth\\logout\\route.ts": {
+    "mtime": 1776840505.0026026,
+    "hash": "da8b9b9169808119d382612274468788"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\mobile-auth\\me\\route.ts": {
+    "mtime": 1777961904.2289016,
+    "hash": "947c03cd26ac6d8d2db275f6aa3bdf41"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\schedule\\route.ts": {
+    "mtime": 1777300843.7346594,
+    "hash": "9a4d624c6dfb8883bcaa1b05d89c81da"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\me\\table-preferences\\[key]\\route.ts": {
+    "mtime": 1777387395.4196036,
+    "hash": "86646ad918600c205be83d833a57f004"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\media\\route.ts": {
+    "mtime": 1778505163.1610005,
+    "hash": "9e9c28ddd73220156180ac1dd8b79177"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\media\\cleanup\\route.ts": {
+    "mtime": 1778505162.7819893,
+    "hash": "0d0715ee446a79174a2a51021a66125b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\media\\drive\\[id]\\route.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "fed2cf30e68af4e9fa8d96d4a2e63652"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\media\\[id]\\route.ts": {
+    "mtime": 1778505162.8305173,
+    "hash": "91a3c4c05ba97c4ee7179ae34d6d49c9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\consumption\\route.ts": {
+    "mtime": 1777227439.8479676,
+    "hash": "19c51ee83a7b237ab40c3d9fbf701765"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\inventory-by-warehouse\\route.ts": {
+    "mtime": 1777540043.790424,
+    "hash": "5ee3669b61f7d55ea62ec8d9119c2b24"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\job-consumption\\route.ts": {
+    "mtime": 1777217410.1624537,
+    "hash": "28953eb2f8f6a7158ef2971ab5afc561"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\job-profitability\\route.ts": {
+    "mtime": 1777960263.969758,
+    "hash": "6a8ef85d316d22ea6c1fa78a6f18fba8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\stock-adjustments\\route.ts": {
+    "mtime": 1777486339.447846,
+    "hash": "69b40b44ade9b27134e829a269de9c97"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\stock-count-sessions\\route.ts": {
+    "mtime": 1777531682.334399,
+    "hash": "f87900e254c9410cf0e64c0d758292ec"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\stock-exceptions\\route.ts": {
+    "mtime": 1777485742.2600117,
+    "hash": "f3e98aeab62b8e44de8cf3ee8bc561c0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\stock-integrity\\route.ts": {
+    "mtime": 1777472319.455645,
+    "hash": "7ad0ced05e97cc97c679e95fae128dba"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\stock-valuation\\route.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "686c1b04a363d095a41e405a9dfa9307"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\reports\\supplier-traceability\\route.ts": {
+    "mtime": 1777476806.2040508,
+    "hash": "6e4a4a4fcf56b8edae0d9dc4967769ab"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\roles\\route.ts": {
+    "mtime": 1777465797.6877508,
+    "hash": "e3951714cddc7166f372d4f76ee405b7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\roles\\[id]\\route.ts": {
+    "mtime": 1777465797.7865365,
+    "hash": "2a623bf79475f70e4b77dbe90c733ccb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\session\\switch-company\\route.ts": {
+    "mtime": 1775648785.3106713,
+    "hash": "f159cc13d6092b1ffe8e1a000a7ee3e0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\session\\switch-profile\\route.ts": {
+    "mtime": 1775483028.5204644,
+    "hash": "5b74108575dba7e330511c0be8ba289f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\api-credentials\\route.ts": {
+    "mtime": 1778505162.8207023,
+    "hash": "09f682b69c9fdf04a750135a43efb833"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\api-credentials\\[id]\\route.ts": {
+    "mtime": 1778505163.0265894,
+    "hash": "367864d7deeebcf4e5b6d76691b8c99b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\google-drive\\oauth\\callback\\route.ts": {
+    "mtime": 1778505163.1335545,
+    "hash": "ccafc3a023e2926922a146d7cd0288b4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\google-drive\\oauth\\start\\route.ts": {
+    "mtime": 1778505163.1450846,
+    "hash": "d613de5b4887827648ab2036f9d47eaa"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\google-drive\\status\\route.ts": {
+    "mtime": 1778505163.1335545,
+    "hash": "b7f9133f4567a2c5ab46ce42ac4903bf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\integration-logs\\route.ts": {
+    "mtime": 1778505163.1712794,
+    "hash": "42c468644a1681eaa5d73eec46ecacad"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\settings\\integration-logs\\[id]\\retry\\route.ts": {
+    "mtime": 1778505163.1712794,
+    "hash": "4dbd624f5caa9d995420ad8e719cc7d1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock\\daily-quantity-log\\route.ts": {
+    "mtime": 1778505163.1712794,
+    "hash": "11d0b4fe4908af8e2a9978febb31b29c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock\\daily-quantity-log\\adhoc-jobs\\route.ts": {
+    "mtime": 1778505162.9224517,
+    "hash": "fb50bb19a38decdc087cdeaf0093b98c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock\\daily-quantity-log\\finalize\\route.ts": {
+    "mtime": 1778505162.8060267,
+    "hash": "2503125bb93d00c6efd51ddf83667305"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock\\daily-quantity-log\\pending\\route.ts": {
+    "mtime": 1778505162.7891798,
+    "hash": "3086a749af48531d53fa22a2bfdbb848"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock-batches\\route.ts": {
+    "mtime": 1777291607.804738,
+    "hash": "1c7ccdbfd19ba688c470388a06149277"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock-count-sessions\\route.ts": {
+    "mtime": 1777527659.8122141,
+    "hash": "87bd3b2f67b675306498870b9e887155"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock-count-sessions\\[id]\\route.ts": {
+    "mtime": 1777527660.1125076,
+    "hash": "e66f92f3f763a41a50c4e35d8160c038"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock-count-sessions\\[id]\\submit\\route.ts": {
+    "mtime": 1777529826.7544794,
+    "hash": "8ac8578f0b17d159ecdc13d4f87e7e31"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock-exception-approvals\\route.ts": {
+    "mtime": 1777530975.5026739,
+    "hash": "22939cffbf2fde35fdd4a697f433348c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\stock-exception-approvals\\[id]\\route.ts": {
+    "mtime": 1777532031.6676252,
+    "hash": "c3719bc5815a70ca04cda4e2ad37f77f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\suppliers\\route.ts": {
+    "mtime": 1778505162.8073258,
+    "hash": "3e907fdeddb884c312b81f6196bb30e8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\suppliers\\sync\\route.ts": {
+    "mtime": 1777465741.410007,
+    "hash": "feb230ae03a14d81c634400f4a829b50"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\suppliers\\[id]\\route.ts": {
+    "mtime": 1777465827.3119407,
+    "hash": "f96c1ec6215b31a01ca356eb82556af9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\suppliers\\[id]\\check-delete\\route.ts": {
+    "mtime": 1776022526.3835304,
+    "hash": "1a2f835401a8ec8e320cec1c46b31ea8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\route.ts": {
+    "mtime": 1778505163.1551669,
+    "hash": "c2fa9159e879e4df482a4feeef1487d6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\batch\\route.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "0f601731a8bb1ade0af7135ae72f02e9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\dispatch-entry\\route.ts": {
+    "mtime": 1777449182.084147,
+    "hash": "73a5eb4aa47b0db9e5cef5509e4022e4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\manual-adjustment\\route.ts": {
+    "mtime": 1777527691.648609,
+    "hash": "e4359a9d151d4fe0b5f4575ea79d20ae"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\non-stock-reconcile\\route.ts": {
+    "mtime": 1777540043.8054204,
+    "hash": "a97abc1ff2811aad522b563158700b8f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\transfer\\route.ts": {
+    "mtime": 1777540043.82042,
+    "hash": "758198985939541128aef5b3861dafd3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\transfers\\route.ts": {
+    "mtime": 1777291558.051303,
+    "hash": "92fea2d5d65384a8d5c4adac1acdfab3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\[id]\\route.ts": {
+    "mtime": 1777963317.3920145,
+    "hash": "da471ec748cf502cbdef32006174efa1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\units\\route.ts": {
+    "mtime": 1777465759.7184176,
+    "hash": "e65b2a7ead3d40730903fe4ec69ef3e5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\units\\[id]\\route.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "ba90ab2d3714aa3b6ad0618b53d59203"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\upload\\letterhead\\route.ts": {
+    "mtime": 1778505162.7891798,
+    "hash": "90e3cd740564aef049fe23c509659c38"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\upload\\material-asset\\route.ts": {
+    "mtime": 1778505162.8073258,
+    "hash": "0b88bc8bc9c08a59a4a32c676537d09f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\upload\\signed-copy\\route.ts": {
+    "mtime": 1778505162.7775836,
+    "hash": "22a0930bf4100678d93a70556ed70509"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\upload\\template-image\\route.ts": {
+    "mtime": 1778505163.1571834,
+    "hash": "033d813e1f4ec9f90598db7f5ad9ce80"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\upload\\user-profile-image\\route.ts": {
+    "mtime": 1778505162.8102014,
+    "hash": "2a6d7d7c5263ea8711e9260dacc80b6e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\upload\\user-signature\\route.ts": {
+    "mtime": 1778505162.8060267,
+    "hash": "f6719eadc0c961d0b09601ba534706ce"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\user\\profile\\route.ts": {
+    "mtime": 1777963181.3596559,
+    "hash": "a0fc3e7a322b0609f7c4d19836bed2dd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\users\\route.ts": {
+    "mtime": 1777465797.5559232,
+    "hash": "2892ae71f8a697c82a086bc152af8b99"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\users\\[id]\\route.ts": {
+    "mtime": 1777465797.617126,
+    "hash": "6c248ffad0d7f637a2461e9a5a56fa67"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\warehouses\\route.ts": {
+    "mtime": 1777465780.7328146,
+    "hash": "08910da459ee70eac600f1e723b6a171"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\api\\warehouses\\[id]\\route.ts": {
+    "mtime": 1777465780.798543,
+    "hash": "94757d6f619b65ae06c1e59990846ca6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\docs\\api\\page.tsx": {
+    "mtime": 1778505163.147098,
+    "hash": "b0c3bf1b311c7bb7c584f93619efd7bb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\hr-schedule-print\\page.tsx": {
+    "mtime": 1776521446.5782998,
+    "hash": "d00bac5a038b02b65ba63c24a057c376"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\print\\delivery-note\\page.tsx": {
+    "mtime": 1777963468.9699752,
+    "hash": "1de71abdde27387490fc87460cf855e6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\privacy-policy\\page.tsx": {
+    "mtime": 1776691894.0383205,
+    "hash": "35be964eb5008a6284a2ab9bdf7600c9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\settings\\print-template\\edit\\layout.tsx": {
+    "mtime": 1778505163.1732943,
+    "hash": "28f81978d2c8b0a6270ec0619a5ab7fd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\settings\\print-template\\edit\\page.tsx": {
+    "mtime": 1778505163.1912992,
+    "hash": "877c7c1826297459c83aafa943322d10"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\terms-of-service\\page.tsx": {
+    "mtime": 1776691894.1286008,
+    "hash": "a9551ed38a4cd75bceeefd9aa9b5a19c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\app\\unauthorized\\page.tsx": {
+    "mtime": 1776408907.8507314,
+    "hash": "5e5d2f01f902d73a1398867b0a7b8526"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\hr\\EmployeeProfileView.tsx": {
+    "mtime": 1777963518.582631,
+    "hash": "a6a0ab4ed8fb1e43a55ab7547edf7829"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\hr\\HrPageChrome.tsx": {
+    "mtime": 1777961900.7577019,
+    "hash": "411142aea7db1c9f5781b078fd8e4464"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\job-costing\\FormulaBuilderEditor.tsx": {
+    "mtime": 1777743736.126684,
+    "hash": "31e658fa48ead30a3e60b45d89bd3d7d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\job-costing\\formula-builder\\sections.tsx": {
+    "mtime": 1777960263.9795902,
+    "hash": "544d6086a6c7eb21ff4d781382582da0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\job-costing\\formula-builder\\shared.ts": {
+    "mtime": 1777743374.634707,
+    "hash": "2461a8ef4b4496d553c72da99d92c99f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\jobs\\ConsumptionCostingModal.tsx": {
+    "mtime": 1775719994.6075482,
+    "hash": "50ed73359dd93598e672f79e279f6437"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\jobs\\JobConsumptionCostingSection.tsx": {
+    "mtime": 1778505162.7775836,
+    "hash": "2314b997fab9b19e022979ef06c893be"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\jobs\\JobScopeFilter.tsx": {
+    "mtime": 1778505162.818688,
+    "hash": "cdde16b826a573a10f957c32e905d79c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\jobs\\JobVariationModal.tsx": {
+    "mtime": 1775725695.2374914,
+    "hash": "9f8b8370dcef5b20b22e4e62c5abf3e0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\layout\\AppShell.tsx": {
+    "mtime": 1777300843.736671,
+    "hash": "67d199d639f8d7f11aea33d8d4afdd1b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\layout\\CompanySwitcher.tsx": {
+    "mtime": 1776022526.4121773,
+    "hash": "21f68e536ca51315c5426a5ea144750f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\layout\\Header.tsx": {
+    "mtime": 1776427192.3358407,
+    "hash": "c63c196d67dcfa248f5afc92b30f448a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\layout\\ProfileSwitcher.tsx": {
+    "mtime": 1775483149.1552951,
+    "hash": "cf9bf66228bae83668c16d03e6d2c334"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\layout\\Sidebar.tsx": {
+    "mtime": 1778505162.8369524,
+    "hash": "19c7df44508a90f355eb6f3b81bf899b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\legal\\LegalPage.tsx": {
+    "mtime": 1776691893.9581466,
+    "hash": "b439ecb63f1375d20132e020935abb82"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\materials\\BulkImportModal.tsx": {
+    "mtime": 1777384231.0294712,
+    "hash": "3bdfa268956f504427e8dcfdb8822119"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\me\\EmployeePortalLayout.tsx": {
+    "mtime": 1776409137.6136563,
+    "hash": "026dbfbf4f1103a592aeef3b9a2d400e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\me\\MeAttendancePage.tsx": {
+    "mtime": 1776408967.4861054,
+    "hash": "673bf8b4ff60175690ddc8d9db8b4bb8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\me\\MeProfilePage.tsx": {
+    "mtime": 1776408960.8701663,
+    "hash": "459222d90bfa1950c9c6adb674506965"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\me\\shared.tsx": {
+    "mtime": 1777963477.5365999,
+    "hash": "812af8309724f7fe4054625f6901db19"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\CanvasPreview.tsx": {
+    "mtime": 1776685985.043048,
+    "hash": "73a94ccf36bc8a6a287875f8b33e829f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\DataFieldsExplorer.tsx": {
+    "mtime": 1776362663.370148,
+    "hash": "67603dc81085e29bebb5e3c7b9c32577"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\DocumentRenderer.tsx": {
+    "mtime": 1778505162.9029195,
+    "hash": "3de98b38052be347c758b37ca62371fb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\PageChromeEditor.tsx": {
+    "mtime": 1778505163.1953285,
+    "hash": "b13f12cafc980e92d21ac7c5211c1fbc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\SearchableFieldSelect.tsx": {
+    "mtime": 1776362881.7701757,
+    "hash": "ca9f648b2ff041f86afd4d0cceef7af9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\SectionAdvancedStyleEditor.tsx": {
+    "mtime": 1776362727.33896,
+    "hash": "e1aee0e47ce0a80db129c9e135e3c64a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\SectionEditor.tsx": {
+    "mtime": 1777963399.7481635,
+    "hash": "6f91b41424c37e0361caff738c6c3c4d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\sectionStyleWrap.tsx": {
+    "mtime": 1776494804.437799,
+    "hash": "1a4fe50de30325195db3f5755f910d2b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\TemplateBuilder.tsx": {
+    "mtime": 1777963456.628379,
+    "hash": "4ebcce617a9fe05d516d610aa5efba50"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\reports\\JobConsumptionTable.tsx": {
+    "mtime": 1775465548.5796177,
+    "hash": "962da3953ef70fe8313a331d3339ac36"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\settings\\MediaLibraryPanel.tsx": {
+    "mtime": 1778505162.8227167,
+    "hash": "94a06a1b3e59a9e5bb63793ba3934073"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\stock\\DispatchLineGrid.tsx": {
+    "mtime": 1777450733.179811,
+    "hash": "de3f253b549213b5dc06cc88370d1f54"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\stock\\IssueReconcileForm.tsx": {
+    "mtime": 1777477311.1681712,
+    "hash": "b940112eba3eb3044231cb10d2091d82"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\stock\\LineGridColumnSettings.tsx": {
+    "mtime": 1777445516.831761,
+    "hash": "078479bed026be111feae4ab4f9af8a7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\suppliers\\SupplierEditor.tsx": {
+    "mtime": 1777107025.512107,
+    "hash": "714f6d7e596cd4564f2b3c5b11abe01c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\transactions\\StockTransactionModal.tsx": {
+    "mtime": 1778505163.021919,
+    "hash": "5fed6b10eaac55377349d7382ed9bec0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\transactions\\TransactionLedger.tsx": {
+    "mtime": 1778505162.818688,
+    "hash": "bcfef3d7295c724b2ece956d3519b9c0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\Badge.tsx": {
+    "mtime": 1777300843.7120883,
+    "hash": "934989b0c91edb36e903b8305c3943a8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\Button.tsx": {
+    "mtime": 1776853033.1201737,
+    "hash": "3e2d7b8520cdcbc26bf7100098d99f96"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\ContextMenu.tsx": {
+    "mtime": 1776427929.645664,
+    "hash": "155bbfc6f2af2e46125be1f5ff0db337"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\DataTable.tsx": {
+    "mtime": 1777387427.3117068,
+    "hash": "3808700ae7e7f35181b7a1f2e1411bd0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\FlexibleTable.tsx": {
+    "mtime": 1777540043.791425,
+    "hash": "70410e3756f4640d97d348c10d0854d7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\HoverTooltip.tsx": {
+    "mtime": 1776022526.512198,
+    "hash": "a5e7228f980b2b407d76373aa423211b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\Modal.tsx": {
+    "mtime": 1776853067.687783,
+    "hash": "1e6e2f7375fdb7e474226edfbbb0140b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\MultiSelectDropdown.tsx": {
+    "mtime": 1777300843.7403898,
+    "hash": "50caafecfc971b6778e13686ac4f23e7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\SearchSelect.tsx": {
+    "mtime": 1777448090.6533847,
+    "hash": "e9529a5706186647afa3e33e1520d23e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\Spinner.tsx": {
+    "mtime": 1775465040.7814934,
+    "hash": "b1874ef3e19ac27176a11396087d523b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\StatCard.tsx": {
+    "mtime": 1775465051.699527,
+    "hash": "5e1a733defef0778ced1c2667099a416"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\skeleton\\CardGridSkeleton.tsx": {
+    "mtime": 1775545081.1267514,
+    "hash": "66da1ab30e88f14b5096a2b262c317ff"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\skeleton\\SkeletonBlock.tsx": {
+    "mtime": 1775545068.5079134,
+    "hash": "f89b84fdfbb84b252e5a3bb56304c9c3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\skeleton\\SkeletonLine.tsx": {
+    "mtime": 1775545064.949411,
+    "hash": "7f086a3c9fd34b6b45a6773fb37892e2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\skeleton\\StatCardSkeleton.tsx": {
+    "mtime": 1775545077.4502487,
+    "hash": "41db89b6d41706ce9a719881bcf4dd25"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\components\\ui\\skeleton\\TableSkeleton.tsx": {
+    "mtime": 1775564654.1212053,
+    "hash": "67be7e694e8798dffadda8e21cba0528"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\docs\\architecture\\database-scalability-migrations.sql": {
+    "mtime": 1778505162.7891798,
+    "hash": "912ec4eff16c922e4b984c5f4fac6812"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\jobContactFormUi.ts": {
+    "mtime": 1778505162.7891798,
+    "hash": "9e802e1667774897219f85fc69fdcfc0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\materialMasterData.ts": {
+    "mtime": 1777382960.7083952,
+    "hash": "55575c92ebff672eff0e6b867279d72a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\partyContacts.ts": {
+    "mtime": 1777226816.6124225,
+    "hash": "041f978469d9a31e286b701e749ebdd0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\partyFormUi.ts": {
+    "mtime": 1777107025.4519713,
+    "hash": "24c9bc4c09429ab6d1253ad27fa2cede"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\partyListRecordPayload.ts": {
+    "mtime": 1777226787.3895211,
+    "hash": "8ad21987330ba68e23d19886fa7b73ed"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\partyListsApi.ts": {
+    "mtime": 1777295074.3857744,
+    "hash": "9bf21f16703496c41ce27345603be94c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\partyListSync.ts": {
+    "mtime": 1778505162.8073258,
+    "hash": "881df60fd292715b83314cc374faba76"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\permissions.ts": {
+    "mtime": 1777961906.1394665,
+    "hash": "5f978ab4e2e9362702954ba059e93778"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\auth\\requireSession.ts": {
+    "mtime": 1775645832.2966435,
+    "hash": "e5cf3c95d7143233b4e89776e0092d7c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\auth\\selfService.ts": {
+    "mtime": 1776408885.3818946,
+    "hash": "b415059bff038caf4bee99d85ac1e2d7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\db\\postgresAdapter.ts": {
+    "mtime": 1777279699.6521087,
+    "hash": "97fcb0f045b40910fee50297f56ef593"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\db\\prisma.ts": {
+    "mtime": 1778505162.8060267,
+    "hash": "08a6492eac7fba499e30361f464c8f58"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\docs\\apiEndpoints.ts": {
+    "mtime": 1778505162.7775836,
+    "hash": "ccd48bbd25503de087570ecebf779643"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hooks\\useContextMenu.ts": {
+    "mtime": 1775559367.329016,
+    "hash": "4a83c4f48c37b7a8b1cb917f614ca236"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\attendanceReportBuilder.ts": {
+    "mtime": 1776329914.66133,
+    "hash": "cbe1a48fb5c905bb2a59913596d11a41"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\attendanceReportFormatting.ts": {
+    "mtime": 1776329245.3213737,
+    "hash": "6883807c11799f72265f54d399925f34"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\attendanceReportPresets.ts": {
+    "mtime": 1776334625.0017128,
+    "hash": "f24be48feb9b9a47ff860892e0f1e4c8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\attendanceReports.ts": {
+    "mtime": 1776705575.8465798,
+    "hash": "4612b406a7115b9d578cfa1253757ab6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\defaultDocumentTypes.ts": {
+    "mtime": 1777300843.7410917,
+    "hash": "1103414a3aa57c9972de067074bef48e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\dubaiShift.ts": {
+    "mtime": 1777300843.7859168,
+    "hash": "efd8a15c6730c97fcc2750992b3b7ee7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\employeeMeta.ts": {
+    "mtime": 1776342958.9701,
+    "hash": "29e36be5633419d85067060c44570fa9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\employeeTypeSettings.ts": {
+    "mtime": 1777300843.7410917,
+    "hash": "db1e06a94d37807713958f4328d927dc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\generateAttendanceFromSchedule.ts": {
+    "mtime": 1777960263.9149795,
+    "hash": "be3dae47368215671485e65f3f4e3fb2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\linkedEmployee.ts": {
+    "mtime": 1777300843.736671,
+    "hash": "1c0b662a9fa850a783af5c1de9750c52"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\matchEmployee.ts": {
+    "mtime": 1777300843.7346594,
+    "hash": "9459b8b2761c6ed3040b1380eb3a0748"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\mobileAccess.ts": {
+    "mtime": 1776840488.5650885,
+    "hash": "6124930535fd27b754a0943707731a20"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\parseDailyWorkScheduleCsv.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "631be8492401a9c6cd1c7ba175a1485c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\provisionEmployeeUser.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "639fb0b2aa2cb60b638fd9034e5ad364"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\requireCompanySession.ts": {
+    "mtime": 1777300843.7120883,
+    "hash": "a46e3445635c77ba74367dd2cbf63753"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\runScheduleCsvImport.ts": {
+    "mtime": 1777300843.7403898,
+    "hash": "c513349d4fb4dbb5729e1c97d989ed5c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\workDate.ts": {
+    "mtime": 1777300843.7346594,
+    "hash": "98bfc9ea9d75fd3eb1333e1d67034d8e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\workforceProfile.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "139be3bdea06e8ce89c8a6b6ce24edcd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\integrations\\apiKeys.ts": {
+    "mtime": 1778505162.8369524,
+    "hash": "d877de40f07af16e1b1a3f3ee7c07e74"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\integrations\\domainAllowlist.ts": {
+    "mtime": 1778505162.8227167,
+    "hash": "2d0de3a0568ec72f42677e7f7056a639"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\integrations\\integrationRoute.ts": {
+    "mtime": 1777101655.8395097,
+    "hash": "4fab6ac3a7f48c0f0a578b394ca80cd2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\integrations\\jobSyncService.ts": {
+    "mtime": 1778505162.7869165,
+    "hash": "362b58ba19332532b629dddd6d527bd6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\integrations\\partyUpsertService.ts": {
+    "mtime": 1778505162.9224517,
+    "hash": "bb1e9d3549a395f4745ba5a05d33948d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\budgetJobContext.ts": {
+    "mtime": 1777960263.8961678,
+    "hash": "df89f707798247ded6ffecfe740eee58"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\costEngine.ts": {
+    "mtime": 1778505162.9444942,
+    "hash": "7a76058ecf2ebde1e247e176f9be5511"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\expressionEvaluator.ts": {
+    "mtime": 1777710950.120293,
+    "hash": "ad666a6a558d474da2eaf85a40332e4d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\formulaEngine.ts": {
+    "mtime": 1777960263.8732772,
+    "hash": "9e76289c090630556a7327dc3dd0acb8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\jobItemAssignments.ts": {
+    "mtime": 1777225123.8183951,
+    "hash": "9e07fd2137ba80c1454228e31427dbde"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\jobItemProgressTracking.ts": {
+    "mtime": 1778505163.0620534,
+    "hash": "54177f03352010132c7e3b77304e7de7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\pricing.ts": {
+    "mtime": 1777752349.582491,
+    "hash": "fd1d9a86e252adc430a58e1b0d868521"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\progressTracking.ts": {
+    "mtime": 1777960263.9795902,
+    "hash": "687c49f2995db03322efb75e7e7416b8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\settings.ts": {
+    "mtime": 1776950372.184191,
+    "hash": "c35bf8a43e918e3b773c392cdfa97c90"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\job-costing\\types.ts": {
+    "mtime": 1777960263.9707744,
+    "hash": "3e8db75136448b67dbae513cfc7a2b1e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\jobs\\jobContacts.ts": {
+    "mtime": 1777227335.1052773,
+    "hash": "2eeac947c12934fb4ce79eaf324f591b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\jobs\\jobRequiredExpertises.ts": {
+    "mtime": 1777226158.9116256,
+    "hash": "e8109b02cbe003a9156e2bc8eab2ebda"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\live-updates\\server.ts": {
+    "mtime": 1778505163.022556,
+    "hash": "20bc909dc13d254986736189e1a5d19f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\media\\userScopedMedia.ts": {
+    "mtime": 1778505162.8060267,
+    "hash": "3c054c8bc96a3784c93e93a55653a718"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\navigation\\appNavigation.tsx": {
+    "mtime": 1778505162.8227167,
+    "hash": "3a3a222bb51cf888a2c100b9d93057bf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\stock\\buildDailyQuantityLog.ts": {
+    "mtime": 1778505162.8060267,
+    "hash": "c18da7b8fa4968c10777fce7cd658ce1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\stock-control\\settings.ts": {
+    "mtime": 1777531925.8610919,
+    "hash": "e558f6e40f4c694ffd860cef46e2e8a8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\types\\documentTemplate.ts": {
+    "mtime": 1777963381.8016484,
+    "hash": "d2d7d7d66d70e1a4ce4a7b292d1bb472"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\apiResponse.ts": {
+    "mtime": 1777546586.3250322,
+    "hash": "f5d2ba3334a0edc257406ac4da4b0c92"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\auditActor.ts": {
+    "mtime": 1777270559.7615,
+    "hash": "351b55b7357aa7f36fb204e498e89a73"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\canvasLayout.ts": {
+    "mtime": 1776456666.9080343,
+    "hash": "13ae83562794250da2bcbeb36c020191"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\companyOperationalSettings.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "bc7531c491a6c047352cef51b7985695"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\companyPrintTemplates.ts": {
+    "mtime": 1776689683.5723796,
+    "hash": "782645a23a605386c383a566cedd3470"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\decimal.ts": {
+    "mtime": 1777217329.2239637,
+    "hash": "6cbbe96182acdf69c083d7aa95c9ae94"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\documentDefaults.ts": {
+    "mtime": 1776666705.4426775,
+    "hash": "dce11a0a409802293fec24368206a9bb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\fifoConsumption.ts": {
+    "mtime": 1775713454.1014855,
+    "hash": "c235f492c615c38fa2f2a649fa9da655"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\formatters.ts": {
+    "mtime": 1775464915.3657763,
+    "hash": "019bd273f2bf516f9791c3b52e9f3689"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\fuzzyMatch.ts": {
+    "mtime": 1777751617.2375216,
+    "hash": "10198a1759f552748b2fb51900b58308"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\globalSettings.ts": {
+    "mtime": 1778505163.1221144,
+    "hash": "146203450046b031a7de1f313526cc1a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\googleDrive.ts": {
+    "mtime": 1778505163.1610005,
+    "hash": "bc8d7add40251f2fc114546615e6c14d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\googleDriveUrl.ts": {
+    "mtime": 1777300843.7378855,
+    "hash": "9c613d8652e5df84c1ab5f58dac95623"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\itemTypeFields.ts": {
+    "mtime": 1777963570.3954985,
+    "hash": "ef053b8a93b40b96370d14642206a45f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\manualStockAdjustment.ts": {
+    "mtime": 1777484145.8427684,
+    "hash": "d47c1041b8290c1eaf10681b9e91f9ff"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\manualStockAdjustmentExecution.ts": {
+    "mtime": 1777484876.8807192,
+    "hash": "69e37ccedc2f4fe18f6d61f24d953c02"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\manualStockAdjustmentImport.ts": {
+    "mtime": 1777486892.8338947,
+    "hash": "5644797c2111063ca3e251abf6b82cc4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\manualStockAdjustmentPolicy.ts": {
+    "mtime": 1777531904.3759317,
+    "hash": "cc9a8f505adc67dff1382319cf497058"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\manualStockAdjustmentRequest.ts": {
+    "mtime": 1777531932.0029478,
+    "hash": "9491cd14989b602b41649329ec694f45"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\materialAssembly.ts": {
+    "mtime": 1777971918.42988,
+    "hash": "ea3f62097eec833f1ef9ed23043c7fda"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\materialUom.ts": {
+    "mtime": 1778505162.988249,
+    "hash": "be9d952ada6421f9ef411f531742293d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\materialUomDb.ts": {
+    "mtime": 1778505162.8073258,
+    "hash": "2aa36e906b0b08c84871af6dedad2f01"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\migrateDocumentSections.ts": {
+    "mtime": 1777963580.79619,
+    "hash": "29bc12f8476a9fd72bbb67992eba5e6d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\printTemplateSession.ts": {
+    "mtime": 1776521401.1961017,
+    "hash": "01773f7aa60767147a30d9997d5684fd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\receiptCancellation.ts": {
+    "mtime": 1777482469.5954342,
+    "hash": "bc36cf813709f3a5d2c549404a9e78ae"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\requireActiveCompanyInDb.ts": {
+    "mtime": 1776022526.463972,
+    "hash": "9a3635d798e9d31032d8b7d41816b13e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\stockBatchManagement.ts": {
+    "mtime": 1776022526.4002216,
+    "hash": "b7735e35a9720288d2620202a7273111"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\stockCountSession.ts": {
+    "mtime": 1777526801.2000134,
+    "hash": "c5d5210a22538bc0bc05d3f7888478fc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\stockCountSessionServer.ts": {
+    "mtime": 1777527659.5844152,
+    "hash": "bb34b6af138051d48cea205771ef282b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\stockExceptionApproval.ts": {
+    "mtime": 1777484151.0182993,
+    "hash": "4b6722b61a7b5c6f22b9cbdfffff8a18"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\templateData.ts": {
+    "mtime": 1777963423.003789,
+    "hash": "f5f8e6cd6bd2ccbac98f754bb3d9769a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\transactionBatchLinks.ts": {
+    "mtime": 1777471806.8488772,
+    "hash": "1675abbdf537febba16b12e23b9a0014"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\unitConversion.ts": {
+    "mtime": 1775566142.8702357,
+    "hash": "cf9e44819b39fe638f106d283f5e7f95"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\validations\\customer.schema.ts": {
+    "mtime": 1775464928.2229965,
+    "hash": "d0bd42e1c3d70d801541e812aed9ee20"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\validations\\job.schema.ts": {
+    "mtime": 1775464923.918448,
+    "hash": "9e73ebdffb7bf2a456d3b869910de08e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\validations\\material.schema.ts": {
+    "mtime": 1777971940.5998223,
+    "hash": "7767bb42156d6b39a8656943ae050d96"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\validations\\transaction.schema.ts": {
+    "mtime": 1775464926.5737796,
+    "hash": "dccf49c2dd5ace8052d36cb1a0ea215d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\warehouses\\companyWarehouseMode.ts": {
+    "mtime": 1777540043.7016978,
+    "hash": "3c50bcd92efb020b49ed142cd041fa14"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\lib\\warehouses\\stockWarehouses.ts": {
+    "mtime": 1777540043.7004862,
+    "hash": "e45e78ad112f51d770931e4caf1f6f00"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migration_helper.sql": {
+    "mtime": 1775816728.8156128,
+    "hash": "afef3c1f41bc9c6752fc4858181f9a14"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260408105028_init\\migration.sql": {
+    "mtime": 1775645428.874529,
+    "hash": "bbb6a936e8c1610edda2a08930fb05b6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260408150216_make_optional_material_fields\\migration.sql": {
+    "mtime": 1775660536.581486,
+    "hash": "0626ecac2d1e36f65a1a24d23ed4ae15"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260409063405_add_job_variations\\migration.sql": {
+    "mtime": 1775716445.255452,
+    "hash": "e17eedb4b264fa2abae07173ca49aaf1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260409090603_add_job_fields\\migration.sql": {
+    "mtime": 1775725563.2083335,
+    "hash": "b3b83b232f2d2a2a6381ca68626fa43d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260409105332_make_job_description_optional\\migration.sql": {
+    "mtime": 1775732012.5311527,
+    "hash": "cca2f23ed4b68979b77dc3d08d6a0909"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260409180000_add_is_delivery_note\\migration.sql": {
+    "mtime": 1775762133.388359,
+    "hash": "d667882f41c04a1c04e70c362dc3a1aa"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260410062845_add_print_template\\migration.sql": {
+    "mtime": 1775802525.4103153,
+    "hash": "ed191d0dfb01f52992b1f913836481da"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260410120000_rename_print_template\\migration.sql": {
+    "mtime": 1775816735.5700383,
+    "hash": "abf86c884d5d27c065149a8008e2c649"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260411190000_party_lists_parties\\migration.sql": {
+    "mtime": 1776022526.4216957,
+    "hash": "6b38c7a7f18e5bd93c4f393793cc8bee"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260412120000_user_profile_signature\\migration.sql": {
+    "mtime": 1778505162.7891798,
+    "hash": "f529624ba92c54cf164cba335e44f28d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413063731_add_media_assets\\migration.sql": {
+    "mtime": 1776062251.9392536,
+    "hash": "8957dcd2453326f5473b2a5b2aee3948"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413084500_external_job_sync_foundation\\migration.sql": {
+    "mtime": 1778505162.7891798,
+    "hash": "bfd1f1692b01fb20185309069c597d32"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413101500_integration_sync_logs\\migration.sql": {
+    "mtime": 1778505162.8285027,
+    "hash": "6afe704fc9a020e1e43b25af96b102a9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413104500_job_source_mode_gate\\migration.sql": {
+    "mtime": 1778505163.0848827,
+    "hash": "6f19f5832c321128876c032e7ee1b570"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413112000_integration_idempotency_retry\\migration.sql": {
+    "mtime": 1778505163.0603478,
+    "hash": "4bb3493e1bb46963ef6aa0a8a6898120"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413140000_api_credential_webhook_secret\\migration.sql": {
+    "mtime": 1778505163.0286052,
+    "hash": "d3ba7e418535378c837c92437f2f53c2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260413160000_job_contact_person\\migration.sql": {
+    "mtime": 1778505162.8073258,
+    "hash": "66fec29d5396e2688bfea072224790d7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260414120000_api_credential_domains_drop_hmac\\migration.sql": {
+    "mtime": 1778505163.0265894,
+    "hash": "8032f65e36e9873a0bee97de9b2facbe"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260414180000_material_uom\\migration.sql": {
+    "mtime": 1778505162.8369524,
+    "hash": "d5ee9c1626cc4f78cc09daeceaca7ddc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260414195000_hr_workforce_module\\migration.sql": {
+    "mtime": 1777300843.7416189,
+    "hash": "c0232ebeade2470c65f7cbc0d316fdd1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260415103000_employee_profile_notes\\migration.sql": {
+    "mtime": 1777300843.736671,
+    "hash": "c990a5fabd81f1540734bc5d693595e7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260415160000_job_expertise_catalog\\migration.sql": {
+    "mtime": 1777300843.7120883,
+    "hash": "3782033ae369838619095ae43ff535a5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260416133000_attendance_break_windows\\migration.sql": {
+    "mtime": 1776326421.4828944,
+    "hash": "f63ec24d63c1c876cc3c8d142a8b9911"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260420102246_add_work_schedule_notes\\migration.sql": {
+    "mtime": 1776680566.3189406,
+    "hash": "ba2fed8fc0dfd1a0cc477a2203dd3285"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260420173000_add_company_hr_employee_type_settings\\migration.sql": {
+    "mtime": 1776689699.486233,
+    "hash": "3926fdd27ac7fa1e54bced869a3385da"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260422063823_add_geofence_attendance\\migration.sql": {
+    "mtime": 1776839903.3053708,
+    "hash": "ed8488f0cb323cb29a39a1e214857a59"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260422065004_add_employee_mobile_access_tokens\\migration.sql": {
+    "mtime": 1776840604.2732525,
+    "hash": "f97c89261fee94be1c59f2923ae593c5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260423120000_add_material_negative_consumption\\migration.sql": {
+    "mtime": 1776923971.6414237,
+    "hash": "5ec2d0aaa870b24078068b428b144da9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260423190000_add_job_costing_engine\\migration.sql": {
+    "mtime": 1776950307.668165,
+    "hash": "757958341b052d9d524b00cd260dc0cd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426123000_job_money_decimal_phase1\\migration.sql": {
+    "mtime": 1777215584.1340702,
+    "hash": "166690838ae67503e822de573386dea5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426143000_inventory_decimal_phase2\\migration.sql": {
+    "mtime": 1777217329.1200275,
+    "hash": "e0fe8ad4bd4d7a50f4317ff6bc09e65b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426170000_tenant_safe_fk_phase3\\migration.sql": {
+    "mtime": 1777221131.4368818,
+    "hash": "a379f59da167ab2611667fd4d6fa7143"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426190000_tenant_safe_fk_phase3b\\migration.sql": {
+    "mtime": 1777222275.5673847,
+    "hash": "a1fad511a05728ec4a4e4c4b9210d439"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426203000_tenant_safe_fk_phase3c\\migration.sql": {
+    "mtime": 1777223924.8638363,
+    "hash": "deb94ecdcdaa77598bf2ef4ba13bfba5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426220000_phase4_job_item_assignments\\migration.sql": {
+    "mtime": 1777225964.7742422,
+    "hash": "e87e9a06d4dcf139ba1b6eba51b6093f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260426233000_phase4_job_required_expertises\\migration.sql": {
+    "mtime": 1777226147.6128287,
+    "hash": "a9c05f37d4b255cafb3403d3a778075d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260427003000_phase4_party_contacts\\migration.sql": {
+    "mtime": 1777226788.7512844,
+    "hash": "125e95371809696e63d1f2fffaaf1a36"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260427013000_phase4_job_contacts\\migration.sql": {
+    "mtime": 1777227166.410218,
+    "hash": "098fb16fa47d08d9a5a8f3557357b4bf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260427023000_material_master_refs\\migration.sql": {
+    "mtime": 1777268208.8162339,
+    "hash": "5a86e9279944e8c7903f33c2f6af920f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260427030000_schedule_qty_decimal\\migration.sql": {
+    "mtime": 1777269861.39454,
+    "hash": "af209657ab5ad63d572042728863710d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260427043000_transaction_actor_audit_pilot\\migration.sql": {
+    "mtime": 1777270574.3049634,
+    "hash": "6d430bc364452ecb3af6cdf9b5cd6b43"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260428120000_user_table_preferences\\migration.sql": {
+    "mtime": 1777386282.7910173,
+    "hash": "4dd161028e8c2814b6d6a9d255567659"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations\\20260504140000_drop_attendance_expected_shift\\migration.sql": {
+    "mtime": 1777960263.9986255,
+    "hash": "049cbe5d572e011aa2f883b0168f636f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260427000000_init_postgres\\migration.sql": {
+    "mtime": 1777279885.1520324,
+    "hash": "67fd051dd3080b6926e45c7952824ecb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260427120000_company_warehouse_mode_foundation\\migration.sql": {
+    "mtime": 1777291081.2916956,
+    "hash": "257f30c2fb414a83d124d4227e4ca529"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260428120000_user_table_preferences\\migration.sql": {
+    "mtime": 1777386269.5118737,
+    "hash": "a683082062a4053fc371599b811e78ac"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260429170000_live_update_events\\migration.sql": {
+    "mtime": 1777462448.0939841,
+    "hash": "a7d45c7e5976e40f3ec1b49dcb309fb4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260429210000_stock_exception_approvals\\migration.sql": {
+    "mtime": 1777483406.5162387,
+    "hash": "f9fa970dbd3f7be8fdb10f028fd563e8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260429223000_manual_stock_adjustments\\migration.sql": {
+    "mtime": 1777484139.98333,
+    "hash": "fb0da8527d58345d552d4f79f5571751"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260430093000_stock_count_sessions\\migration.sql": {
+    "mtime": 1777527558.2877564,
+    "hash": "c3f217edd2bb61da8a31190a14d2d87e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260501111500_formula_library_versions\\migration.sql": {
+    "mtime": 1777643744.9149842,
+    "hash": "0e1ed34387a10e31d422240e8fe8642f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260503120000_job_costing_snapshots\\migration.sql": {
+    "mtime": 1777821294.1263192,
+    "hash": "3c0c01ce4f570c21509be87e8c918cda"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260503133000_job_item_progress_tracking\\migration.sql": {
+    "mtime": 1777821830.09725,
+    "hash": "97e0af0ec62ca5a82e87b467d4e91ce6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260503153000_job_item_tracked_progress_entries\\migration.sql": {
+    "mtime": 1777828995.1374745,
+    "hash": "a8a0455604cb72db23a2ebf6037394cc"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260503170000_job_item_multiple_trackers\\migration.sql": {
+    "mtime": 1777829614.0628824,
+    "hash": "3bc35f56ab5410154216e1846dc12f66"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260503183000_fix_job_costing_snapshot_status_columns\\migration.sql": {
+    "mtime": 1777835045.7109537,
+    "hash": "ec306c2365f007c2090947880e586f1d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260504183000_job_execution_progress\\migration.sql": {
+    "mtime": 1777960263.8961678,
+    "hash": "d59eb8a449cdd0fd148a509384a63ecd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505124500_material_stock_assembly\\migration.sql": {
+    "mtime": 1777970276.0983891,
+    "hash": "1dc1baf621b5713287fc46a91794abc4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505131000_material_stock_assembly_overhead\\migration.sql": {
+    "mtime": 1777971913.7996745,
+    "hash": "2ce6dcfff295d5155b6aad90b3c91f01"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505170000_company_foundation_settings\\migration.sql": {
+    "mtime": 1778505162.8073258,
+    "hash": "84d3e3444b1ae37fda2c5fbaa1714ab2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505170500_transaction_extensibility_columns\\migration.sql": {
+    "mtime": 1778505162.8081868,
+    "hash": "cca79842e84a79dfd5e5dc0436581bd3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505170600_transaction_idempotency_partial_unique\\migration.sql": {
+    "mtime": 1778505163.0808473,
+    "hash": "084f019dcc26c96b2200ad955ac68d2a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505173000_domain_event_table\\migration.sql": {
+    "mtime": 1778505163.0286052,
+    "hash": "edd341fa5e7cc023b676748add684a6f"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505173500_business_document_table\\migration.sql": {
+    "mtime": 1778505163.0286052,
+    "hash": "08066e45ccf831e9be648e05dda7dc3a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505174000_workflow_approval_table\\migration.sql": {
+    "mtime": 1778505163.021919,
+    "hash": "44e63f43c311df1a5a45a479b2e52130"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505174500_material_onboarding_guard\\migration.sql": {
+    "mtime": 1778505162.818688,
+    "hash": "452a8981494e6894b52c98eda1fb506e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505175500_company_onboarding_warehouse_sync\\migration.sql": {
+    "mtime": 1778505163.0848827,
+    "hash": "c34063ef4e20560b402f9e6b82cbfb71"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505180000_company_fallback_warehouse_company_scope_fk\\migration.sql": {
+    "mtime": 1778505163.0808473,
+    "hash": "4a538f5faccb350f06c97617871772c8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505182000_business_document_company_scope_fk\\migration.sql": {
+    "mtime": 1778505162.7891798,
+    "hash": "a24a510eec303484855fbd3c2935b4f1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505183000_domain_event_entity_scope_guard\\migration.sql": {
+    "mtime": 1778505163.0286052,
+    "hash": "ba4617fb162e7ecca317b880e28dbdb7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505184000_domain_event_entity_type_enum\\migration.sql": {
+    "mtime": 1778505162.7891798,
+    "hash": "e0b2371d01e744b90ed0478040c6ab72"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505185000_domain_event_module_enum\\migration.sql": {
+    "mtime": 1778505163.0286052,
+    "hash": "3176f4a43580f863cf83c5ab7fabc3f5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505190000_domain_event_type_registry_and_format_guard\\migration.sql": {
+    "mtime": 1778505162.7933254,
+    "hash": "809074efd0ab679575db541718b3d207"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505191000_domain_event_type_registry_seed\\migration.sql": {
+    "mtime": 1778505163.1531532,
+    "hash": "46cb7032f32df0940932743b65ba763a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505192000_company_foundation_readiness_view\\migration.sql": {
+    "mtime": 1778505162.7869165,
+    "hash": "7bb45618ebd700b48d86ee4a513fc982"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505193000_company_foundation_readiness_ops_indexes\\migration.sql": {
+    "mtime": 1778505163.1335545,
+    "hash": "7ac2ebbe23334374e869a2024a2a2f5e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505194000_company_onboarding_status_backfill\\migration.sql": {
+    "mtime": 1778505163.1592016,
+    "hash": "b90844b824604f6557ee02451449cba6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260505195000_company_operational_settings_default_backfill\\migration.sql": {
+    "mtime": 1778505162.8073258,
+    "hash": "b0aaa6c7d82efb53a65cee3fe01c88ed"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260506172000_company_operational_settings_remove_google_drive_folder_id\\migration.sql": {
+    "mtime": 1778505162.8285027,
+    "hash": "9061acdfc3219400273e04b834251c56"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260506174500_global_drive_config\\migration.sql": {
+    "mtime": 1778505162.7775836,
+    "hash": "4f6f689d34e805cfe7ba07b5c97edfe0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260507120000_material_media_fields\\migration.sql": {
+    "mtime": 1778505162.8285027,
+    "hash": "b14a5f8c92da1904199ce0c725d341fb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260507123000_material_gallery_documents\\migration.sql": {
+    "mtime": 1778505162.818688,
+    "hash": "767d1e9c3d47b9459caeb4c64618b2a8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260511140000_company_party_master_source_modes\\migration.sql": {
+    "mtime": 1778505163.1326146,
+    "hash": "b1b2a2173d8d169d7f1d44a681f4db29"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\AppProviders.tsx": {
+    "mtime": 1777461220.6152067,
+    "hash": "b2b8e1600d85ba4e4d7615b64cb6562a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\ContextMenuProvider.tsx": {
+    "mtime": 1777104153.4786286,
+    "hash": "24bc9b5f23087bb0ca9d7852ad5b8c58"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\DoubleClickSelectionGuard.tsx": {
+    "mtime": 1776022526.4506705,
+    "hash": "01b8dd8b92dccdae7a810dd8930bfd1b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\ReduxProvider.tsx": {
+    "mtime": 1775465013.31007,
+    "hash": "34ce0bcd528841d3c87f844562e9e4c8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\SessionProvider.tsx": {
+    "mtime": 1775465014.3221686,
+    "hash": "47efdcf270d537668a6caf862215fe3b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\StockLiveUpdates.tsx": {
+    "mtime": 1777468245.0244265,
+    "hash": "9dae3cda1ee681f06bf7fc72744bf3b7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\providers\\ThemeProvider.tsx": {
+    "mtime": 1777300843.657112,
+    "hash": "4ecc02de49683821c54bed3fa72f3254"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\scripts\\relabel_graphify_communities.py": {
+    "mtime": 1777300296.3474658,
+    "hash": "94126f4dfd7c767dc2ece108aeeabf4e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\scripts\\seed-print-templates.ts": {
+    "mtime": 1778505162.818688,
+    "hash": "b63cc114570b9fe089a9df7c24114f26"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\scripts\\seed-production.ts": {
+    "mtime": 1778505162.857586,
+    "hash": "543542e0e5ef608501899d55cc99641d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\scripts\\seed.ts": {
+    "mtime": 1778505162.9682407,
+    "hash": "28fa03189f9f14cc2b4be31d40f64482"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\hooks.ts": {
+    "mtime": 1778505163.021919,
+    "hash": "6cee4401d8c9816aba3961e711f8b1c3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\store.ts": {
+    "mtime": 1777465612.2723062,
+    "hash": "4af170793ec2e82837c8475ef7ebbde8"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\adminApi.ts": {
+    "mtime": 1777465607.679085,
+    "hash": "8fd9c63012555f54b57014848187aec9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\appApi.ts": {
+    "mtime": 1778505162.8369524,
+    "hash": "02b428504c28d4ffaf6cc7694ee476c7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\adminEndpoints\\companies.ts": {
+    "mtime": 1777540043.8044214,
+    "hash": "21651f99d31f9381698b159276c3ca97"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\adminEndpoints\\profiles.ts": {
+    "mtime": 1775652805.6778135,
+    "hash": "1e1d22391b92c0495e0287093fdbab8d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\adminEndpoints\\roles.ts": {
+    "mtime": 1777540043.817424,
+    "hash": "c7adfbc07a90c184d7a857465518cdd2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\adminEndpoints\\users.ts": {
+    "mtime": 1777540043.8279963,
+    "hash": "3adb1ddbbe523f2b63bf1e0693237bba"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\categories.ts": {
+    "mtime": 1775669870.741632,
+    "hash": "b69aa94c3e14b079ad100c4cf104a27a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\customers.ts": {
+    "mtime": 1776022526.4206958,
+    "hash": "74a896fa4a98130714ff2984145702b0"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\dispatch.ts": {
+    "mtime": 1777452026.50608,
+    "hash": "03d453af12d23ca30ba4324bc68343c4"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\hr.ts": {
+    "mtime": 1777468234.6560073,
+    "hash": "cb97b7cfe83650910b5e70b562a92dce"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\jobs.ts": {
+    "mtime": 1778505162.8073258,
+    "hash": "44470bc5ee1cd4a22bbaee5f6aa148b9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\materialLogs.ts": {
+    "mtime": 1775652968.7187462,
+    "hash": "4c643e32b268adbd70c58d47cef3e837"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\materials.ts": {
+    "mtime": 1778505162.9389462,
+    "hash": "8dca233ad3cdeb276644c2293de5bb29"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\receipts.ts": {
+    "mtime": 1777540043.717993,
+    "hash": "0db6a52681f40dd47beea31c259fbd99"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\reports.ts": {
+    "mtime": 1778505163.0777912,
+    "hash": "753da29debf9ce14e642e1b19cbb7e5a"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\stockBatches.ts": {
+    "mtime": 1777291755.0782566,
+    "hash": "c71db497c063c5fcc4f13f770afc90bb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\stockCountSessions.ts": {
+    "mtime": 1777527718.292266,
+    "hash": "93fa3cedc3861870c8fb459c761dc729"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\suppliers.ts": {
+    "mtime": 1777106150.0273244,
+    "hash": "39823801af163f6a70cf7ab77c6b2f04"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\transactions.ts": {
+    "mtime": 1778505163.021919,
+    "hash": "d169d527da17512b297801020c56c532"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\units.ts": {
+    "mtime": 1775669856.306487,
+    "hash": "964e70febf1a2159a781780bca9a8948"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\api\\endpoints\\warehouses.ts": {
+    "mtime": 1777291751.7875247,
+    "hash": "333aa01bcaa3090da8d021caeb4b88bf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\slices\\companySlice.ts": {
+    "mtime": 1775652643.0208938,
+    "hash": "06391bb996f291bdd6459c01902f68dd"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\store\\slices\\uiSlice.ts": {
+    "mtime": 1775652643.4673426,
+    "hash": "4798316e92f74faf65a9efb14471e382"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\dispatch-budget-warning.test.ts": {
+    "mtime": 1777960263.9132175,
+    "hash": "fa938bb02d624300cdccac0e25bf3fd2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\dispatch-override-reason.test.ts": {
+    "mtime": 1777479470.9109206,
+    "hash": "735f682f8bf22336c46af1d9d90d08af"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\fifo-batch.test.ts": {
+    "mtime": 1777234413.9287913,
+    "hash": "d04df94060a2d8219173fe6befd528da"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\job-profitability-report.test.ts": {
+    "mtime": 1777960263.9943755,
+    "hash": "e616596c0f88d042e88a5ae4944c77f7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\manual-stock-adjustment-approval.test.ts": {
+    "mtime": 1777485762.9235914,
+    "hash": "6cd8f54dd0e3373d49a25cd27c1bb126"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\manual-stock-adjustment-import.test.ts": {
+    "mtime": 1777486892.8573308,
+    "hash": "7e37e3f1fa1fd0eb1799e0c0bb2e3e9b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\manual-stock-adjustment-policy.test.ts": {
+    "mtime": 1777532018.007633,
+    "hash": "cd6e21e32535864772aca2db6f8e126b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\materials-crud.test.ts": {
+    "mtime": 1777234414.013427,
+    "hash": "e7a8b655d0d0c98d68f2a8658a7cb41e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\multi-tenancy.test.ts": {
+    "mtime": 1777234414.0899315,
+    "hash": "b46a084ab322f21cfdaad12a15681ecf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\non-stock-reconcile-allocation.test.ts": {
+    "mtime": 1777477336.5766492,
+    "hash": "6e11b66123e2756500b2f2881861299c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\receipt-adjustment-executor.test.ts": {
+    "mtime": 1777483731.6388724,
+    "hash": "7075f9fb26027bc1d1e00ad97c7b60a7"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\receipt-adjustment-impact.test.ts": {
+    "mtime": 1777482361.5325882,
+    "hash": "d24150337c24f071f6fa922590cd021c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\receipt-cancel-workflow.test.ts": {
+    "mtime": 1777481864.1029694,
+    "hash": "2919a7490c159bafffe98f28876292a2"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\receipt-delete-guard.test.ts": {
+    "mtime": 1777481497.0717773,
+    "hash": "4d9a4f1142b4edcbffae336d490b12fa"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\returns-batch-integrity.test.ts": {
+    "mtime": 1777471902.9810624,
+    "hash": "89046b70cc7fec01c5b01e9383e44ac9"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\setup.ts": {
+    "mtime": 1777527861.0942175,
+    "hash": "64bd7e109870c7ffc6872f9d94350de5"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-adjustments-report.test.ts": {
+    "mtime": 1777486339.5556235,
+    "hash": "650bcac6c97c34cdad8fa3a635e5a5ed"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-count-session-ledger.test.ts": {
+    "mtime": 1777529782.885559,
+    "hash": "ea34d440c317a18adf43762452c94067"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-count-session.test.ts": {
+    "mtime": 1777526801.2552922,
+    "hash": "d9ac0167a3711d7ab353b70ddf7f6c3b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-count-sessions-report.test.ts": {
+    "mtime": 1777531719.6322024,
+    "hash": "bbab03c59694e303bb201f59d82bbc58"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-exception-approval-queue.test.ts": {
+    "mtime": 1777531069.108032,
+    "hash": "ccd8f1006b00693e87535373cf4b8f6d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-exceptions-report.test.ts": {
+    "mtime": 1777482876.1053565,
+    "hash": "ecdd4ae0835afa9c844e70e531ce3efb"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\stock-integrity-report.test.ts": {
+    "mtime": 1777472412.4034877,
+    "hash": "63087067dc38c4fe7229e86a1e087c2c"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\supplier-traceability-report.test.ts": {
+    "mtime": 1777476840.7304862,
+    "hash": "c865f92296bd69a0733b47b25eceafaf"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\transfer-concurrency.test.ts": {
+    "mtime": 1777540043.829436,
+    "hash": "7ed497c2325388ffa8bd2780e41615e6"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\integration\\transfers.test.ts": {
+    "mtime": 1777234414.2325034,
+    "hash": "904c5a8196cf18d4f9bbef3fc800a24b"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\API-job-sync.md": {
+    "mtime": 1778505162.7869165,
+    "hash": "f22ed4c0f62ea9f39cef3e266a07aef3"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\API-party-lists.md": {
+    "mtime": 1776022526.4362907,
+    "hash": "20e429701d3a0714c53313c7f64bcd13"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\DEVELOPER_GUIDE.md": {
+    "mtime": 1775647675.7521274,
+    "hash": "d7a6dfcd1ed4e95e9445bbed62d62770"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\README.md": {
+    "mtime": 1775651558.486874,
+    "hash": "f9f4e32ad2c0c0f3efcd01ce8a83b164"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\docs\\architecture\\database-scalability-blueprint.md": {
+    "mtime": 1778505162.7869165,
+    "hash": "9d3af8631b6b2749bbefa9cba5b43d3d"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\__tests__\\README.md": {
+    "mtime": 1775650733.2469275,
+    "hash": "82dd2bc9f5261b7edb883125f75821e1"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\public\\file.svg": {
+    "mtime": 1775464833.1170905,
+    "hash": "d09f95206c3fa0bb9bd9fefabfd0ea71"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\public\\globe.svg": {
+    "mtime": 1775464833.1108687,
+    "hash": "2aaafa6a49b6563925fe440891e32717"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\public\\next.svg": {
+    "mtime": 1775464833.1143138,
+    "hash": "8e061864f388b47f33a1c3780831193e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\public\\vercel.svg": {
+    "mtime": 1775464833.1170905,
+    "hash": "c0af2f507b369b085b35ef4bbe3bcf1e"
+  },
+  "C:\\almuraqib-custom-application\\AMFGI\\public\\window.svg": {
+    "mtime": 1775464833.1098468,
+    "hash": "a2760511c65806022ad20adf74370ff3"
+  }
 }

@@ -31,7 +31,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   }
 
   try {
-    const driveId = extractGoogleDriveFileId(asset.fileUrl);
+    const driveId = extractGoogleDriveFileId(asset.driveId);
     if (driveId) {
       await deleteFromDrive(driveId, companyId);
     }

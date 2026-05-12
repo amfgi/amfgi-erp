@@ -60,6 +60,14 @@ const STORE_KEEPER_PERMISSIONS = [
 ];
 
 const systemActorFields = buildTransactionActorFields(null, 'System Seed');
+const DEFAULT_OPERATIONAL_SETTINGS: Prisma.InputJsonValue = {
+  inventoryValuationMethod: 'FIFO',
+  currencyCode: 'AED',
+  allowNegativeStock: false,
+  stockDispatchPolicy: 'BLOCK_IF_INSUFFICIENT',
+  stockReservationMode: 'SOFT',
+  autoCreateStockBatches: true,
+};
 
 async function setMaterialWarehouseStock(args: {
   companyId: string;
@@ -1766,6 +1774,12 @@ async function seed() {
   // ── Delete old data (clean slate) ────────────────────────────────────────────
   console.log('Clearing old data…');
   await prisma.user.updateMany({ data: { linkedEmployeeId: null } });
+  await prisma.domainEvent.deleteMany({});
+  await prisma.workflowApproval.deleteMany({});
+  await prisma.stockBatch.updateMany({ data: { businessDocumentId: null } });
+  await prisma.transaction.updateMany({ data: { businessDocumentId: null } });
+  await prisma.businessDocument.deleteMany({});
+  await prisma.materialAssemblyComponent.deleteMany({});
   await prisma.attendanceEntry.deleteMany({});
   await prisma.workAssignmentMember.deleteMany({});
   await prisma.driverRunLog.deleteMany({});
@@ -1800,6 +1814,7 @@ async function seed() {
   await prisma.customer.deleteMany({});
   await prisma.material.deleteMany({});
   await prisma.workforceExpertise.deleteMany({});
+  await prisma.company.updateMany({ data: { stockFallbackWarehouseId: null } });
   await prisma.warehouse.deleteMany({});
   await prisma.category.deleteMany({});
   await prisma.unit.deleteMany({});
@@ -1813,31 +1828,22 @@ async function seed() {
   // ── Companies ───────────────────────────────────────────────────────────────
   console.log('\nCreating companies…');
 
-  const amfgi = await prisma.company.upsert({
-    where: { slug: 'amfgi' },
-    update: {
-      name: 'Almuraqib Fiber Glass Industry LLC',
-      externalCompanyId: 'SEED-AMFGI',
-      jobSourceMode: 'HYBRID',
-      warehouseMode: 'REQUIRED',
-      description: 'Fiberglass fabrication and moulding',
-      address: 'P.O. Box 123456, Dubai, UAE\nJebel Ali Industrial Area 1\nDubai, United Arab Emirates',
-      phone: '+971 4 885 1234',
-      email: 'info@almuraqib.ae',
-      isActive: true,
-      jobCostingSettings: mergeStockControlSettingsIntoCompanySettings(
-        { nonWorkingWeekdays: [0] },
-        { negativeEvidenceQtyThreshold: 10, negativeDecisionNoteQtyThreshold: 25 }
-      ) as Prisma.InputJsonValue,
-      hrEmployeeTypeSettings: DEFAULT_EMPLOYEE_TYPE_SETTINGS as unknown as Prisma.InputJsonValue,
-      printTemplates: companySeedPrintTemplates as unknown as Prisma.InputJsonValue,
-    },
-    create: {
+  const amfgi = await prisma.company.create({
+    data: {
+      id: randomUUID(),
       name: 'Almuraqib Fiber Glass Industry LLC',
       slug: 'amfgi',
       externalCompanyId: 'SEED-AMFGI',
       jobSourceMode: 'HYBRID',
       warehouseMode: 'REQUIRED',
+      onboardingStatus: 'OPERATIONAL',
+      foundationChecklist: {
+        profileReady: true,
+        warehouseReady: true,
+        operationalReady: true,
+      } as Prisma.InputJsonValue,
+      operationalSettings: DEFAULT_OPERATIONAL_SETTINGS,
+      settingsVersion: 1,
       description: 'Fiberglass fabrication and moulding',
       address: 'P.O. Box 123456, Dubai, UAE\nJebel Ali Industrial Area 1\nDubai, United Arab Emirates',
       phone: '+971 4 885 1234',
@@ -1849,34 +1855,25 @@ async function seed() {
       ) as Prisma.InputJsonValue,
       hrEmployeeTypeSettings: DEFAULT_EMPLOYEE_TYPE_SETTINGS as unknown as Prisma.InputJsonValue,
       printTemplates: companySeedPrintTemplates as unknown as Prisma.InputJsonValue,
-    },
+    }
   });
 
-  const km = await prisma.company.upsert({
-    where: { slug: 'km' },
-    update: {
-      name: 'K&M Industries',
-      externalCompanyId: 'SEED-KM',
-      jobSourceMode: 'HYBRID',
-      warehouseMode: 'REQUIRED',
-      description: 'Steel fabrication and structural work',
-      address: 'P.O. Box 654321, Abu Dhabi, UAE\nIndustrial Zone 3\nAbu Dhabi, United Arab Emirates',
-      phone: '+971 2 555 8888',
-      email: 'info@kandm.ae',
-      isActive: true,
-      jobCostingSettings: mergeStockControlSettingsIntoCompanySettings(
-        { nonWorkingWeekdays: [0] },
-        { negativeEvidenceQtyThreshold: 10, negativeDecisionNoteQtyThreshold: 25 }
-      ) as Prisma.InputJsonValue,
-      hrEmployeeTypeSettings: DEFAULT_EMPLOYEE_TYPE_SETTINGS as unknown as Prisma.InputJsonValue,
-      printTemplates: companySeedPrintTemplates as unknown as Prisma.InputJsonValue,
-    },
-    create: {
+  const km = await prisma.company.create({
+    data: {
+      id: randomUUID(),
       name: 'K&M Industries',
       slug: 'km',
       externalCompanyId: 'SEED-KM',
       jobSourceMode: 'HYBRID',
       warehouseMode: 'REQUIRED',
+      onboardingStatus: 'OPERATIONAL',
+      foundationChecklist: {
+        profileReady: true,
+        warehouseReady: true,
+        operationalReady: true,
+      } as Prisma.InputJsonValue,
+      operationalSettings: DEFAULT_OPERATIONAL_SETTINGS,
+      settingsVersion: 1,
       description: 'Steel fabrication and structural work',
       address: 'P.O. Box 654321, Abu Dhabi, UAE\nIndustrial Zone 3\nAbu Dhabi, United Arab Emirates',
       phone: '+971 2 555 8888',
@@ -1888,7 +1885,7 @@ async function seed() {
       ) as Prisma.InputJsonValue,
       hrEmployeeTypeSettings: DEFAULT_EMPLOYEE_TYPE_SETTINGS as unknown as Prisma.InputJsonValue,
       printTemplates: companySeedPrintTemplates as unknown as Prisma.InputJsonValue,
-    },
+    }
   });
 
   console.log(`  ✓ ${amfgi.name}`);

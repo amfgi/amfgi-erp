@@ -111,6 +111,9 @@ export async function calculateJobCostEngine(params: {
         id: true,
         jobNumber: true,
         parentJobId: true,
+        status: true,
+        startDate: true,
+        endDate: true,
         executionProgressStatus: true,
         executionProgressPercent: true,
         executionPlannedStartDate: true,
@@ -397,10 +400,17 @@ export async function calculateJobCostEngine(params: {
   const allJobAttendanceFlat = Array.from(mergedAttendanceByDay.values());
 
   const settings = normalizeJobCostingSettings(company?.jobCostingSettings);
-  const execStatus = executionJob.executionProgressStatus;
+  // Status, planned start/end now live on the Job profile fields. Fall back to the legacy
+  // execution-* fields for older data that wasn't synced yet.
+  const execStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD' = (() => {
+    if (executionJob.status === 'COMPLETED') return 'COMPLETED';
+    if (executionJob.status === 'ON_HOLD' || executionJob.status === 'CANCELLED') return 'ON_HOLD';
+    if (executionJob.executionActualStartDate) return 'IN_PROGRESS';
+    return executionJob.executionProgressStatus ?? 'NOT_STARTED';
+  })();
   const execPercent = decimalToNumberOrZero(executionJob.executionProgressPercent);
-  const execPlannedStart = executionJob.executionPlannedStartDate;
-  const execPlannedEnd = executionJob.executionPlannedEndDate;
+  const execPlannedStart = executionJob.startDate ?? executionJob.executionPlannedStartDate;
+  const execPlannedEnd = executionJob.endDate ?? executionJob.executionPlannedEndDate;
   const execActualStart = executionJob.executionActualStartDate;
   const execActualEnd = executionJob.executionActualEndDate;
   const execNote = executionJob.executionProgressNote;

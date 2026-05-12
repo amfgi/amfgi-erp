@@ -1,11 +1,8 @@
 import { auth } from '@/auth';
-import { prisma } from '@/lib/db/prisma';
-import { Prisma } from '@prisma/client';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
-import {
-  readCompanyGoogleDriveOAuthConfig,
-  writeCompanyGoogleDriveOAuthConfig,
-} from '@/lib/utils/companyPrintTemplates';
+import { z } from 'zod';
+import { getGlobalGoogleDriveConfig, setGlobalGoogleDriveConfig } from '@/lib/utils/globalSettings';
+import { validateDriveFolderAccess } from '@/lib/utils/googleDrive';
 import type { Session } from 'next-auth';
 
 function canManageDrive(session: Session | null) {
@@ -18,27 +15,51 @@ export async function GET() {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!canManageDrive(session)) return errorResponse('Forbidden', 403);
-
-  const companyId = session.user.activeCompanyId;
-  if (!companyId) return errorResponse('No active company selected', 400);
-
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { id: true, name: true, printTemplates: true },
-  });
-  if (!company) return errorResponse('Company not found', 404);
-
-  const config = readCompanyGoogleDriveOAuthConfig(company.printTemplates);
+  const config = await getGlobalGoogleDriveConfig();
+  const hasEnvRootFolder = Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID?.trim());
+  const hasGlobalRootFolder = Boolean(config.rootFolderId?.trim());
 
   return successResponse({
-    connected: Boolean(config?.refreshToken),
-    connectedAt: config?.connectedAt ?? null,
-    connectedEmail: config?.connectedEmail ?? null,
-    rootFolderConfigured: Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()),
+    connected: Boolean(config.refreshToken),
+    connectedAt: config.connectedAt ?? null,
+    connectedEmail: config.connectedEmail ?? null,
+    rootFolderId: config.rootFolderId,
+    rootFolderConfigured: hasGlobalRootFolder || hasEnvRootFolder,
+    rootFolderSource: hasGlobalRootFolder ? 'global' : hasEnvRootFolder ? 'env' : 'none',
     oauthClientConfigured: Boolean(
       process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim(),
     ),
-    companyName: company.name,
+  });
+}
+
+const UpdateSchema = z.object({
+  rootFolderId: z.string().trim().optional().or(z.literal('')),
+});
+
+export async function PUT(req: Request) {
+  const session = await auth();
+  if (!session?.user) return errorResponse('Unauthorized', 401);
+  if (!canManageDrive(session)) return errorResponse('Forbidden', 403);
+
+  const body = await req.json();
+  const parsed = UpdateSchema.safeParse(body);
+  if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const rootFolderIdRaw = parsed.data.rootFolderId;
+  const nextRootFolderId = rootFolderIdRaw && rootFolderIdRaw.trim().length > 0 ? rootFolderIdRaw.trim() : null;
+  if (nextRootFolderId) {
+    try {
+      await validateDriveFolderAccess(nextRootFolderId);
+    } catch (error) {
+      return errorResponse(error instanceof Error ? error.message : 'Drive folder access validation failed', 422);
+    }
+  }
+  const next = await setGlobalGoogleDriveConfig({ rootFolderId: nextRootFolderId });
+
+  return successResponse({
+    rootFolderId: next.rootFolderId,
+    rootFolderConfigured: Boolean(next.rootFolderId) || Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()),
+    rootFolderSource: next.rootFolderId ? 'global' : process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() ? 'env' : 'none',
   });
 }
 
@@ -46,20 +67,10 @@ export async function DELETE() {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!canManageDrive(session)) return errorResponse('Forbidden', 403);
-
-  const companyId = session.user.activeCompanyId;
-  if (!companyId) return errorResponse('No active company selected', 400);
-
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { printTemplates: true },
-  });
-  if (!company) return errorResponse('Company not found', 404);
-
-  const nextPrintTemplates = writeCompanyGoogleDriveOAuthConfig(company.printTemplates, null);
-  await prisma.company.update({
-    where: { id: companyId },
-    data: { printTemplates: nextPrintTemplates as Prisma.InputJsonValue },
+  await setGlobalGoogleDriveConfig({
+    refreshToken: null,
+    connectedAt: null,
+    connectedEmail: null,
   });
 
   return successResponse({ ok: true });

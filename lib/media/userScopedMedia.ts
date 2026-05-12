@@ -48,7 +48,7 @@ export async function finalizeUserMediaUpload(params: {
     await tx.mediaAsset.create({
       data: {
         companyId,
-        fileUrl: newFileUrl,
+        driveId: newFileUrl,
         mimeType,
         fileName,
         category,

@@ -6,10 +6,8 @@ import { useRouter }             from 'next/navigation';
 import { useAppDispatch }        from '@/store/hooks';
 import { switchActiveCompany }   from '@/store/slices/companySlice';
 import toast                     from 'react-hot-toast';
-import { useGetCompaniesQuery } from '@/store/hooks';
+import { useGetCompaniesQuery, type Company } from '@/store/hooks';
 import { appApi } from '@/store/api/appApi';
-
-interface Company { id: string; name: string; slug: string; description?: string }
 
 export default function SelectCompanyPage() {
   const { data: session, update } = useSession();
@@ -19,7 +17,7 @@ export default function SelectCompanyPage() {
   const [loading,   setLoading]   = useState<string | null>(null);
 
   // For type safety, cast companies data
-  const companies: Company[] = companiesData.map((c: any) => ({
+  const companies = companiesData.map((c: Company) => ({
     id: c.id,
     name: c.name,
     slug: c.slug,
@@ -90,7 +88,7 @@ export default function SelectCompanyPage() {
               disabled={!!loading}
               className="w-full flex items-center gap-4 p-5 rounded-xl bg-slate-800 border border-slate-700 hover:border-emerald-500/50 hover:bg-slate-800/80 transition-all text-left group disabled:opacity-50"
             >
-              <div className="h-12 w-12 rounded-xl bg-slate-700 flex items-center justify-center text-xl font-bold text-emerald-400 flex-shrink-0 group-hover:bg-emerald-600/20 transition-colors">
+              <div className="h-12 w-12 rounded-xl bg-slate-700 flex items-center justify-center text-xl font-bold text-emerald-400 shrink-0 group-hover:bg-emerald-600/20 transition-colors">
                 {c.name[0]?.toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">

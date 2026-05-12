@@ -4,11 +4,10 @@ import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import {
   readCompanyGoogleDriveFolderRegistry,
-  readCompanyGoogleDriveOAuthConfig,
-  type GoogleDriveOAuthConfig,
   writeCompanyGoogleDriveFolderRegistry,
 } from '@/lib/utils/companyPrintTemplates';
 import { driveFileIdToDisplayUrl } from '@/lib/utils/googleDriveUrl';
+import { getGlobalGoogleDriveConfig } from '@/lib/utils/globalSettings';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
@@ -16,6 +15,7 @@ const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 export type DriveUploadFolderTarget = {
   companyId: string;
   rootFolderId: string;
+  scope?: 'company' | 'global';
   folderPath?: Array<{
     key: string;
     name: string;
@@ -44,25 +44,21 @@ function createOAuthClient(origin?: string) {
   );
 }
 
-async function loadCompanyDriveOAuthConfig(companyId: string): Promise<GoogleDriveOAuthConfig> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { printTemplates: true },
-  });
-
-  const config = readCompanyGoogleDriveOAuthConfig(company?.printTemplates);
-  if (!config?.refreshToken) {
-    throw new Error('Google Drive is not connected for this company. Connect Google Drive from Settings first.');
+async function loadGlobalDriveOAuthRefreshToken(): Promise<string> {
+  const config = await getGlobalGoogleDriveConfig();
+  const refreshToken = config.refreshToken?.trim();
+  if (!refreshToken) {
+    throw new Error('Google Drive is not connected. Connect Google Drive from Settings > Drive first.');
   }
-
-  return config;
+  return refreshToken;
 }
 
 async function getDriveClientForCompany(companyId: string) {
-  const config = await loadCompanyDriveOAuthConfig(companyId);
+  void companyId;
+  const refreshToken = await loadGlobalDriveOAuthRefreshToken();
   const oauth2Client = createOAuthClient();
   oauth2Client.setCredentials({
-    refresh_token: config.refreshToken,
+    refresh_token: refreshToken,
   });
   return google.drive({ version: 'v3', auth: oauth2Client });
 }
@@ -135,12 +131,38 @@ async function renameFolderIfNeeded(
   }
 }
 
+async function isFolderAccessible(
+  drive: ReturnType<typeof google.drive>,
+  folderId: string,
+): Promise<boolean> {
+  try {
+    const res = await drive.files.get({
+      fileId: folderId,
+      fields: 'id, mimeType',
+      supportsAllDrives: true,
+    });
+    return res.data.mimeType === FOLDER_MIME_TYPE;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureFolderPath(
   drive: ReturnType<typeof google.drive>,
   companyId: string,
   rootFolderId: string,
+  scope: 'company' | 'global',
   folderPath: Array<{ key: string; name: string }>,
 ): Promise<string> {
+  if (scope === 'global') {
+    let currentFolderId = rootFolderId;
+    for (const segment of folderPath) {
+      const desiredName = sanitizeFolderName(segment.name, segment.key);
+      currentFolderId = await ensureChildFolder(drive, currentFolderId, desiredName);
+    }
+    return currentFolderId;
+  }
+
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     select: { name: true, printTemplates: true },
@@ -161,10 +183,18 @@ async function ensureFolderPath(
     const desiredName = sanitizeFolderName(segment.name, segment.key);
     const existing = registry[segment.key];
     if (existing?.folderId) {
-      currentFolderId = existing.folderId;
-      if (existing.folderName !== desiredName) {
-        await renameFolderIfNeeded(drive, existing.folderId, desiredName);
-        registry[segment.key] = { folderId: existing.folderId, folderName: desiredName };
+      const existingAccessible = await isFolderAccessible(drive, existing.folderId);
+      if (existingAccessible) {
+        currentFolderId = existing.folderId;
+        if (existing.folderName !== desiredName) {
+          await renameFolderIfNeeded(drive, existing.folderId, desiredName);
+          registry[segment.key] = { folderId: existing.folderId, folderName: desiredName };
+          registryChanged = true;
+        }
+      } else {
+        // Heal stale registry references (e.g. folder removed/inaccessible after account switch).
+        currentFolderId = await ensureChildFolder(drive, currentFolderId, desiredName);
+        registry[segment.key] = { folderId: currentFolderId, folderName: desiredName };
         registryChanged = true;
       }
       continue;
@@ -291,12 +321,13 @@ export async function uploadToDrive(
   mimeType: string,
   target: DriveUploadFolderTarget,
 ): Promise<{ id: string; webViewLink: string; viewerUrl: string }> {
-  try {
+  const tryUpload = async (rootFolderId: string) => {
     const drive = await getDriveClientForCompany(target.companyId);
     const parentFolderId = await ensureFolderPath(
       drive,
       target.companyId,
-      target.rootFolderId,
+      rootFolderId,
+      target.scope ?? 'company',
       target.folderPath?.filter(Boolean) ?? [],
     );
 
@@ -321,7 +352,24 @@ export async function uploadToDrive(
       webViewLink: res.data.webViewLink!,
       viewerUrl: driveFileIdToDisplayUrl(id) ?? '',
     };
+  };
+
+  try {
+    return await tryUpload(target.rootFolderId);
   } catch (error) {
+    const envFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+    const normalized = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    const permissionLikeError =
+      normalized.includes('insufficient permission') ||
+      normalized.includes('the user does not have sufficient permissions') ||
+      normalized.includes('file not found');
+    if (permissionLikeError && envFolderId && envFolderId !== target.rootFolderId) {
+      try {
+        return await tryUpload(envFolderId);
+      } catch (fallbackError) {
+        throw new Error(explainGoogleDriveError(fallbackError));
+      }
+    }
     throw new Error(explainGoogleDriveError(error));
   }
 }
@@ -346,6 +394,7 @@ export async function moveDriveFile(
       drive,
       target.companyId,
       target.rootFolderId,
+      target.scope ?? 'company',
       target.folderPath?.filter(Boolean) ?? [],
     );
 
@@ -376,6 +425,25 @@ export async function moveDriveFile(
       id: driveId,
       viewerUrl: driveFileIdToDisplayUrl(driveId) ?? '',
     };
+  } catch (error) {
+    throw new Error(explainGoogleDriveError(error));
+  }
+}
+
+export async function validateDriveFolderAccess(rootFolderId: string): Promise<void> {
+  const folderId = rootFolderId.trim();
+  if (!folderId) throw new Error('Drive folder ID is required');
+  try {
+    const drive = await getDriveClientForCompany('global');
+    const res = await drive.files.get({
+      fileId: folderId,
+      fields: 'id, mimeType',
+      supportsAllDrives: true,
+    });
+    const mimeType = res.data.mimeType?.trim();
+    if (mimeType !== FOLDER_MIME_TYPE) {
+      throw new Error('Configured Drive ID is not a folder');
+    }
   } catch (error) {
     throw new Error(explainGoogleDriveError(error));
   }

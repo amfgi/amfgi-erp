@@ -21,7 +21,7 @@ export async function POST() {
 
   const orphans = await prisma.mediaAsset.findMany({
     where: { companyId, links: { none: {} } },
-    select: { id: true, fileUrl: true },
+    select: { id: true, driveId: true },
   });
 
   let deleted = 0;
@@ -29,11 +29,11 @@ export async function POST() {
 
   for (const row of orphans) {
     try {
-      const driveId = extractGoogleDriveFileId(row.fileUrl);
+      const driveId = extractGoogleDriveFileId(row.driveId);
       if (driveId) await deleteFromDrive(driveId, companyId);
     } catch (e) {
       driveErrors.push(
-        row.fileUrl + (e instanceof Error ? `: ${e.message}` : ': unknown error')
+        row.driveId + (e instanceof Error ? `: ${e.message}` : ': unknown error')
       );
     }
     await prisma.mediaAsset.delete({ where: { id: row.id } });

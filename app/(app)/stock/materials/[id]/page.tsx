@@ -21,6 +21,7 @@ import {
   useGetMaterialLogsQuery,
   useGetMaterialsQuery,
   useGetPriceLogsQuery,
+  useGetStockValuationQuery,
   useGetUnitsQuery,
   useGetWarehousesQuery,
   useUpsertMaterialAssemblyMutation,
@@ -61,6 +62,44 @@ interface DraftAssemblyComponent {
   quantity: string;
 }
 
+interface UploadedAsset {
+  url: string;
+  fileName: string;
+  mimeType: string;
+  assetType?: string;
+}
+
+interface MaterialStoredFile {
+  url: string;
+  fileName: string;
+  mimeType: string;
+}
+
+type MaterialEditorTab = 'details' | 'files' | 'uom' | 'history';
+type MaterialUploadType = 'feature-image' | 'photo-gallery' | 'document';
+type MaterialDeleteTarget =
+  | { kind: 'feature-image' }
+  | { kind: 'gallery'; index: number; fileName: string }
+  | { kind: 'document'; index: number; fileName: string }
+  | { kind: 'pending-feature-image'; fileName: string }
+  | { kind: 'pending-gallery'; index: number; fileName: string }
+  | { kind: 'pending-document'; index: number; fileName: string };
+
+function normalizeStoredFiles(value: unknown): MaterialStoredFile[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const row = entry as Record<string, unknown>;
+      const url = typeof row.url === 'string' ? row.url.trim() : '';
+      const fileName = typeof row.fileName === 'string' ? row.fileName.trim() : '';
+      const mimeType = typeof row.mimeType === 'string' ? row.mimeType.trim() : '';
+      if (!url || !fileName || !mimeType) return null;
+      return { url, fileName, mimeType };
+    })
+    .filter(Boolean) as MaterialStoredFile[];
+}
+
 const STOCK_TYPE_OPTIONS = [
   'Raw Material',
   'Work In Progress',
@@ -75,11 +114,6 @@ const STOCK_TYPE_OPTIONS = [
 function formatNumber(value?: number | null) {
   if (value === undefined || value === null) return '-';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
-}
-
-function formatMoney(value?: number | null) {
-  if (value === undefined || value === null) return '-';
-  return `AED ${value.toFixed(2)}`;
 }
 
 function inputClassName() {
@@ -194,6 +228,21 @@ function MaterialEditor({
   const [assemblyOutputQuantity, setAssemblyOutputQuantity] = useState(material?.assemblyOutputQuantity?.toString() ?? '1');
   const [assemblyOverheadPercent, setAssemblyOverheadPercent] = useState(material?.assemblyOverheadPercent?.toString() ?? '0');
   const [assemblyComponents, setAssemblyComponents] = useState<DraftAssemblyComponent[]>([]);
+  const [uploadType, setUploadType] = useState<MaterialUploadType>('feature-image');
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [pendingFeatureImageFile, setPendingFeatureImageFile] = useState<File | null>(null);
+  const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
+  const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
+  const [isUploadingAssets, setIsUploadingAssets] = useState(false);
+  const [activeTab, setActiveTab] = useState<MaterialEditorTab>('details');
+  const [deleteTarget, setDeleteTarget] = useState<MaterialDeleteTarget | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState(material?.imageUrl ?? '');
+  const [existingGalleryFiles, setExistingGalleryFiles] = useState<MaterialStoredFile[]>(
+    normalizeStoredFiles(material?.photoGallery)
+  );
+  const [existingDocumentFiles, setExistingDocumentFiles] = useState<MaterialStoredFile[]>(
+    normalizeStoredFiles(material?.documentFiles)
+  );
 
   useEffect(() => {
     if (!material) return;
@@ -210,6 +259,13 @@ function MaterialEditor({
     setUnitCost(material.unitCost?.toString() ?? '');
     setAssemblyOutputQuantity(material.assemblyOutputQuantity?.toString() ?? '1');
     setAssemblyOverheadPercent(material.assemblyOverheadPercent?.toString() ?? '0');
+    setExistingImageUrl(material.imageUrl ?? '');
+    setExistingGalleryFiles(normalizeStoredFiles(material.photoGallery));
+    setExistingDocumentFiles(normalizeStoredFiles(material.documentFiles));
+    setPendingFeatureImageFile(null);
+    setPendingGalleryFiles([]);
+    setPendingDocumentFiles([]);
+    setSelectedUploadFile(null);
   }, [material, material?.id, material?.updatedAt, material?.unitCost, material?.currentStock]);
 
   const materialUoms = material?.materialUoms ?? [];
@@ -218,6 +274,9 @@ function MaterialEditor({
   const isStockAssembly = stockType === 'Stock Assembly';
 
   const { data: allMaterials = [] } = useGetMaterialsQuery(undefined, {
+    refetchOnMountOrArgChange: 30,
+  });
+  const { data: stockValuation } = useGetStockValuationQuery(undefined, {
     refetchOnMountOrArgChange: 30,
   });
   const { data: materialAssembly } = useGetMaterialAssemblyQuery(material?.id ?? '', {
@@ -250,6 +309,7 @@ function MaterialEditor({
   );
   const assemblyOutputQuantityValue = Math.max(parseFloat(assemblyOutputQuantity) || 1, 0.0001);
   const assemblyOverheadPercentValue = Math.max(parseFloat(assemblyOverheadPercent) || 0, 0);
+  const currencyCode = stockValuation?.summary.currencyCode ?? 'AED';
   const assemblyTotalCost = useMemo(
     () =>
       assemblyComponents.reduce((sum, row) => {
@@ -270,6 +330,76 @@ function MaterialEditor({
     : 'Update stock settings, packaging conversions, and change history.';
   const submitButtonText = isCreateMode ? 'Create Material' : 'Save Changes';
   const isLoading = isCreateMode ? isCreating : isUpdating;
+  const tabOptions: Array<{ id: MaterialEditorTab; label: string; hidden?: boolean }> = [
+    { id: 'details', label: 'Details' },
+    { id: 'files', label: 'Files' },
+    { id: 'uom', label: 'UOM', hidden: isCreateMode },
+    { id: 'history', label: 'History', hidden: isCreateMode },
+  ];
+
+  const uploadMaterialAsset = async (
+    file: File,
+    assetType: MaterialUploadType
+  ): Promise<UploadedAsset> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('materialName', name.trim());
+    formData.append('assetType', assetType);
+    if (material?.id) {
+      formData.append('materialId', material.id);
+    }
+
+    const res = await fetch('/api/upload/material-asset', {
+      method: 'POST',
+      body: formData,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json?.error || `Failed to upload material ${assetType}`);
+    }
+    return json.data as UploadedAsset;
+  };
+
+  const handleAddPendingUpload = () => {
+    if (!selectedUploadFile) {
+      toast.error('Choose a file first');
+      return;
+    }
+    if (uploadType !== 'document' && !selectedUploadFile.type.startsWith('image/')) {
+      toast.error('Feature image and gallery require image files');
+      return;
+    }
+
+    if (uploadType === 'feature-image') {
+      setPendingFeatureImageFile(selectedUploadFile);
+    } else if (uploadType === 'photo-gallery') {
+      setPendingGalleryFiles((prev) => [...prev, selectedUploadFile]);
+    } else {
+      setPendingDocumentFiles((prev) => [...prev, selectedUploadFile]);
+    }
+    setSelectedUploadFile(null);
+    toast.success('Added to upload list');
+  };
+
+  const confirmDeleteFile = () => {
+    if (!deleteTarget) return;
+
+    if (deleteTarget.kind === 'feature-image') {
+      setExistingImageUrl('');
+    } else if (deleteTarget.kind === 'gallery') {
+      setExistingGalleryFiles((prev) => prev.filter((_, idx) => idx !== deleteTarget.index));
+    } else if (deleteTarget.kind === 'document') {
+      setExistingDocumentFiles((prev) => prev.filter((_, idx) => idx !== deleteTarget.index));
+    } else if (deleteTarget.kind === 'pending-feature-image') {
+      setPendingFeatureImageFile(null);
+    } else if (deleteTarget.kind === 'pending-gallery') {
+      setPendingGalleryFiles((prev) => prev.filter((_, idx) => idx !== deleteTarget.index));
+    } else if (deleteTarget.kind === 'pending-document') {
+      setPendingDocumentFiles((prev) => prev.filter((_, idx) => idx !== deleteTarget.index));
+    }
+
+    setDeleteTarget(null);
+  };
 
   const stockStatus = useMemo(() => {
     if (isCreateMode) {
@@ -313,23 +443,54 @@ function MaterialEditor({
       return;
     }
 
-    const payload = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      unit: unit.trim(),
-      category: category.trim() || undefined,
-      warehouse: warehouse.trim() || undefined,
-      stockType: stockType.trim(),
-      allowNegativeConsumption,
-      externalItemName: externalItemName.trim() || undefined,
-      ...(isCreateMode && { currentStock: parseFloat(currentStock) || 0 }),
-      reorderLevel: reorderLevel ? parseFloat(reorderLevel) : undefined,
-      unitCost: isStockAssembly ? calculatedAssemblyUnitCost : unitCost ? parseFloat(unitCost) : undefined,
-      assemblyOutputQuantity: parseFloat(assemblyOutputQuantity) || 1,
-      assemblyOverheadPercent: parseFloat(assemblyOverheadPercent) || 0,
-    };
-
     try {
+      setIsUploadingAssets(true);
+      let imageUrl = existingImageUrl || undefined;
+      let galleryFiles = [...existingGalleryFiles];
+      let documentFiles = [...existingDocumentFiles];
+
+      if (pendingFeatureImageFile) {
+        const uploaded = await uploadMaterialAsset(pendingFeatureImageFile, 'feature-image');
+        imageUrl = uploaded.url;
+      }
+
+      for (const galleryFile of pendingGalleryFiles) {
+        const uploaded = await uploadMaterialAsset(galleryFile, 'photo-gallery');
+        galleryFiles.push({
+          url: uploaded.url,
+          fileName: uploaded.fileName,
+          mimeType: uploaded.mimeType,
+        });
+      }
+
+      for (const documentFile of pendingDocumentFiles) {
+        const uploaded = await uploadMaterialAsset(documentFile, 'document');
+        documentFiles.push({
+          url: uploaded.url,
+          fileName: uploaded.fileName,
+          mimeType: uploaded.mimeType,
+        });
+      }
+
+      const payload = {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        unit: unit.trim(),
+        category: category.trim() || undefined,
+        warehouse: warehouse.trim() || undefined,
+        stockType: stockType.trim(),
+        allowNegativeConsumption,
+        externalItemName: externalItemName.trim() || undefined,
+        imageUrl,
+        photoGallery: galleryFiles,
+        documentFiles,
+        ...(isCreateMode && { currentStock: parseFloat(currentStock) || 0 }),
+        reorderLevel: reorderLevel ? parseFloat(reorderLevel) : undefined,
+        unitCost: isStockAssembly ? calculatedAssemblyUnitCost : unitCost ? parseFloat(unitCost) : undefined,
+        assemblyOutputQuantity: parseFloat(assemblyOutputQuantity) || 1,
+        assemblyOverheadPercent: parseFloat(assemblyOverheadPercent) || 0,
+      };
+
       if (isCreateMode) {
         const result = await createMaterial(payload).unwrap();
 
@@ -345,6 +506,9 @@ function MaterialEditor({
 
         if (description) changes.description = { from: null, to: description };
         if (reorderLevel) changes.reorderLevel = { from: null, to: reorderLevel };
+        if (imageUrl) changes.imageUrl = { from: null, to: imageUrl };
+        if (galleryFiles.length > 0) changes.photoGallery = { from: null, to: galleryFiles.length };
+        if (documentFiles.length > 0) changes.documentFiles = { from: null, to: documentFiles.length };
 
         await createMaterialLog({
           materialId: result.id,
@@ -430,6 +594,17 @@ function MaterialEditor({
           to: parseFloat(reorderLevel) || 0,
         };
       }
+      if ((material.imageUrl ?? '') !== (imageUrl ?? '')) {
+        changes.imageUrl = { from: material.imageUrl ?? null, to: imageUrl ?? null };
+      }
+      const previousGalleryCount = normalizeStoredFiles(material.photoGallery).length;
+      const previousDocumentCount = normalizeStoredFiles(material.documentFiles).length;
+      if (previousGalleryCount !== galleryFiles.length) {
+        changes.photoGallery = { from: previousGalleryCount, to: galleryFiles.length };
+      }
+      if (previousDocumentCount !== documentFiles.length) {
+        changes.documentFiles = { from: previousDocumentCount, to: documentFiles.length };
+      }
 
       if (Object.keys(changes).length > 0) {
         await createMaterialLog({
@@ -449,8 +624,17 @@ function MaterialEditor({
       }
 
       toast.success('Material updated successfully');
+      setExistingImageUrl(imageUrl ?? '');
+      setExistingGalleryFiles(galleryFiles);
+      setExistingDocumentFiles(documentFiles);
+      setPendingFeatureImageFile(null);
+      setPendingGalleryFiles([]);
+      setPendingDocumentFiles([]);
+      setSelectedUploadFile(null);
     } catch (error: unknown) {
       toast.error(extractErrorMessage(error, isCreateMode ? 'Failed to create material' : 'Failed to update material'));
+    } finally {
+      setIsUploadingAssets(false);
     }
   };
 
@@ -536,7 +720,7 @@ function MaterialEditor({
               <Button variant="secondary" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} loading={isLoading}>
+              <Button onClick={handleSave} loading={isLoading || isUploadingAssets}>
                 {submitButtonText}
               </Button>
             </div>
@@ -560,7 +744,10 @@ function MaterialEditor({
             },
             {
               label: 'Unit cost',
-              value: unitCost ? `AED ${Number(unitCost || 0).toFixed(2)}` : formatMoney(material?.unitCost),
+              value:
+                unitCost || material?.unitCost !== undefined
+                  ? `${currencyCode} ${Number(unitCost || material?.unitCost || 0).toFixed(2)}`
+                  : '-',
               note: latestPriceLog ? `Latest change ${new Date(latestPriceLog.timestamp).toLocaleDateString()}` : 'Manual cost baseline',
             },
             {
@@ -578,8 +765,31 @@ function MaterialEditor({
         </div>
       </section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+        <div className="flex flex-wrap gap-2">
+          {tabOptions
+            .filter((tab) => !tab.hidden)
+            .map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={[
+                  'rounded-xl border px-3 py-2 text-sm font-medium transition',
+                  activeTab === tab.id
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400/70 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            ))}
+        </div>
+      </section>
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="space-y-4">
+          {activeTab === 'details' ? (
           <SectionShell
             title="Material details"
             description="Keep the core stock settings close together so edits take one pass."
@@ -723,7 +933,7 @@ function MaterialEditor({
                 </FieldShell>
               )}
 
-              <FieldShell label="Unit cost (AED)">
+              <FieldShell label={`Unit cost (${currencyCode})`}>
                 <input
                   type="number"
                   min="0"
@@ -783,7 +993,7 @@ function MaterialEditor({
               <Button type="button" variant="ghost" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} loading={isLoading}>
+              <Button onClick={handleSave} loading={isLoading || isUploadingAssets}>
                 {submitButtonText}
               </Button>
             </div>
@@ -837,7 +1047,7 @@ function MaterialEditor({
                           placeholder="Qty"
                         />
                         <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                          AED {lineCost.toFixed(4)}
+                          {currencyCode} {lineCost.toFixed(4)}
                         </div>
                         <Button
                           type="button"
@@ -862,14 +1072,183 @@ function MaterialEditor({
                     Add component
                   </Button>
                   <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Input: AED {assemblyTotalCost.toFixed(4)} | Overhead: {assemblyOverheadPercentValue.toFixed(2)}% | Total: AED {assemblyTotalCostWithOverhead.toFixed(4)} | Output: {assemblyOutputQuantityValue.toFixed(3)} {unit || material?.unit || ''}
+                    Input: {currencyCode} {assemblyTotalCost.toFixed(4)} | Overhead: {assemblyOverheadPercentValue.toFixed(2)}% | Total: {currencyCode} {assemblyTotalCostWithOverhead.toFixed(4)} | Output: {assemblyOutputQuantityValue.toFixed(3)} {unit || material?.unit || ''}
                   </p>
                 </div>
               </div>
             ) : null}
           </SectionShell>
+          ) : null}
 
-          {!isCreateMode ? (
+          {activeTab === 'files' ? (
+            <SectionShell
+              title="Material files"
+              description="Upload feature image, gallery photos, and documents with one dropdown uploader."
+            >
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70 lg:grid-cols-[12rem_minmax(0,1fr)_auto]">
+                <select
+                  value={uploadType}
+                  onChange={(e) => setUploadType(e.target.value as MaterialUploadType)}
+                  className={inputClassName()}
+                >
+                  <option value="feature-image">Feature Image</option>
+                  <option value="photo-gallery">Photo Gallery</option>
+                  <option value="document">Documents</option>
+                </select>
+                <input
+                  type="file"
+                  accept={uploadType === 'document' ? '.pdf,.doc,.docx,.xls,.xlsx,.txt,image/*' : 'image/jpeg,image/png,image/webp'}
+                  onChange={(e) => setSelectedUploadFile(e.target.files?.[0] ?? null)}
+                  className={inputClassName()}
+                />
+                <Button type="button" variant="secondary" onClick={handleAddPendingUpload}>
+                  Add
+                </Button>
+              </div>
+
+              <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Feature image preview</h3>
+                    {existingImageUrl ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="danger"
+                        onClick={() => setDeleteTarget({ kind: 'feature-image' })}
+                      >
+                        Delete
+                      </Button>
+                    ) : null}
+                  </div>
+                  {pendingFeatureImageFile ? (
+                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                      <span>Pending update: {pendingFeatureImageFile.name}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setDeleteTarget({ kind: 'pending-feature-image', fileName: pendingFeatureImageFile.name })
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : null}
+                  {existingImageUrl ? (
+                    <a href={existingImageUrl} target="_blank" rel="noreferrer" className="mt-3 block">
+                      <img src={existingImageUrl} alt={`${name || 'Material'} image`} className="max-h-64 w-full rounded-lg border border-slate-200 object-contain dark:border-slate-700" />
+                    </a>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No uploaded image yet.</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Pending uploads</h3>
+                  <div className="mt-3 space-y-2">
+                    {!pendingFeatureImageFile && pendingGalleryFiles.length === 0 && pendingDocumentFiles.length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">No pending uploads.</p>
+                    ) : (
+                      <>
+                        {pendingFeatureImageFile ? (
+                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                            Feature Image: {pendingFeatureImageFile.name}
+                          </div>
+                        ) : null}
+                        {pendingGalleryFiles.map((entry, idx) => (
+                          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                            <span>Gallery: {entry.name}</span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeleteTarget({ kind: 'pending-gallery', index: idx, fileName: entry.name })}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                        {pendingDocumentFiles.map((entry, idx) => (
+                          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                            <span>Document: {entry.name}</span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeleteTarget({ kind: 'pending-document', index: idx, fileName: entry.name })}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Photo gallery</h3>
+                  <div className="mt-3 space-y-2">
+                    {existingGalleryFiles.length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">No gallery photos uploaded.</p>
+                    ) : (
+                      existingGalleryFiles.map((entry, idx) => (
+                        <div key={entry.url} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                          <a href={entry.url} target="_blank" rel="noreferrer" className="truncate underline">
+                            {entry.fileName}
+                          </a>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            onClick={() => setDeleteTarget({ kind: 'gallery', index: idx, fileName: entry.fileName })}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Documents</h3>
+                  <div className="mt-3 space-y-2">
+                    {existingDocumentFiles.length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">No documents uploaded.</p>
+                    ) : (
+                      existingDocumentFiles.map((entry, idx) => (
+                        <div key={entry.url} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                          <a href={entry.url} target="_blank" rel="noreferrer" className="truncate underline">
+                            {entry.fileName}
+                          </a>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            onClick={() => setDeleteTarget({ kind: 'document', index: idx, fileName: entry.fileName })}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex justify-end">
+                <Button onClick={handleSave} loading={isLoading || isUploadingAssets}>
+                  {submitButtonText}
+                </Button>
+              </div>
+            </SectionShell>
+          ) : null}
+
+          {!isCreateMode && activeTab === 'uom' ? (
             <SectionShell
               title="Units of measure"
               description="Define packaging or billing units while keeping all stock in the base unit."
@@ -1042,7 +1421,7 @@ function MaterialEditor({
             </SectionShell>
           ) : null}
 
-          {!isCreateMode ? (
+          {!isCreateMode && activeTab === 'history' ? (
             <SectionShell
               title="Change history"
               description="Recent field changes and pricing adjustments stay visible in one place."
@@ -1094,7 +1473,7 @@ function MaterialEditor({
                               {log.source === 'manual' ? 'Manual update' : 'Bill-linked'}
                             </span>
                             <span className={log.currentPrice > log.previousPrice ? 'text-red-600 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}>
-                              AED {log.previousPrice} → AED {log.currentPrice}
+                              {currencyCode} {log.previousPrice} → {currencyCode} {log.currentPrice}
                             </span>
                           </div>
                           <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">{new Date(log.timestamp).toLocaleString()}</p>
@@ -1118,7 +1497,14 @@ function MaterialEditor({
               {[
                 { label: 'Stock on hand', value: isCreateMode ? currentStock || '0' : formatNumber(material.currentStock) },
                 { label: 'Reorder level', value: reorderLevel || formatNumber(material?.reorderLevel) },
-                { label: 'Unit cost', value: unitCost ? `AED ${Number(unitCost || 0).toFixed(2)}` : formatMoney(material?.unitCost) },
+                {
+                  label: 'Unit cost',
+                  value: unitCost
+                    ? `${currencyCode} ${Number(unitCost || 0).toFixed(2)}`
+                    : material?.unitCost !== undefined
+                      ? `${currencyCode} ${Number(material.unitCost || 0).toFixed(2)}`
+                      : '-',
+                },
                 { label: 'Warehouse', value: warehouse || material?.warehouse || '-' },
               ].map((item) => (
                 <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/70">
@@ -1210,6 +1596,27 @@ function MaterialEditor({
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete file?"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This will remove the file from this material record after you save changes. This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="danger" onClick={confirmDeleteFile}>
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

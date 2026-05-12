@@ -125,7 +125,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
@@ -225,13 +225,8 @@ export default function LoginPage() {
 								placeholder='••••••••'
 							/>
 						</div>
-						<Button
-							type='submit'
-							loading={loading}
-							fullWidth
-							size='lg'
-						>
-							Sign in
+						<Button type='submit' className='w-full' size='lg' disabled={loading}>
+							{loading ? 'Signing in…' : 'Sign in'}
 						</Button>
 					</form>
 
@@ -249,7 +244,7 @@ export default function LoginPage() {
 					<Button
 						type='button'
 						variant='outline'
-						fullWidth
+						className='w-full border-slate-600 bg-slate-900 text-white hover:bg-slate-800 hover:text-white'
 						onClick={handleGoogle}
 					>
 						<svg className='h-4 w-4 mr-2' viewBox='0 0 24 24'>

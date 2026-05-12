@@ -5,6 +5,7 @@ export interface Company {
   name: string;
   slug: string;
   description?: string;
+  externalCompanyId?: string | null;
   isActive: boolean;
   warehouseMode?: 'REQUIRED';
   stockFallbackWarehouseId?: string | null;
@@ -34,7 +35,19 @@ export const companiesApi = adminApi.injectEndpoints({
         body,
       }),
       transformResponse: (r: { data: Company }) => r.data,
-      invalidatesTags: [{ type: 'Company', id: 'LIST' }],
+      invalidatesTags: [],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data: created } = await queryFulfilled;
+          dispatch(
+            adminApi.util.updateQueryData('getCompanies', undefined, (draft) => {
+              if (!draft.some((c) => c.id === created.id)) draft.unshift(created);
+            }),
+          );
+        } catch {
+          /* no-op */
+        }
+      },
     }),
 
     updateCompany: builder.mutation<Company, { id: string; data: Partial<Company> }>({
@@ -44,10 +57,35 @@ export const companiesApi = adminApi.injectEndpoints({
         body: data,
       }),
       transformResponse: (r: { data: Company }) => r.data,
-      invalidatesTags: (result, error, { id }) => [
-        { type: 'Company', id },
-        { type: 'Company', id: 'LIST' },
-      ],
+      invalidatesTags: [],
+      async onQueryStarted({ id, data }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          adminApi.util.updateQueryData('getCompanies', undefined, (draft) => {
+            const row = draft.find((c) => c.id === id);
+            if (!row) return;
+            if (data.name !== undefined) row.name = data.name;
+            if (data.description !== undefined) row.description = data.description;
+            if (data.externalCompanyId !== undefined) row.externalCompanyId = data.externalCompanyId;
+            if (data.isActive !== undefined) row.isActive = data.isActive;
+            if (data.slug !== undefined) row.slug = data.slug;
+            if (data.warehouseMode !== undefined) row.warehouseMode = data.warehouseMode;
+            if (data.stockFallbackWarehouseId !== undefined) {
+              row.stockFallbackWarehouseId = data.stockFallbackWarehouseId;
+            }
+          }),
+        );
+        try {
+          const { data: server } = await queryFulfilled;
+          dispatch(
+            adminApi.util.updateQueryData('getCompanies', undefined, (draft) => {
+              const idx = draft.findIndex((c) => c.id === id);
+              if (idx !== -1) draft[idx] = server;
+            }),
+          );
+        } catch {
+          patch.undo();
+        }
+      },
     }),
   }),
 });

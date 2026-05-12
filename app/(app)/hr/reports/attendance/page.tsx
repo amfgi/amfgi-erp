@@ -276,7 +276,7 @@ export default function HrAttendanceReportPage() {
                   const preset = savedPresets.find((item) => item.id === nextId);
                   setSelectedPresetSchema(preset?.schema ?? null);
                 }}
-                className="min-w-[14rem] rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white shadow-sm"
+                className="min-w-56 rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white shadow-sm"
               >
                 <option value="">Standard report</option>
                 {savedPresets.map((preset) => (
@@ -454,7 +454,7 @@ export default function HrAttendanceReportPage() {
               placeholder="Search employee or code"
               className="mt-4 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
             />
-            <div className="mt-4 max-h-[34rem] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-4 max-h-136 space-y-2 overflow-y-auto pr-1">
               {showEmployeeListLoading ? (
                 <div className="rounded-xl border border-white/10 bg-slate-950/50 px-4 py-5 text-sm text-slate-500">Loading report...</div>
               ) : visibleEmployees.length === 0 ? (

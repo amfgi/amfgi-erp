@@ -1,9 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
+
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import { Select } from '@/components/ui/shadcn/select';
 import { useGetJobProfitabilityQuery } from '@/store/hooks';
+import { cn } from '@/lib/utils';
 
 function formatMoney(value: number | null) {
   if (value == null) return '-';
@@ -26,6 +34,49 @@ function formatPct(value: number | null) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
+}
+
+function jobStatusBadge(status: string) {
+  const label = status.replace(/_/g, ' ');
+  const cls =
+    status === 'ACTIVE'
+      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+      : status === 'COMPLETED'
+        ? 'border-sky-500/35 bg-sky-500/10 text-sky-800 dark:text-sky-200'
+        : status === 'ON_HOLD'
+          ? 'border-amber-500/35 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+          : status === 'CANCELLED'
+            ? 'border-destructive/30 bg-destructive/10 text-destructive'
+            : 'border-border bg-muted/50 text-muted-foreground';
+  return (
+    <Badge variant="outline" className={cn('text-[10px] font-medium uppercase tracking-wide', cls)}>
+      {label}
+    </Badge>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  emphasize,
+}: {
+  label: string;
+  value: ReactNode;
+  emphasize?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-3 py-2.5',
+        emphasize
+          ? 'border-amber-500/35 bg-amber-500/10'
+          : 'border-border bg-muted/30',
+      )}
+    >
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn('mt-1 text-base font-semibold tabular-nums text-foreground sm:text-lg')}>{value}</p>
+    </div>
+  );
 }
 
 export default function JobProfitabilityPage() {
@@ -97,7 +148,7 @@ export default function JobProfitabilityPage() {
         row.reconcileCost.toFixed(2),
         row.variationJobWorkValue == null ? '' : row.variationJobWorkValue.toFixed(2),
         row.materialMarginAgainstVariationValue == null ? '' : row.materialMarginAgainstVariationValue.toFixed(2),
-      ].join(',')
+      ].join(','),
     );
 
     const blob = new Blob([[headers.join(','), ...csvRows].join('\n')], { type: 'text/csv' });
@@ -111,230 +162,216 @@ export default function JobProfitabilityPage() {
 
   if (!canView) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Job profitability</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">You do not have permission to view this report.</p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Card>
+          <CardHeader>
+            <CardTitle>Job profitability</CardTitle>
+            <CardDescription>You do not have permission to view this report.</CardDescription>
+          </CardHeader>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-                Reports
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Customer and job profitability
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Variation jobs are rolled up with their customer, parent job, material budget, actual issued cost,
-                returns, and reconcile-linked consumption.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleExport}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-              >
-                Export CSV
-              </button>
-              <button
-                type="button"
-                onClick={() => void refetch()}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-              >
-                Refresh
-              </button>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Insights</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Customer and job profitability</h1>
+          <p className="text-sm text-muted-foreground">
+            Variation jobs rolled up with customer, parent job, material budget, issued cost, returns, and
+            reconcile-linked consumption.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={handleExport} disabled={filteredRows.length === 0}>
+            Export CSV
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => void refetch()} disabled={isFetching}>
+            {isFetching ? 'Refreshing…' : 'Refresh'}
+          </Button>
+          <p className="w-full text-right text-xs tabular-nums text-muted-foreground sm:w-auto sm:pl-2">
+            {filteredRows.length} row{filteredRows.length === 1 ? '' : 's'}
+          </p>
+        </div>
+      </header>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Variations</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{summary?.totalVariations ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Customers</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{summary?.customersCovered ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/20">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">Over budget</p>
-              <p className="mt-2 text-xl font-semibold text-amber-900 dark:text-amber-100">{summary?.overBudgetCount ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Budget cost</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{formatMoney(summary?.totalBudgetMaterialCost ?? 0)}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Net cost</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{formatMoney(summary?.totalNetMaterialCost ?? 0)}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Unbudgeted jobs</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{summary?.withUnbudgetedMaterialCount ?? 0}</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        <SummaryTile label="Variations" value={summary?.totalVariations ?? 0} />
+        <SummaryTile label="Customers" value={summary?.customersCovered ?? 0} />
+        <SummaryTile label="Over budget" value={summary?.overBudgetCount ?? 0} emphasize />
+        <SummaryTile label="Budget cost" value={formatMoney(summary?.totalBudgetMaterialCost ?? 0)} />
+        <SummaryTile label="Net cost" value={formatMoney(summary?.totalNetMaterialCost ?? 0)} />
+        <SummaryTile label="Unbudgeted jobs" value={summary?.withUnbudgetedMaterialCount ?? 0} />
+      </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_180px_200px_auto]">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Search</label>
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Customer, parent job, variation, description..."
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-              >
-                <option value="all">All statuses</option>
-                <option value="ACTIVE">Active</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="ON_HOLD">On hold</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Focus</label>
-              <select
-                value={focus}
-                onChange={(event) => setFocus(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-              >
-                <option value="all">All jobs</option>
-                <option value="over_budget">Over budget only</option>
-                <option value="unbudgeted">Unbudgeted issues</option>
-                <option value="reconcile">Reconcile linked</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                Net cost = stock out minus returns. Reconcile cost is a subset of issued cost.
-              </p>
-            </div>
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_11rem_12rem]">
+          <div className="space-y-2">
+            <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search</span>
+            <Input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Customer, parent job, variation, description…"
+            />
+          </div>
+          <div className="space-y-2">
+            <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</span>
+            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="ON_HOLD">On hold</option>
+              <option value="CANCELLED">Cancelled</option>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Focus</span>
+            <Select value={focus} onChange={(event) => setFocus(event.target.value)}>
+              <option value="all">All jobs</option>
+              <option value="over_budget">Over budget only</option>
+              <option value="unbudgeted">Unbudgeted issues</option>
+              <option value="reconcile">Reconcile linked</option>
+            </Select>
           </div>
         </div>
-
-        <div className="p-4 sm:p-5">
-          {isError ? (
-            <p className="text-sm text-red-600 dark:text-red-400">Could not load the profitability report. Try refresh.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-                    <th className="sticky left-0 z-20 min-w-[260px] border-r border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/95">
-                      Customer / Job
-                    </th>
-                    <th className="min-w-[90px] px-3 py-3">Status</th>
-                    <th className="min-w-[110px] px-3 py-3 text-right">Budget qty</th>
-                    <th className="min-w-[130px] px-3 py-3 text-right">Budget cost</th>
-                    <th className="min-w-[110px] px-3 py-3 text-right">Net qty</th>
-                    <th className="min-w-[130px] px-3 py-3 text-right">Net cost</th>
-                    <th className="min-w-[130px] px-3 py-3 text-right">Variance</th>
-                    <th className="min-w-[110px] px-3 py-3 text-right">Variance %</th>
-                    <th className="min-w-[130px] px-3 py-3 text-right">Unbudgeted</th>
-                    <th className="min-w-[130px] px-3 py-3 text-right">Reconcile</th>
-                    <th className="min-w-[150px] px-3 py-3 text-right">Variation value</th>
-                    <th className="min-w-[150px] px-3 py-3 text-right">Material margin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isFetching && filteredRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
-                        Loading...
-                      </td>
-                    </tr>
-                  ) : filteredRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
-                        No rows match your filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRows.map((row) => (
-                      <tr
-                        key={row.variationJobId}
-                        className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
-                      >
-                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-inherit px-3 py-2.5 align-top dark:border-slate-800">
-                          <p className="font-medium text-slate-900 dark:text-white">{row.customerName}</p>
-                          <div className="mt-1 space-y-1 text-xs">
-                            <p className="text-slate-500 dark:text-slate-400">
-                              Parent:{' '}
-                              <Link href={`/customers/jobs/${row.parentJobId}`} className="text-emerald-700 hover:underline dark:text-emerald-300">
-                                {row.parentJobNumber}
-                              </Link>
-                            </p>
-                            <p className="text-slate-500 dark:text-slate-400">
-                              Variation:{' '}
-                              <Link href={`/customers/jobs/${row.variationJobId}`} className="text-emerald-700 hover:underline dark:text-emerald-300">
-                                {row.variationJobNumber}
-                              </Link>
-                            </p>
-                            {row.variationDescription ? (
-                              <p className="line-clamp-2 text-slate-500 dark:text-slate-400">{row.variationDescription}</p>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{row.status}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatQty(row.budgetMaterialQuantity)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatMoney(row.budgetMaterialCost)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatQty(row.netMaterialQuantity)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatMoney(row.netMaterialCost)}</td>
-                        <td className={`px-3 py-2.5 text-right tabular-nums ${row.materialCostVariance > 0.005 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
-                          {formatMoney(row.materialCostVariance)}
-                        </td>
-                        <td className={`px-3 py-2.5 text-right tabular-nums ${row.materialCostVariance > 0.005 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>
-                          {formatPct(row.budgetVariancePct)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatMoney(row.unbudgetedMaterialCost)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatMoney(row.reconcileCost)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatMoney(row.variationJobWorkValue)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatMoney(row.materialMarginAgainstVariationValue)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Net cost = stock out minus returns. Reconcile cost is a subset of issued cost.
+        </p>
       </section>
 
-      <p className="text-xs text-slate-500 dark:text-slate-500">
+      {isError ? (
+        <Alert variant="destructive">
+          <AlertDescription>Could not load the profitability report. Try refresh.</AlertDescription>
+        </Alert>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <th className="sticky left-0 z-20 min-w-[260px] border-r border-border bg-muted/50 px-3 py-3 backdrop-blur-sm">
+                    Customer / Job
+                  </th>
+                  <th className="min-w-[90px] px-3 py-3">Status</th>
+                  <th className="min-w-[110px] px-3 py-3 text-right">Budget qty</th>
+                  <th className="min-w-[130px] px-3 py-3 text-right">Budget cost</th>
+                  <th className="min-w-[110px] px-3 py-3 text-right">Net qty</th>
+                  <th className="min-w-[130px] px-3 py-3 text-right">Net cost</th>
+                  <th className="min-w-[130px] px-3 py-3 text-right">Variance</th>
+                  <th className="min-w-[110px] px-3 py-3 text-right">Variance %</th>
+                  <th className="min-w-[130px] px-3 py-3 text-right">Unbudgeted</th>
+                  <th className="min-w-[130px] px-3 py-3 text-right">Reconcile</th>
+                  <th className="min-w-[150px] px-3 py-3 text-right">Variation value</th>
+                  <th className="min-w-[150px] px-3 py-3 text-right">Material margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isFetching && filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">
+                      Loading…
+                    </td>
+                  </tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">
+                      No rows match your filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRows.map((row) => (
+                    <tr
+                      key={row.variationJobId}
+                      className="border-b border-border odd:bg-background even:bg-muted/25 transition-colors hover:bg-muted/40"
+                    >
+                      <td className="sticky left-0 z-10 border-r border-border bg-inherit px-3 py-2.5 align-top backdrop-blur-sm">
+                        <p className="font-medium text-foreground">{row.customerName}</p>
+                        <div className="mt-1 space-y-1 text-xs">
+                          <p className="text-muted-foreground">
+                            Parent:{' '}
+                            <Link
+                              href={`/customers/jobs/${row.parentJobId}`}
+                              className="font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                              {row.parentJobNumber}
+                            </Link>
+                          </p>
+                          <p className="text-muted-foreground">
+                            Variation:{' '}
+                            <Link
+                              href={`/customers/jobs/${row.variationJobId}`}
+                              className="font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                              {row.variationJobNumber}
+                            </Link>
+                          </p>
+                          {row.variationDescription ? (
+                            <p className="line-clamp-2 text-muted-foreground">{row.variationDescription}</p>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle">{jobStatusBadge(row.status)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.budgetMaterialQuantity)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatMoney(row.budgetMaterialCost)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.netMaterialQuantity)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatMoney(row.netMaterialCost)}</td>
+                      <td
+                        className={cn(
+                          'px-3 py-2.5 text-right tabular-nums',
+                          row.materialCostVariance > 0.005
+                            ? 'text-amber-700 dark:text-amber-300'
+                            : 'text-emerald-700 dark:text-emerald-300',
+                        )}
+                      >
+                        {formatMoney(row.materialCostVariance)}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-3 py-2.5 text-right tabular-nums',
+                          row.materialCostVariance > 0.005
+                            ? 'text-amber-700 dark:text-amber-300'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        {formatPct(row.budgetVariancePct)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{formatMoney(row.unbudgetedMaterialCost)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{formatMoney(row.reconcileCost)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{formatMoney(row.variationJobWorkValue)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                        {formatMoney(row.materialMarginAgainstVariationValue)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs leading-relaxed text-muted-foreground">
         Use{' '}
-        <Link href="/reports/job-consumption" className="text-emerald-700 underline dark:text-emerald-300">
+        <Link href="/reports/job-consumption" className="font-medium text-primary underline-offset-4 hover:underline">
           Job consumption
         </Link>{' '}
         for quantity-first usage,{' '}
-        <Link href="/reports/supplier-traceability" className="text-emerald-700 underline dark:text-emerald-300">
+        <Link href="/reports/supplier-traceability" className="font-medium text-primary underline-offset-4 hover:underline">
           supplier traceability
         </Link>{' '}
         for inbound-to-dispatch tracking,{' '}
-        <Link href="/reports/stock-exceptions" className="text-emerald-700 underline dark:text-emerald-300">
+        <Link href="/reports/stock-exceptions" className="font-medium text-primary underline-offset-4 hover:underline">
           stock exceptions
         </Link>{' '}
         for override and adjustment trails,{' '}
-        <Link href="/reports/stock-adjustments" className="text-emerald-700 underline dark:text-emerald-300">
+        <Link href="/reports/stock-adjustments" className="font-medium text-primary underline-offset-4 hover:underline">
           stock adjustments
         </Link>{' '}
         for manual correction value trail, and{' '}
-        <Link href="/stock/integrity" className="text-emerald-700 underline dark:text-emerald-300">
+        <Link href="/stock/integrity" className="font-medium text-primary underline-offset-4 hover:underline">
           Stock integrity
         </Link>{' '}
         if the numbers drift.

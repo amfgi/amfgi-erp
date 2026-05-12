@@ -41,5 +41,5 @@ export default function StockJobBudgetByIdPage() {
     return <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Job not found.</div>;
   }
 
-  return <JobCostEnginePage />;
+  return <JobCostEnginePage hiddenTabs={['progress', 'entries']} />;
 }

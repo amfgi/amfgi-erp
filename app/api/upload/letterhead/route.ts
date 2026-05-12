@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { uploadToDrive, deleteFromDrive } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = await getEffectiveGoogleDriveRootFolderId();
 
     if (!folderId) return errorResponse('Google Drive folder not configured', 500);
 

@@ -5,6 +5,7 @@ import { assertWarehouseModeTransition, ensureCompanyFallbackWarehouse, normaliz
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { normalizeCompanyPrintTemplateShape } from '@/lib/utils/companyPrintTemplates';
 import { normalizeStockControlSettings, mergeStockControlSettingsIntoCompanySettings } from '@/lib/stock-control/settings';
+import { Prisma }          from '@prisma/client';
 import { z }               from 'zod';
 
 const UpdateSchema = z.object({
@@ -16,8 +17,15 @@ const UpdateSchema = z.object({
   email:          z.string().email().optional().or(z.literal('')),
   printTemplates: z.any().optional(),
   externalCompanyId: z.string().max(120).optional().or(z.literal('')),
-  jobSourceMode: z.enum(['HYBRID', 'EXTERNAL_ONLY']).optional(),
+  jobSourceMode: z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
+  customerSourceMode: z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
+  supplierSourceMode: z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
   jobCostingSettings: z.any().optional(),
+  operationalSettings: z
+    .object({
+      currencyCode: z.string().trim().min(3).max(3).optional(),
+    })
+    .optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -67,7 +75,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  const update: Record<string, unknown> = {};
+  const update: Prisma.CompanyUpdateInput = {};
   if (isSA && parsed.data.name !== undefined) update.name = parsed.data.name;
   if (isSA && parsed.data.description !== undefined) update.description = parsed.data.description;
   if (isSA && parsed.data.isActive !== undefined) update.isActive = parsed.data.isActive;
@@ -80,6 +88,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   if (isSA && parsed.data.jobSourceMode !== undefined) {
     update.jobSourceMode = parsed.data.jobSourceMode;
+  }
+  if (isSA && parsed.data.customerSourceMode !== undefined) {
+    update.customerSourceMode = parsed.data.customerSourceMode;
+  }
+  if (isSA && parsed.data.supplierSourceMode !== undefined) {
+    update.supplierSourceMode = parsed.data.supplierSourceMode;
   }
   if (isSA && parsed.data.jobCostingSettings !== undefined) {
     update.jobCostingSettings = mergeStockControlSettingsIntoCompanySettings(
@@ -98,6 +112,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const company = await prisma.$transaction(async (tx) => {
+    const existing = await tx.company.findUniqueOrThrow({
+      where: { id },
+      select: { operationalSettings: true },
+    });
+
+    if (isSA && parsed.data.operationalSettings !== undefined) {
+      const currentOperational =
+        existing.operationalSettings &&
+        typeof existing.operationalSettings === 'object' &&
+        !Array.isArray(existing.operationalSettings)
+          ? (existing.operationalSettings as Record<string, unknown>)
+          : {};
+
+      const nextOperationalSettings: Record<string, unknown> = {
+        ...currentOperational,
+        ...(parsed.data.operationalSettings.currencyCode
+          ? { currencyCode: parsed.data.operationalSettings.currencyCode.toUpperCase() }
+          : {}),
+      };
+      update.operationalSettings = nextOperationalSettings;
+    }
+
     if (isSA) {
       await assertWarehouseModeTransition(tx, id, normalizeWarehouseMode(undefined));
     }

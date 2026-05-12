@@ -34,10 +34,23 @@ export async function syncTrackedJobItemProgress(tx: TxClient, companyId: string
   const jobRow = await tx.job.findFirst({
     where: { id: item.jobId, companyId },
     select: {
+      status: true,
       executionProgressStatus: true,
       executionProgressPercent: true,
+      executionActualStartDate: true,
     },
   });
+
+  // Status now lives on the Job profile (Job.status). Map to JobItemProgressStatus.
+  const derivedJobStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD' | undefined = jobRow
+    ? jobRow.status === 'COMPLETED'
+      ? 'COMPLETED'
+      : jobRow.status === 'ON_HOLD' || jobRow.status === 'CANCELLED'
+        ? 'ON_HOLD'
+        : jobRow.executionActualStartDate
+          ? 'IN_PROGRESS'
+          : (jobRow.executionProgressStatus ?? 'NOT_STARTED')
+    : undefined;
 
   const snapshot = calculateTrackedProgress(
     trackers,
@@ -47,7 +60,7 @@ export async function syncTrackedJobItemProgress(tx: TxClient, companyId: string
       quantity: decimalToNumberOrZero(entry.quantity),
     })),
     {
-      progressStatus: jobRow?.executionProgressStatus ?? item.progressStatus,
+      progressStatus: derivedJobStatus ?? item.progressStatus,
       progressPercent: decimalToNumberOrZero(jobRow?.executionProgressPercent ?? item.progressPercent),
     }
   );

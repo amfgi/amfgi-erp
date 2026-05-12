@@ -209,8 +209,20 @@ interface ManualStockAdjustmentPolicySummary {
 
 export const transactionsApi = appApi.injectEndpoints({
   endpoints: (builder) => ({
-    getTransactionsByJob: builder.query<Transaction[], { jobId: string; limit?: number }>({
-      query: ({ jobId, limit = 100 }) => `/transactions?jobId=${jobId}&limit=${limit}`,
+    getTransactionsByJob: builder.query<
+      Transaction[],
+      { jobId: string; jobIds?: string[]; limit?: number }
+    >({
+      query: ({ jobId, jobIds, limit = 100 }) => {
+        const params = new URLSearchParams();
+        if (jobIds && jobIds.length > 0) {
+          jobIds.forEach((id) => params.append('jobIds', id));
+        } else {
+          params.set('jobId', jobId);
+        }
+        params.set('limit', String(limit));
+        return `/transactions?${params.toString()}`;
+      },
       transformResponse: (r: { data: Transaction[] }) => r.data,
       providesTags: (result, error, arg) => [
         { type: 'Transaction', id: arg.jobId },

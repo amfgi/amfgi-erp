@@ -30,6 +30,7 @@ export {
 export {
   useGetCompanyProfilesQuery,
   useCreateCompanyProfileMutation,
+  type CompanyProfile,
 } from './api/adminEndpoints/profiles';
 
 // App API hooks (company-scoped)
@@ -69,6 +70,12 @@ export {
   useAddJobItemProgressEntryMutation,
   useUpdateJobItemProgressEntryMutation,
   useDeleteJobItemProgressEntryMutation,
+  useGetDailyQuantityLogQuery,
+  useGetDailyQuantityLogPendingQuery,
+  useFinalizeQuantityLogDayMutation,
+  useUnlockQuantityLogDayMutation,
+  useAddQuantityLogAdhocJobMutation,
+  useRemoveQuantityLogAdhocJobMutation,
   useGetFormulaLibrariesQuery,
   useGetFormulaLibraryByIdQuery,
   useCreateFormulaLibraryMutation,
@@ -89,6 +96,14 @@ export {
   type DispatchBudgetWarningRow,
   type JobItemProgressEntry,
   type JobProgressEntryListRow,
+  type DailyQuantityLogResponse,
+  type DailyQuantityLogAssignment,
+  type DailyQuantityLogTeam,
+  type DailyQuantityLogItem,
+  type DailyQuantityLogTracker,
+  type DailyQuantityLogExistingEntry,
+  type DailyQuantityLogJob,
+  type DailyQuantityLogEligibleJob,
 } from './api/endpoints/jobs';
 
 export {

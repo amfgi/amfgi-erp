@@ -62,6 +62,17 @@ export async function POST(req: Request) {
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
   const companyId = session.user.activeCompanyId;
 
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { supplierSourceMode: true },
+  });
+  if (company?.supplierSourceMode === 'EXTERNAL_ONLY') {
+    return errorResponse(
+      'Manual supplier creation is disabled. This company is set to external-only suppliers (use the integration API or party lists sync).',
+      403
+    );
+  }
+
   try {
     const body = await req.json();
     const parsed = CreateSupplierSchema.safeParse(body);

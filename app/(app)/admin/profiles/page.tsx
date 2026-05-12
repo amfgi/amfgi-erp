@@ -1,131 +1,173 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Button }              from '@/components/ui/Button';
-import { Badge }               from '@/components/ui/Badge';
-import Modal                   from '@/components/ui/Modal';
-import toast                   from 'react-hot-toast';
+import { useState } from 'react';
 
-type CompanyProfile = {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string;
-  isActive: boolean;
-  createdAt?: string | Date;
-  updatedAt?: string | Date;
-};
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import Modal from '@/components/ui/Modal';
+import {
+  useGetCompanyProfilesQuery,
+  useCreateCompanyProfileMutation,
+  type CompanyProfile,
+} from '@/store/hooks';
+import toast from 'react-hot-toast';
+
+const labelClass = 'text-[11px] font-medium uppercase tracking-wide text-muted-foreground';
+
+const textareaClass =
+  'min-h-[4.5rem] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background resize-none';
+
+function autoSlug(value: string) {
+  return value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
 
 export default function AdminProfilesPage() {
-  const [profiles,    setProfiles]    = useState<CompanyProfile[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [modal,       setModal]       = useState(false);
+  const [modal, setModal] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
+  const { data: profiles = [], isLoading, isError, refetch } = useGetCompanyProfilesQuery();
+  const [createProfile] = useCreateCompanyProfileMutation();
 
-  const [name,        setName]        = useState('');
-  const [slug,        setSlug]        = useState('');
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
 
-  const fetchProfiles = () => {
-    setLoading(true);
-    fetch('/api/company-profiles').then((r) => r.json()).then((j) => { setProfiles(j.data ?? []); setLoading(false); });
+  const openModal = () => {
+    setName('');
+    setSlug('');
+    setDescription('');
+    setModal(true);
   };
 
-  useEffect(() => { fetchProfiles(); }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormLoading(true);
-    const res = await fetch('/api/company-profiles', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name, slug, description: description || undefined }),
-    });
-    setFormLoading(false);
-    if (res.ok) {
+    try {
+      await createProfile({ name, slug, description: description || undefined }).unwrap();
       toast.success('Division created');
       setModal(false);
-      setName(''); setSlug(''); setDescription('');
-      fetchProfiles();
-    } else {
-      const err = await res.json();
-      toast.error(err.error ?? 'Failed to create');
+      setName('');
+      setSlug('');
+      setDescription('');
+    } catch (err) {
+      const message = (err as { data?: { error?: string } }).data?.error ?? 'Failed to create';
+      toast.error(message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const autoSlug = (value: string) =>
-    value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Company Divisions</h1>
-          <p className="text-slate-400 text-sm mt-1">Manage the internal company profiles that partition data</p>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Administration</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Company divisions</h1>
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Internal company profiles that partition data across the organization.
+          </p>
         </div>
-        <Button onClick={() => setModal(true)}>+ Add Division</Button>
-      </div>
+        <Button type="button" size="sm" onClick={openModal}>
+          Add division
+        </Button>
+      </header>
 
-      {loading ? (
-        <p className="text-slate-500 text-center py-12">Loading...</p>
+      {isError ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Could not load divisions</CardTitle>
+            <CardDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>Check your connection and try again.</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
+                Retry
+              </Button>
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : isLoading ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {profiles.map((p) => (
-            <div key={p.id} className="rounded-xl bg-slate-800 border border-slate-700 p-5 space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold text-white">{p.name}</h3>
-                  <code className="text-xs text-slate-500 font-mono">{p.slug}</code>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {profiles.map((p: CompanyProfile) => (
+            <Card key={p.id}>
+              <CardHeader className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <CardTitle className="text-base">{p.name}</CardTitle>
+                    <code className="block truncate font-mono text-xs text-muted-foreground">{p.slug}</code>
+                  </div>
+                  {p.isActive ? (
+                    <Badge variant="secondary" className="shrink-0 font-normal">
+                      Active
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+                      Inactive
+                    </Badge>
+                  )}
                 </div>
-                <Badge label={p.isActive ? 'Active' : 'Inactive'} variant={p.isActive ? 'green' : 'gray'} />
-              </div>
-              {p.description && <p className="text-sm text-slate-400">{p.description}</p>}
-            </div>
+                {p.description ? <CardDescription className="text-sm">{p.description}</CardDescription> : null}
+              </CardHeader>
+            </Card>
           ))}
-          {profiles.length === 0 && (
-            <div className="col-span-2 text-center py-12 text-slate-500">
-              No divisions created yet.
-            </div>
-          )}
+          {profiles.length === 0 ? (
+            <div className="col-span-full py-12 text-center text-sm text-muted-foreground">No divisions created yet.</div>
+          ) : null}
         </div>
       )}
 
-      <Modal isOpen={modal} onClose={() => setModal(false)} title="Create Division">
+      <Modal isOpen={modal} onClose={() => !formLoading && setModal(false)} title="Create division">
         <form onSubmit={handleCreate} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Division Name *</label>
-            <input
+          <div className="space-y-2">
+            <label htmlFor="division-name" className={labelClass}>
+              Division name <span className="text-destructive">*</span>
+            </label>
+            <Input
+              id="division-name"
               required
               value={name}
-              onChange={(e) => { setName(e.target.value); setSlug(autoSlug(e.target.value)); }}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-emerald-500"
+              onChange={(e) => {
+                setName(e.target.value);
+                setSlug(autoSlug(e.target.value));
+              }}
               placeholder="Fiber Glass Work"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Slug (URL-safe) *</label>
-            <input
+          <div className="space-y-2">
+            <label htmlFor="division-slug" className={labelClass}>
+              Slug (URL-safe) <span className="text-destructive">*</span>
+            </label>
+            <Input
+              id="division-slug"
               required
               pattern="^[a-z0-9-]+$"
               value={slug}
               onChange={(e) => setSlug(autoSlug(e.target.value))}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm font-mono focus:ring-2 focus:ring-emerald-500"
               placeholder="fiber-glass-work"
+              className="font-mono text-sm"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Description</label>
+          <div className="space-y-2">
+            <label htmlFor="division-desc" className={labelClass}>
+              Description
+            </label>
             <textarea
+              id="division-desc"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-emerald-500 resize-none"
+              className={textareaClass}
               placeholder="Optional description"
             />
           </div>
-          <div className="flex gap-3 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setModal(false)} fullWidth>Cancel</Button>
-            <Button type="submit" loading={formLoading} fullWidth>Create Division</Button>
+          <div className="flex gap-3 border-t border-border pt-4">
+            <Button type="button" variant="outline" className="flex-1" disabled={formLoading} onClick={() => setModal(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" className="flex-1" disabled={formLoading}>
+              {formLoading ? 'Creating…' : 'Create division'}
+            </Button>
           </div>
         </form>
       </Modal>

@@ -22,9 +22,10 @@ interface Transaction {
   updatedAt?: string | Date;
 }
 
-export default function TransactionLedger({ jobId }: { jobId: string }) {
+export default function TransactionLedger({ jobId, jobIds }: { jobId: string; jobIds?: string[] }) {
   const { data: txns = [], isLoading: loading } = useGetTransactionsByJobQuery({
     jobId,
+    jobIds,
     limit: 100,
   });
 

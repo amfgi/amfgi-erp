@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import type { AppSessionUser } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
+import { resolveBoundFieldImageSrc } from '@/lib/utils/googleDriveUrl';
 
 function canAccess(user: AppSessionUser) {
   const isSA = user.isSuperAdmin ?? false;
@@ -38,19 +39,22 @@ export async function GET(req: Request) {
     },
   });
 
-  const data = rows.map((a) => ({
-    id: a.id,
-    fileUrl: a.fileUrl,
-    previewUrl: a.fileUrl,
-    mimeType: a.mimeType,
-    fileName: a.fileName,
-    category: a.category,
-    bytes: a.bytes,
-    createdAt: a.createdAt,
-    uploadedBy: a.uploadedBy,
-    linkCount: a.links.length,
-    links: a.links,
-  }));
+  const data = rows.map((a) => {
+    const display = resolveBoundFieldImageSrc(a.driveId);
+    return {
+      id: a.id,
+      fileUrl: display || a.driveId,
+      previewUrl: display || null,
+      mimeType: a.mimeType,
+      fileName: a.fileName,
+      category: a.category,
+      bytes: a.bytes,
+      createdAt: a.createdAt,
+      uploadedBy: a.uploadedBy,
+      linkCount: a.links.length,
+      links: a.links,
+    };
+  });
 
   return successResponse(data);
 }

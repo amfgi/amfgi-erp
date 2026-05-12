@@ -1,6 +1,6 @@
 import { adminApi } from '../adminApi';
 
-interface CompanyProfile {
+export interface CompanyProfile {
   id: string;
   name: string;
   slug: string;
@@ -25,7 +25,19 @@ export const profilesApi = adminApi.injectEndpoints({
         body,
       }),
       transformResponse: (r: { data: CompanyProfile }) => r.data,
-      invalidatesTags: [{ type: 'CompanyProfile', id: 'LIST' }],
+      invalidatesTags: [],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data: created } = await queryFulfilled;
+          dispatch(
+            adminApi.util.updateQueryData('getCompanyProfiles', undefined, (draft) => {
+              if (!draft.some((p) => p.id === created.id)) draft.unshift(created);
+            }),
+          );
+        } catch {
+          /* no-op */
+        }
+      },
     }),
   }),
 });

@@ -3,12 +3,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { useSession } from 'next-auth/react';
+import toast from 'react-hot-toast';
+
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import { Badge } from '@/components/ui/Badge';
 import Modal from '@/components/ui/Modal';
-import toast from 'react-hot-toast';
-import { useSession } from 'next-auth/react';
+import { cn } from '@/lib/utils';
 import { formatDateTime, formatDate } from '@/lib/utils/formatters';
 import type { Column } from '@/components/ui/DataTable';
 import { useGetDispatchEntriesQuery, useDeleteTransactionMutation, type DispatchEntry as DispatchEntryRecord } from '@/store/hooks';
@@ -247,8 +251,10 @@ export default function DispatchPage() {
 
   if (!canView) {
     return (
-      <div className="text-center py-12">
-        <p className="text-slate-400">You don't have permission to view dispatch history.</p>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>You do not have permission to view dispatch history.</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -329,129 +335,138 @@ export default function DispatchPage() {
   const dispatchNoteCount = filteredEntries.filter(e => e.isDeliveryNote !== true).length;
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.09),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.12),_transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-                Dispatch Desk
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Stock-out history and note control
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review every dispatch and delivery note, reopen any row for editing, and keep signed-copy follow-up visible from one compact ledger.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stock/dispatch/entry">
-                <Button>New Dispatch</Button>
-              </Link>
-              <Link href="/stock/dispatch/delivery-note">
-                <Button variant="secondary">New Delivery Note</Button>
-              </Link>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Dispatch desk</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Stock-out history and note control</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Review every dispatch and delivery note, reopen any row for editing, and keep signed-copy follow-up visible
+            from one compact ledger.
+          </p>
         </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link href="/stock/dispatch/entry" className={cn(buttonVariants({ size: 'sm' }))}>
+            New dispatch
+          </Link>
+          <Link href="/stock/dispatch/delivery-note" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+            New delivery note
+          </Link>
+        </div>
+      </header>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-5">
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Total entries</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{totalEntries}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Dispatch notes</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{dispatchNoteCount}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Delivery notes</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{deliveryNoteCount}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Materials touched</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{totalMaterials}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Total valuation</p>
-            <p className="mt-2 text-xl font-semibold text-emerald-700 dark:text-emerald-300">{totalDispatchValuation.toFixed(2)}</p>
-          </div>
-        </div>
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Total entries</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{totalEntries}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Dispatch notes</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{dispatchNoteCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Delivery notes</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{deliveryNoteCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Materials touched</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{totalMaterials}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Total valuation</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-300">
+              {totalDispatchValuation.toFixed(2)}
+            </p>
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
-            {[
-              { value: 'all' as const, label: 'All Entries' },
-              { value: 'month' as const, label: 'Month' },
-              { value: 'day' as const, label: 'Day' },
-            ].map((option) => (
-              <button
-                key={option.value}
-                onClick={() => handleFilterTypeChange(option.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors ${
-                  filterType === option.value
-                    ? 'bg-emerald-600 text-white'
-                    : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+              {[
+                { value: 'all' as const, label: 'All entries' },
+                { value: 'month' as const, label: 'Month' },
+                { value: 'day' as const, label: 'Day' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleFilterTypeChange(option.value)}
+                  className={cn(
+                    'rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors',
+                    filterType === option.value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'border border-border bg-muted/40 text-muted-foreground hover:bg-muted/60',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
 
             <div className="flex flex-wrap gap-2">
-            {[
-              { value: 'all' as const, label: 'All Types' },
-              { value: 'dispatch' as const, label: 'Dispatch Only' },
-              { value: 'delivery' as const, label: 'Delivery Notes Only' },
-            ].map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setNoteTypeFilter(option.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors ${
-                  noteTypeFilter === option.value
-                    ? 'bg-blue-600 text-white'
-                    : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+              {[
+                { value: 'all' as const, label: 'All types' },
+                { value: 'dispatch' as const, label: 'Dispatch only' },
+                { value: 'delivery' as const, label: 'Delivery notes only' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setNoteTypeFilter(option.value)}
+                  className={cn(
+                    'rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors',
+                    noteTypeFilter === option.value
+                      ? 'bg-sky-600 text-white dark:bg-sky-600'
+                      : 'border border-border bg-muted/40 text-muted-foreground hover:bg-muted/60',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {filterType !== 'all' ? (
+              <input
+                type={filterType === 'day' ? 'date' : 'month'}
+                value={selectedDate}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            ) : null}
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+              Search by job number or description
+            </span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {filterType !== 'all' ? (
-            <input
-              type={filterType === 'day' ? 'date' : 'month'}
-              value={selectedDate}
-              onChange={(e) => handleDateChange(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-            />
-          ) : null}
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-transparent dark:text-slate-500">
-            Search by job number or description
-          </span>
+        <div className="mt-4">
+          <DataTable
+            columns={columns as any}
+            data={filteredEntries as any}
+            loading={loading}
+            emptyText="No dispatch entries found for this period."
+            searchKeys={['jobNumber', 'jobDescription'] as any}
+            onRowClick={handleRowClick as any}
+            onRowContextMenu={handleRowContextMenu}
+            onRowDoubleClick={handleRowDoubleClick as any}
+            selectedRowId={selectedRowId}
+          />
         </div>
-      </div>
-
-      <div className="mt-4">
-        <DataTable
-          columns={columns as any}
-          data={filteredEntries as any}
-          loading={loading}
-          emptyText="No dispatch entries found for this period."
-          searchKeys={['jobNumber', 'jobDescription'] as any}
-          onRowClick={handleRowClick as any}
-          onRowContextMenu={handleRowContextMenu}
-          onRowDoubleClick={handleRowDoubleClick as any}
-          selectedRowId={selectedRowId}
-        />
-      </div>
-    </section>
+      </section>
 
       {/* View Modal */}
       {viewModal.open && viewModal.entry && (() => {

@@ -242,7 +242,8 @@ export default function CustomerJobFormPage() {
   const [jobContactsDraft, setJobContactsDraft] = useState<JobContactRow[] | null>(null);
   const [requiredExpertisesDraft, setRequiredExpertisesDraft] = useState<string[] | null>(null);
   const [expertiseOptions, setExpertiseOptions] = useState<string[]>([]);
-  const [jobSourceMode, setJobSourceMode] = useState<'HYBRID' | 'EXTERNAL_ONLY'>('HYBRID');
+  type JobSourceModeUi = 'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY';
+  const [jobSourceMode, setJobSourceMode] = useState<JobSourceModeUi>('HYBRID');
   const saving = isCreating || isUpdating;
   const form = formDraft ?? baseForm;
   const jobContacts = jobContactsDraft ?? baseContacts;
@@ -266,7 +267,8 @@ export default function CustomerJobFormPage() {
         const res = await fetch(`/api/companies/${session.user.activeCompanyId}`, { cache: 'no-store' });
         const json = await res.json();
         if (!cancelled && res.ok && json?.success) {
-          setJobSourceMode((json.data?.jobSourceMode as 'HYBRID' | 'EXTERNAL_ONLY') || 'HYBRID');
+          const m = json.data?.jobSourceMode;
+          setJobSourceMode(m === 'EXTERNAL_ONLY' || m === 'INTERNAL_ONLY' || m === 'HYBRID' ? m : 'HYBRID');
         }
       } catch {
         if (!cancelled) setJobSourceMode('HYBRID');
@@ -397,7 +399,7 @@ export default function CustomerJobFormPage() {
 
   return (
     <form id="job-form" onSubmit={handleSubmit} className="-mx-4 -my-4 min-h-[calc(100dvh-4rem)] bg-[linear-gradient(180deg,#f8fafc_0%,#ecfeff_45%,#f8fafc_100%)] px-4 py-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_55%,#020617_100%)] sm:-mx-5 sm:-my-5 sm:px-5 sm:py-5 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6">
-      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <section className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_34%),linear-gradient(135deg,#0f172a,#020617)] sm:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">

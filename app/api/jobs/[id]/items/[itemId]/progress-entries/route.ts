@@ -83,6 +83,27 @@ export async function POST(
   const hasTracker = item.trackingItems.some((entry) => typeof entry === 'object' && entry !== null && (entry as { id?: unknown }).id === parsed.data.trackerId);
   if (!hasTracker) return errorResponse('Tracked item not found on this budget item', 422);
 
+  /** Block entries that would push cumulative qty past the tracker's target. */
+  const trackerDef = item.trackingItems.find(
+    (entry) => typeof entry === 'object' && entry !== null && (entry as { id?: unknown }).id === parsed.data.trackerId
+  ) as { targetValue?: unknown; label?: unknown } | undefined;
+  const target = Number(trackerDef?.targetValue ?? 0);
+  if (target > 0) {
+    const cumAgg = await prisma.jobItemProgressEntry.aggregate({
+      where: { companyId, jobItemId: itemId, trackerId: parsed.data.trackerId },
+      _sum: { quantity: true },
+    });
+    const currentCumulative = decimalToNumberOrZero(cumAgg._sum.quantity ?? 0);
+    const remaining = Math.max(0, target - currentCumulative);
+    if (parsed.data.quantity > remaining) {
+      const label = typeof trackerDef?.label === 'string' ? trackerDef.label : 'tracker';
+      return errorResponse(
+        `Quantity exceeds remaining target for "${label}". Remaining: ${remaining.toLocaleString()}.`,
+        422
+      );
+    }
+  }
+
   const entry = await prisma.$transaction(async (tx) => {
     const created = await tx.jobItemProgressEntry.create({
       data: {

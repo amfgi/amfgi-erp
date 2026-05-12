@@ -158,6 +158,20 @@ export async function processJobUpsert(params: {
 }> {
   const { companyId, credentialId, payload } = params;
   const now = new Date();
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { jobSourceMode: true, customerSourceMode: true },
+  });
+  if (!company) {
+    throw new JobSyncReferenceError('Company not found');
+  }
+  if (company.jobSourceMode === 'INTERNAL_ONLY') {
+    throw new JobSyncReferenceError(
+      'Job source mode is internal only. Inbound job integration is disabled for this company.'
+    );
+  }
+
   if (payload.customerExternalId !== undefined) {
     const existingCustomer = await prisma.customer.findUnique({
       where: {
@@ -166,6 +180,11 @@ export async function processJobUpsert(params: {
       select: { id: true },
     });
     if (!existingCustomer) {
+      if (company.customerSourceMode === 'INTERNAL_ONLY') {
+        throw new JobSyncReferenceError(
+          'Customer source mode is internal only. Create the customer in AMFGI (with matching external party id if needed) before posting jobs, or change company customer source mode.'
+        );
+      }
       await syncExternalCustomersForCompany(companyId);
     }
   }

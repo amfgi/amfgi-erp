@@ -25,6 +25,7 @@ import {
 } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
 import { upsertStockExceptionApproval } from '@/lib/utils/stockExceptionApproval';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 function parseDeliveryNoteLabel(notes?: string | null): string {
   const match = notes?.match(/--- DELIVERY NOTE #(\d+)/);
@@ -796,7 +797,7 @@ export async function POST(req: Request) {
     });
 
     if (result.signedCopyUrl && result.ids.length > 0 && jobId) {
-      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+      const folderId = await getEffectiveGoogleDriveRootFolderId();
       if (folderId) {
         try {
           const signedCopyDriveId = extractGoogleDriveFileId(result.signedCopyUrl);

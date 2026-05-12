@@ -3,7 +3,11 @@
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 
-type HubCard = {
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { cn } from '@/lib/utils';
+
+type HubItem = {
   href: string;
   title: string;
   description: string;
@@ -15,7 +19,7 @@ type HubCard = {
 const HUB_SECTIONS: Array<{
   title: string;
   description: string;
-  cards: HubCard[];
+  cards: HubItem[];
 }> = [
   {
     title: 'Daily Operations',
@@ -93,47 +97,16 @@ const HUB_SECTIONS: Array<{
   },
 ];
 
-const toneClasses: Record<HubCard['tone'], string> = {
-  emerald:
-    'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300',
-  sky: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-cyan-300',
-  amber:
-    'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
+const toneBadgeClass: Record<HubItem['tone'], string> = {
+  emerald: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200',
+  sky: 'border-sky-500/35 bg-sky-500/10 text-sky-800 dark:text-sky-200',
+  amber: 'border-amber-500/35 bg-amber-500/10 text-amber-800 dark:text-amber-200',
 };
 
-function canSeeCard(isSuperAdmin: boolean, permissions: string[], card: HubCard) {
+function canSeeItem(isSuperAdmin: boolean, permissions: string[], item: HubItem) {
   if (isSuperAdmin) return true;
-  if (!card.perms || card.perms.length === 0) return true;
-  return card.perms.some((perm) => permissions.includes(perm));
-}
-
-function HubLinkCard({ card }: { card: HubCard }) {
-  return (
-    <Link
-      href={card.href}
-      className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50/40 hover:shadow-lg dark:border-white/10 dark:bg-slate-900/50 dark:hover:bg-white/5 dark:hover:shadow-black/10"
-    >
-      <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.08),transparent_38%)] opacity-70 dark:bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.06),transparent_38%)]"
-        aria-hidden
-      />
-      <div className="relative">
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] ${toneClasses[card.tone]}`}>
-          {card.eyebrow}
-        </span>
-        <h3 className="mt-4 text-xl font-semibold text-slate-900 transition-colors group-hover:text-emerald-700 dark:text-white dark:group-hover:text-emerald-300">
-          {card.title}
-        </h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">{card.description}</p>
-        <div className="mt-5 flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors group-hover:text-slate-900 dark:text-slate-300 dark:group-hover:text-white">
-          <span>Open section</span>
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M9 5l7 7-7 7" />
-          </svg>
-        </div>
-      </div>
-    </Link>
-  );
+  if (!item.perms || item.perms.length === 0) return true;
+  return item.perms.some((perm) => permissions.includes(perm));
 }
 
 export default function HrHubPage() {
@@ -143,70 +116,89 @@ export default function HrHubPage() {
 
   const visibleSections = HUB_SECTIONS.map((section) => ({
     ...section,
-    cards: section.cards.filter((card) => canSeeCard(isSuperAdmin, permissions, card)),
+    cards: section.cards.filter((item) => canSeeItem(isSuperAdmin, permissions, item)),
   })).filter((section) => section.cards.length > 0);
 
-  const totalVisibleCards = visibleSections.reduce((sum, section) => sum + section.cards.length, 0);
+  const totalVisibleLinks = visibleSections.reduce((sum, section) => sum + section.cards.length, 0);
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-3xl border p-6 shadow-sm" style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}>
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.12),transparent_38%)]"
-          aria-hidden
-        />
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-300/80">Human Resources</p>
-            <h1 className="mt-2 text-3xl font-semibold" style={{ color: 'var(--foreground)' }}>HR operations hub</h1>
-            <p className="mt-3 text-sm leading-6" style={{ color: 'var(--foreground-muted)' }}>
-              Run daily workforce planning, attendance control, employee records, and HR setup from one entry point built for operations teams.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[26rem]">
-            <div className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}>
-              <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>Accessible sections</p>
-              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--foreground)' }}>{totalVisibleCards}</p>
-            </div>
-            <div className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}>
-              <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>Primary workflow</p>
-              <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">Schedule to attendance</p>
-            </div>
-            <div className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}>
-              <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>Data foundation</p>
-              <p className="mt-2 text-sm font-medium" style={{ color: 'var(--foreground)' }}>Employees, skills, documents</p>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">People</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">HR operations hub</h1>
+          <p className="text-sm text-muted-foreground">
+            Run daily workforce planning, attendance control, employee records, and HR setup from one entry point for
+            operations teams.
+          </p>
         </div>
-      </section>
+        <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {totalVisibleLinks} link{totalVisibleLinks === 1 ? '' : 's'}
+        </p>
+      </header>
 
       {visibleSections.length === 0 ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-white/10 dark:bg-slate-900/40">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">No HR sections available</h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            Your account does not currently have HR permissions for this company.
-          </p>
-        </section>
+        <Alert>
+          <AlertTitle>No HR sections available</AlertTitle>
+          <AlertDescription>Your account does not currently have HR permissions for this company.</AlertDescription>
+        </Alert>
       ) : (
-        visibleSections.map((section) => (
-          <section key={section.title} className="space-y-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{section.title}</h2>
-                <p className="text-sm text-slate-600 dark:text-slate-400">{section.description}</p>
-              </div>
-              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                {section.cards.length} section{section.cards.length === 1 ? '' : 's'}
-              </div>
-            </div>
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {section.cards.map((card) => (
-                <HubLinkCard key={card.href} card={card} />
-              ))}
-            </div>
-          </section>
-        ))
+        <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visibleSections.map((section, sectionIndex) => {
+            const headingId = `hr-hub-section-${sectionIndex}`;
+            return (
+              <section
+                key={section.title}
+                className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+                aria-labelledby={headingId}
+              >
+                <div className="flex flex-col gap-0.5 bg-muted/30 px-4 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 id={headingId} className="text-sm font-semibold text-foreground">
+                      {section.title}
+                    </h2>
+                    <span className="text-xs tabular-nums text-muted-foreground">{section.cards.length}</span>
+                  </div>
+                  <p className="text-xs leading-snug text-muted-foreground">{section.description}</p>
+                </div>
+                <ul className="flex min-h-0 flex-1 flex-col divide-y divide-border" role="list">
+                  {section.cards.map((item) => (
+                    <li key={item.href} role="listitem">
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          'flex min-h-13 items-start gap-3 px-4 py-3 transition-colors',
+                          'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'shrink-0 text-[10px] font-medium uppercase tracking-wide whitespace-nowrap',
+                                toneBadgeClass[item.tone],
+                              )}
+                            >
+                              {item.eyebrow}
+                            </Badge>
+                          </div>
+                          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                            {item.description}
+                          </p>
+                        </div>
+                        <span className="shrink-0 pt-1 text-xs font-medium text-muted-foreground" aria-hidden>
+                          →
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       )}
     </div>
   );

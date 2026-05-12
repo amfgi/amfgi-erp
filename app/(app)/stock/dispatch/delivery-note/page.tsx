@@ -4,10 +4,12 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import SearchSelect from '@/components/ui/SearchSelect';
 import DispatchLineGrid from '@/components/stock/DispatchLineGrid';
 import { Badge } from '@/components/ui/Badge';
+import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   useGetJobsQuery,
@@ -273,6 +275,12 @@ export default function DeliveryNoteCreatePage() {
       requiresReason: negativeStockLineCount > 0 || budgetWarningCount > 0,
     };
   }, [budgetWarning, lines, materials, skipMaterialDispatch]);
+
+  const materialLineCount = useMemo(() => lines.filter((l) => l.materialId.trim()).length, [lines]);
+  const filledCustomItemCount = useMemo(
+    () => customItems.filter((c) => c.name.trim()).length,
+    [customItems],
+  );
 
   useEffect(() => {
     if (!selectedJob) {
@@ -903,10 +911,8 @@ export default function DeliveryNoteCreatePage() {
 
   if (isLoadingEdit) {
     return (
-      <div className="max-w-6xl mx-auto space-y-6 py-8">
-        <div className="text-center">
-          <p className="text-slate-400">Loading delivery note...</p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+        Loading delivery note…
       </div>
     );
   }
@@ -982,56 +988,89 @@ export default function DeliveryNoteCreatePage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1240px] space-y-4">
-      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="flex items-center justify-between">
-        <div>
-          <div className="mb-1 flex items-center gap-2">
-            <Link href="/stock/dispatch" className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-700 transition-colors hover:text-blue-600 dark:text-blue-300/80 dark:hover:text-blue-200">
-              ← Dispatch
-            </Link>
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">{pageTitle}</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">{pageDescription}</p>
-        </div>
-        <div className="flex gap-3">
-          {editingTransactionId && (
-            <button
-              type="button"
-              onClick={handleDuplicate}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              📋 Duplicate
-            </button>
-          )}
-          <Link href="/stock/dispatch">
-            <Button variant="ghost">Cancel</Button>
+    <div className="flex w-full min-w-0 flex-col gap-5 overflow-x-hidden">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <Link
+            href="/stock/dispatch"
+            className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            ← Dispatch
           </Link>
-          <button
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">{pageDescription}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          {editingTransactionId ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => void handleDuplicate()}>
+              Duplicate
+            </Button>
+          ) : null}
+          <Link href="/stock/dispatch" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
+            Cancel
+          </Link>
+          <Button
+            type="button"
+            size="sm"
+            disabled={submitting}
             onClick={() => {
               if (formRef.current) {
                 formRef.current.dispatchEvent(new Event('submit', { bubbles: true }));
               }
             }}
-            disabled={submitting}
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:bg-slate-400 dark:disabled:bg-slate-700"
           >
-            {submitting ? 'Saving...' : submitButtonText}
-          </button>
+            {submitting ? 'Saving…' : submitButtonText}
+          </Button>
         </div>
-      </div>
-      </div>
+      </header>
 
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-0">
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          {
+            label: 'Delivery note #',
+            value: deliveryNoteNumber != null ? `DN #${deliveryNoteNumber}` : '—',
+            note: editingTransactionId ? 'Editing existing' : 'New document',
+          },
+          {
+            label: 'Material lines',
+            value: String(materialLineCount),
+            note: skipMaterialDispatch ? 'Skipped (custom only)' : 'Rows with a material',
+          },
+          {
+            label: 'Custom items',
+            value: String(filledCustomItemCount),
+            note: `${customItems.length} row(s) in grid`,
+          },
+          {
+            label: 'Budget warnings',
+            value: budgetWarningLoading ? '…' : String(budgetWarning?.warningCount ?? 0),
+            note: 'Variation budget check',
+          },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className="overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+      >
         {budgetWarning && (
-          <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-600/10 p-4">
-            <p className="text-sm font-medium text-amber-300">
+          <div className="border-b border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="text-sm font-medium text-foreground">
               Budget warning: this delivery may exceed the variation job material budget.
             </p>
             <div className="mt-3 space-y-2">
               {budgetWarning.rows.slice(0, 4).map((row) => (
-                <div key={row.materialId} className="rounded-md bg-slate-950/30 px-3 py-2 text-xs text-slate-200">
-                  <span className="font-semibold text-white">{row.materialName}</span>
+                <div key={row.materialId} className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground">
+                  <span className="font-semibold">{row.materialName}</span>
                   {' · '}
                   projected {row.projectedIssuedBaseQuantity.toFixed(3)} {row.baseUnit}
                   {' vs budget '}
@@ -1040,28 +1079,28 @@ export default function DeliveryNoteCreatePage() {
                 </div>
               ))}
               {budgetWarning.warningCount > 4 && (
-                <p className="text-xs text-amber-200">+{budgetWarning.warningCount - 4} more material warning(s)</p>
+                <p className="text-xs text-muted-foreground">+{budgetWarning.warningCount - 4} more material warning(s)</p>
               )}
             </div>
-            <p className="mt-3 text-xs text-amber-200/90">
+            <p className="mt-3 text-xs text-muted-foreground">
               Enter an override reason below if this extra issue is intentional.
             </p>
           </div>
         )}
 
         {overrideSignals.negativeStockLineCount > 0 && (
-          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-600/10 p-4">
-            <p className="text-sm font-medium text-red-300">
+          <div className="border-b border-destructive/40 bg-destructive/10 p-4">
+            <p className="text-sm font-medium text-destructive">
               Override required: {overrideSignals.negativeStockLineCount} line(s) exceed available warehouse FIFO stock on a negative-consumption material.
             </p>
-            <p className="mt-2 text-xs text-red-200/90">
+            <p className="mt-2 text-xs text-muted-foreground">
               Saving will be blocked unless you capture the reason for this stock exception.
             </p>
           </div>
         )}
 
-        {/* Header */}
-        <div className="rounded-t-3xl border border-slate-200 border-b-0 bg-white p-5 dark:border-slate-800 dark:bg-slate-950/70">
+        {/* Job & delivery */}
+        <div className="border-b border-border p-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
             <div>
               <SearchSelect
@@ -1077,14 +1116,14 @@ export default function DeliveryNoteCreatePage() {
                   }))}
                 renderItem={(item) => (
                   <div>
-                    <div className="font-medium">{item.label}</div>
-                    <div className="text-xs text-slate-400">{item.searchText}</div>
+                    <div className="font-medium text-foreground">{item.label}</div>
+                    <div className="text-xs text-muted-foreground">{item.searchText}</div>
                   </div>
                 )}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Delivery Date
               </label>
               <input
@@ -1092,31 +1131,31 @@ export default function DeliveryNoteCreatePage() {
                 required
                 value={date}
                 onChange={(e) => handleDateChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Delivery Note #
               </label>
-                <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                  <span className="font-semibold text-blue-700 dark:text-blue-300">
+                <div className="flex items-center rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
+                  <span className="font-semibold text-primary">
                   {deliveryNoteNumber ? `DN #${deliveryNoteNumber}` : 'Loading...'}
                 </span>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Budget Warnings
               </label>
-              <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                <span className="font-semibold text-amber-700 dark:text-amber-300">
-                  {budgetWarningLoading ? 'Checking...' : `${budgetWarning?.warningCount ?? 0} warning(s)`}
+              <div className="flex items-center rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
+                <span className="font-semibold text-amber-700 dark:text-amber-400">
+                  {budgetWarningLoading ? 'Checking…' : `${budgetWarning?.warningCount ?? 0} warning(s)`}
                 </span>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Contact Person
               </label>
               {(() => {
@@ -1203,8 +1242,8 @@ export default function DeliveryNoteCreatePage() {
         </div>
 
         {/* Notes */}
-        <div className="border border-slate-200 border-b-0 border-t-0 bg-white p-5 dark:border-slate-800 dark:bg-slate-950/70">
-          <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
+        <div className="border-b border-border p-5">
+          <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Notes
           </label>
           <textarea
@@ -1212,10 +1251,10 @@ export default function DeliveryNoteCreatePage() {
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Optional general notes"
             rows={2}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <div className="mt-4">
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
+            <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Override Reason
             </label>
             <textarea
@@ -1223,31 +1262,31 @@ export default function DeliveryNoteCreatePage() {
               onChange={(e) => setOverrideReason(e.target.value)}
               placeholder={overrideSignals.requiresReason ? 'Required for this delivery note' : 'Only needed for exceptions'}
               rows={2}
-              className={`w-full rounded-xl border px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 dark:text-white ${
+              className={`w-full rounded-md border px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring ${
                 overrideSignals.requiresReason
-                  ? 'border-amber-400 bg-amber-50 focus:ring-amber-500 dark:border-amber-500/40 dark:bg-amber-500/10'
-                  : 'border-slate-200 bg-slate-50 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900'
+                  ? 'border-amber-500/50 bg-amber-500/10'
+                  : 'border-border bg-background'
               }`}
             />
           </div>
         </div>
 
         {/* Skip Materials Toggle */}
-        <div className="border border-slate-200 border-b-0 border-t-0 bg-white p-5 dark:border-slate-800 dark:bg-slate-950/70">
+        <div className="border-b border-border p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="mb-1 text-sm font-medium text-slate-900 dark:text-slate-200">
+              <p className="mb-1 text-sm font-medium text-foreground">
                 Custom Items Only
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 Skip actual dispatch, create delivery note for printing purposes only
               </p>
             </div>
             <button
               type="button"
               onClick={() => setSkipMaterialDispatch(!skipMaterialDispatch)}
-              className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-800 ${
-                skipMaterialDispatch ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+              className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background ${
+                skipMaterialDispatch ? 'bg-primary' : 'bg-muted'
               }`}
             >
               <span
@@ -1261,29 +1300,29 @@ export default function DeliveryNoteCreatePage() {
 
         {/* Materials Section */}
         {!skipMaterialDispatch && (
-        <div className="overflow-x-auto border border-slate-200 border-b-0 bg-white dark:border-slate-800 dark:bg-slate-950/70">
-          <div className="border-b border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/80">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Materials for Dispatch</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Add materials to be dispatched. This section affects inventory.</p>
+        <div className="overflow-x-auto border-b border-border">
+          <div className="border-b border-border bg-muted/40 p-4">
+            <h3 className="text-sm font-semibold text-foreground">Materials for Dispatch</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Add materials to be dispatched. This section affects inventory.</p>
           </div>
                     <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/80">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide w-8">#</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide min-w-[200px]">Material</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wide min-w-[128px]">UOM</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wide w-28">In Stock</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wide w-32">Dispatch Qty</th>
-                <th className="px-3 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wide w-32">Return Qty</th>
+              <tr className="border-b border-border bg-muted/40">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground w-8">#</th>
+                <th className="min-w-[200px] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material</th>
+                <th className="min-w-[128px] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">UOM</th>
+                <th className="w-28 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">In Stock</th>
+                <th className="w-32 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dispatch Qty</th>
+                <th className="w-32 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Return Qty</th>
                 {showWarehouseColumn ? (
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide min-w-[170px]">Warehouse</th>
+                  <th className="min-w-[170px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Warehouse</th>
                 ) : null}
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={showWarehouseColumn ? 7 : 6} className="px-4 py-8 text-center text-slate-500 text-sm">
+                  <td colSpan={showWarehouseColumn ? 7 : 6} className="px-4 py-8 text-center text-sm text-muted-foreground">
                     No materials added yet. Click "+ Add Material" to start.
                   </td>
                 </tr>
@@ -1295,8 +1334,8 @@ export default function DeliveryNoteCreatePage() {
                   const selectedUom = getSelectedUom(mat, line.quantityUomId);
                   const selectedWarehouseBaseStock = getWarehouseBaseStock(mat, line.warehouseId);
                   return (
-                    <tr key={line.id} className="border-b border-slate-200 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-900/40">
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500 dark:text-slate-500">{idx + 1}</td>
+                    <tr key={line.id} className="border-b border-border hover:bg-muted/40">
+                      <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{idx + 1}</td>
 
                       <td className="px-4 py-2">
                         <SearchSelect
@@ -1442,46 +1481,46 @@ export default function DeliveryNoteCreatePage() {
         )}
 
         {/* Custom Items Section */}
-        <div className="border border-slate-200 border-b-0 bg-white dark:border-slate-800 dark:bg-slate-950/70">
-          <div className="border-b border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/80">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+        <div className="border-b border-border">
+          <div className="border-b border-border bg-muted/40 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.3A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z" />
                 </svg>
                 Custom Items (For Printing)
               </h3>
               {deliveryNoteNumber && (
-                <span className="px-3 py-1 bg-blue-600/30 border border-blue-500/50 rounded-full text-xs font-semibold text-blue-300">
+                <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                   Delivery Note #{deliveryNoteNumber}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Add custom items to appear on the printed delivery note. This section does not affect inventory.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Add custom items to appear on the printed delivery note. This section does not affect inventory.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/80">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide w-8">#</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide min-w-[200px]">Item Name *</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wide min-w-[200px]">Description</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wide w-20">Unit</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wide w-24">Qty</th>
-                  <th className="px-2 py-3 w-20"></th>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="w-8 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">#</th>
+                  <th className="min-w-[200px] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Item Name *</th>
+                  <th className="min-w-[200px] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</th>
+                  <th className="w-20 px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit</th>
+                  <th className="w-24 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
+                  <th className="w-20 px-2 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {customItems.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">
+                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
                       No custom items yet. Click "+ Add Item" to start.
                     </td>
                   </tr>
                 ) : (
                   customItems.map((item, idx) => (
-                    <tr key={item.id} className="border-b border-slate-200 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-900/40">
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500 dark:text-slate-500">{idx + 1}</td>
+                    <tr key={item.id} className="border-b border-border hover:bg-muted/40">
+                      <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{idx + 1}</td>
                       <td className="px-4 py-2">
                         <input
                           type="text"
@@ -1546,11 +1585,11 @@ export default function DeliveryNoteCreatePage() {
               </tbody>
             </table>
           </div>
-          <div className="border-t border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/70">
+          <div className="border-t border-border bg-card p-4">
             <button
               type="button"
               onClick={addCustomItem}
-              className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-500/20 dark:text-blue-300"
+              className="rounded-md border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
             >
               + Add Item
             </button>

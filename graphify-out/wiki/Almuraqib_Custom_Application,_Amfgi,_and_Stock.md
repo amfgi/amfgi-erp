@@ -1,10 +1,11 @@
 # Almuraqib Custom Application, Amfgi, and Stock
 
-> 1 nodes · cohesion 1.00
+> 2 nodes · cohesion 1.00
 
 ## Key Concepts
 
-- **page.tsx** (0 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\job-budget\[id]\page.tsx`
+- **page.tsx** (1 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\non-stock-reconcile\page.tsx`
+- **NonStockReconcilePage()** (1 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\non-stock-reconcile\page.tsx`
 
 ## Relationships
 
@@ -12,11 +13,11 @@
 
 ## Source Files
 
-- `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\job-budget\[id]\page.tsx`
+- `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\non-stock-reconcile\page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 0 (0%)
+- EXTRACTED: 2 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

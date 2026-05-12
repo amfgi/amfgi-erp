@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- **layout.tsx** (1 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\layout.tsx`
-- **HrLayout()** (1 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\layout.tsx`
+- **page.tsx** (1 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\schedule\[workDate]\page.tsx`
+- **HrScheduleDayPage()** (1 connections) — `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\schedule\[workDate]\page.tsx`
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\layout.tsx`
+- `C:\almuraqib-custom-application\AMFGI\app\(app)\hr\schedule\[workDate]\page.tsx`
 
 ## Audit Trail
 

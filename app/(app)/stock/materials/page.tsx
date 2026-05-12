@@ -4,7 +4,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import * as XLSX from 'xlsx';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import BulkImportModal from '@/components/materials/BulkImportModal';
 import toast from 'react-hot-toast';
@@ -57,8 +58,8 @@ function extractErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function formatMoney(value?: number) {
-  return value !== undefined ? `AED ${value.toFixed(2)}` : '-';
+function formatMoney(value: number | undefined, currencyCode: string) {
+  return value !== undefined ? `${currencyCode} ${value.toFixed(2)}` : '-';
 }
 
 function formatCount(value: number) {
@@ -133,7 +134,9 @@ export default function MaterialsPage() {
     [activeMaterials]
   );
 
-  const fifoInventoryValue = stockValuation?.summary.fifoStockValue ?? inventoryValue;
+  const preferredInventoryValue = stockValuation?.summary.totalStockValue ?? inventoryValue;
+  const valuationCurrencyCode = stockValuation?.summary.currencyCode ?? 'AED';
+  const preferredMethod = stockValuation?.summary.preferredMethod ?? 'FIFO';
 
   const distinctWarehouses = useMemo(
     () => new Set(activeMaterials.map((material) => material.warehouse).filter(Boolean)).size,
@@ -373,7 +376,9 @@ export default function MaterialsPage() {
         sortable: true,
         hiddenByDefault: true,
         render: (material) => (
-          <div className="min-w-[120px] text-sm text-slate-700 dark:text-slate-200">{formatMoney(material.unitCost)}</div>
+          <div className="min-w-[120px] text-sm text-slate-700 dark:text-slate-200">
+            {formatMoney(material.unitCost, valuationCurrencyCode)}
+          </div>
         ),
       },
       {
@@ -432,85 +437,86 @@ export default function MaterialsPage() {
         },
       },
     ],
-    []
+    [valuationCurrencyCode]
   );
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.08),_transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-                Materials Control
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                 Inventory
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review stock health, move inventory, and jump into material setup without leaving the main grid.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => setImportModal(true)}>
-                Import Excel
-              </Button>
-              <Button variant="secondary" onClick={handleExport}>
-                Export Excel
-              </Button>
-              <Button onClick={() => router.push('/stock/materials/new')}>Add Material</Button>
-            </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Materials</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Inventory</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Review stock health, move inventory, and jump into material setup without leaving the main grid.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+          <p className="text-xs tabular-nums text-muted-foreground sm:text-right">
+            {formatCount(activeMaterials.length)} active
+            {materials.length !== activeMaterials.length ? (
+              <span> · {materials.length - activeMaterials.length} archived</span>
+            ) : null}
+          </p>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setImportModal(true)}>
+              Import Excel
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={handleExport}>
+              Export Excel
+            </Button>
+            <Button type="button" size="sm" onClick={() => router.push('/stock/materials/new')}>
+              Add material
+            </Button>
           </div>
         </div>
+      </header>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: 'Active materials',
-              value: String(activeMaterials.length),
-              note: `${materials.length - activeMaterials.length} archived`,
-            },
-            {
-              label: 'Low stock watch',
-              value: String(lowStockCount),
-              note: 'At or below reorder point',
-            },
-            {
-              label: 'FIFO value',
-              value: `AED ${fifoInventoryValue.toFixed(2)}`,
-              note: 'Preferred inventory valuation method',
-            },
-            {
-              label: 'Warehouse coverage',
-              value: String(distinctWarehouses),
-              note: 'Distinct warehouse assignments',
-            },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-950/80">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">{item.label}</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
-        </div>
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          {
+            label: 'Active materials',
+            value: String(activeMaterials.length),
+            note: `${materials.length - activeMaterials.length} archived`,
+          },
+          {
+            label: 'Low stock watch',
+            value: String(lowStockCount),
+            note: 'At or below reorder point',
+          },
+          {
+            label: `${preferredMethod} value`,
+            value: `${valuationCurrencyCode} ${preferredInventoryValue.toFixed(2)}`,
+            note: 'Company preferred inventory valuation method',
+          },
+          {
+            label: 'Warehouse coverage',
+            value: String(distinctWarehouses),
+            note: 'Distinct warehouse assignments',
+          },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
+        ))}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/60 sm:p-4">
-        <div className="mb-3 flex flex-col gap-2 border-b border-slate-200 pb-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4">
+        <div className="mb-3 flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-              Live inventory
-            </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Live inventory</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Right-click a row for quick actions, or open a material to edit pricing, UOM, and history.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-500">
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">Double-click to open</span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">Search all fields or one field</span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">Fuzzy, contains, or exact match</span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">Columns save to your profile</span>
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Double-click to open</span>
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Search all fields or one field</span>
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Fuzzy, contains, or exact match</span>
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Columns save to your profile</span>
           </div>
         </div>
 
@@ -599,11 +605,11 @@ export default function MaterialsPage() {
                 Cancel
               </Button>
               <Button
-                variant="danger"
+                variant="destructive"
                 onClick={handleDelete}
                 disabled={isDeleting || deleteModal.checking || !deleteModal.canDelete}
               >
-                {isDeleting ? 'Deleting...' : 'Delete'}
+                {isDeleting ? 'Deleting…' : 'Delete'}
               </Button>
             </div>
           </div>

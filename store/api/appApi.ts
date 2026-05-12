@@ -8,6 +8,7 @@ export const appApi = createApi({
     'StockBatch',
     'Job',
     'JobMaterials',
+    'JobDailyQuantityLog',
     'Customer',
     'Supplier',
     'Transaction',

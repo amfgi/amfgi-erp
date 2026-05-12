@@ -6,6 +6,7 @@ import {
   uploadToDrive,
 } from '@/lib/utils/googleDrive';
 import { finalizeUserMediaUpload, MEDIA_KIND_USER_SIGNATURE } from '@/lib/media/userScopedMedia';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 /** Signature image for print templates (PNG recommended for transparency). */
 export async function POST(req: Request) {
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     const userId = session.user.id;
-    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const rootFolderId = await getEffectiveGoogleDriveRootFolderId();
     if (!rootFolderId) return errorResponse('Google Drive folder not configured', 500);
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext =
@@ -45,6 +46,7 @@ export async function POST(req: Request) {
       {
         companyId,
         rootFolderId,
+        scope: 'global',
         folderPath: [
           { key: 'drive-folder:users-root', name: 'Users' },
           {

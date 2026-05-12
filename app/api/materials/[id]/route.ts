@@ -24,6 +24,28 @@ const UpdateSchema = z.object({
   reorderLevel:        z.number().finite().min(0).optional(),
   assemblyOutputQuantity: z.number().finite().positive().optional(),
   assemblyOverheadPercent: z.number().finite().min(0).optional(),
+  imageUrl: z.string().url().optional(),
+  attachmentUrl: z.string().url().optional(),
+  attachmentName: z.string().min(1).max(255).optional(),
+  attachmentMimeType: z.string().min(1).max(150).optional(),
+  photoGallery: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        fileName: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(150),
+      })
+    )
+    .optional(),
+  documentFiles: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        fileName: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(150),
+      })
+    )
+    .optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {

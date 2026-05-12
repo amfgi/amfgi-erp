@@ -14,6 +14,8 @@ model Company {
   externalCompanyId        String?                     @unique
   /// HYBRID = local + external parent jobs, EXTERNAL_ONLY = parent jobs from API only
   jobSourceMode            JobSourceMode               @default(HYBRID)
+  customerSourceMode       PartyMasterSourceMode       @default(HYBRID)
+  supplierSourceMode       PartyMasterSourceMode       @default(HYBRID)
   description              String?                     @db.Text
   isActive                 Boolean                     @default(true)
   jobCostingSettings       Json?
@@ -27,6 +29,10 @@ model Company {
   phone                    String?
   warehouseMode            WarehouseMode               @default(REQUIRED)
   stockFallbackWarehouseId String?
+  onboardingStatus         CompanyOnboardingStatus     @default(NEW)
+  foundationChecklist      Json?
+  operationalSettings      Json?
+  settingsVersion          Int                         @default(1)
   categories               Category[]
   customers                Customer[]
   customerContacts         CustomerContact[]
@@ -42,7 +48,7 @@ model Company {
   activeForUsers           User[]                      @relation("UserActiveCompany")
   users                    UserCompanyAccess[]
   warehouses               Warehouse[]                 @relation("CompanyWarehouses")
-  stockFallbackWarehouse   Warehouse?                  @relation("CompanyStockFallbackWarehouse", fields: [stockFallbackWarehouseId], references: [id], onDelete: SetNull)
+  stockFallbackWarehouse   Warehouse?                  @relation("CompanyStockFallbackWarehouse", fields: [id, stockFallbackWarehouseId], references: [companyId, id], onDelete: SetNull)
   mediaAssets              MediaAsset[]
   apiCredentials           ApiCredential[]
   lpoValueChanges          JobLpoValueHistory[]
@@ -72,6 +78,11 @@ model Company {
   liveUpdateEvents         LiveUpdateEvent[]
   stockExceptionApprovals  StockExceptionApproval[]
   stockCountSessions       StockCountSession[]
+  domainEvents             DomainEvent[]
+  businessDocuments        BusinessDocument[]
+  workflowApprovals        WorkflowApproval[]
+  quantityLogDaySubmissions QuantityLogDaySubmission[]
+  quantityLogAdhocJobs      QuantityLogAdhocJob[]
 }
 
 model User {
@@ -95,15 +106,23 @@ model User {
   /// When set, this login is the employee self-service account for HR portal
   linkedEmployeeId      String?                     @unique
   linkedEmployee        Employee?                   @relation("EmployeeUserLink", fields: [linkedEmployeeId], references: [id], onDelete: SetNull)
+  domainEvents          DomainEvent[]               @relation("DomainEventActorUser")
+  createdBusinessDocuments  BusinessDocument[]      @relation("BusinessDocumentCreatedBy")
+  approvedBusinessDocuments BusinessDocument[]      @relation("BusinessDocumentApprovedBy")
+  requestedWorkflowApprovals WorkflowApproval[]     @relation("WorkflowApprovalRequestedBy")
+  decidedWorkflowApprovals   WorkflowApproval[]     @relation("WorkflowApprovalDecidedBy")
+  quantityLogDaySubmissions  QuantityLogDaySubmission[]
+  quantityLogAdhocJobsCreated QuantityLogAdhocJob[]
 
   @@index([activeCompanyId])
 }
 
 /// Uploaded file stored in Google Drive; usage tracked via MediaAssetLink (orphans = safe to delete).
+/// `driveId` stores a viewer URL, Drive web URL, or bare file id — see `extractGoogleDriveFileId`.
 model MediaAsset {
   id           String           @id @default(cuid())
   companyId    String
-  fileUrl      String           @db.Text
+  driveId      String           @db.Text
   mimeType     String           @default("image/jpeg")
   fileName     String
   /// e.g. profile_image, signature, template, general
@@ -116,7 +135,7 @@ model MediaAsset {
   uploadedBy   User?            @relation("MediaAssetUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   links        MediaAssetLink[]
 
-  @@unique([companyId, fileUrl])
+  @@unique([companyId, driveId])
   @@index([companyId, category])
   @@index([companyId, createdAt])
 }
@@ -186,6 +205,103 @@ model LiveUpdateEvent {
 
   @@index([companyId, channel, id])
   @@index([createdAt])
+}
+
+model GlobalSetting {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DomainEvent {
+  id            String   @id @default(cuid())
+  companyId     String
+  module        DomainModule
+  eventType     String
+  entityType    DomainEntityType
+  entityId      String
+  occurredAt    DateTime @default(now())
+  actorUserId   String?
+  correlationId String?
+  payload       Json?
+  createdAt     DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actorUser User?   @relation("DomainEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, module, occurredAt])
+  @@index([companyId, entityType, entityId, occurredAt])
+  @@index([correlationId])
+}
+
+model DomainEventTypeRegistry {
+  id          String       @id @default(cuid())
+  module      DomainModule
+  eventType   String
+  description String?      @db.Text
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([module, eventType])
+  @@index([module, isActive])
+}
+
+model BusinessDocument {
+  id            String                 @id @default(cuid())
+  companyId     String
+  docType       String
+  docNumber     String
+  docDate       DateTime
+  status        BusinessDocumentStatus @default(DRAFT)
+  sourceModule  String
+  partyType     String?
+  partyId       String?
+  currencyCode  String?
+  fxRate        Decimal?               @db.Decimal(18, 6)
+  totals        Json?
+  meta          Json?
+  createdById   String?
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("BusinessDocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedBy   User?         @relation("BusinessDocumentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+  stockBatches StockBatch[]
+
+  @@unique([companyId, docType, docNumber])
+  @@unique([companyId, id])
+  @@index([companyId, docType, status, docDate])
+  @@index([companyId, sourceModule, docDate])
+  @@index([companyId, partyType, partyId])
+}
+
+model WorkflowApproval {
+  id            String                 @id @default(cuid())
+  companyId     String
+  entityType    String
+  entityId      String
+  workflowType  String
+  status        WorkflowApprovalStatus @default(PENDING)
+  requestedById String?
+  requestedAt   DateTime               @default(now())
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String?                @db.Text
+  payload       Json?
+
+  company      Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requestedBy  User?   @relation("WorkflowApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy    User?   @relation("WorkflowApprovalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, workflowType, entityType, entityId])
+  @@index([companyId, status, requestedAt])
+  @@index([companyId, workflowType, status])
 }
 
 model StockCountSession {
@@ -282,6 +398,12 @@ model Material {
   companyId                String
   name                     String
   description              String?                  @db.Text
+  imageUrl                 String?
+  attachmentUrl            String?
+  attachmentName           String?
+  attachmentMimeType       String?
+  photoGallery             Json?
+  documentFiles            Json?
   unit                     String
   category                 String?
   categoryId               String?
@@ -367,6 +489,7 @@ model StockBatch {
   supplier          String?
   supplierId        String?
   receiptNumber     String?
+  businessDocumentId String?
   receivedDate      DateTime
   expiryDate        DateTime?
   notes             String?            @db.Text
@@ -376,6 +499,7 @@ model StockBatch {
   material          Material           @relation(fields: [companyId, materialId], references: [companyId, id])
   warehouse         Warehouse?         @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
   supplierRef       Supplier?          @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
+  businessDocument  BusinessDocument?  @relation(fields: [companyId, businessDocumentId], references: [companyId, id], onDelete: SetNull)
   transactionLinks  TransactionBatch[]
 
   @@unique([companyId, batchNumber])
@@ -384,6 +508,7 @@ model StockBatch {
   @@index([companyId, warehouseId, materialId, receivedDate])
   @@index([receiptNumber])
   @@index([companyId, supplierId])
+  @@index([companyId, businessDocumentId])
   @@index([materialId], map: "StockBatch_materialId_fkey")
 }
 
@@ -408,6 +533,13 @@ model Transaction {
   updatedAt           DateTime           @updatedAt
   isDeliveryNote      Boolean            @default(false)
   signedCopyUrl       String?
+  sourceModule        String             @default("stock")
+  referenceType       String?
+  referenceId         String?
+  idempotencyKey      String?
+  postingGroupId      String?
+  meta                Json?
+  businessDocumentId  String?
   company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   job                 Job?               @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: Restrict)
   material            Material           @relation(fields: [companyId, materialId], references: [companyId, id])
@@ -416,6 +548,7 @@ model Transaction {
   parent              Transaction?       @relation("TxParent", fields: [companyId, parentTransactionId], references: [companyId, id], onDelete: Restrict)
   children            Transaction[]      @relation("TxParent")
   batchesUsed         TransactionBatch[]
+  businessDocument    BusinessDocument?  @relation(fields: [companyId, businessDocumentId], references: [companyId, id], onDelete: SetNull)
 
   @@unique([companyId, id])
   @@index([companyId, date])
@@ -424,6 +557,10 @@ model Transaction {
   @@index([companyId, warehouseId, materialId, date])
   @@index([companyId, parentTransactionId])
   @@index([performedByUserId])
+  @@index([companyId, sourceModule, date])
+  @@index([companyId, referenceType, referenceId])
+  @@index([companyId, postingGroupId])
+  @@index([companyId, businessDocumentId])
   @@index([jobId], map: "Transaction_jobId_fkey")
   @@index([materialId], map: "Transaction_materialId_fkey")
 }
@@ -497,6 +634,7 @@ model Job {
   jobCostingSnapshots    JobCostingSnapshot[]
   requiredExpertiseLinks JobRequiredExpertise[]
   workAssignments        WorkAssignment[]
+  quantityLogAdhocJobs     QuantityLogAdhocJob[]
 
   @@unique([companyId, id])
   @@unique([companyId, jobNumber])
@@ -505,6 +643,36 @@ model Job {
   @@index([companyId, customerId])
   @@index([companyId, parentJobId])
   @@index([companyId, source])
+}
+
+/// Marks that the daily quantity log was finalized for this calendar day — no new progress entries for this date.
+model QuantityLogDaySubmission {
+  id            String   @id @default(cuid())
+  companyId     String
+  workDate      DateTime @db.Date
+  submittedAt   DateTime @default(now())
+  submittedById String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  submittedBy   User     @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, workDate])
+  @@index([companyId, workDate])
+}
+
+/// Jobs attached to a quantity log for a day without an HR schedule row (ad-hoc logging).
+model QuantityLogAdhocJob {
+  id          String   @id @default(cuid())
+  companyId   String
+  workDate    DateTime @db.Date
+  jobId       String
+  createdById String
+  createdAt   DateTime @default(now())
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  job         Job      @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: Cascade)
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, workDate, jobId])
+  @@index([companyId, workDate])
 }
 
 model JobContact {
@@ -1398,10 +1566,66 @@ enum JobRecordSource {
 enum JobSourceMode {
   HYBRID
   EXTERNAL_ONLY
+  INTERNAL_ONLY
+}
+
+enum PartyMasterSourceMode {
+  HYBRID
+  EXTERNAL_ONLY
+  INTERNAL_ONLY
 }
 
 enum WarehouseMode {
   DISABLED
   OPTIONAL
   REQUIRED
+}
+
+enum CompanyOnboardingStatus {
+  NEW
+  PROFILE_READY
+  WAREHOUSE_READY
+  OPERATIONAL
+}
+
+enum DomainEntityType {
+  TRANSACTION
+  STOCK_BATCH
+  BUSINESS_DOCUMENT
+  MATERIAL
+  WAREHOUSE
+  JOB
+  SUPPLIER
+  CUSTOMER
+  EMPLOYEE
+  WORKFLOW_APPROVAL
+  OTHER
+}
+
+enum DomainModule {
+  STOCK
+  JOB
+  BUDGET
+  HR
+  PROCUREMENT
+  PRODUCTION
+  FINANCE
+  INTEGRATION
+  SYSTEM
+  OTHER
+}
+
+enum BusinessDocumentStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  POSTED
+  VOID
+}
+
+enum WorkflowApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }

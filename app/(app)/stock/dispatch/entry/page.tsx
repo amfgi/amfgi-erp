@@ -3,12 +3,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link                               from 'next/link';
 import { useSearchParams }                from 'next/navigation';
-import { useSession }                     from 'next-auth/react';
-import { Button }                         from '@/components/ui/Button';
-import SearchSelect                       from '@/components/ui/SearchSelect';
+import { useSession } from 'next-auth/react';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
+import SearchSelect from '@/components/ui/SearchSelect';
 import LineGridColumnSettings, { type LineGridColumnConfig } from '@/components/stock/LineGridColumnSettings';
-import DispatchLineGrid                   from '@/components/stock/DispatchLineGrid';
-import toast                              from 'react-hot-toast';
+import DispatchLineGrid from '@/components/stock/DispatchLineGrid';
+import { cn } from '@/lib/utils';
+import toast from 'react-hot-toast';
 import {
   useGetMaterialsQuery,
   useGetJobsQuery,
@@ -647,44 +649,47 @@ export default function DispatchMaterialsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1240px] space-y-4 overflow-x-hidden">
-      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="space-y-4">
-          <div className="mb-1 flex items-center gap-2">
-            <Link href="/stock/dispatch" className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 transition-colors hover:text-emerald-600 dark:text-emerald-300/80 dark:hover:text-emerald-200">
-              ← Dispatch
-            </Link>
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">Dispatch worksheet</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">Dispatch stock to a job, capture returns in the same sheet, and keep every line easier to scan.</p>
-          <div className="flex flex-wrap gap-3 lg:justify-end">
-            <Link href="/stock/dispatch">
-              <Button type="button" variant="ghost">Cancel</Button>
-            </Link>
-            <Button type="submit" form="dispatch-entry-form" loading={submitting}>
-              Dispatch
-            </Button>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5 overflow-x-hidden">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <Link
+            href="/stock/dispatch"
+            className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            ← Dispatch
+          </Link>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Dispatch worksheet</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Dispatch stock to a job, capture returns in the same sheet, and keep every line easier to scan.
+          </p>
         </div>
-      </div>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <Link href="/stock/dispatch" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
+            Cancel
+          </Link>
+          <Button type="submit" form="dispatch-entry-form" size="sm" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Dispatch'}
+          </Button>
+        </div>
+      </header>
 
       {existingEntry?.exists && (
-        <div className="bg-amber-600/15 border border-amber-500/30 rounded-lg p-4">
-          <p className="text-sm text-amber-300">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+          <p className="text-sm text-foreground">
             ⚠️ <strong>Entry found</strong> for this job on {date}. Data has been loaded for editing. Saving will update the existing entry.
           </p>
         </div>
       )}
 
       {budgetWarning && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-600/10 p-4">
-          <p className="text-sm font-medium text-amber-300">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+          <p className="text-sm font-medium text-foreground">
             Budget warning: this dispatch may exceed the variation job material budget.
           </p>
           <div className="mt-3 space-y-2">
             {budgetWarning.rows.slice(0, 4).map((row) => (
-              <div key={row.materialId} className="rounded-md bg-slate-950/30 px-3 py-2 text-xs text-slate-200">
-                <span className="font-semibold text-white">{row.materialName}</span>
+              <div key={row.materialId} className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground">
+                <span className="font-semibold">{row.materialName}</span>
                 {' · '}
                 projected {row.projectedIssuedBaseQuantity.toFixed(3)} {row.baseUnit}
                 {' vs budget '}
@@ -693,38 +698,40 @@ export default function DispatchMaterialsPage() {
               </div>
             ))}
             {budgetWarning.warningCount > 4 && (
-              <p className="text-xs text-amber-200">+{budgetWarning.warningCount - 4} more material warning(s)</p>
+              <p className="text-xs text-muted-foreground">+{budgetWarning.warningCount - 4} more material warning(s)</p>
             )}
           </div>
-          <p className="mt-3 text-xs text-amber-200/90">
+          <p className="mt-3 text-xs text-muted-foreground">
             Enter an override reason below if this extra issue is intentional.
           </p>
         </div>
       )}
 
       {overrideSignals.negativeStockLineCount > 0 && (
-        <div className="rounded-lg border border-red-500/30 bg-red-600/10 p-4">
-          <p className="text-sm font-medium text-red-300">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">
             Override required: {overrideSignals.negativeStockLineCount} line(s) exceed available warehouse FIFO stock on a negative-consumption material.
           </p>
-          <p className="mt-2 text-xs text-red-200/90">
+          <p className="mt-2 text-xs text-muted-foreground">
             Saving will be blocked unless you capture the reason for this stock exception.
           </p>
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 dark:border-slate-800 dark:bg-slate-800 sm:grid-cols-4">
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: 'Rows in use', value: String(populatedLines.length), note: `${lines.length} open lines` },
           { label: 'Dispatch qty', value: totalDispatchQty.toFixed(3), note: 'Entered total' },
           { label: 'Return qty', value: totalReturnQty.toFixed(3), note: 'Entered total' },
           { label: 'Budget warnings', value: budgetWarningLoading ? '...' : String(budgetWarning?.warningCount ?? 0), note: 'Variation budget check' },
         ].map((item) => (
-          <div key={item.label} className="bg-white px-4 py-3 dark:bg-slate-950/80">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{item.label}</p>
-            <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{item.value}</p>
-            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">{item.note}</p>
-          </div>
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
         ))}
       </section>
 
@@ -736,10 +743,10 @@ export default function DispatchMaterialsPage() {
             e.preventDefault();
           }
         }}
-        className="space-y-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70"
+        className="space-y-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
       >
         {/* Header */}
-        <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
+        <div className="border-b border-border p-4 sm:p-5">
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_220px_minmax(220px,0.8fr)_minmax(220px,0.8fr)]">
             <div>
               <SearchSelect
@@ -755,15 +762,15 @@ export default function DispatchMaterialsPage() {
                   }))}
                 renderItem={(item) => (
                   <div>
-                    <div className="font-medium text-slate-900 dark:text-white">{item.label}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">{item.searchText}</div>
+                    <div className="font-medium text-foreground">{item.label}</div>
+                    <div className="text-xs text-muted-foreground">{item.searchText}</div>
                   </div>
                 )}
                 dropdownInPortal
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Dispatch Date
               </label>
               <input
@@ -771,32 +778,32 @@ export default function DispatchMaterialsPage() {
                 required
                 value={date}
                 onChange={(e) => handleDateChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Notes / Reference
               </label>
               <input
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Optional notes"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Override Reason
               </label>
               <input
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
                 placeholder={overrideSignals.requiresReason ? 'Required for this dispatch' : 'Only needed for exceptions'}
-                className={`w-full rounded-xl border px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 dark:bg-slate-900 dark:text-white ${
+                className={`w-full rounded-md border px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring ${
                   overrideSignals.requiresReason
-                    ? 'border-amber-400 bg-amber-50 focus:ring-amber-500 dark:border-amber-500/40 dark:bg-amber-500/10'
-                    : 'border-slate-200 bg-white focus:ring-emerald-500 dark:border-slate-700'
+                    ? 'border-amber-500/50 bg-amber-500/10'
+                    : 'border-border bg-background'
                 }`}
               />
             </div>

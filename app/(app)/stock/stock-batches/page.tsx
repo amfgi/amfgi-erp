@@ -3,9 +3,11 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import type { Column } from '@/components/ui/DataTable';
+import { cn } from '@/lib/utils';
 import { useGetStockBatchesQuery } from '@/store/hooks';
 import type { StockBatch } from '@/store/api/endpoints/stockBatches';
 
@@ -43,14 +45,10 @@ function SectionShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">{description}</p>
-        ) : null}
+    <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">{title}</h2>
+        {description ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
       <div className="p-4 sm:p-5">{children}</div>
     </section>
@@ -111,7 +109,7 @@ export default function StockBatchesPage() {
           <div className="font-mono text-sm font-semibold text-emerald-700 dark:text-emerald-300">
             {batch.batchNumber}
           </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+          <div className="mt-1 text-xs text-muted-foreground">
             Receipt {batch.receiptNumber || '-'}
           </div>
         </div>
@@ -123,18 +121,18 @@ export default function StockBatchesPage() {
       sortable: true,
       render: (batch) => (
         <div className="min-w-[220px]">
-          <div className="font-medium text-slate-900 dark:text-white">{batch.materialName}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-500">
+          <div className="font-medium text-foreground">{batch.materialName}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{batch.materialUnit}</span>
             {batch.warehouse ? (
               <>
-                <span className="text-slate-300 dark:text-slate-600">/</span>
+                <span className="text-muted-foreground/50">/</span>
                 <span>{batch.warehouse}</span>
               </>
             ) : null}
             {batch.stockType ? (
               <>
-                <span className="text-slate-300 dark:text-slate-600">/</span>
+                <span className="text-muted-foreground/50">/</span>
                 <span>{batch.stockType}</span>
               </>
             ) : null}
@@ -148,9 +146,9 @@ export default function StockBatchesPage() {
       sortable: true,
       render: (batch) =>
         batch.supplierName ? (
-          <span className="text-sm text-slate-700 dark:text-slate-300">{batch.supplierName}</span>
+          <span className="text-sm text-foreground">{batch.supplierName}</span>
         ) : (
-          <span className="text-slate-400 dark:text-slate-500">Walk-in / not linked</span>
+          <span className="text-muted-foreground">Walk-in / not linked</span>
         ),
     },
     {
@@ -162,14 +160,14 @@ export default function StockBatchesPage() {
         return (
           <div className="min-w-[170px]">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="font-semibold text-slate-900 dark:text-white">
+              <span className="font-semibold text-foreground">
                 {formatQty(batch.quantityAvailable)}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 of {formatQty(batch.quantityReceived)}
               </span>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-emerald-500"
                 style={{ width: `${fill}%` }}
@@ -184,7 +182,7 @@ export default function StockBatchesPage() {
       header: 'Base Cost',
       sortable: true,
       render: (batch) => (
-        <div className="min-w-[110px] text-sm text-slate-700 dark:text-slate-300">
+        <div className="min-w-[110px] text-sm text-foreground">
           {formatMoney(batch.unitCost)}
         </div>
       ),
@@ -194,7 +192,7 @@ export default function StockBatchesPage() {
       header: 'Received',
       sortable: true,
       render: (batch) => (
-        <div className="min-w-[120px] text-sm text-slate-700 dark:text-slate-300">
+        <div className="min-w-[120px] text-sm text-foreground">
           {formatDate(batch.receivedDate)}
         </div>
       ),
@@ -203,92 +201,84 @@ export default function StockBatchesPage() {
 
   if (!canView) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Stock batches</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">
-            You do not have permission to view stock batches.
-          </p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Card>
+          <CardHeader>
+            <CardTitle>Stock batches</CardTitle>
+            <CardDescription>You do not have permission to view stock batches.</CardDescription>
+          </CardHeader>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.08),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-                Batch Ledger
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Stock batch control
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Track every received batch, what is still available, and how dispatch consumes stock behind the screen.
-              </p>
-            </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Batch ledger</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Stock batch control</h1>
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Track every received batch, what is still available, and how dispatch consumes stock behind the screen.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link
+            href="/stock/goods-receipt"
+            className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'inline-flex')}
+          >
+            Receipt history
+          </Link>
+          <Link href="/stock/goods-receipt/receive" className={cn(buttonVariants({ size: 'sm' }), 'inline-flex')}>
+            New receipt
+          </Link>
+        </div>
+      </header>
 
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stock/goods-receipt">
-                <Button variant="secondary">Receipt history</Button>
-              </Link>
-              <Link href="/stock/goods-receipt/receive">
-                <Button>New receipt</Button>
-              </Link>
-            </div>
+      <div className="grid divide-y divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+        {[
+          {
+            label: 'Batches in view',
+            value: String(batches.length),
+            note: 'All received stock batches',
+          },
+          {
+            label: 'Open batches',
+            value: String(openBatchCount),
+            note: 'Still carrying available stock',
+          },
+          {
+            label: 'Available value',
+            value: formatMoney(availableValue),
+            note: 'Available qty x base unit cost',
+          },
+          {
+            label: 'Material coverage',
+            value: String(materialCoverage),
+            note: `${expiringSoonCount} expiring within 30 days`,
+          },
+        ].map((item) => (
+          <div key={item.label} className="bg-card px-5 py-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
           </div>
-        </div>
+        ))}
+      </div>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: 'Batches in view',
-              value: String(batches.length),
-              note: 'All received stock batches',
-            },
-            {
-              label: 'Open batches',
-              value: String(openBatchCount),
-              note: 'Still carrying available stock',
-            },
-            {
-              label: 'Available value',
-              value: formatMoney(availableValue),
-              note: 'Available qty x base unit cost',
-            },
-            {
-              label: 'Material coverage',
-              value: String(materialCoverage),
-              note: `${expiringSoonCount} expiring within 30 days`,
-            },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-950/80">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                {item.label}
-              </p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(21rem,0.95fr)]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(21rem,0.95fr)]">
         <SectionShell
           title="Batch list"
           description="Search by batch, material, supplier, or receipt number. Select a row to inspect the costing and consumption flow."
         >
-          <div className="mb-3 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-500">
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">
+          <div className="mb-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">
               FIFO-ready receipt batches
             </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">
               Base cost stored per unit
             </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-transparent">
+            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">
               Click row for detail
             </span>
           </div>
@@ -305,21 +295,21 @@ export default function StockBatchesPage() {
           />
         </SectionShell>
 
-        <div className="space-y-4">
+        <div className="flex flex-col gap-5">
           <SectionShell
             title="Batch detail"
             description="The selected batch shows what was received, what remains, and when this layer was last touched."
           >
             {selectedBatch ? (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300/80">
+                <div className="rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
                     Selected batch
                   </p>
-                  <h3 className="mt-2 font-mono text-lg font-semibold text-emerald-700 dark:text-emerald-300">
+                  <h3 className="mt-2 font-mono text-lg font-semibold text-emerald-800 dark:text-emerald-200">
                     {selectedBatch.batchNumber}
                   </h3>
-                  <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">
+                  <p className="mt-1 text-sm text-foreground">
                     {selectedBatch.materialName} {selectedBatch.receiptNumber ? `· ${selectedBatch.receiptNumber}` : ''}
                   </p>
                 </div>
@@ -335,26 +325,26 @@ export default function StockBatchesPage() {
                   ].map(([label, value]) => (
                     <div
                       key={label}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-700 dark:bg-slate-950/70"
+                      className="rounded-lg border border-border bg-muted/30 px-3 py-3"
                     >
-                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">{label}</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{value}</p>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">{value}</p>
                     </div>
                   ))}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-950/60">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-500">
+                <div className="rounded-lg border border-border bg-background px-4 py-4">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Remaining layer</span>
                     <span>{ratio(selectedBatch.quantityAvailable, selectedBatch.quantityReceived).toFixed(0)}%</span>
                   </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-emerald-500"
                       style={{ width: `${ratio(selectedBatch.quantityAvailable, selectedBatch.quantityReceived)}%` }}
                     />
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                     Received on {formatDate(selectedBatch.receivedDate)}
                     {selectedBatch.expiryDate ? ` · expires ${formatDate(selectedBatch.expiryDate)}` : ''}
                     {selectedBatch.issueLinkCount > 0 ? ` · linked to ${selectedBatch.issueLinkCount} issue transaction${selectedBatch.issueLinkCount === 1 ? '' : 's'}` : ' · not consumed yet'}
@@ -362,14 +352,14 @@ export default function StockBatchesPage() {
                 </div>
 
                 {selectedBatch.notes ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/60">
-                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Notes</p>
-                    <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{selectedBatch.notes}</p>
+                  <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</p>
+                    <p className="mt-1 text-sm text-foreground">{selectedBatch.notes}</p>
                   </div>
                 ) : null}
               </div>
             ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">Select a batch from the list to inspect it.</p>
+              <p className="text-sm text-muted-foreground">Select a batch from the list to inspect it.</p>
             )}
           </SectionShell>
 
@@ -398,18 +388,18 @@ export default function StockBatchesPage() {
               ].map((item) => (
                 <div
                   key={item.step}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/70"
+                  className="rounded-lg border border-border bg-muted/30 px-4 py-3"
                 >
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.step}</p>
-                  <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">{item.body}</p>
+                  <p className="text-sm font-semibold text-foreground">{item.step}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
                 </div>
               ))}
 
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-900/40 dark:bg-blue-950/20">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700 dark:text-blue-300/80">
+              <div className="rounded-lg border border-sky-500/35 bg-sky-500/10 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">
                   Example flow
                 </p>
-                <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                <div className="mt-3 space-y-2 text-sm leading-relaxed text-foreground">
                   <p>
                     Acetone base unit is <strong>kg</strong>.
                   </p>

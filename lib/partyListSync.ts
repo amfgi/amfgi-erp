@@ -1,3 +1,4 @@
+import type { PartyMasterSourceMode } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import {
   fetchExternalClients,
@@ -11,6 +12,15 @@ import {
 } from '@/lib/partyContacts';
 
 type PartyKind = 'customer' | 'supplier';
+
+function assertPartySyncAllowed(mode: PartyMasterSourceMode | undefined, kind: PartyKind): void {
+  if (mode === 'INTERNAL_ONLY') {
+    const label = kind === 'customer' ? 'Customer' : 'Supplier';
+    throw new Error(
+      `${label} source mode is internal only. Party lists sync is disabled — switch mode on the company profile or use local records only.`
+    );
+  }
+}
 
 export type PartyListSyncResult = {
   ok: true;
@@ -94,11 +104,21 @@ async function upsertPartyListRows(companyId: string, kind: PartyKind, parties: 
 }
 
 export async function syncExternalCustomersForCompany(companyId: string): Promise<PartyListSyncResult> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { customerSourceMode: true },
+  });
+  assertPartySyncAllowed(company?.customerSourceMode, 'customer');
   const parties = await fetchExternalClients();
   return upsertPartyListRows(companyId, 'customer', parties);
 }
 
 export async function syncExternalSuppliersForCompany(companyId: string): Promise<PartyListSyncResult> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { supplierSourceMode: true },
+  });
+  assertPartySyncAllowed(company?.supplierSourceMode, 'supplier');
   const parties = await fetchExternalSuppliers();
   return upsertPartyListRows(companyId, 'supplier', parties);
 }

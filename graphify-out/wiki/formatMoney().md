@@ -1,10 +1,13 @@
 # formatMoney()
 
-> God node · 12 connections · `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\stock-batches\page.tsx`
+> God node · 13 connections · `C:\almuraqib-custom-application\AMFGI\app\(app)\stock\stock-batches\page.tsx`
 
 **Community:** [[Almuraqib Custom Application Amfgi]]
 
 ## Connections by Relation
+
+### calls
+- [[normalizeNumber()]] `EXTRACTED`
 
 ### contains
 - [[page.tsx]] `EXTRACTED`

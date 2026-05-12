@@ -4,6 +4,7 @@ import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySessi
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { buildEmployeeDriveFolderName, uploadToDrive } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCompanySession();
@@ -28,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return errorResponse('File size must not exceed 8 MB', 400);
     }
 
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = await getEffectiveGoogleDriveRootFolderId();
     if (!folderId) return errorResponse('Google Drive folder not configured', 500);
 
     const buffer = Buffer.from(await file.arrayBuffer());
