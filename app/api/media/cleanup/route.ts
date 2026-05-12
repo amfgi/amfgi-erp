@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import type { AppSessionUser } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { deleteFromDrive } from '@/lib/utils/googleDrive';
+import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
 
 function canAccess(user: AppSessionUser) {
   const isSA = user.isSuperAdmin ?? false;
@@ -28,7 +29,8 @@ export async function POST() {
 
   for (const row of orphans) {
     try {
-      await deleteFromDrive(row.driveId, companyId);
+      const driveId = extractGoogleDriveFileId(row.driveId);
+      if (driveId) await deleteFromDrive(driveId, companyId);
     } catch (e) {
       driveErrors.push(
         row.driveId + (e instanceof Error ? `: ${e.message}` : ': unknown error')

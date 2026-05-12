@@ -3,45 +3,211 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
-import { useGetMaterialsQuery, useGetStockBatchesQuery, useGetStockIntegrityQuery, useGetStockValuationQuery } from '@/store/hooks';
 
-function formatMoney(value: number) {
-  return `AED ${value.toLocaleString('en-AE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
+import {
+  useGetMaterialsQuery,
+  useGetStockBatchesQuery,
+  useGetStockIntegrityQuery,
+  useGetStockValuationQuery,
+} from '@/store/hooks';
+import { cn } from '@/lib/utils';
 
-function splitMoney(value: number) {
+type Tone = 'emerald' | 'sky' | 'amber' | 'muted';
+
+function splitMoney(value: number, currencyCode: string) {
   const formatted = value.toLocaleString('en-AE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+  return { currency: currencyCode, amount: formatted };
+}
 
-  return {
-    currency: 'AED',
-    amount: formatted,
-  };
+function formatMoney(value: number, currencyCode: string) {
+  return `${currencyCode} ${value.toLocaleString('en-AE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatCount(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
 
-function panelStyle(tone: 'emerald' | 'slate' | 'blue' | 'amber') {
-  const map = {
-    emerald:
-      'border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/20',
-    slate:
-      'border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-950/60',
-    blue:
-      'border-blue-200 bg-blue-50/80 dark:border-blue-900/40 dark:bg-blue-950/20',
-    amber:
-      'border-amber-200 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/20',
-  };
+const toneBadgeClass: Record<Tone, string> = {
+  emerald: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200',
+  sky: 'border-sky-500/35 bg-sky-500/10 text-sky-800 dark:text-sky-200',
+  amber: 'border-amber-500/35 bg-amber-500/10 text-amber-800 dark:text-amber-200',
+  muted: 'border-border bg-muted/50 text-muted-foreground',
+};
 
-  return map[tone];
+type StockLinkRow = {
+  href: string;
+  title: string;
+  description: string;
+  tag: string;
+  tone: Tone;
+};
+
+type StockSection = {
+  id: string;
+  title: string;
+  description: string;
+  rows: StockLinkRow[];
+};
+
+function StockListRow({ row }: { row: StockLinkRow }) {
+  return (
+    <Link
+      href={row.href}
+      className={cn(
+        'flex min-h-13 items-start gap-3 px-4 py-3 transition-colors',
+        'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">{row.title}</span>
+          <Badge
+            variant="outline"
+            className={cn(
+              'shrink-0 text-[10px] font-medium uppercase tracking-wide whitespace-nowrap',
+              toneBadgeClass[row.tone],
+            )}
+          >
+            {row.tag}
+          </Badge>
+        </div>
+        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{row.description}</p>
+      </div>
+      <span className="shrink-0 pt-1 text-xs font-medium text-muted-foreground" aria-hidden>
+        →
+      </span>
+    </Link>
+  );
+}
+
+function SectionPanel({ section }: { section: StockSection }) {
+  const headingId = `stock-section-${section.id}`;
+  const { rows: visibleRows } = section;
+
+  if (visibleRows.length === 0) return null;
+
+  return (
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+      aria-labelledby={headingId}
+    >
+      <div className="flex flex-col gap-0.5 bg-muted/30 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 id={headingId} className="text-sm font-semibold text-foreground">
+            {section.title}
+          </h2>
+          <span className="text-xs tabular-nums text-muted-foreground">{visibleRows.length}</span>
+        </div>
+        <p className="text-xs leading-snug text-muted-foreground">{section.description}</p>
+      </div>
+      <ul className="flex min-h-0 flex-1 flex-col divide-y divide-border" role="list">
+        {visibleRows.map((row) => (
+          <li key={row.href} role="listitem">
+            <StockListRow row={row} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ValuationPanel({
+  valuationLoading,
+  preferredMoney,
+  preferredMethod,
+  currentMoney,
+  warehouseBreakdown,
+  fallbackWarehouseName,
+  currencyCode,
+}: {
+  valuationLoading: boolean;
+  preferredMoney: { currency: string; amount: string };
+  preferredMethod: string;
+  currentMoney: { currency: string; amount: string };
+  warehouseBreakdown: { warehouseId: string | number; warehouseName: string; stockValue: number }[];
+  fallbackWarehouseName: string | null;
+  currencyCode: string;
+}) {
+  return (
+    <section
+      className="overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+      aria-labelledby="stock-valuation-heading"
+    >
+      <div className="border-b border-border bg-muted/30 px-3 py-2.5 sm:px-4">
+        <h2 id="stock-valuation-heading" className="text-sm font-semibold text-foreground">
+          Valuation
+        </h2>
+        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+          Company preferred method versus current material cost, then warehouse value coverage.
+        </p>
+      </div>
+
+      <div className="space-y-4 p-3 sm:p-4">
+        <div className="grid max-w-2xl grid-cols-2 gap-2 sm:gap-3">
+          <Card className="border-border bg-muted/20 shadow-none">
+            <CardHeader className="gap-1 p-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-primary">Preferred</p>
+                <span className="text-[10px] font-medium text-muted-foreground">{preferredMoney.currency}</span>
+              </div>
+              <CardTitle className="text-base font-semibold tabular-nums leading-tight tracking-tight sm:text-lg">
+                {valuationLoading ? '…' : preferredMoney.amount}
+              </CardTitle>
+              <CardDescription className="text-[10px] leading-snug">{preferredMethod} stock value</CardDescription>
+              <Badge variant="secondary" className="mt-0.5 h-5 w-fit px-1.5 text-[9px] uppercase tracking-wide">
+                Company preferred
+              </Badge>
+            </CardHeader>
+          </Card>
+          <Card className="border-border bg-muted/20 shadow-none">
+            <CardHeader className="gap-1 p-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Comparison</p>
+                <span className="text-[10px] font-medium text-muted-foreground">{currentMoney.currency}</span>
+              </div>
+              <CardTitle className="text-base font-semibold tabular-nums leading-tight tracking-tight sm:text-lg">
+                {valuationLoading ? '…' : currentMoney.amount}
+              </CardTitle>
+              <CardDescription className="text-[10px] leading-snug">Current material cost value</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Warehouse coverage</p>
+          {warehouseBreakdown.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {fallbackWarehouseName
+                ? `No warehouse balances yet. System reference: ${fallbackWarehouseName}.`
+                : 'No warehouse balances yet.'}
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {warehouseBreakdown.slice(0, 6).map((warehouse) => (
+                <div
+                  key={String(warehouse.warehouseId)}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2"
+                >
+                  <span className="min-w-0 truncate text-sm text-foreground">{warehouse.warehouseName}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {formatMoney(warehouse.stockValue, currencyCode)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export default function StockPage() {
@@ -57,7 +223,16 @@ export default function StockPage() {
   const canSeeReconcile = isSA || perms.includes('transaction.reconcile');
   const canSeeAdjustments = isSA || perms.includes('transaction.adjust');
   const canSeeJobBudget = isSA || (perms.includes('job.view') && perms.includes('material.view'));
-  const canViewStock = canSeeMaterials || canSeeReceipts || canSeeDispatch || canSeeBatches || canSeeTransfers || canSeeReconcile || canSeeAdjustments || canSeeJobBudget;
+  const canViewStock =
+    canSeeMaterials ||
+    canSeeReceipts ||
+    canSeeDispatch ||
+    canSeeBatches ||
+    canSeeTransfers ||
+    canSeeReconcile ||
+    canSeeAdjustments ||
+    canSeeJobBudget;
+  const canSeeMasterData = isSA || perms.includes('settings.manage') || perms.includes('material.view');
 
   const { data: valuation, isFetching: valuationLoading } = useGetStockValuationQuery(undefined, {
     skip: !canViewStock,
@@ -74,376 +249,259 @@ export default function StockPage() {
 
   const activeMaterials = useMemo(
     () => materials.filter((material) => material.isActive),
-    [materials]
+    [materials],
   );
-  const openBatches = useMemo(
-    () => batches.filter((batch) => batch.quantityAvailable > 0),
-    [batches]
-  );
+  const openBatches = useMemo(() => batches.filter((batch) => batch.quantityAvailable > 0), [batches]);
   const lowStockCount = useMemo(
     () =>
       activeMaterials.filter(
         (material) =>
-          typeof material.reorderLevel === 'number' && material.currentStock <= material.reorderLevel
+          typeof material.reorderLevel === 'number' && material.currentStock <= material.reorderLevel,
       ).length,
-    [activeMaterials]
+    [activeMaterials],
   );
   const integrityExceptionCount = stockIntegrity?.summary.materialsWithExceptions ?? 0;
 
-  const preferredValue = valuation?.summary.fifoStockValue ?? 0;
-  const movingAverageValue = valuation?.summary.movingAverageStockValue ?? 0;
+  const preferredValue = valuation?.summary.totalStockValue ?? 0;
+  const currencyCode = valuation?.summary.currencyCode ?? 'AED';
+  const preferredMethod = valuation?.summary.preferredMethod ?? 'FIFO';
   const currentValue = valuation?.summary.currentStockValue ?? 0;
-  const warehouseMode = valuation?.summary.warehouseMode ?? 'REQUIRED';
   const fallbackWarehouseName = valuation?.summary.fallbackWarehouseName ?? null;
   const warehouseBreakdown = valuation?.warehouseBreakdown ?? [];
-  const preferredMoney = splitMoney(preferredValue);
-  const movingAverageMoney = splitMoney(movingAverageValue);
-  const currentMoney = splitMoney(currentValue);
+  const preferredMoney = splitMoney(preferredValue, currencyCode);
+  const currentMoney = splitMoney(currentValue, currencyCode);
 
-  const modules = [
+  const sections: StockSection[] = [
     {
-      href: '/stock/materials',
-      title: 'Materials',
-      description: 'Maintain items, UOM, stock definitions, and current balance.',
-      enabled: canSeeMaterials,
-      meta: `${formatCount(activeMaterials.length)} active materials`,
-      tone: 'emerald' as const,
+      id: 'receive',
+      title: 'Receive',
+      description: 'Goods receipt creates stock batches and normalizes cost to the base unit.',
+      rows: [
+        ...(canSeeReceipts
+          ? ([
+              {
+                href: '/stock/goods-receipt/receive',
+                title: 'New receipt',
+                description: 'Start a receive entry and post incoming stock against suppliers.',
+                tag: 'Action',
+                tone: 'emerald',
+              },
+              {
+                href: '/stock/goods-receipt',
+                title: 'Goods receipt',
+                description: 'Create receipts, reopen bills, and trace incoming stock.',
+                tag: `${formatCount(openBatches.length)} open`,
+                tone: 'sky',
+              },
+            ])
+          : []),
+      ],
     },
     {
-      href: '/stock/goods-receipt',
-      title: 'Goods Receipt',
-      description: 'Create receipts, reopen bills, and trace incoming stock.',
-      enabled: canSeeReceipts,
-      meta: `${formatCount(openBatches.length)} open batches in stock`,
-      tone: 'blue' as const,
+      id: 'store',
+      title: 'Store',
+      description: 'Materials hold live balances; batches hold FIFO layers by warehouse.',
+      rows: [
+        ...(canSeeMaterials
+          ? ([
+              {
+                href: '/stock/materials',
+                title: 'Materials',
+                description: 'Maintain items, UOM, stock definitions, and current balance.',
+                tag: `${formatCount(activeMaterials.length)} active`,
+                tone: 'emerald',
+              },
+            ])
+          : []),
+        ...(canSeeMasterData
+          ? ([
+              {
+                href: '/stock/master-data',
+                title: 'Master data',
+                description: 'Units, material categories, and warehouses used across receipts and materials.',
+                tag: 'Setup',
+                tone: 'muted',
+              },
+            ])
+          : []),
+        ...(canSeeBatches
+          ? ([
+              {
+                href: '/stock/stock-batches',
+                title: 'Stock batches',
+                description: 'Inspect FIFO layers, remaining balance, and receipt-by-receipt cost.',
+                tag: `${formatCount(batches.length)} batches`,
+                tone: 'sky',
+              },
+              {
+                href: '/stock/inventory-by-warehouse',
+                title: 'Inventory by warehouse',
+                description: 'See each material’s quantity split across warehouses from live balances.',
+                tag: 'Warehouses',
+                tone: 'amber',
+              },
+            ])
+          : []),
+      ],
     },
     {
-      href: '/stock/dispatch',
-      title: 'Dispatch',
-      description: 'Issue material, create delivery notes, and follow stock-out flow.',
-      enabled: canSeeDispatch,
-      meta: `${formatCount(lowStockCount)} materials need attention`,
-      tone: 'amber' as const,
+      id: 'issue',
+      title: 'Issue',
+      description: 'Dispatch consumes the oldest open batch first, then rolls to the next layer when needed.',
+      rows: [
+        ...(canSeeDispatch
+          ? ([
+              {
+                href: '/stock/dispatch/entry',
+                title: 'New dispatch',
+                description: 'Issue material from open FIFO layers to jobs or internal use.',
+                tag: 'Action',
+                tone: 'emerald',
+              },
+              {
+                href: '/stock/dispatch/delivery-note',
+                title: 'Delivery note',
+                description: 'Create delivery paperwork linked to stock-out lines.',
+                tag: 'Action',
+                tone: 'sky',
+              },
+              {
+                href: '/stock/dispatch',
+                title: 'Dispatch',
+                description: 'Issue material, create delivery notes, and follow stock-out flow.',
+                tag: `${formatCount(lowStockCount)} low`,
+                tone: 'amber',
+              },
+            ])
+          : []),
+        ...(canSeeTransfers
+          ? ([
+              {
+                href: '/stock/inter-company-transfers',
+                title: 'Inter-company transfers',
+                description: 'Review transfer history and move stock between companies.',
+                tag: 'Transfer',
+                tone: 'muted',
+              },
+            ])
+          : []),
+      ],
     },
     {
-      href: '/stock/stock-batches',
-      title: 'Stock Batches',
-      description: 'Inspect FIFO layers, remaining balance, and receipt-by-receipt cost.',
-      enabled: canSeeBatches,
-      meta: `${formatCount(batches.length)} total receipt batches`,
-      tone: 'slate' as const,
+      id: 'review',
+      title: 'Review & control',
+      description: 'Reconcile drift, approve adjustments, and tie stock back to jobs and counts.',
+      rows: [
+        ...(canViewStock
+          ? ([
+              {
+                href: '/stock/integrity',
+                title: 'Stock integrity',
+                description: 'Compare company stock, warehouse balances, and open FIFO batches.',
+                tag: integrityLoading ? '…' : `${formatCount(integrityExceptionCount)} issues`,
+                tone: integrityExceptionCount > 0 ? 'amber' : 'muted',
+              },
+            ])
+          : []),
+        ...(canSeeReconcile
+          ? ([
+              {
+                href: '/stock/issue-reconcile',
+                title: 'Issue reconcile',
+                description: 'Distribute non-stock quantities into variation jobs from reconcile history.',
+                tag: 'Reconcile',
+                tone: 'sky',
+              },
+            ])
+          : []),
+        ...(canSeeAdjustments
+          ? ([
+              {
+                href: '/stock/manual-adjustments',
+                title: 'Manual adjustments',
+                description: 'Controlled corrections with approval before balances change.',
+                tag: 'Adjust',
+                tone: 'emerald',
+              },
+              {
+                href: '/stock/count-session',
+                title: 'Stock count session',
+                description: 'Warehouse count sheet, variances, and adjustment requests.',
+                tag: 'Count',
+                tone: 'amber',
+              },
+            ])
+          : []),
+        ...(canSeeJobBudget
+          ? ([
+              {
+                href: '/stock/job-budget',
+                title: 'Job budget & formulas',
+                description: 'Formula templates and variation job material budgets.',
+                tag: 'Jobs',
+                tone: 'muted',
+              },
+            ])
+          : []),
+        ...(isSA || perms.includes('job.view')
+          ? ([
+              {
+                href: '/stock/daily-quantity-log',
+                title: 'Daily quantity log',
+                description: 'Log daily progress quantities from the work schedule for tracked jobs.',
+                tag: 'Schedule',
+                tone: 'sky',
+              },
+            ])
+          : []),
+      ],
     },
-    {
-      href: '/stock/inventory-by-warehouse',
-      title: 'Inventory by warehouse',
-      description: 'See each material’s quantity split across warehouses from live warehouse balances.',
-      enabled: canSeeBatches,
-      meta: 'Per-item warehouse quantities',
-      tone: 'emerald' as const,
-    },
-    {
-      href: '/stock/integrity',
-      title: 'Stock Integrity',
-      description: 'Compare company stock, warehouse balances, and open FIFO batches to catch drift early.',
-      enabled: canViewStock,
-      meta: integrityLoading ? 'Checking integrity...' : `${formatCount(integrityExceptionCount)} materials with exceptions`,
-      tone: 'amber' as const,
-    },
-    {
-      href: '/stock/inter-company-transfers',
-      title: 'Inter-Company Transfers',
-      description: 'Review transfer history and move stock between companies in a dedicated workspace.',
-      enabled: canSeeTransfers,
-      meta: 'Ledger and multi-item transfer',
-      tone: 'blue' as const,
-    },
-    {
-      href: '/stock/issue-reconcile',
-      title: 'Issue Reconcile',
-      description: 'Review reconcile history and manually distribute non-stock quantities into variation jobs.',
-      enabled: canSeeReconcile,
-      meta: 'History and create workspace',
-      tone: 'amber' as const,
-    },
-    {
-      href: '/stock/manual-adjustments',
-      title: 'Manual Adjustments',
-      description: 'Submit controlled stock corrections that go through approval before touching on-hand balances.',
-      enabled: canSeeAdjustments,
-      meta: 'Request and review adjustments',
-      tone: 'amber' as const,
-    },
-    {
-      href: '/stock/count-session',
-      title: 'Stock Count Session',
-      description: 'Load a warehouse count sheet, enter counted stock, and turn only the variances into an adjustment request.',
-      enabled: canSeeAdjustments,
-      meta: 'Count, review variance, submit',
-      tone: 'emerald' as const,
-    },
-    {
-      href: '/stock/job-budget',
-      title: 'Job Budget & Formulas',
-      description: 'Manage formula templates and calculate variation job material budgets.',
-      enabled: canSeeJobBudget,
-      meta: 'Formula library and costing',
-      tone: 'emerald' as const,
-    },
-  ].filter((module) => module.enabled);
+  ] as StockSection[];
 
-  const workflow = [
-    {
-      label: 'Receive',
-      body: 'Goods receipt creates stock batches and normalizes cost to the base unit.',
-    },
-    {
-      label: 'Store',
-      body:
-        'Materials keep the live current stock, while stock batches keep the open FIFO layers by warehouse.',
-    },
-    {
-      label: 'Issue',
-      body: 'Dispatch consumes the oldest open batch first, then rolls to the next layer when needed.',
-    },
-    {
-      label: 'Review',
-      body: 'This Stock page gives the preferred FIFO value first, then moving average and current comparisons.',
-    },
-  ];
+  const linkModuleCount = sections.reduce((n, s) => n + s.rows.length, 0);
 
   if (!canViewStock) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Stock</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">
-            You do not have permission to view the stock workspace.
-          </p>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Stock</CardTitle>
+          <CardDescription>You do not have permission to view the stock workspace.</CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-end 2xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-300/80">
-              Stock Workspace
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">
-              Stock workspace
-            </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Open materials, receipts, dispatch, and batch layers from one page. FIFO stays the
-              system priority, and the comparison cards below show how the same stock looks under
-              other valuation views.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 2xl:min-w-[44rem] 2xl:grid-cols-4">
-            <div
-              className="rounded-2xl border p-4 shadow-sm dark:border-slate-800"
-              style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}
-            >
-              <p className="text-xs uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
-                Preferred
-              </p>
-              <div className="mt-2 flex flex-col gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                    {preferredMoney.currency}
-                  </p>
-                  <p className="mt-1 break-words text-xl font-semibold leading-tight tracking-tight text-slate-900 dark:text-white 2xl:text-2xl">
-                    {valuationLoading ? '...' : preferredMoney.amount}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">FIFO stock value</p>
-                </div>
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300">
-                  System priority
-                </span>
-              </div>
-            </div>
-            <div
-              className="rounded-2xl border p-4 shadow-sm dark:border-slate-800"
-              style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}
-            >
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                Comparison
-              </p>
-              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                {movingAverageMoney.currency}
-              </p>
-              <p className="mt-1 break-words text-xl font-semibold leading-tight tracking-tight text-slate-900 dark:text-white 2xl:text-2xl">
-                {valuationLoading ? '...' : movingAverageMoney.amount}
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Moving average value</p>
-            </div>
-            <div
-              className="rounded-2xl border p-4 shadow-sm dark:border-slate-800"
-              style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}
-            >
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                Comparison
-              </p>
-              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                {currentMoney.currency}
-              </p>
-              <p className="mt-1 break-words text-xl font-semibold leading-tight tracking-tight text-slate-900 dark:text-white 2xl:text-2xl">
-                {valuationLoading ? '...' : currentMoney.amount}
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                Current material cost value
-              </p>
-            </div>
-            <div
-              className="rounded-2xl border p-4 shadow-sm dark:border-slate-800"
-              style={{ backgroundColor: 'var(--surface-panel-soft)', borderColor: 'var(--border-strong)' }}
-            >
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                Actions
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {canSeeReceipts ? (
-                  <Link href="/stock/goods-receipt/receive">
-                    <Button size="sm">New receipt</Button>
-                  </Link>
-                ) : null}
-                {canSeeDispatch ? (
-                  <>
-                    <Link href="/stock/dispatch/entry">
-                      <Button size="sm" variant="secondary">
-                        New dispatch
-                      </Button>
-                    </Link>
-                    <Link href="/stock/dispatch/delivery-note">
-                      <Button size="sm" variant="secondary">
-                        Delivery note
-                      </Button>
-                    </Link>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock workspace</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Stock</h1>
+          <p className="text-sm text-muted-foreground">
+            Workflows from receive through store, issue, and review. Valuation figures update from live materials and
+            batches.
+          </p>
         </div>
-      </section>
+        <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {materialsLoading || batchesLoading ? 'Refreshing…' : `${linkModuleCount} destinations`}
+        </p>
+      </header>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(21rem,0.9fr)]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
-          <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-800">
-            <div>
-              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-                Stock modules
-              </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
-                Jump directly into the stock area you need without going back to the main sidebar.
-              </p>
-            </div>
-            <div className="text-right text-xs text-slate-500 dark:text-slate-500">
-              {materialsLoading || batchesLoading ? 'Refreshing...' : `${modules.length} available modules`}
-            </div>
-          </div>
+      <ValuationPanel
+        valuationLoading={valuationLoading}
+        preferredMoney={preferredMoney}
+        preferredMethod={preferredMethod}
+        currentMoney={currentMoney}
+        warehouseBreakdown={warehouseBreakdown}
+        fallbackWarehouseName={fallbackWarehouseName}
+        currencyCode={currencyCode}
+      />
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {modules.map((module) => (
-              <Link
-                key={module.href}
-                href={module.href}
-                className={`rounded-2xl border px-4 py-4 transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 dark:hover:border-emerald-700/50 dark:hover:bg-emerald-950/20 ${panelStyle(module.tone)}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{module.title}</h3>
-                  <span className="rounded-full border border-white/60 bg-white/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-400">
-                    Open
-                  </span>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">{module.description}</p>
-                <p className="mt-4 text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-                  {module.meta}
-                </p>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-              Flow
-            </h2>
-            <div className="mt-4 space-y-3">
-              {workflow.map((step, index) => (
-                <div
-                  key={step.label}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/70"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
-                      {index + 1}
-                    </span>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{step.label}</p>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">{step.body}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/20 sm:p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300/80">
-              Quick read
-            </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Active materials</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">{formatCount(activeMaterials.length)}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Open batches</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">{formatCount(openBatches.length)}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Warehouse mode</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">{warehouseMode}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Low stock watch</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">{formatCount(lowStockCount)}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Prev. month consumption</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
-                  {valuationLoading ? '...' : formatMoney(valuation?.summary.prevMonthConsumptionValue ?? 0)}
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 space-y-2 border-t border-emerald-200/60 pt-4 dark:border-emerald-900/40">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-                Warehouse coverage
-              </p>
-              {warehouseBreakdown.length === 0 ? (
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {fallbackWarehouseName
-                    ? `No warehouse balances have been created yet. System reference: ${fallbackWarehouseName}.`
-                    : 'No warehouse balances have been created yet.'}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {warehouseBreakdown.slice(0, 3).map((warehouse) => (
-                    <div key={warehouse.warehouseId} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="min-w-0 truncate text-slate-700 dark:text-slate-300">{warehouse.warehouseName}</span>
-                      <span className="shrink-0 text-slate-500 dark:text-slate-500">
-                        {formatMoney(warehouse.stockValue)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
+      <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {sections.map((section) => (
+          <SectionPanel key={section.id} section={section} />
+        ))}
+      </div>
     </div>
   );
 }

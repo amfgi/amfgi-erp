@@ -1,13 +1,14 @@
 # Lib, HR, and Attendance Report Presets
 
-> 4 nodes · cohesion 0.83
+> 5 nodes Â· cohesion 0.80
 
 ## Key Concepts
 
-- **attendanceReportPresets.ts** (3 connections) — `lib\hr\attendanceReportPresets.ts`
-- **attendanceReportPresetStorageKey()** (3 connections) — `lib\hr\attendanceReportPresets.ts`
-- **readAttendanceReportPresets()** (2 connections) — `lib\hr\attendanceReportPresets.ts`
-- **writeAttendanceReportPresets()** (2 connections) — `lib\hr\attendanceReportPresets.ts`
+- **attendanceReportPresetStorageKey()** (4 connections) â€” `lib/hr/attendanceReportPresets.ts`
+- **attendanceReportPresets.ts** (3 connections) â€” `lib/hr/attendanceReportPresets.ts`
+- **readAttendanceReportPresets()** (3 connections) â€” `lib/hr/attendanceReportPresets.ts`
+- **writeAttendanceReportPresets()** (3 connections) â€” `lib/hr/attendanceReportPresets.ts`
+- **attendanceReportPresets.ts** (3 connections) â€” `lib/hr/attendanceReportPresets.ts`
 
 ## Relationships
 
@@ -15,11 +16,11 @@
 
 ## Source Files
 
-- `lib\hr\attendanceReportPresets.ts`
+- `lib/hr/attendanceReportPresets.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 10 (100%)
+- EXTRACTED: 16 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

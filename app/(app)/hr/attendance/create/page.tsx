@@ -3,7 +3,8 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button } from '@/components/ui/shadcn/button';
 import SearchSelect from '@/components/ui/SearchSelect';
 import toast from 'react-hot-toast';
 
@@ -353,13 +354,11 @@ function buildDraftFromExistingRow(
     checkInAt: shouldClearTiming
       ? ''
       : toLocalTimeInput((row.checkInAt as string | null) ?? null) ||
-        toLocalTimeInput((row.expectedShiftStart as string | null) ?? null) ||
         defaultTiming?.dutyStart ||
         '',
     checkOutAt: shouldClearTiming
       ? ''
       : toLocalTimeInput((row.checkOutAt as string | null) ?? null) ||
-        toLocalTimeInput((row.expectedShiftEnd as string | null) ?? null) ||
         defaultTiming?.dutyEnd ||
         '',
     breakInAt: shouldClearTiming
@@ -669,8 +668,30 @@ export default function AttendanceCreatePage() {
     router.push(`/hr/attendance?workDate=${encodeURIComponent(workDate)}`);
   };
 
-  if (!canView) return <div className="text-slate-400">Forbidden</div>;
-  if (loading) return <div className="text-slate-400">Loading...</div>;
+  if (!canView) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>You do not have permission to view HR attendance.</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <div className="h-32 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+          ))}
+        </div>
+        <div className="h-40 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="h-96 animate-pulse rounded-lg border border-border bg-muted/30" />
+      </div>
+    );
+  }
 
   const handleWorkDateChange = (nextDate: string) => {
     setWorkDate(nextDate);
@@ -731,9 +752,9 @@ export default function AttendanceCreatePage() {
 							<Button
 								type='button'
 								onClick={saveAll}
-								loading={saving}
+								disabled={saving}
 							>
-								Save attendance
+								{saving ? 'Saving…' : 'Save attendance'}
 							</Button>
 						)}
 					</div>

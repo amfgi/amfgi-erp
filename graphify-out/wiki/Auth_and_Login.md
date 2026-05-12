@@ -1,25 +1,28 @@
 # Auth and Login
 
-> 4 nodes · cohesion 0.50
+> 6 nodes Â· cohesion 0.47
 
 ## Key Concepts
 
-- **page.tsx** (3 connections) — `app\(auth)\login\page.tsx`
-- **handleCredentials()** (1 connections) — `app\(auth)\login\page.tsx`
-- **handleGoogle()** (1 connections) — `app\(auth)\login\page.tsx`
-- **handleUseCredentials()** (1 connections) — `app\(auth)\login\page.tsx`
+- **page.tsx** (6 connections) â€” `app/(auth)/login/page.tsx`
+- **page.tsx** (3 connections) â€” `app/(auth)/login/page.tsx`
+- **handleCredentials()** (2 connections) â€” `app/(auth)/login/page.tsx`
+- **handleGoogle()** (2 connections) â€” `app/(auth)/login/page.tsx`
+- **handleUseCredentials()** (2 connections) â€” `app/(auth)/login/page.tsx`
+- **LoginPage()** (1 connections) â€” `app/(auth)/login/page.tsx`
 
 ## Relationships
 
-- No strong cross-community connections detected
+- [[Components, HR, and Admin]] (1 shared connections)
+- [[Admin, Components, and Settings]] (1 shared connections)
 
 ## Source Files
 
-- `app\(auth)\login\page.tsx`
+- `app/(auth)/login/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 6 (100%)
+- EXTRACTED: 16 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

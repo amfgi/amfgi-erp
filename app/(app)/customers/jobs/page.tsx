@@ -1,17 +1,21 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
 import toast from 'react-hot-toast';
+
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Input } from '@/components/ui/shadcn/input';
+import { Select } from '@/components/ui/shadcn/select';
+import { Skeleton } from '@/components/ui/shadcn/skeleton';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
-import {
-  useDeleteJobMutation,
-  useGetCustomersQuery,
-  useGetJobsQuery,
-} from '@/store/hooks';
+import { useDeleteJobMutation, useGetCustomersQuery, useGetJobsQuery } from '@/store/hooks';
+import { cn } from '@/lib/utils';
 
 interface Job {
   id: string;
@@ -39,10 +43,6 @@ interface Customer {
 type JobStatusFilter = 'ALL' | 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
 type JobScopeFilter = 'ALL' | 'PARENT_ONLY' | 'VARIATION_ONLY';
 
-function cx(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(' ');
-}
-
 function compactNumber(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
@@ -62,24 +62,24 @@ function extractApiErrorMessage(error: unknown, fallback: string) {
 }
 
 function formatDate(value?: string | Date) {
-  if (!value) return 'No date';
+  if (!value) return '—';
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'No date';
+  if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString();
 }
 
-function statusClasses(status: Job['status']) {
+function statusBadgeVariant(status: Job['status']): 'default' | 'secondary' | 'outline' | 'destructive' {
   switch (status) {
     case 'ACTIVE':
-      return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200';
+      return 'default';
     case 'COMPLETED':
-      return 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200';
+      return 'secondary';
     case 'ON_HOLD':
-      return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200';
+      return 'outline';
     case 'CANCELLED':
-      return 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200';
+      return 'destructive';
     default:
-      return 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200';
+      return 'outline';
   }
 }
 
@@ -104,7 +104,8 @@ export default function CustomerJobsPage() {
   const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('ALL');
   const [scopeFilter, setScopeFilter] = useState<JobScopeFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [jobSourceMode, setJobSourceMode] = useState<'HYBRID' | 'EXTERNAL_ONLY'>('HYBRID');
+  type JobSourceModeUi = 'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY';
+  const [jobSourceMode, setJobSourceMode] = useState<JobSourceModeUi>('HYBRID');
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
     job: Job | null;
@@ -121,7 +122,8 @@ export default function CustomerJobsPage() {
         const res = await fetch(`/api/companies/${session.user.activeCompanyId}`, { cache: 'no-store' });
         const json = await res.json();
         if (!cancelled && res.ok && json?.success) {
-          setJobSourceMode((json.data?.jobSourceMode as 'HYBRID' | 'EXTERNAL_ONLY') || 'HYBRID');
+          const m = json.data?.jobSourceMode;
+          setJobSourceMode(m === 'EXTERNAL_ONLY' || m === 'INTERNAL_ONLY' || m === 'HYBRID' ? m : 'HYBRID');
         }
       } catch {
         if (!cancelled) setJobSourceMode('HYBRID');
@@ -134,7 +136,7 @@ export default function CustomerJobsPage() {
 
   const customerNameById = useMemo(
     () => new Map(customers.map((customer: Customer) => [customer.id, customer.name])),
-    [customers]
+    [customers],
   );
 
   const jobById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
@@ -169,18 +171,9 @@ export default function CustomerJobsPage() {
     });
   }, [customerNameById, jobById, orderedJobRows, searchQuery, statusFilter]);
 
-  const totalVariations = useMemo(
-    () => variationJobs.length,
-    [variationJobs]
-  );
-  const activeJobs = useMemo(
-    () => jobs.filter((job) => job.status === 'ACTIVE').length,
-    [jobs]
-  );
-  const apiJobs = useMemo(
-    () => rootJobs.filter((job) => job.source === 'EXTERNAL_API').length,
-    [rootJobs]
-  );
+  const totalVariations = useMemo(() => variationJobs.length, [variationJobs]);
+  const activeJobs = useMemo(() => jobs.filter((job) => job.status === 'ACTIVE').length, [jobs]);
+  const apiJobs = useMemo(() => rootJobs.filter((job) => job.source === 'EXTERNAL_API').length, [rootJobs]);
 
   const handleCreateJob = () => {
     router.push('/customers/jobs/form?mode=create');
@@ -225,10 +218,6 @@ export default function CustomerJobsPage() {
             } satisfies ContextMenuOption,
           ]
         : []),
-      {
-        label: 'Consumption & Costing',
-        action: () => router.push(`/jobs/${job.id}/consumption-costing`),
-      },
     ];
 
     if (canEdit) {
@@ -275,234 +264,288 @@ export default function CustomerJobsPage() {
     openContextMenu(e.clientX, e.clientY, options);
   };
 
+  const statTiles = [
+    {
+      label: 'All jobs',
+      value: compactNumber(jobs.length),
+      note: `${compactNumber(rootJobs.length)} parents · ${compactNumber(totalVariations)} variations`,
+    },
+    {
+      label: 'Active',
+      value: compactNumber(activeJobs),
+      note: 'Parents and variations in progress',
+    },
+    {
+      label: 'API parents',
+      value: compactNumber(apiJobs),
+      note: 'Synced from external API',
+    },
+    {
+      label: 'Rows shown',
+      value: compactNumber(filteredJobs.length),
+      note:
+        scopeFilter === 'ALL'
+          ? 'Matching current filters'
+          : scopeFilter === 'PARENT_ONLY'
+            ? 'Parent jobs only'
+            : 'Variations only',
+    },
+  ];
+
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800 sm:px-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300/80">
-                Customer Jobs
-              </p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                Jobs
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                Track parent jobs, linked variations, and costing entry points in one compact customer queue.
-              </p>
-            </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customer jobs</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Jobs</h1>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Parent jobs, variations, and ledger entry points in one list. Right-click a row for actions.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => router.push('/customers')}>
+            Customers
+          </Button>
+          {canCreate && jobSourceMode !== 'EXTERNAL_ONLY' ? (
+            <Button type="button" size="sm" onClick={handleCreateJob}>
+              Add job
+            </Button>
+          ) : null}
+        </div>
+      </header>
 
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => router.push('/customers')}>
-                Back to Customers
-              </Button>
-              {canCreate && jobSourceMode !== 'EXTERNAL_ONLY' ? (
-                <Button onClick={handleCreateJob}>Add Job</Button>
-              ) : null}
-            </div>
+      <div className="grid w-full min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
+        {statTiles.map((item) => (
+          <div
+            key={item.label}
+            className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
+          >
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{item.value}</p>
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">{item.note}</p>
           </div>
-        </div>
-
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: 'All jobs', value: compactNumber(jobs.length), note: `${compactNumber(rootJobs.length)} parents, ${compactNumber(totalVariations)} variations` },
-            { label: 'Active rows', value: compactNumber(activeJobs), note: 'Parents and variations currently running' },
-            { label: 'API parents', value: compactNumber(apiJobs), note: 'Externally synced job records' },
-            { label: 'Rows shown', value: compactNumber(filteredJobs.length), note: scopeFilter === 'ALL' ? 'All matching work rows' : scopeFilter === 'PARENT_ONLY' ? 'Parent jobs only' : 'Variations only' },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-3.5 dark:bg-slate-950/80">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">{item.label}</p>
-              <p className="mt-1.5 text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+        ))}
+      </div>
 
       {jobSourceMode === 'EXTERNAL_ONLY' ? (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-          Parent job creation is disabled for this company. Parent jobs must come from the external API, while local variations can still be created from those parent jobs.
-        </div>
+        <Alert>
+          <AlertTitle>External API parents</AlertTitle>
+          <AlertDescription>
+            Parent job creation is disabled for this company. Parents come from the external API; you can still add
+            local variations from those parents.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {jobSourceMode === 'INTERNAL_ONLY' ? (
+        <Alert>
+          <AlertTitle>Internal-only jobs</AlertTitle>
+          <AlertDescription>
+            Inbound job sync from the Project Management API is disabled. Use local parent jobs and variations only.
+          </AlertDescription>
+        </Alert>
       ) : null}
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
-        <div className="grid gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">
-              Search Jobs & Variations
+      <section className="flex w-full min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="grid w-full min-w-0 grid-cols-1 gap-4 border-b border-border pb-4 lg:grid-cols-[minmax(0,1fr)_11rem_11rem]">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <label htmlFor="job-search" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Search
             </label>
-            <input
+            <Input
+              id="job-search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by job number, parent number, customer, site, or description..."
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              placeholder="Job number, customer, site, description…"
             />
           </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">
-              Job Type
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="job-scope" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Scope
             </label>
-            <select
+            <Select
+              id="job-scope"
               value={scopeFilter}
               onChange={(e) => setScopeFilter(e.target.value as JobScopeFilter)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             >
-              <option value="ALL">All jobs and variations</option>
-              <option value="PARENT_ONLY">Parent only</option>
-              <option value="VARIATION_ONLY">Variation only</option>
-            </select>
+              <option value="ALL">All jobs & variations</option>
+              <option value="PARENT_ONLY">Parents only</option>
+              <option value="VARIATION_ONLY">Variations only</option>
+            </Select>
           </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">
-              Status Filter
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="job-status" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Status
             </label>
-            <select
+            <Select
+              id="job-status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as JobStatusFilter)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             >
               <option value="ALL">All statuses</option>
               <option value="ACTIVE">Active</option>
               <option value="COMPLETED">Completed</option>
               <option value="ON_HOLD">On hold</option>
               <option value="CANCELLED">Cancelled</option>
-            </select>
+            </Select>
           </div>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800">
+        <div className="overflow-hidden rounded-md border border-border">
           {jobsLoading && jobs.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-slate-500 dark:text-slate-400">Loading jobs...</div>
+            <div className="flex flex-col divide-y divide-border">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-4 px-4 py-3">
+                  <Skeleton className="h-8 w-24 shrink-0" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <Skeleton className="h-4 w-48 max-w-full" />
+                    <Skeleton className="h-3 w-full max-w-md" />
+                  </div>
+                  <Skeleton className="h-6 w-16 shrink-0 rounded-full" />
+                </div>
+              ))}
+            </div>
           ) : filteredJobs.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-slate-500 dark:text-slate-400">No jobs match the current filter.</div>
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">No jobs match the current filters.</div>
           ) : (
-            <div className="divide-y divide-slate-200 dark:divide-slate-800">
-              {filteredJobs.map((job) => {
-                const variations = variationsByParent.get(job.id) ?? [];
-                const parentJob = job.parentJobId ? jobById.get(job.parentJobId) : null;
-                const isVariation = Boolean(job.parentJobId);
-                const customerName = customerNameById.get(job.customerId) ?? 'Unknown customer';
+            <>
+              <div
+                className="hidden border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground xl:grid xl:grid-cols-[minmax(11rem,0.75fr)_minmax(0,1.25fr)_minmax(12rem,0.95fr)_9.5rem_minmax(9rem,1fr)]"
+                aria-hidden
+              >
+                <span>Job</span>
+                <span>Customer & details</span>
+                <span>Site & schedule</span>
+                <span>Status</span>
+                <span className="text-right">Actions</span>
+              </div>
+              <div className="divide-y divide-border">
+                {filteredJobs.map((job) => {
+                  const variations = variationsByParent.get(job.id) ?? [];
+                  const parentJob = job.parentJobId ? jobById.get(job.parentJobId) : null;
+                  const isVariation = Boolean(job.parentJobId);
+                  const customerName = customerNameById.get(job.customerId) ?? 'Unknown customer';
 
-                return (
-                  <div
-                    key={job.id}
-                    className={cx(
-                      'grid gap-0 bg-white transition hover:bg-slate-50/80 dark:bg-slate-950/70 dark:hover:bg-slate-900/60 xl:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.2fr)_minmax(13rem,0.85fr)_8.5rem_13rem]',
-                      isVariation && 'bg-sky-50/35 dark:bg-sky-950/20'
-                    )}
-                    onContextMenu={(e) => handleJobContextMenu(job, e)}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/customers/jobs/${job.id}`)}
-                      className="px-4 py-4 text-left"
+                  const typeLabel = isVariation ? 'Variation' : job.source === 'EXTERNAL_API' ? 'API parent' : 'Parent';
+                  const lineageVariant = isVariation
+                    ? 'outline'
+                    : job.source === 'EXTERNAL_API'
+                      ? 'secondary'
+                      : 'default';
+
+                  return (
+                    <Link
+                      key={job.id}
+                      href={`/customers/jobs/${job.id}`}
+                      onContextMenu={(e) => handleJobContextMenu(job, e)}
+                      className={cn(
+                        'grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-muted/50 xl:grid-cols-[minmax(11rem,0.75fr)_minmax(0,1.25fr)_minmax(12rem,0.95fr)_9.5rem_minmax(9rem,1fr)] xl:items-center xl:gap-0',
+                        isVariation && 'bg-muted/15',
+                      )}
                     >
-                      <div className="flex items-start gap-3">
-                        <span className={cx(
-                          'mt-1 h-8 w-1.5 shrink-0 rounded-full',
-                          isVariation ? 'bg-sky-400 dark:bg-sky-300' : 'bg-slate-300 dark:bg-slate-600'
-                        )} />
-                        <span className="min-w-0">
-                          <span className="block truncate font-semibold text-slate-900 dark:text-white">{job.jobNumber}</span>
-                          <span className={cx(
-                            'mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]',
-                            isVariation
-                              ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200'
-                              : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
-                          )}>
-                            {isVariation ? 'Variation' : job.source === 'EXTERNAL_API' ? 'API parent' : 'Parent'}
-                          </span>
-                          {parentJob ? (
-                            <span className="mt-1 block truncate text-xs text-slate-500 dark:text-slate-500">
-                              Parent: {parentJob.jobNumber}
-                            </span>
-                          ) : null}
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          className={cn(
+                            'mt-1 h-8 w-1 shrink-0 rounded-full',
+                            isVariation ? 'bg-primary' : 'bg-muted-foreground/40',
+                          )}
+                          aria-hidden
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">{job.jobNumber}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <Badge variant={lineageVariant} className="text-[10px] uppercase tracking-wide">
+                              {typeLabel}
+                            </Badge>
+                            {parentJob ? (
+                              <span className="truncate text-xs text-muted-foreground">Parent {parentJob.jobNumber}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 xl:border-l xl:border-border xl:pl-4">
+                        <p className="text-sm font-medium text-foreground">{customerName}</p>
+                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                          {job.description || 'No description'}
+                        </p>
+                        {parentJob ? (
+                          <p className="mt-1 text-xs text-muted-foreground">Scope: {parentJob.jobNumber}</p>
+                        ) : null}
+                      </div>
+
+                      <div className="min-w-0 xl:border-l xl:border-border xl:pl-4">
+                        <p className="text-sm text-foreground">{job.site || 'Site not set'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {isVariation
+                            ? 'Budget & dispatch on this variation'
+                            : variations.length > 0
+                              ? `${compactNumber(variations.length)} variation${variations.length === 1 ? '' : 's'}`
+                              : 'No variations'}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">Start {formatDate(job.startDate)}</p>
+                      </div>
+
+                      <div className="flex items-center xl:border-l xl:border-border xl:pl-4">
+                        <Badge variant={statusBadgeVariant(job.status)} className="whitespace-nowrap">
+                          {job.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground xl:border-l xl:border-border xl:pl-4">
+                        <span className="hidden xl:inline">Right-click for more</span>
+                        <span aria-hidden className="text-muted-foreground">
+                          →
                         </span>
                       </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/customers/jobs/${job.id}`)}
-                      className="px-4 py-4 text-left"
-                    >
-                      <p className="text-sm font-medium text-slate-900 dark:text-white">{customerName}</p>
-                      <p className="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
-                        {job.description || 'No job description added yet.'}
-                      </p>
-                      {parentJob ? (
-                        <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">
-                          Part of parent scope {parentJob.jobNumber}
-                        </p>
-                      ) : null}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/customers/jobs/${job.id}`)}
-                      className="px-4 py-4 text-left"
-                    >
-                      <p className="text-sm text-slate-900 dark:text-white">{job.site || 'Site not set'}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                        {isVariation
-                          ? 'Budget and dispatch should run on this variation'
-                          : variations.length > 0
-                          ? `${compactNumber(variations.length)} variation${variations.length === 1 ? '' : 's'} linked`
-                          : 'No variations yet'}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-                        Start {formatDate(job.startDate)}
-                      </p>
-                    </button>
-
-                    <div className="px-4 py-4">
-                      <span className={cx('inline-flex rounded-full border px-2.5 py-1 text-xs font-medium', statusClasses(job.status))}>
-                        {job.status.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    <div className="px-4 py-4 text-xs text-slate-500 dark:text-slate-500">
-                      Right-click for ledger, budget, costing, variation, edit, and delete actions.
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </section>
 
       {deleteModal.open && deleteModal.job ? (
         <>
-          <div className="fixed inset-0 z-40 bg-black/50" onClick={() => !deleteModal.loading && closeDeleteModal()} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-rose-600 dark:text-rose-300/80">
-              Remove Job
-            </p>
-            <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/50"
+            aria-label="Close dialog"
+            onClick={() => !deleteModal.loading && closeDeleteModal()}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-job-title"
+            className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-6 shadow-lg"
+          >
+            <p className="text-xs font-medium uppercase tracking-wide text-destructive">Remove job</p>
+            <h2 id="delete-job-title" className="mt-2 text-lg font-semibold text-foreground">
               {deleteModal.job.jobNumber}
             </h2>
 
             {!deleteModal.canDelete ? (
               <>
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                  This job is linked to {deleteModal.linkedCount} transaction{deleteModal.linkedCount === 1 ? '' : 's'} and cannot be deleted yet.
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Linked to {deleteModal.linkedCount} transaction{deleteModal.linkedCount === 1 ? '' : 's'} — cannot
+                  delete yet.
                 </p>
-                <div className="mt-6 flex justify-end gap-3">
-                  <Button variant="ghost" onClick={closeDeleteModal}>Close</Button>
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={closeDeleteModal}>
+                    Close
+                  </Button>
                 </div>
               </>
             ) : (
               <>
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                  Delete this job record and remove it from the customer job queue?
-                </p>
-                <div className="mt-6 flex justify-end gap-3">
-                  <Button variant="ghost" onClick={closeDeleteModal} disabled={deleteModal.loading}>
+                <p className="mt-3 text-sm text-muted-foreground">Delete this job and remove it from the queue?</p>
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button type="button" variant="ghost" onClick={closeDeleteModal} disabled={deleteModal.loading}>
                     Cancel
                   </Button>
-                  <Button variant="danger" onClick={handleDelete} disabled={isDeleting || deleteModal.loading}>
-                    {deleteModal.loading ? 'Deleting...' : 'Delete Job'}
+                  <Button type="button" variant="destructive" onClick={handleDelete} disabled={isDeleting || deleteModal.loading}>
+                    {deleteModal.loading ? 'Deleting…' : 'Delete'}
                   </Button>
                 </div>
               </>

@@ -3,8 +3,15 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
 import toast from 'react-hot-toast';
+
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
+import { cn } from '@/lib/utils';
 import { useGetHrSchedulesQuery } from '@/store/api/endpoints/hr';
 
 async function readApiEnvelope<T>(res: Response) {
@@ -45,17 +52,36 @@ function StatCard({
 }) {
   const toneClass =
     tone === 'emerald'
-      ? 'text-emerald-300'
+      ? 'text-emerald-600 dark:text-emerald-300'
       : tone === 'amber'
-        ? 'text-amber-300'
-        : 'text-white';
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-foreground';
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4 shadow-sm">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-semibold ${toneClass}`}>{value}</p>
-    </div>
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className={cn('mt-2 text-2xl font-semibold tabular-nums', toneClass)}>{value}</p>
+      </CardContent>
+    </Card>
   );
+}
+
+function workflowBadgeClasses(row: {
+  status: string;
+  attendanceRows: number;
+  workDate: string;
+}) {
+  const attendanceReady = row.attendanceRows > 0;
+  if (row.status === 'LOCKED') {
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300';
+  }
+  if (row.status === 'PUBLISHED') {
+    return attendanceReady
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+      : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-800 dark:text-cyan-300';
+  }
+  return 'border-border bg-muted/50 text-muted-foreground';
 }
 
 export default function HrScheduleListPage() {
@@ -81,7 +107,7 @@ export default function HrScheduleListPage() {
       [row.workDate, row.status]
         .join(' ')
         .toLowerCase()
-        .includes(q)
+        .includes(q),
     );
   }, [rows, search]);
 
@@ -98,7 +124,7 @@ export default function HrScheduleListPage() {
         }
         return acc;
       },
-      { total: 0, draft: 0, published: 0, locked: 0, pendingAttendance: 0 }
+      { total: 0, draft: 0, published: 0, locked: 0, pendingAttendance: 0 },
     );
   }, [rows]);
 
@@ -120,92 +146,128 @@ export default function HrScheduleListPage() {
     router.push(`/hr/schedule/${newDate}`);
   };
 
-  if (!canView) return <div className="text-slate-400">Forbidden</div>;
-  if (loading) return <div className="text-slate-400">Loading...</div>;
+  if (!canView) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>You do not have permission to view HR schedules.</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <div className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+          ))}
+        </div>
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full text-left text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  {['Date', 'Workflow', 'Teams', 'Absences', 'Attendance', 'Actions'].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:pl-5 last:pr-5"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <TableSkeleton rows={6} columns={6} />
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/60 p-6 shadow-xl shadow-black/10">
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.12),transparent_38%)]"
-          aria-hidden
-        />
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300/80">HR Planning</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Schedule planning</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="w-full min-w-0 space-y-6 border-b border-border pb-4">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">HR planning</p>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Schedule planning</h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">
               Create the day schedule, assign teams and drivers, then hand it off cleanly into attendance.
             </p>
           </div>
 
-          {canEdit && (
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-sm xl:min-w-[22rem]">
-              <label className="text-sm text-slate-300">
-                <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Work date</span>
-                <input
-                  type="date"
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
-                />
-              </label>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setNewDate(todayYmd())}
-                  className="text-xs text-emerald-400 transition-colors hover:text-emerald-300"
-                >
-                  Use today
-                </button>
-                <Button onClick={createSchedule} disabled={creating || !newDate} loading={creating}>
-                  Create schedule draft
-                </Button>
-              </div>
-            </div>
-          )}
+          {canEdit ? (
+            <Card className="w-full shrink-0 lg:max-w-sm">
+              <CardContent className="space-y-4 p-4">
+                <div className="space-y-2">
+                  <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Work date
+                  </span>
+                  <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Button type="button" variant="ghost" size="sm" className="h-auto px-0 text-xs" onClick={() => setNewDate(todayYmd())}>
+                    Use today
+                  </Button>
+                  <Button type="button" disabled={creating || !newDate} size="sm" onClick={() => void createSchedule()}>
+                    {creating ? 'Creating…' : 'Create schedule draft'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
-      </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Total schedules" value={summary.total} />
-        <StatCard label="Drafts" value={summary.draft} />
-        <StatCard label="Published" value={summary.published} tone="emerald" />
-        <StatCard label="Locked" value={summary.locked} />
-        <StatCard label="Needs attendance" value={summary.pendingAttendance} tone="amber" />
-      </section>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard label="Total schedules" value={summary.total} />
+          <StatCard label="Drafts" value={summary.draft} />
+          <StatCard label="Published" value={summary.published} tone="emerald" />
+          <StatCard label="Locked" value={summary.locked} />
+          <StatCard label="Needs attendance" value={summary.pendingAttendance} tone="amber" />
+        </div>
+      </header>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-900/40">
-        <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white">Schedule register</h2>
-            <p className="text-sm text-slate-400">Recent days with planning progress and attendance handoff status.</p>
+            <h2 className="text-lg font-semibold text-foreground">Schedule register</h2>
+            <p className="text-sm text-muted-foreground">
+              Recent days with planning progress and attendance handoff status.
+            </p>
           </div>
-          <input
+          <Input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by date or status"
-            className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white lg:max-w-sm"
+            className="lg:max-w-sm"
           />
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
-            <thead className="border-b border-white/10 bg-slate-950/50 text-xs uppercase tracking-wide text-slate-500">
+          <table className="min-w-[980px] w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/50">
               <tr>
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">Workflow</th>
-                <th className="px-5 py-3">Teams</th>
-                <th className="px-5 py-3">Absences</th>
-                <th className="px-5 py-3">Attendance</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date</th>
+                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workflow</th>
+                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Teams</th>
+                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Absences</th>
+                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Attendance</th>
+                <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5 text-slate-200">
+            <tbody className="divide-y divide-border text-muted-foreground">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={6} className="px-5 py-10 text-center text-muted-foreground">
                     No schedules match the current filter.
                   </td>
                 </tr>
@@ -223,56 +285,48 @@ export default function HrScheduleListPage() {
                         : 'Draft planning in progress';
 
                   return (
-                    <tr key={row.id} className="transition-colors hover:bg-white/5">
+                    <tr key={row.id} className="transition-colors hover:bg-muted/40">
                       <td className="px-5 py-4">
                         <button
                           type="button"
                           onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
                           className="text-left"
                         >
-                          <p className="font-medium text-white">{formatDateLabel(row.workDate)}</p>
-                          <p className="mt-1 text-xs text-slate-500">{workDateYmd}</p>
+                          <p className="font-medium text-foreground">{formatDateLabel(row.workDate)}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{workDateYmd}</p>
                         </button>
                       </td>
                       <td className="px-5 py-4">
-                        <span
-                          className={[
-                            'inline-flex rounded-full px-2.5 py-1 text-xs font-medium',
-                            row.status === 'LOCKED'
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : row.status === 'PUBLISHED'
-                                ? attendanceReady
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-cyan-500/20 text-cyan-300'
-                                : 'bg-slate-500/20 text-slate-300',
-                          ].join(' ')}
-                        >
+                        <Badge variant="outline" className={cn('font-medium', workflowBadgeClasses(row))}>
                           {row.status}
-                        </span>
-                        <p className="mt-2 text-xs text-slate-400">{workflowLabel}</p>
+                        </Badge>
+                        <p className="mt-2 text-xs text-muted-foreground">{workflowLabel}</p>
                       </td>
-                      <td className="px-5 py-4 text-slate-300">{row._count.assignments}</td>
-                      <td className="px-5 py-4 text-slate-300">{row._count.absences}</td>
+                      <td className="px-5 py-4">{row._count.assignments}</td>
+                      <td className="px-5 py-4">{row._count.absences}</td>
                       <td className="px-5 py-4">
-                        <span className={attendanceReady ? 'text-emerald-300' : 'text-amber-300'}>
+                        <span
+                          className={
+                            attendanceReady
+                              ? 'font-medium text-emerald-600 dark:text-emerald-300'
+                              : 'font-medium text-amber-700 dark:text-amber-300'
+                          }
+                        >
                           {row.attendanceRows}
                         </span>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {attendanceReady ? 'Rows available' : 'Not generated yet'}
                         </p>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
-                          >
+                          <Button variant="outline" size="sm" type="button" onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}>
                             Plan
                           </Button>
                           <Button
+                            variant={attendanceReady ? 'secondary' : 'default'}
                             size="sm"
-                            variant={attendanceReady ? 'secondary' : 'primary'}
+                            type="button"
                             onClick={() => router.push(`/hr/attendance?workDate=${encodeURIComponent(workDateYmd)}`)}
                           >
                             {attendanceReady ? 'Attendance' : 'Create attendance'}

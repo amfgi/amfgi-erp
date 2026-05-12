@@ -1,10 +1,10 @@
 # Store, Slices, and Company Slice
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **companySlice.ts** (0 connections) — `store\slices\companySlice.ts`
+- **companySlice.ts** (0 connections) â€” `store/slices/companySlice.ts`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `store\slices\companySlice.ts`
+- `store/slices/companySlice.ts`
 
 ## Audit Trail
 

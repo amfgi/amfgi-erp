@@ -1,14 +1,38 @@
 'use client';
 
-import { use } from 'react';
+import { use, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
+import JobConsumptionCostingSection from '@/components/jobs/JobConsumptionCostingSection';
+import JobScopeFilter, { type JobScopeOption } from '@/components/jobs/JobScopeFilter';
 import TransactionLedger from '@/components/transactions/TransactionLedger';
 import { useGetCustomersQuery, useGetJobByIdQuery, useGetJobMaterialsQuery, useGetJobsQuery } from '@/store/hooks';
+
+const JobCostEnginePage = dynamic(() => import('@/app/(app)/jobs/[id]/cost-engine/page'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-64 items-center justify-center">
+      <Spinner size="lg" />
+    </div>
+  ),
+});
+
+type LedgerTabId = 'costing' | 'materials' | 'transactions' | 'progress' | 'entries';
+
+const LEDGER_TABS: Array<{ id: LedgerTabId; label: string; description: string }> = [
+  { id: 'costing', label: 'Budget vs consumption', description: 'Quoted budget against actual stock-out costing' },
+  { id: 'materials', label: 'Material summary', description: 'Dispatched, returned, net consumed by material' },
+  { id: 'transactions', label: 'Transactions', description: 'Stock movements recorded against the job' },
+  { id: 'progress', label: 'Progress', description: 'Job-wide roll-up, pace, and schedule' },
+  { id: 'entries', label: 'Quantity log', description: 'Trackable targets and dated quantity entries' },
+];
+
+const TABS_REQUIRING_SCOPE: ReadonlyArray<LedgerTabId> = ['costing', 'materials', 'transactions'];
 
 type MaterialSummary = {
   materialId: string;
@@ -75,19 +99,82 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
   const router = useRouter();
 
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(id);
-  const { data: materialsData, isLoading: materialsLoading } = useGetJobMaterialsQuery(id);
   const { data: customers = [] } = useGetCustomersQuery();
   const { data: jobs = [] } = useGetJobsQuery();
+
+  const [activeTab, setActiveTab] = useState<LedgerTabId>('costing');
+
+  const isVariation = Boolean(job?.parentJobId);
+  const variations = useMemo(
+    () => (job && !job.parentJobId ? jobs.filter((entry) => entry.parentJobId === id) : []),
+    [job, jobs, id],
+  );
+  const variationCount = variations.length;
+
+  const scopeOptions = useMemo<JobScopeOption[]>(() => {
+    if (!job) return [];
+    if (job.parentJobId) {
+      return [
+        {
+          id: job.id,
+          jobNumber: job.jobNumber,
+          description: job.description,
+          isParent: false,
+        },
+      ];
+    }
+    return [
+      {
+        id: job.id,
+        jobNumber: job.jobNumber,
+        description: job.description,
+        isParent: true,
+      },
+      ...variations.map((variation) => ({
+        id: variation.id,
+        jobNumber: variation.jobNumber,
+        description: variation.description,
+        isParent: false,
+      })),
+    ];
+  }, [job, variations]);
+
+  const scopeKey = useMemo(
+    () => scopeOptions.map((option) => option.id).slice().sort().join('|'),
+    [scopeOptions],
+  );
+  const [selectionScopeKey, setSelectionScopeKey] = useState<string>('');
+  const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
+
+  if (scopeKey && scopeKey !== selectionScopeKey) {
+    setSelectionScopeKey(scopeKey);
+    setSelectedJobIds(scopeOptions.map((option) => option.id));
+  }
+
+  const totalSelectableJobCount = scopeOptions.length;
+  const isFilterActive =
+    !isVariation &&
+    selectedJobIds.length > 0 &&
+    selectedJobIds.length < totalSelectableJobCount;
+
+  const materialsScopeIds =
+    selectedJobIds.length > 0 && !isVariation ? selectedJobIds : undefined;
+
+  const { data: materialsData, isLoading: materialsLoading } = useGetJobMaterialsQuery(
+    materialsScopeIds && materialsScopeIds.length > 0
+      ? { jobId: id, jobIds: materialsScopeIds }
+      : id,
+    { skip: !job },
+  );
+
   const summary = materialsData || [];
   const isLoading = jobLoading || materialsLoading;
 
   const customerName = (customers as Customer[]).find((entry) => entry.id === job?.customerId)?.name ?? 'Unknown customer';
   const parentJob = job?.parentJobId ? jobs.find((entry) => entry.id === job.parentJobId) : null;
-  const variationCount = jobs.filter((entry) => entry.parentJobId === id).length;
   const contacts = safeContacts((job as { contactsJson?: unknown } | undefined)?.contactsJson);
   const totalDispatched = summary.reduce((sum, row) => sum + row.dispatched, 0);
   const totalConsumed = summary.reduce((sum, row) => sum + row.netConsumed, 0);
-  const isVariation = Boolean(job?.parentJobId);
 
   if (isLoading) {
     return (
@@ -101,9 +188,12 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
     return <div className="py-12 text-center text-slate-500 dark:text-slate-400">Job not found.</div>;
   }
 
+  const showScopeCard =
+    !isVariation && variationCount > 0 && TABS_REQUIRING_SCOPE.includes(activeTab);
+
   return (
     <div className="-mx-4 -my-4 min-h-[calc(100dvh-4rem)] bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_42%,#f8fafc_100%)] px-4 py-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_55%,#020617_100%)] sm:-mx-5 sm:-my-5 sm:px-5 sm:py-5 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6">
-      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <section className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_34%),linear-gradient(135deg,#0f172a,#020617)] sm:px-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-4xl">
@@ -160,50 +250,125 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
         </div>
       </section>
 
+      <section className="mt-5 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-4">
+        <div className="flex flex-wrap gap-2">
+          {LEDGER_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                activeTab === tab.id
+                  ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900/60'
+              }`}
+            >
+              <div className="text-sm font-semibold">{tab.label}</div>
+              <div className="mt-1 text-xs text-current/70">{tab.description}</div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {showScopeCard ? (
+        <section className="mt-5 flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/75 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Reporting scope</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Switch which jobs feed this tab. Defaults to the parent and all {variationCount} variation{variationCount === 1 ? '' : 's'}.
+            </p>
+          </div>
+          <JobScopeFilter
+            options={scopeOptions}
+            selectedIds={selectedJobIds}
+            onChange={setSelectedJobIds}
+          />
+        </section>
+      ) : null}
+
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="space-y-5">
-          <section className="rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
-            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Material Summary</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Dispatched, returned, net consumed, and returnable stock for this job scope.</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Material</th>
-                    <th className="px-4 py-3 text-right">Dispatched</th>
-                    <th className="px-4 py-3 text-right">Returned</th>
-                    <th className="px-4 py-3 text-right">Net Consumed</th>
-                    <th className="px-4 py-3 text-right">Available Return</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.map((mat: MaterialSummary) => (
-                    <tr key={mat.materialId} className="border-t border-slate-200 dark:border-slate-800">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-950 dark:text-white">{mat.materialName}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-500">{mat.unit}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.dispatched)}</td>
-                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.returned)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-emerald-700 dark:text-emerald-300">{formatQty(mat.netConsumed)}</td>
-                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.availableToReturn)}</td>
-                    </tr>
-                  ))}
-                  {summary.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                        No materials dispatched yet.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          {activeTab === 'costing' ? (
+            <JobConsumptionCostingSection
+              jobId={id}
+              selectedJobIds={!isVariation ? selectedJobIds : undefined}
+              totalSelectableJobCount={totalSelectableJobCount}
+            />
+          ) : null}
 
-          <TransactionLedger jobId={id} />
+          {activeTab === 'materials' ? (
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
+              <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Material summary</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Dispatched, returned, net consumed, and returnable stock for the selected scope.
+                </p>
+                {isFilterActive ? (
+                  <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">
+                    Showing {selectedJobIds.length} of {totalSelectableJobCount} jobs.
+                  </p>
+                ) : null}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Material</th>
+                      <th className="px-4 py-3 text-right">Dispatched</th>
+                      <th className="px-4 py-3 text-right">Returned</th>
+                      <th className="px-4 py-3 text-right">Net Consumed</th>
+                      <th className="px-4 py-3 text-right">Available Return</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.map((mat: MaterialSummary) => (
+                      <tr key={mat.materialId} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-950 dark:text-white">{mat.materialName}</div>
+                          <div className="text-xs text-slate-500 dark:text-slate-500">{mat.unit}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.dispatched)}</td>
+                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.returned)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-emerald-700 dark:text-emerald-300">{formatQty(mat.netConsumed)}</td>
+                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatQty(mat.availableToReturn)}</td>
+                      </tr>
+                    ))}
+                    {summary.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                          No materials dispatched yet.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === 'transactions' ? (
+            <section className="rounded-[1.75rem] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/75">
+              <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Transaction ledger</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Stock movements recorded against the selected scope.</p>
+                {isFilterActive ? (
+                  <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">
+                    Showing {selectedJobIds.length} of {totalSelectableJobCount} jobs.
+                  </p>
+                ) : null}
+              </div>
+              <div className="px-5 py-4">
+                <TransactionLedger
+                  jobId={id}
+                  jobIds={!isVariation && selectedJobIds.length > 0 ? selectedJobIds : undefined}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === 'progress' ? <JobCostEnginePage embeddedTab="progress" /> : null}
+
+          {activeTab === 'entries' ? <JobCostEnginePage embeddedTab="entries" /> : null}
         </main>
 
         <aside className="space-y-5 xl:sticky xl:top-5 xl:self-start">

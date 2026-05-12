@@ -6,6 +6,7 @@ import {
   uploadToDrive,
 } from '@/lib/utils/googleDrive';
 import { finalizeUserMediaUpload, MEDIA_KIND_USER_SIGNATURE } from '@/lib/media/userScopedMedia';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 /** Signature image for print templates (PNG recommended for transparency). */
 export async function POST(req: Request) {
@@ -33,18 +34,19 @@ export async function POST(req: Request) {
     }
 
     const userId = session.user.id;
-    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const rootFolderId = await getEffectiveGoogleDriveRootFolderId();
     if (!rootFolderId) return errorResponse('Google Drive folder not configured', 500);
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext =
       file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-    const { id } = await uploadToDrive(
+    const { viewerUrl } = await uploadToDrive(
       buffer,
       `user-${userId}-signature-${Date.now()}.${ext}`,
       file.type,
       {
         companyId,
         rootFolderId,
+        scope: 'global',
         folderPath: [
           { key: 'drive-folder:users-root', name: 'Users' },
           {
@@ -55,18 +57,18 @@ export async function POST(req: Request) {
       },
     );
 
-    const { displayUrl, driveId } = await finalizeUserMediaUpload({
+    const { displayUrl } = await finalizeUserMediaUpload({
       userId,
       companyId,
       kind: MEDIA_KIND_USER_SIGNATURE,
-      newDriveId: id,
+      newFileUrl: viewerUrl,
       mimeType: file.type,
       fileName: `user-${userId}-signature.${ext}`,
       bytes: file.size,
       uploadedById: userId,
     });
 
-    return successResponse({ url: displayUrl, driveId });
+    return successResponse({ url: displayUrl });
   } catch (err: unknown) {
     const message = explainGoogleDriveError(err);
     console.error('User signature upload error:', message);

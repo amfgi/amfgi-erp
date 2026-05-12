@@ -16,13 +16,16 @@ import {
 import { resolveQuantityToBase, resolveFactorToBase } from '@/lib/utils/materialUomDb';
 import { applyMaterialWarehouseDelta, resolveEffectiveWarehouse } from '@/lib/warehouses/stockWarehouses';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
+import { recalculateAssemblyAncestorsTx } from '@/lib/utils/materialAssembly';
 import {
   buildCustomerDriveFolderName,
   buildJobDriveFolderName,
   buildSignedDeliveryNoteDriveFileName,
   moveDriveFile,
 } from '@/lib/utils/googleDrive';
+import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
 import { upsertStockExceptionApproval } from '@/lib/utils/stockExceptionApproval';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 function parseDeliveryNoteLabel(notes?: string | null): string {
   const match = notes?.match(/--- DELIVERY NOTE #(\d+)/);
@@ -213,7 +216,6 @@ export async function POST(req: Request) {
       const materialCostById = new Map<string, number>();
       let preservedSignedCopy:
         | {
-            signedCopyDriveId: string;
             signedCopyUrl: string | null;
           }
         | null = null;
@@ -237,9 +239,8 @@ export async function POST(req: Request) {
           });
 
           if (existingTxn) {
-            if (!preservedSignedCopy && existingTxn.signedCopyDriveId) {
+            if (!preservedSignedCopy && existingTxn.signedCopyUrl) {
               preservedSignedCopy = {
-                signedCopyDriveId: existingTxn.signedCopyDriveId,
                 signedCopyUrl: existingTxn.signedCopyUrl,
               };
             }
@@ -554,7 +555,6 @@ export async function POST(req: Request) {
               averageCost,
               notes: buildStockOutOverrideNote(notes, overrideReason),
               isDeliveryNote: isDeliveryNote || false,
-              signedCopyDriveId: preservedSignedCopy && created.length === 0 ? preservedSignedCopy.signedCopyDriveId : null,
               signedCopyUrl: preservedSignedCopy && created.length === 0 ? preservedSignedCopy.signedCopyUrl : null,
               date: txDate,
               ...actorFields,
@@ -775,6 +775,13 @@ export async function POST(req: Request) {
                 unitCost: currentPrice,
               },
             });
+
+            await recalculateAssemblyAncestorsTx(
+              tx,
+              companyId,
+              materialId,
+              session.user.name || session.user.email || session.user.id
+            );
           }
         }
       }
@@ -785,14 +792,18 @@ export async function POST(req: Request) {
         billAmount,
         includeTax,
         taxAmount,
-        signedCopyDriveId: preservedSignedCopy?.signedCopyDriveId ?? null,
+        signedCopyUrl: preservedSignedCopy?.signedCopyUrl ?? null,
       };
     });
 
-    if (result.signedCopyDriveId && result.ids.length > 0 && jobId) {
-      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+    if (result.signedCopyUrl && result.ids.length > 0 && jobId) {
+      const folderId = await getEffectiveGoogleDriveRootFolderId();
       if (folderId) {
         try {
+          const signedCopyDriveId = extractGoogleDriveFileId(result.signedCopyUrl);
+          if (!signedCopyDriveId) {
+            throw new Error('Unable to extract Drive file id from signed copy URL');
+          }
           const job = await prisma.job.findUnique({
             where: { id: jobId },
             select: {
@@ -817,7 +828,7 @@ export async function POST(req: Request) {
               result.ids[0],
             );
 
-            await moveDriveFile(result.signedCopyDriveId, fileName, {
+            await moveDriveFile(signedCopyDriveId, fileName, {
               companyId,
               rootFolderId: folderId,
               folderPath: [

@@ -39,16 +39,24 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const jobId = searchParams.get('jobId');
+  const jobIdsParam = searchParams.getAll('jobIds').filter(Boolean);
   const type = searchParams.get('type');
   const limit = Math.min(Number(searchParams.get('limit') ?? 50), 200);
 
   try {
     const companyId = session.user.activeCompanyId;
 
+    const jobFilter =
+      jobIdsParam.length > 0
+        ? { in: jobIdsParam }
+        : jobId
+          ? jobId
+          : undefined;
+
     const transactions = await prisma.transaction.findMany({
       where: {
         companyId,
-        jobId: jobId ? jobId : undefined,
+        jobId: jobFilter,
         type: type ? (type as TransactionFilterType) : undefined,
       },
       select: {

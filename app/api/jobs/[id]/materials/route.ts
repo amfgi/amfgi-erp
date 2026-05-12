@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
-export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!session.user.isSuperAdmin && !session.user.permissions.includes('job.view')) {
@@ -13,12 +13,27 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
 
   const { id } = await params;
+  const { searchParams } = new URL(req.url);
+  const requestedJobIds = searchParams.getAll('jobIds').filter(Boolean);
 
-  // Get all STOCK_OUT and RETURN transactions for this job
+  const companyId = session.user.activeCompanyId;
+
+  let jobIdsToScope: string[] = [id];
+  if (requestedJobIds.length > 0) {
+    const validJobs = await prisma.job.findMany({
+      where: { companyId, id: { in: requestedJobIds } },
+      select: { id: true },
+    });
+    if (validJobs.length === 0) {
+      return errorResponse('No matching jobs found', 404);
+    }
+    jobIdsToScope = validJobs.map((row) => row.id);
+  }
+
   const transactions = await prisma.transaction.findMany({
     where: {
-      jobId: id,
-      companyId: session.user.activeCompanyId,
+      jobId: { in: jobIdsToScope },
+      companyId,
       type: {
         in: ['STOCK_OUT', 'RETURN'],
       },
@@ -34,7 +49,6 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     },
   });
 
-  // Group by material and calculate totals
   const materialMap = new Map<string, {
     materialId: string;
     materialName: string;
@@ -69,7 +83,6 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     materialMap.set(key, existing);
   }
 
-  // Convert to array and sort by material name
   const result = Array.from(materialMap.values()).sort((a, b) =>
     a.materialName.localeCompare(b.materialName)
   );

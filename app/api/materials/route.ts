@@ -3,8 +3,9 @@ import { prisma } from '@/lib/db/prisma';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { serializeMaterialUoms } from '@/lib/utils/materialUom';
 import type { MaterialUomWithUnit } from '@/lib/utils/materialUom';
-import { decimalToNumber } from '@/lib/utils/decimal';
+import { decimalToNumber, decimalToNumberOrZero } from '@/lib/utils/decimal';
 import { resolveCategoryRef, resolveWarehouseRef } from '@/lib/materialMasterData';
+import { applyMaterialWarehouseDelta } from '@/lib/warehouses/stockWarehouses';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { z }                 from 'zod';
 
@@ -22,6 +23,30 @@ const MaterialSchema = z.object({
   unitCost:            z.number().finite().min(0).optional(),
   reorderLevel:        z.number().finite().min(0).optional(),
   currentStock:        z.number().finite().min(0).optional(),
+  assemblyOutputQuantity: z.number().finite().positive().optional(),
+  assemblyOverheadPercent: z.number().finite().min(0).optional(),
+  imageUrl: z.string().url().optional(),
+  attachmentUrl: z.string().url().optional(),
+  attachmentName: z.string().min(1).max(255).optional(),
+  attachmentMimeType: z.string().min(1).max(150).optional(),
+  photoGallery: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        fileName: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(150),
+      })
+    )
+    .optional(),
+  documentFiles: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        fileName: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(150),
+      })
+    )
+    .optional(),
 });
 
 export async function GET() {
@@ -111,6 +136,8 @@ export async function POST(req: Request) {
         unitCost: decimalToNumber(parsed.data.unitCost) ?? null,
         reorderLevel: decimalToNumber(parsed.data.reorderLevel) ?? null,
         currentStock: decimalToNumber(parsed.data.currentStock) ?? 0,
+        assemblyOutputQuantity: decimalToNumber(parsed.data.assemblyOutputQuantity) ?? 1,
+        assemblyOverheadPercent: decimalToNumber(parsed.data.assemblyOverheadPercent) ?? 0,
         isActive: true,
       },
     });
@@ -136,6 +163,36 @@ export async function POST(req: Request) {
       });
     }
 
+    const openingStock = decimalToNumberOrZero(parsed.data.currentStock);
+    if (openingStock > 0 && warehouseRef.warehouseId) {
+      await applyMaterialWarehouseDelta(
+        tx,
+        companyId,
+        mat.id,
+        warehouseRef.warehouseId,
+        openingStock
+      );
+
+      const unitCost = decimalToNumberOrZero(parsed.data.unitCost);
+      await tx.stockBatch.create({
+        data: {
+          materialId: mat.id,
+          companyId,
+          warehouseId: warehouseRef.warehouseId,
+          batchNumber: `OPEN-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+          quantityReceived: openingStock,
+          quantityAvailable: openingStock,
+          unitCost,
+          totalCost: openingStock * unitCost,
+          supplier: 'Opening balance',
+          receiptNumber: null,
+          receivedDate: new Date(),
+          expiryDate: null,
+          notes: 'Created on material setup',
+        },
+      });
+    }
+
     return mat;
   });
 
@@ -145,6 +202,12 @@ export async function POST(req: Request) {
       materialUoms: {
         include: { unit: { select: { id: true, name: true } } },
         orderBy: [{ isBase: 'desc' }, { createdAt: 'asc' }],
+      },
+      materialWarehouseStocks: {
+        select: {
+          warehouseId: true,
+          currentStock: true,
+        },
       },
     },
   });
@@ -162,6 +225,7 @@ export async function POST(req: Request) {
       materialUoms: withUoms
         ? serializeMaterialUoms(withUoms.materialUoms as MaterialUomWithUnit[])
         : [],
+      materialWarehouseStocks: withUoms?.materialWarehouseStocks ?? [],
     },
     201
   );

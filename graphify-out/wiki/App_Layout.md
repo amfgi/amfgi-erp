@@ -1,11 +1,12 @@
 # App Layout
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **layout.tsx** (1 connections) — `app\(app)\layout.tsx`
-- **AppLayout()** (1 connections) — `app\(app)\layout.tsx`
+- **AppLayout()** (2 connections) â€” `app/(app)/layout.tsx`
+- **layout.tsx** (1 connections) â€” `app/(app)/layout.tsx`
+- **layout.tsx** (1 connections) â€” `app/(app)/layout.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\layout.tsx`
+- `app/(app)/layout.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

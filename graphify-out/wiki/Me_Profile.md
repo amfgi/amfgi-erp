@@ -1,12 +1,14 @@
 # Me Profile
 
-> 3 nodes · cohesion 0.67
+> 5 nodes Â· cohesion 0.40
 
 ## Key Concepts
 
-- **EmployeeProfilePage()** (2 connections) — `app\(app)\me\profile\page.tsx`
-- **page.tsx** (1 connections) — `app\(app)\hr\employees\[id]\page.tsx`
-- **page.tsx** (1 connections) — `app\(app)\me\profile\page.tsx`
+- **EmployeeProfilePage()** (4 connections) â€” `app/(app)/me/profile/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/hr/employees/[id]/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/me/profile/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/hr/employees/[id]/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/me/profile/page.tsx`
 
 ## Relationships
 
@@ -14,12 +16,12 @@
 
 ## Source Files
 
-- `app\(app)\hr\employees\[id]\page.tsx`
-- `app\(app)\me\profile\page.tsx`
+- `app/(app)/hr/employees/[id]/page.tsx`
+- `app/(app)/me/profile/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 4 (100%)
+- EXTRACTED: 8 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

@@ -30,6 +30,7 @@ export {
 export {
   useGetCompanyProfilesQuery,
   useCreateCompanyProfileMutation,
+  type CompanyProfile,
 } from './api/adminEndpoints/profiles';
 
 // App API hooks (company-scoped)
@@ -43,8 +44,12 @@ export {
   useBulkCreateMaterialsMutation,
   useCreateMaterialUomMutation,
   useDeleteMaterialUomMutation,
+  useGetMaterialAssemblyQuery,
+  useUpsertMaterialAssemblyMutation,
   type Material,
   type MaterialUomDto,
+  type MaterialAssembly,
+  type MaterialAssemblyRow,
 } from './api/endpoints/materials';
 
 export {
@@ -60,18 +65,45 @@ export {
   useAddJobItemMutation,
   useUpdateJobItemMutation,
   useDeleteJobItemMutation,
+  useGetJobItemProgressEntriesQuery,
+  useGetJobProgressEntriesForJobQuery,
+  useAddJobItemProgressEntryMutation,
+  useUpdateJobItemProgressEntryMutation,
+  useDeleteJobItemProgressEntryMutation,
+  useGetDailyQuantityLogQuery,
+  useGetDailyQuantityLogPendingQuery,
+  useFinalizeQuantityLogDayMutation,
+  useUnlockQuantityLogDayMutation,
+  useAddQuantityLogAdhocJobMutation,
+  useRemoveQuantityLogAdhocJobMutation,
   useGetFormulaLibrariesQuery,
   useGetFormulaLibraryByIdQuery,
   useCreateFormulaLibraryMutation,
   useUpdateFormulaLibraryMutation,
   useDeleteFormulaLibraryMutation,
+  useGetFormulaLibraryVersionsQuery,
+  useRestoreFormulaLibraryVersionMutation,
   useCalculateJobCostEngineMutation,
+  useGetJobCostingSnapshotsQuery,
+  useGetJobCostingSnapshotByIdQuery,
+  useCreateJobCostingSnapshotMutation,
+  useApproveJobCostingSnapshotMutation,
   useGetDispatchBudgetWarningMutation,
   useCreateJobMutation,
   useUpdateJobMutation,
   useDeleteJobMutation,
   type DispatchBudgetWarningResult,
   type DispatchBudgetWarningRow,
+  type JobItemProgressEntry,
+  type JobProgressEntryListRow,
+  type DailyQuantityLogResponse,
+  type DailyQuantityLogAssignment,
+  type DailyQuantityLogTeam,
+  type DailyQuantityLogItem,
+  type DailyQuantityLogTracker,
+  type DailyQuantityLogExistingEntry,
+  type DailyQuantityLogJob,
+  type DailyQuantityLogEligibleJob,
 } from './api/endpoints/jobs';
 
 export {

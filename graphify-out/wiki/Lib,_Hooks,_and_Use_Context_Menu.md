@@ -1,11 +1,12 @@
 # Lib, Hooks, and Use Context Menu
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **useContextMenu.ts** (1 connections) — `lib\hooks\useContextMenu.ts`
-- **useContextMenu()** (1 connections) — `lib\hooks\useContextMenu.ts`
+- **useContextMenu()** (2 connections) â€” `lib/hooks/useContextMenu.ts`
+- **useContextMenu.ts** (1 connections) â€” `lib/hooks/useContextMenu.ts`
+- **useContextMenu.ts** (1 connections) â€” `lib/hooks/useContextMenu.ts`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `lib\hooks\useContextMenu.ts`
+- `lib/hooks/useContextMenu.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

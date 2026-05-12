@@ -1,11 +1,12 @@
 # Lib, Docs, and API Endpoints
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **apiEndpoints.ts** (1 connections) — `lib\docs\apiEndpoints.ts`
-- **authLabel()** (1 connections) — `lib\docs\apiEndpoints.ts`
+- **authLabel()** (2 connections) â€” `lib/docs/apiEndpoints.ts`
+- **apiEndpoints.ts** (1 connections) â€” `lib/docs/apiEndpoints.ts`
+- **apiEndpoints.ts** (1 connections) â€” `lib/docs/apiEndpoints.ts`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `lib\docs\apiEndpoints.ts`
+- `lib/docs/apiEndpoints.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

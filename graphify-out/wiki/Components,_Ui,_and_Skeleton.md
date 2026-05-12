@@ -1,10 +1,12 @@
 # Components, Ui, and Skeleton
 
-> 1 nodes � cohesion 1.00
+> 3 nodes · cohesion 0.67
 
 ## Key Concepts
 
-- **TableSkeleton.tsx** (0 connections) � `components\ui\skeleton\TableSkeleton.tsx`
+- **CardGridSkeleton()** (2 connections) — `components/ui/skeleton/CardGridSkeleton.tsx`
+- **CardGridSkeleton.tsx** (1 connections) — `components/ui/skeleton/CardGridSkeleton.tsx`
+- **CardGridSkeleton.tsx** (1 connections) — `components/ui/skeleton/CardGridSkeleton.tsx`
 
 ## Relationships
 
@@ -12,11 +14,11 @@
 
 ## Source Files
 
-- `components\ui\skeleton\TableSkeleton.tsx`
+- `components/ui/skeleton/CardGridSkeleton.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 0 (0%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

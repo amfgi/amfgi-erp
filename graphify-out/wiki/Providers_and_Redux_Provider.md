@@ -1,11 +1,12 @@
 # Providers and Redux Provider
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **ReduxProvider.tsx** (1 connections) — `providers\ReduxProvider.tsx`
-- **ReduxProvider()** (1 connections) — `providers\ReduxProvider.tsx`
+- **ReduxProvider()** (2 connections) â€” `providers/ReduxProvider.tsx`
+- **ReduxProvider.tsx** (1 connections) â€” `providers/ReduxProvider.tsx`
+- **ReduxProvider.tsx** (1 connections) â€” `providers/ReduxProvider.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `providers\ReduxProvider.tsx`
+- `providers/ReduxProvider.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

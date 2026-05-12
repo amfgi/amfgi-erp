@@ -1,9 +1,22 @@
+import { randomUUID } from 'crypto';
+
 import { auth }            from '@/auth';
 import { prisma }          from '@/lib/db/prisma';
 import { GLOBAL_LIVE_UPDATE_COMPANY_ID, publishLiveUpdate } from '@/lib/live-updates/server';
 import { ensureCompanyFallbackWarehouse, normalizeWarehouseMode } from '@/lib/warehouses/companyWarehouseMode';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z }                from 'zod';
+
+/** Lowercase URL slug: letters, digits, single hyphens; empty if nothing valid remains. */
+function normalizeCompanySlug(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
 export async function GET() {
   const session = await auth();
@@ -24,9 +37,13 @@ export async function GET() {
 
 const CreateSchema = z.object({
   name:              z.string().min(1).max(100),
+  /** Optional; normalized to lowercase a-z, 0-9, hyphens. Omit or blank to derive from name. */
+  slug:              z.string().max(80).optional(),
   description:       z.string().max(300).optional(),
   externalCompanyId: z.string().max(120).optional(),
-  jobSourceMode:     z.enum(['HYBRID', 'EXTERNAL_ONLY']).optional(),
+  jobSourceMode:        z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
+  customerSourceMode:   z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
+  supplierSourceMode:   z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
 });
 
 export async function POST(req: Request) {
@@ -37,7 +54,27 @@ export async function POST(req: Request) {
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const slug = parsed.data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const slugFromName = normalizeCompanySlug(parsed.data.name);
+  const slugFromInput =
+    parsed.data.slug !== undefined && parsed.data.slug.trim() !== ''
+      ? normalizeCompanySlug(parsed.data.slug)
+      : '';
+
+  let slug: string;
+  if (slugFromInput !== '') {
+    slug = slugFromInput;
+  } else if (slugFromName !== '') {
+    slug = slugFromName;
+  } else {
+    slug = `company-${randomUUID().slice(0, 8)}`;
+  }
+
+  if (parsed.data.slug !== undefined && parsed.data.slug.trim() !== '' && slugFromInput === '') {
+    return errorResponse(
+      'Custom slug must contain at least one letter or digit (lowercase a–z, 0–9, hyphens only).',
+      422
+    );
+  }
 
   const conflictOr = [{ slug }, { name: parsed.data.name }] as Array<Record<string, string>>;
   if (parsed.data.externalCompanyId) {
@@ -49,11 +86,14 @@ export async function POST(req: Request) {
   const company = await prisma.$transaction(async (tx) => {
     const created = await tx.company.create({
       data: {
+        id: randomUUID(),
         name:        parsed.data.name,
         slug,
         description: parsed.data.description,
         externalCompanyId: parsed.data.externalCompanyId || null,
         jobSourceMode: parsed.data.jobSourceMode || 'HYBRID',
+        customerSourceMode: parsed.data.customerSourceMode || 'HYBRID',
+        supplierSourceMode: parsed.data.supplierSourceMode || 'HYBRID',
         warehouseMode: normalizeWarehouseMode(undefined),
         isActive:    true,
       },

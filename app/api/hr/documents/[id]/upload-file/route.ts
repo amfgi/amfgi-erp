@@ -2,7 +2,9 @@ import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
-import { buildEmployeeDriveFolderName, uploadToDrive } from '@/lib/utils/googleDrive';
+import { buildEmployeeDriveFolderName, deleteFromDrive, uploadToDrive } from '@/lib/utils/googleDrive';
+import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
+import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 const ALLOWED = new Map([
   ['image/jpeg', 'jpg'],
@@ -20,7 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const doc = await prisma.employeeDocument.findFirst({
     where: { id: documentId, companyId },
-    include: { employee: { select: { employeeCode: true, fullName: true, id: true } } },
+    include: { employee: { select: { employeeCode: true, fullName: true, id: true } }, documentType: { select: { name: true } }, visaPeriod: { select: { label: true } } },
   });
   if (!doc) return errorResponse('Document not found', 404);
 
@@ -36,15 +38,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return errorResponse('File size must not exceed 20 MB', 400);
     }
 
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = await getEffectiveGoogleDriveRootFolderId();
     if (!folderId) return errorResponse('Google Drive folder not configured', 500);
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext = ALLOWED.get(file.type)!;
-    const safeCode = doc.employee.employeeCode.replace(/[^a-zA-Z0-9-_]/g, '_');
-    const { id: driveId, viewerUrl } = await uploadToDrive(
+    // const safeCode = doc.employee.employeeCode.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const employeeName = doc.employee.fullName
+    const documentType = doc.documentType.name
+    const visaPeriod = doc.visaPeriod?.label ?? null;
+
+    const { viewerUrl } = await uploadToDrive(
       buffer,
-      `employee-doc-${safeCode}-${documentId.slice(0, 8)}-${Date.now()}.${ext}`,
+      `${employeeName} - ${documentType} - ${visaPeriod} - ${documentId.slice(0, 8)}-${Date.now()}.${ext}`,
       file.type,
       {
         companyId,
@@ -62,11 +68,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     await prisma.employeeDocument.update({
       where: { id: documentId },
-      data: { mediaDriveId: driveId },
+      data: { mediaUrl: viewerUrl },
     });
 
+    if (doc.mediaUrl) {
+      const oldId = extractGoogleDriveFileId(doc.mediaUrl);
+      if (oldId) {
+        try {
+          await deleteFromDrive(oldId, companyId);
+        } catch (error) {
+          console.error('Failed to delete replaced employee document file from Drive:', error);
+        }
+      }
+    }
+
     return successResponse({
-      driveId,
       previewUrl: viewerUrl,
     });
   } catch (err: unknown) {

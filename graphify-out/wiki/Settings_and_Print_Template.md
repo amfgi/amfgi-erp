@@ -1,11 +1,12 @@
 # Settings and Print Template
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **layout.tsx** (1 connections) — `app\settings\print-template\edit\layout.tsx`
-- **PrintTemplateEditLayout()** (1 connections) — `app\settings\print-template\edit\layout.tsx`
+- **PrintTemplateEditLayout()** (2 connections) â€” `app/settings/print-template/edit/layout.tsx`
+- **layout.tsx** (1 connections) â€” `app/settings/print-template/edit/layout.tsx`
+- **layout.tsx** (1 connections) â€” `app/settings/print-template/edit/layout.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\settings\print-template\edit\layout.tsx`
+- `app/settings/print-template/edit/layout.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

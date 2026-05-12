@@ -4,9 +4,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
-import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
+
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
+import Modal from '@/components/ui/Modal';
+import { cn } from '@/lib/utils';
 import { useDeleteTransactionMutation, useGetNonStockReconcileDataQuery } from '@/store/hooks';
 import type { NonStockReconcileHistoryItem } from '@/store/api/endpoints/transactions';
 
@@ -34,8 +38,10 @@ export default function IssueReconcilePage() {
 
   if (!canReconcile) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-slate-500 dark:text-slate-400">You do not have permission to access issue reconcile.</p>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>You do not have permission to access issue reconcile.</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -58,53 +64,67 @@ export default function IssueReconcilePage() {
     }
   };
 
+  if (isLoading && data == null) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <div className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="grid gap-3 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+          ))}
+        </div>
+        <div className="h-64 animate-pulse rounded-lg border border-border bg-muted/30" />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-[1280px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.1),_transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.14),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-700 dark:text-amber-300/80">
-                Issue Reconcile
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Reconcile history and controls
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review previous non-stock issue reconciliations and open the manual create screen when you need to distribute fresh quantities into variation jobs sourced from monthly dispatch-note activity.
-              </p>
-            </div>
-
-            <Link href="/stock/issue-reconcile/new">
-              <Button>Create reconcile</Button>
-            </Link>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Issue reconcile</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Reconcile history and controls</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Review previous non-stock issue reconciliations and open the manual create screen when you need to distribute
+            fresh quantities into variation jobs sourced from monthly dispatch-note activity.
+          </p>
         </div>
+        <Link href="/stock/issue-reconcile/new" className={cn(buttonVariants({ size: 'sm' }), 'shrink-0')}>
+          Create reconcile
+        </Link>
+      </header>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 md:grid-cols-3">
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">History rows</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{data?.history.length ?? 0}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Variation jobs</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{data?.jobs.length ?? 0}</p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Non-stock items</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{data?.materials.length ?? 0}</p>
-          </div>
-        </div>
+      <section className="grid min-w-0 gap-3 md:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">History rows</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{data?.history.length ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Variation jobs</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{data?.jobs.length ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Non-stock items</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{data?.materials.length ?? 0}</p>
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Previous history</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">Recent non-stock reconcile postings across job variations.</p>
+      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Previous history</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Recent non-stock reconcile postings across job variations.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
+            <thead className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Material</th>
@@ -116,21 +136,23 @@ export default function IssueReconcilePage() {
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border text-muted-foreground">
               {(data?.history ?? []).map((entry) => (
-                <tr key={entry.id} className="border-t border-slate-200 dark:border-slate-800">
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{new Date(entry.date).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{entry.materialName}</td>
+                <tr key={entry.id} className="transition-colors hover:bg-muted/40">
+                  <td className="px-4 py-3">{new Date(entry.date).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 font-medium text-foreground">{entry.materialName}</td>
                   <td className="px-4 py-3">
-                    <div className="text-slate-900 dark:text-white">{entry.jobNumber}</div>
+                    <div className="text-foreground">{entry.jobNumber}</div>
                     {entry.jobDescription ? (
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{entry.jobDescription}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{entry.jobDescription}</div>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{entry.customerName || '-'}</td>
-                  <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{formatNumber(entry.quantity)} {entry.unit}</td>
-                  <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{formatMoney(entry.averageCost)}</td>
-                  <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{formatMoney(entry.totalCost)}</td>
+                  <td className="px-4 py-3">{entry.customerName || '-'}</td>
+                  <td className="px-4 py-3">
+                    {formatNumber(entry.quantity)} {entry.unit}
+                  </td>
+                  <td className="px-4 py-3">{formatMoney(entry.averageCost)}</td>
+                  <td className="px-4 py-3">{formatMoney(entry.totalCost)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <Button type="button" size="sm" variant="ghost" onClick={() => setViewEntry(entry)}>
@@ -148,7 +170,7 @@ export default function IssueReconcilePage() {
               ))}
               {!isLoading && (data?.history.length ?? 0) === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-500">
+                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No reconcile history yet.
                   </td>
                 </tr>
@@ -164,75 +186,87 @@ export default function IssueReconcilePage() {
         title="Delete reconcile entry"
       >
         <div className="space-y-4">
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            This will delete the selected reconcile transaction.
-          </p>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-6 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-            After delete:
-            the distributed issue cost is removed from that job,
-            the reconciled stock quantity is added back to material stock,
-            and any FIFO batch quantities consumed by this reconcile are restored.
+          <p className="text-sm text-muted-foreground">This will delete the selected reconcile transaction.</p>
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-3 text-xs leading-6 text-amber-900 dark:text-amber-100">
+            After delete: the distributed issue cost is removed from that job, the reconciled stock quantity is added
+            back to material stock, and any FIFO batch quantities consumed by this reconcile are restored.
           </div>
           <div className="flex gap-3">
-            <Button type="button" variant="ghost" fullWidth onClick={() => setWarningEntryId(null)}>
+            <Button type="button" variant="ghost" className="min-w-0 flex-1" onClick={() => setWarningEntryId(null)}>
               Cancel
             </Button>
-            <Button type="button" fullWidth loading={deleting} onClick={handleDelete}>
-              Delete
+            <Button
+              type="button"
+              variant="destructive"
+              className="min-w-0 flex-1"
+              disabled={deleting}
+              onClick={() => void handleDelete()}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
             </Button>
           </div>
         </div>
       </Modal>
 
-      <Modal
-        isOpen={Boolean(viewEntry)}
-        onClose={() => setViewEntry(null)}
-        title="Reconcile entry"
-      >
+      <Modal isOpen={Boolean(viewEntry)} onClose={() => setViewEntry(null)} title="Reconcile entry">
         {viewEntry ? (
-          <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
-            <div><span className="font-medium text-slate-900 dark:text-white">Date:</span> {new Date(viewEntry.date).toLocaleString()}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Material:</span> {viewEntry.materialName}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Job:</span> {viewEntry.jobNumber}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Company:</span> {viewEntry.customerName || '-'}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Quantity:</span> {formatNumber(viewEntry.quantity)} {viewEntry.unit}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Average cost:</span> {formatMoney(viewEntry.averageCost)}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Total cost:</span> {formatMoney(viewEntry.totalCost)}</div>
-            <div><span className="font-medium text-slate-900 dark:text-white">Notes:</span> {viewEntry.notes || '-'}</div>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <div>
+              <span className="font-medium text-foreground">Date:</span> {new Date(viewEntry.date).toLocaleString()}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Material:</span> {viewEntry.materialName}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Job:</span> {viewEntry.jobNumber}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Company:</span> {viewEntry.customerName || '-'}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Quantity:</span> {formatNumber(viewEntry.quantity)}{' '}
+              {viewEntry.unit}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Average cost:</span> {formatMoney(viewEntry.averageCost)}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Total cost:</span> {formatMoney(viewEntry.totalCost)}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Notes:</span> {viewEntry.notes || '-'}
+            </div>
           </div>
         ) : null}
       </Modal>
 
-      <Modal
-        isOpen={Boolean(editEntry)}
-        onClose={() => setEditEntry(null)}
-        title="Edit reconcile entry"
-      >
+      <Modal isOpen={Boolean(editEntry)} onClose={() => setEditEntry(null)} title="Edit reconcile entry">
         {editEntry ? (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              You are about to edit this reconcile entry for <span className="font-medium text-slate-900 dark:text-white">{editEntry.materialName}</span> on job <span className="font-medium text-slate-900 dark:text-white">{editEntry.jobNumber}</span>.
+            <p className="text-sm text-muted-foreground">
+              You are about to edit this reconcile entry for{' '}
+              <span className="font-medium text-foreground">{editEntry.materialName}</span> on job{' '}
+              <span className="font-medium text-foreground">{editEntry.jobNumber}</span>.
             </p>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-6 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-              What happens on save:
-              the current reconcile transaction will be deleted first,
-              its stock and FIFO batch effects will be reversed,
-              and then a new reconcile transaction will be created from the values you save in the edit form.
+            <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-3 text-xs leading-6 text-amber-900 dark:text-amber-100">
+              What happens on save: the current reconcile transaction will be deleted first, its stock and FIFO batch
+              effects will be reversed, and then a new reconcile transaction will be created from the values you save in
+              the edit form.
             </div>
             <div className="flex gap-3">
-              <Button type="button" variant="ghost" fullWidth onClick={() => setEditEntry(null)}>
+              <Button type="button" variant="ghost" className="min-w-0 flex-1" onClick={() => setEditEntry(null)}>
                 Cancel
               </Button>
               <Button
                 type="button"
-                fullWidth
+                className="min-w-0 flex-1"
                 onClick={() => {
                   const targetId = editEntry.id;
                   setEditEntry(null);
                   router.push(`/stock/issue-reconcile/new?transactionId=${targetId}`);
                 }}
               >
-                Continue To Edit
+                Continue to edit
               </Button>
             </div>
           </div>

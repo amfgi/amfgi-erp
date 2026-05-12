@@ -1,10 +1,10 @@
 # Store and Store
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **store.ts** (0 connections) — `store\store.ts`
+- **store.ts** (0 connections) â€” `store/store.ts`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `store\store.ts`
+- `store/store.ts`
 
 ## Audit Trail
 

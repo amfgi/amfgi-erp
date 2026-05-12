@@ -1,14 +1,15 @@
 # Components, HR, and Hr Page Chrome
 
-> 5 nodes · cohesion 0.60
+> 6 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **HrPageChrome.tsx** (4 connections) — `components\hr\HrPageChrome.tsx`
-- **prettifyDateSegment()** (2 connections) — `components\hr\HrPageChrome.tsx`
-- **labelForSegment()** (2 connections) — `components\hr\HrPageChrome.tsx`
-- **buildBreadcrumbs()** (2 connections) — `components\hr\HrPageChrome.tsx`
-- **HrPageChrome()** (2 connections) — `components\hr\HrPageChrome.tsx`
+- **HrPageChrome.tsx** (4 connections) â€” `components/hr/HrPageChrome.tsx`
+- **HrPageChrome.tsx** (4 connections) â€” `components/hr/HrPageChrome.tsx`
+- **prettifyDateSegment()** (3 connections) â€” `components/hr/HrPageChrome.tsx`
+- **labelForSegment()** (3 connections) â€” `components/hr/HrPageChrome.tsx`
+- **buildBreadcrumbs()** (3 connections) â€” `components/hr/HrPageChrome.tsx`
+- **HrPageChrome()** (3 connections) â€” `components/hr/HrPageChrome.tsx`
 
 ## Relationships
 
@@ -16,11 +17,11 @@
 
 ## Source Files
 
-- `components\hr\HrPageChrome.tsx`
+- `components/hr/HrPageChrome.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 12 (100%)
+- EXTRACTED: 20 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

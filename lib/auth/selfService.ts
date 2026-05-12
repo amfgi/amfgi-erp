@@ -4,9 +4,16 @@ type SelfServiceCandidate = {
   linkedEmployeeId?: string | null;
 };
 
-export function isEmployeeSelfServiceUser(user: SelfServiceCandidate | null | undefined) {
+/** Row / session shape: linked employee login, not a super admin. */
+export function isEmployeeSelfServiceAccount(
+  user: { isSuperAdmin?: boolean | null; linkedEmployeeId?: string | null } | null | undefined,
+) {
   if (!user) return false;
   if (user.isSuperAdmin) return false;
-  if (!user.linkedEmployeeId) return false;
-  return true;
+  return Boolean(user.linkedEmployeeId);
+}
+
+export function isEmployeeSelfServiceUser(user: SelfServiceCandidate | null | undefined) {
+  if (!user) return false;
+  return isEmployeeSelfServiceAccount(user);
 }

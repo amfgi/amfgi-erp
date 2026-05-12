@@ -1,10 +1,10 @@
 # Lib, Utils, and Print Template Session
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **printTemplateSession.ts** (0 connections) — `lib\utils\printTemplateSession.ts`
+- **printTemplateSession.ts** (0 connections) â€” `lib/utils/printTemplateSession.ts`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `lib\utils\printTemplateSession.ts`
+- `lib/utils/printTemplateSession.ts`
 
 ## Audit Trail
 

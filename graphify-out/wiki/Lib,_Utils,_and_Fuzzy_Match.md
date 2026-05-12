@@ -1,12 +1,13 @@
 # Lib, Utils, and Fuzzy Match
 
-> 3 nodes · cohesion 0.67
+> 4 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **fuzzyMatch.ts** (2 connections) — `lib\utils\fuzzyMatch.ts`
-- **fuzzyMatch()** (1 connections) — `lib\utils\fuzzyMatch.ts`
-- **searchItems()** (1 connections) — `lib\utils\fuzzyMatch.ts`
+- **fuzzyMatch.ts** (2 connections) â€” `lib/utils/fuzzyMatch.ts`
+- **fuzzyMatch()** (2 connections) â€” `lib/utils/fuzzyMatch.ts`
+- **searchItems()** (2 connections) â€” `lib/utils/fuzzyMatch.ts`
+- **fuzzyMatch.ts** (2 connections) â€” `lib/utils/fuzzyMatch.ts`
 
 ## Relationships
 
@@ -14,11 +15,11 @@
 
 ## Source Files
 
-- `lib\utils\fuzzyMatch.ts`
+- `lib/utils/fuzzyMatch.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 4 (100%)
+- EXTRACTED: 8 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

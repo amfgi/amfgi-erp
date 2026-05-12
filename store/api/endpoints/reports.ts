@@ -16,8 +16,9 @@ interface StockValuationResponse {
     movingAverageStockValue: number;
     currentStockValue: number;
     preferredMethod: 'FIFO';
+    currencyCode?: string;
     prevMonthConsumptionValue: number;
-    warehouseMode?: 'REQUIRED';
+    warehouseMode?: 'REQUIRED' | 'OPTIONAL' | 'DISABLED';
     fallbackWarehouseName?: string | null;
     warehouseCount?: number;
   };

@@ -15,9 +15,6 @@ export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!canManageDrive(session)) return errorResponse('Forbidden', 403);
-
-  const companyId = session.user.activeCompanyId;
-  if (!companyId) return errorResponse('No active company selected', 400);
   if (!process.env.GOOGLE_CLIENT_ID?.trim() || !process.env.GOOGLE_CLIENT_SECRET?.trim()) {
     return errorResponse('Google OAuth client is not configured', 500);
   }
@@ -27,7 +24,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   cookieStore.set(
     'google_drive_oauth_state',
-    JSON.stringify({ state, companyId }),
+    JSON.stringify({ state }),
     {
       httpOnly: true,
       sameSite: 'lax',

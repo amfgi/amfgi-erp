@@ -1,47 +1,61 @@
 # Settings API
 
-> 22 nodes · cohesion 0.15
+> 31 nodes Â· cohesion 0.14
 
 ## Key Concepts
 
-- **page.tsx** (20 connections) — `app\(app)\settings\page.tsx`
-- **extractMutationErrorMessage()** (7 connections) — `app\(app)\settings\page.tsx`
-- **page.tsx** (6 connections) — `app\(app)\settings\api\page.tsx`
-- **writeCompanyDocumentTemplates()** (5 connections) — `lib\utils\companyPrintTemplates.ts`
-- **handleTemplateDelete()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleTemplateDuplicate()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleSetDefault()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleCreateApiCredential()** (2 connections) — `app\(app)\settings\api\page.tsx`
-- **copyNewApiKey()** (2 connections) — `app\(app)\settings\api\page.tsx`
-- **openDomainModal()** (2 connections) — `app\(app)\settings\api\page.tsx`
-- **saveDomainModal()** (2 connections) — `app\(app)\settings\api\page.tsx`
-- **handleRevokeApiCredential()** (2 connections) — `app\(app)\settings\api\page.tsx`
-- **retryIntegrationLog()** (2 connections) — `app\(app)\settings\api\page.tsx`
-- **handleUnitSave()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleUnitDelete()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleCategorySave()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleCategoryDelete()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleWarehouseSave()** (2 connections) — `app\(app)\settings\page.tsx`
-- **handleWarehouseDelete()** (2 connections) — `app\(app)\settings\page.tsx`
-- **buildJobSyncPlaygroundPayload()** (1 connections) — `app\(app)\settings\page.tsx`
-- **runIntegrationPlayground()** (1 connections) — `app\(app)\settings\page.tsx`
-- **async()** (1 connections) — `app\(app)\settings\page.tsx`
+- **page.tsx** (48 connections) â€” `app/(app)/settings/page.tsx`
+- **page.tsx** (28 connections) â€” `app/(app)/settings/api/page.tsx`
+- **page.tsx** (20 connections) â€” `app/(app)/settings/page.tsx`
+- **extractMutationErrorMessage()** (8 connections) â€” `app/(app)/settings/page.tsx`
+- **writeCompanyDocumentTemplates()** (6 connections) â€” `lib/utils/companyPrintTemplates.ts`
+- **page.tsx** (6 connections) â€” `app/(app)/settings/api/page.tsx`
+- **handleCreateApiCredential()** (4 connections) â€” `app/(app)/settings/api/page.tsx`
+- **copyNewApiKey()** (4 connections) â€” `app/(app)/settings/api/page.tsx`
+- **openDomainModal()** (4 connections) â€” `app/(app)/settings/api/page.tsx`
+- **saveDomainModal()** (4 connections) â€” `app/(app)/settings/api/page.tsx`
+- **handleRevokeApiCredential()** (4 connections) â€” `app/(app)/settings/api/page.tsx`
+- **retryIntegrationLog()** (4 connections) â€” `app/(app)/settings/api/page.tsx`
+- **handleTemplateDelete()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleTemplateDuplicate()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleSetDefault()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleUnitSave()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleUnitDelete()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleCategorySave()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleCategoryDelete()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleWarehouseSave()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **handleWarehouseDelete()** (3 connections) â€” `app/(app)/settings/page.tsx`
+- **buildJobSyncPlaygroundPayload()** (2 connections) â€” `app/(app)/settings/page.tsx`
+- **runIntegrationPlayground()** (2 connections) â€” `app/(app)/settings/page.tsx`
+- **SETTINGS_TABS** (1 connections) â€” `app/(app)/settings/page.tsx`
+- **SettingsTabId** (1 connections) â€” `app/(app)/settings/page.tsx`
+- *... and 6 more nodes in this community*
 
 ## Relationships
 
-- [[Lib Utils and Media]] (2 shared connections)
-- [[Customers, Admin, and Suppliers]] (1 shared connections)
+- [[Components, HR, and Admin]] (16 shared connections)
+- [[Admin, Components, and Settings]] (9 shared connections)
+- [[Lib Utils]] (5 shared connections)
+- [[HR, Reports, and Components]] (4 shared connections)
+- [[Lib, Scripts, and Settings]] (4 shared connections)
+- [[Customers, Stock, and Providers]] (3 shared connections)
+- [[Reports, Settings, and HR]] (2 shared connections)
+- [[Lib Utils and Types]] (2 shared connections)
+- [[Components Ui and Materials]] (1 shared connections)
+- [[HR Schedule]] (1 shared connections)
+- [[Suppliers]] (1 shared connections)
+- [[HR Schedule and Settings]] (1 shared connections)
 
 ## Source Files
 
-- `app\(app)\settings\api\page.tsx`
-- `app\(app)\settings\page.tsx`
-- `lib\utils\companyPrintTemplates.ts`
+- `app/(app)/settings/api/page.tsx`
+- `app/(app)/settings/page.tsx`
+- `lib/utils/companyPrintTemplates.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 64 (90%)
-- INFERRED: 7 (10%)
+- EXTRACTED: 172 (96%)
+- INFERRED: 7 (4%)
 - AMBIGUOUS: 0 (0%)
 
 ---

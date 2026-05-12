@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
+import { Input } from '@/components/ui/shadcn/input';
 import { ContextMenu } from '@/components/ui/ContextMenu';
 import toast from 'react-hot-toast';
 import { convertGoogleDriveUrl } from '@/lib/utils/googleDriveUrl';
+import { cn } from '@/lib/utils';
 
 function previewSrc(url: string | null | undefined): string {
   if (!url?.trim()) return '';
@@ -14,10 +16,15 @@ function previewSrc(url: string | null | undefined): string {
   return converted || url.trim();
 }
 
-function EmptyAvatar({ name }: { name: string }) {
+function EmptyAvatar({ name, compact }: { name: string; compact?: boolean }) {
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   return (
-    <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-emerald-500/20 to-sky-500/20 text-3xl font-semibold text-slate-700 dark:text-slate-200">
+    <div
+      className={cn(
+        'flex h-full w-full items-center justify-center bg-linear-to-br from-emerald-500/20 to-sky-500/20 font-semibold text-foreground',
+        compact ? 'text-2xl sm:text-3xl' : 'text-3xl',
+      )}
+    >
       {initial}
     </div>
   );
@@ -102,9 +109,8 @@ export default function ProfilePage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Upload failed');
       const url = json.data.url as string;
-      const driveId = json.data.driveId as string | undefined;
       setImageUrl(url);
-      await update(driveId !== undefined ? { image: url, imageDriveId: driveId } : { image: url });
+      await update({ image: url });
       toast.success('Profile photo updated');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
@@ -126,11 +132,8 @@ export default function ProfilePage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Upload failed');
       const url = json.data.url as string;
-      const driveId = json.data.driveId as string | undefined;
       setSignatureUrl(url);
-      await update(
-        driveId !== undefined ? { signatureUrl: url, signatureDriveId: driveId } : { signatureUrl: url }
-      );
+      await update({ signatureUrl: url });
       toast.success('Signature updated');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
@@ -186,8 +189,13 @@ export default function ProfilePage() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-slate-500 dark:text-slate-400">
-        Loading profile...
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <div className="flex flex-col gap-2 border-b border-border pb-4">
+          <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+          <div className="h-7 w-48 max-w-full animate-pulse rounded bg-muted" />
+          <div className="h-4 w-64 max-w-full animate-pulse rounded bg-muted" />
+        </div>
+        <p className="text-sm text-muted-foreground">Loading profile…</p>
       </div>
     );
   }
@@ -197,203 +205,186 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-none">
-        <div className="bg-linear-to-r from-emerald-500/10 via-transparent to-sky-500/10 px-6 py-6 sm:px-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-4">
-              <div className="flex flex-col items-start gap-2">
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={onAvatarChange}
-                  disabled={uploadingAvatar}
-                />
-                <button
-                  type="button"
-                  onClick={(event) => setAvatarMenu({ x: event.clientX, y: event.clientY })}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setAvatarMenu({ x: event.clientX, y: event.clientY });
-                  }}
-                  className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-left transition hover:border-emerald-400 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-emerald-500"
-                  aria-label="Open profile photo menu"
-                >
-                  {avatarPreview ? (
-                    <Image src={avatarPreview} alt="" fill className="object-cover" sizes="80px" />
-                  ) : (
-                    <EmptyAvatar name={sessionName} />
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 bg-slate-950/70 px-2 py-1 text-center text-[10px] font-medium uppercase tracking-[0.16em] text-white opacity-0 transition group-hover:opacity-100">
-                    Photo menu
-                  </div>
-                </button>
-                {uploadingAvatar && (
-                  <div className="rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                    Uploading photo...
-                  </div>
-                )}
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Account</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Profile</h1>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{sessionName}</span>
+            {sessionEmail ? <span className="text-muted-foreground"> · {sessionEmail}</span> : null}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-end gap-3">
+          <div className="flex flex-col items-end gap-2">
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={onAvatarChange}
+              disabled={uploadingAvatar}
+            />
+            <button
+              type="button"
+              onClick={(event) => setAvatarMenu({ x: event.clientX, y: event.clientY })}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setAvatarMenu({ x: event.clientX, y: event.clientY });
+              }}
+              className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-muted text-left shadow-sm transition hover:border-primary/50 sm:h-20 sm:w-20 sm:rounded-xl"
+              aria-label="Open profile photo menu"
+            >
+              {avatarPreview ? (
+                <Image src={avatarPreview} alt="" fill className="object-cover" sizes="80px" />
+              ) : (
+                <EmptyAvatar name={sessionName} compact />
+              )}
+              <div className="absolute inset-x-0 bottom-0 bg-foreground/80 px-1 py-0.5 text-center text-[9px] font-medium uppercase tracking-wide text-background opacity-0 transition group-hover:opacity-100 sm:text-[10px]">
+                Menu
               </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300/80">
-                  My Profile
-                </p>
-                <h1 className="mt-1 truncate text-2xl font-semibold text-slate-900 dark:text-white">
-                  {sessionName}
-                </h1>
-                <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-400">{sessionEmail}</p>
+            </button>
+            {uploadingAvatar ? (
+              <div className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Uploading…
               </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Identity</p>
-                <p className="mt-1 text-sm font-medium text-slate-800 dark:text-slate-100">Account profile</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Photo</p>
-                <p className="mt-1 text-sm font-medium text-slate-800 dark:text-slate-100">
-                  {avatarPreview ? 'Configured' : 'Not uploaded'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Signature</p>
-                <p className="mt-1 text-sm font-medium text-slate-800 dark:text-slate-100">
-                  {signaturePreview ? 'Ready for print' : 'Not uploaded'}
-                </p>
-              </div>
-            </div>
+            ) : null}
           </div>
         </div>
-      </section>
+      </header>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-none">
-          <div className="flex items-start justify-between gap-4">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Identity</p>
+          <p className="mt-1 text-sm font-medium text-foreground">Session account</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Photo</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{avatarPreview ? 'Configured' : 'Not uploaded'}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Signature</p>
+          <p className="mt-1 text-sm font-medium text-foreground">
+            {signaturePreview ? 'Ready for print' : 'Not uploaded'}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex flex-col gap-0.5 border-b border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Account details</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              <h2 className="text-sm font-semibold text-foreground">Account details</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                 Keep your display identity up to date across the application.
               </p>
             </div>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              Session account
+            <span className="mt-2 w-fit rounded-full border border-border bg-background px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:mt-0">
+              Session
             </span>
           </div>
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Current identity</p>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Name</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">{sessionName}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Email</p>
-                  <p className="mt-1 break-all text-sm text-slate-700 dark:text-slate-300">{sessionEmail}</p>
+          <div className="flex flex-col gap-6 p-4 sm:p-5">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">Current identity</p>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Name</p>
+                    <p className="mt-1 text-base font-semibold text-foreground">{sessionName}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Email</p>
+                    <p className="mt-1 break-all text-sm text-foreground">{sessionEmail}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Display name
-                </label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                />
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-                  This name is shown in the app and used for account context.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" onClick={saveName} loading={savingName} disabled={savingName}>
-                  Save name
-                </Button>
-                <span className="text-xs text-slate-500 dark:text-slate-500">
-                  Changes update your current session after save.
-                </span>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="profile-display-name" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Display name
+                  </label>
+                  <Input id="profile-display-name" value={name} onChange={(e) => setName(e.target.value)} />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    This name is shown in the app and used for account context.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" onClick={() => void saveName()} disabled={savingName}>
+                    {savingName ? 'Saving…' : 'Save name'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Updates your session after save.</span>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-none">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Print assets</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Your signature is stored on Google Drive and can be used in print templates.
-          </p>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-            Signature path for templates: <code className="text-slate-700 dark:text-slate-300">user.signatureUrl</code>
+        <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+            <h2 className="text-sm font-semibold text-foreground">Print assets</h2>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              Signature on Google Drive for use in print templates.
+            </p>
           </div>
-
-          <div className="mt-6 space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-              <div className="flex flex-col gap-4">
-                <input
-                  ref={signatureInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={onSignatureChange}
-                  disabled={uploadingSig}
-                />
-                <div className="flex flex-col gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Signature</h3>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                      Best uploaded as transparent PNG | JPEG, PNG, or WebP | up to 3 MB
-                    </p>
+          <div className="p-4 sm:p-5">
+            <p className="text-xs text-muted-foreground">
+              Template field: <code className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-foreground">user.signatureUrl</code>
+            </p>
+            <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4">
+              <input
+                ref={signatureInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={onSignatureChange}
+                disabled={uploadingSig}
+              />
+              <div className="mb-3">
+                <h3 className="text-xs font-semibold text-foreground">Signature</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Transparent PNG ideal · JPEG, PNG, or WebP · up to 3 MB
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={(event) => setSignatureMenu({ x: event.clientX, y: event.clientY })}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setSignatureMenu({ x: event.clientX, y: event.clientY });
+                }}
+                className="group relative min-h-[160px] w-full overflow-hidden rounded-lg border border-border bg-background text-left transition hover:border-primary/40 sm:min-h-[170px]"
+                aria-label="Open signature menu"
+              >
+                {signaturePreview ? (
+                  <div className="relative h-[160px] w-full sm:h-[170px]">
+                    <Image
+                      src={signaturePreview}
+                      alt="Signature preview"
+                      fill
+                      className="object-contain p-4"
+                      sizes="(max-width: 768px) 100vw, 520px"
+                    />
                   </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={(event) => setSignatureMenu({ x: event.clientX, y: event.clientY })}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setSignatureMenu({ x: event.clientX, y: event.clientY });
-                  }}
-                  className="group relative min-h-[170px] overflow-hidden rounded-2xl border border-slate-200 bg-[linear-gradient(45deg,rgba(148,163,184,0.15)_25%,transparent_25%,transparent_50%,rgba(148,163,184,0.15)_50%,rgba(148,163,184,0.15)_75%,transparent_75%,transparent)] bg-[length:18px_18px] text-left transition hover:border-emerald-400 dark:border-slate-600 dark:hover:border-emerald-500"
-                  aria-label="Open signature menu"
-                >
-                  {signaturePreview ? (
-                    <div className="relative h-[170px] w-full">
-                      <Image
-                        src={signaturePreview}
-                        alt="Signature preview"
-                        fill
-                        className="object-contain p-4"
-                        sizes="(max-width: 768px) 100vw, 520px"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex h-[170px] items-center justify-center text-sm text-slate-500 dark:text-slate-500">
-                      No signature uploaded yet
-                    </div>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 bg-slate-950/70 px-3 py-2 text-center text-[10px] font-medium uppercase tracking-[0.16em] text-white opacity-0 transition group-hover:opacity-100">
-                    Signature menu
-                  </div>
-                </button>
-                {uploadingSig && (
-                  <div className="w-fit rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                    Uploading signature...
+                ) : (
+                  <div className="flex h-[160px] items-center justify-center text-sm text-muted-foreground sm:h-[170px]">
+                    No signature uploaded yet
                   </div>
                 )}
-                <p className="text-[11px] text-slate-500 dark:text-slate-500">
-                  Click or right-click the signature preview
-                </p>
+                <div className="absolute inset-x-0 bottom-0 bg-foreground/80 px-3 py-2 text-center text-[10px] font-medium uppercase tracking-wide text-background opacity-0 transition group-hover:opacity-100">
+                  Signature menu
                 </div>
+              </button>
+              {uploadingSig ? (
+                <div className="mt-2 w-fit rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  Uploading…
+                </div>
+              ) : null}
+              <p className="mt-2 text-[11px] text-muted-foreground">Click or right-click the preview</p>
             </div>
           </div>
         </section>
       </div>
+
       {avatarMenu && (
         <ContextMenu
           x={avatarMenu.x}

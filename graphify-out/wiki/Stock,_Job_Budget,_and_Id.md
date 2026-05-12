@@ -1,10 +1,12 @@
 # Stock, Job Budget, and Id
 
-> 1 nodes � cohesion 1.00
+> 3 nodes · cohesion 0.67
 
 ## Key Concepts
 
-- **page.tsx** (0 connections) � `app\(app)\stock\job-budget\[id]\page.tsx`
+- **StockJobBudgetByIdPage()** (2 connections) — `app/(app)/stock/job-budget/[id]/page.tsx`
+- **page.tsx** (1 connections) — `app/(app)/stock/job-budget/[id]/page.tsx`
+- **page.tsx** (1 connections) — `app/(app)/stock/job-budget/[id]/page.tsx`
 
 ## Relationships
 
@@ -12,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\stock\job-budget\[id]\page.tsx`
+- `app/(app)/stock/job-budget/[id]/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 0 (0%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

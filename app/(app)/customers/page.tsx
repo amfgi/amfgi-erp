@@ -1,11 +1,17 @@
 ﻿'use client';
 
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
-import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
+
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Input } from '@/components/ui/shadcn/input';
+import { Select } from '@/components/ui/shadcn/select';
+import Modal from '@/components/ui/Modal';
+import { cn } from '@/lib/utils';
 import {
   useGetCustomersQuery,
   useGetJobsQuery,
@@ -13,7 +19,6 @@ import {
   useUpdateCustomerMutation,
   useDeleteCustomerMutation,
   useDeleteJobMutation,
-  useSyncCustomersFromPartyApiMutation,
   type Customer,
 } from '@/store/hooks';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
@@ -34,10 +39,6 @@ const FILTER_OPTIONS: Array<{ value: CustomerFilter; label: string }> = [
   { value: 'active', label: 'Active only' },
   { value: 'inactive', label: 'Inactive only' },
 ];
-
-function cx(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(' ');
-}
 
 function matchesText(value: string | null | undefined, query: string) {
   return (value ?? '').toLowerCase().includes(query);
@@ -67,27 +68,6 @@ function extractApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function customerStatusClasses(isActive: boolean) {
-  return isActive
-    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-    : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-}
-
-function jobStatusClasses(status: Job['status']) {
-  switch (status) {
-    case 'ACTIVE':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-    case 'COMPLETED':
-      return 'border-sky-500/30 bg-sky-500/10 text-sky-300';
-    case 'ON_HOLD':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-    case 'CANCELLED':
-      return 'border-red-500/30 bg-red-500/10 text-red-400';
-    default:
-      return 'border-slate-500/30 bg-slate-500/10 text-slate-300';
-  }
-}
-
 function prettyJobStatus(status: Job['status']) {
   return status
     .toLowerCase()
@@ -96,45 +76,11 @@ function prettyJobStatus(status: Job['status']) {
     .join(' ');
 }
 
-function SummaryCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string | number;
-  hint: string;
-}) {
-  return (
-    <div
-      className="rounded-2xl border p-4 shadow-sm"
-      style={{
-        backgroundColor: 'var(--surface-panel-soft)',
-        borderColor: 'var(--border-strong)',
-      }}
-    >
-      <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>
-        {label}
-      </p>
-      <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--foreground)' }}>
-        {value}
-      </p>
-      <p className="mt-1 text-xs" style={{ color: 'var(--foreground-muted)' }}>
-        {hint}
-      </p>
-    </div>
-  );
-}
-
 function InfoField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>
-        {label}
-      </p>
-      <p className="mt-1 text-sm" style={{ color: 'var(--foreground)' }}>
-        {value}
-      </p>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm text-foreground">{value}</p>
     </div>
   );
 }
@@ -147,10 +93,8 @@ function FormField({
   children: React.ReactNode;
 }) {
   return (
-    <label className="space-y-2 text-sm" style={{ color: 'var(--foreground-soft)' }}>
-      <span className="block text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>
-        {label}
-      </span>
+    <label className="space-y-2 text-sm text-foreground">
+      <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
       {children}
     </label>
   );
@@ -164,14 +108,12 @@ function CustomerReadOnlyDetails({ customer }: { customer: Customer }) {
   return (
     <div className="max-h-[70vh] space-y-6 overflow-y-auto pr-1">
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={cx(
-            'inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em]',
-            customerStatusClasses(customer.isActive),
-          )}
+        <Badge
+          variant={customer.isActive ? 'secondary' : 'outline'}
+          className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide"
         >
           {customer.isActive ? 'Active' : 'Inactive'}
-        </span>
+        </Badge>
         {customer.source === 'PARTY_API_SYNC' ? (
           <span className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-300">
             Synced from party API
@@ -262,13 +204,38 @@ export default function CustomersPage() {
   const [updateCustomer, { isLoading: isUpdating }] = useUpdateCustomerMutation();
   const [deleteCustomer, { isLoading: isDeleting }] = useDeleteCustomerMutation();
   const [deleteJob, { isLoading: isDeletingJob }] = useDeleteJobMutation();
-  const [syncPartyCustomers, { isLoading: isSyncingParty }] = useSyncCustomersFromPartyApiMutation();
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
   const canCreate = isSA || perms.includes('customer.create');
   const canEdit = isSA || perms.includes('customer.edit');
   const canDelete = isSA || perms.includes('customer.delete');
+
+  const [customerSourceMode, setCustomerSourceMode] = useState<'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY'>('HYBRID');
+
+  useEffect(() => {
+    if (!session?.user?.activeCompanyId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/companies/${session.user.activeCompanyId}`, { cache: 'no-store' });
+        const json = await res.json();
+        if (!cancelled && res.ok && json?.success) {
+          const m = json.data?.customerSourceMode;
+          setCustomerSourceMode(
+            m === 'EXTERNAL_ONLY' || m === 'INTERNAL_ONLY' || m === 'HYBRID' ? m : 'HYBRID',
+          );
+        }
+      } catch {
+        if (!cancelled) setCustomerSourceMode('HYBRID');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.activeCompanyId]);
+
+  const canCreateLocalCustomer = canCreate && customerSourceMode !== 'EXTERNAL_ONLY';
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -426,14 +393,12 @@ export default function CustomersPage() {
     const activeCustomers = customers.filter((customer) => customer.isActive).length;
     const inactiveCustomers = customers.length - activeCustomers;
     const activeJobs = rootJobs.filter((job) => job.status === 'ACTIVE').length;
-    const syncedCustomers = customers.filter((customer) => customer.source === 'PARTY_API_SYNC').length;
 
     return {
       totalCustomers: customers.length,
       activeCustomers,
       inactiveCustomers,
       activeJobs,
-      syncedCustomers,
     };
   }, [customers, rootJobs]);
 
@@ -516,15 +481,6 @@ export default function CustomersPage() {
     }
   };
 
-  const handleSyncPartyCustomers = async () => {
-    try {
-      const result = await syncPartyCustomers().unwrap();
-      toast.success(`Synced ${result.created} new and ${result.updated} updated customers`);
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, 'Failed to sync party list customers'));
-    }
-  };
-
   const openCustomerDetails = (customerId: string) => {
     setDetailsCustomerId(customerId);
   };
@@ -598,13 +554,9 @@ export default function CustomersPage() {
       canEdit
         ? {
             label: 'Edit job',
-        action: () => router.push(`/customers/jobs/form?mode=edit&id=${job.id}`),
+            action: () => router.push(`/customers/jobs/form?mode=edit&id=${job.id}`),
           }
         : null,
-      {
-        label: 'Open costing view',
-        action: () => router.push(`/jobs/${job.id}/consumption-costing`),
-      },
       canCreate && !job.parentJobId
         ? {
             label: 'Create variation',
@@ -663,111 +615,69 @@ export default function CustomersPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <section
-        className="rounded-3xl border p-6 shadow-sm"
-        style={{
-          backgroundColor: 'var(--surface-panel-soft)',
-          borderColor: 'var(--border-strong)',
-        }}
-      >
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300/80">Master data</p>
-            <h1 className="mt-2 text-3xl font-semibold" style={{ color: 'var(--foreground)' }}>
-              Customer directory
-            </h1>
-            <p className="mt-3 text-sm leading-6" style={{ color: 'var(--foreground-muted)' }}>
-              Manage customer records, review job activity, and keep local and synced party master data in one operational workspace.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[34rem] xl:grid-cols-4">
-            <SummaryCard label="Customers" value={compactNumber(totals.totalCustomers)} hint="Records in this company" />
-            <SummaryCard label="Active" value={compactNumber(totals.activeCustomers)} hint="Ready for ongoing work" />
-            <SummaryCard label="Inactive" value={compactNumber(totals.inactiveCustomers)} hint="Hidden from new activity" />
-            <SummaryCard label="Active Jobs" value={compactNumber(totals.activeJobs)} hint="Across all customers" />
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Master data</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Customer directory</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage customer records and review job activity for this company.
+          </p>
         </div>
-      </section>
+        <div className="shrink-0 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            {compactNumber(totals.totalCustomers)} customer{totals.totalCustomers === 1 ? '' : 's'}
+          </span>
+        </div>
+      </header>
 
-      <section
-        className="rounded-2xl border p-5 shadow-sm"
-        style={{
-          backgroundColor: 'var(--surface-panel-soft)',
-          borderColor: 'var(--border-strong)',
-        }}
-      >
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid flex-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_14rem]">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="grid min-w-0 flex-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_14rem]">
             <FormField label="Search">
-              <input
+              <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search by customer, contact, job number, site, or project"
-                className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none ring-emerald-500/30 transition focus:ring-2"
-                style={{
-                  backgroundColor: 'var(--input-background)',
-                  color: 'var(--input-foreground)',
-                  borderColor: 'var(--input-border)',
-                }}
               />
             </FormField>
             <FormField label="Status view">
-              <select
+              <Select
                 value={filterActive}
                 onChange={(event) => setFilterActive(event.target.value as CustomerFilter)}
-                className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none ring-emerald-500/30 transition focus:ring-2"
-                style={{
-                  backgroundColor: 'var(--input-background)',
-                  color: 'var(--input-foreground)',
-                  borderColor: 'var(--input-border)',
-                }}
               >
                 {FILTER_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </FormField>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--foreground-muted)' }}>
-                Synced records
-              </p>
-              <p className="mt-1 text-sm" style={{ color: 'var(--foreground-soft)' }}>
-                {compactNumber(totals.syncedCustomers)} customer{totals.syncedCustomers === 1 ? '' : 's'} from party API
-              </p>
-            </div>
-            {canEdit ? (
-              <Button type="button" variant="outline" onClick={handleSyncPartyCustomers} loading={isSyncingParty}>
-                Sync customers
-              </Button>
-            ) : null}
-            {canCreate ? (
-              <Button type="button" onClick={openCreate}>
-                Add customer
-              </Button>
-            ) : null}
-          </div>
+          {canCreateLocalCustomer ? (
+            <Button type="button" onClick={openCreate} size="sm" className="shrink-0">
+              Add customer
+            </Button>
+          ) : null}
         </div>
       </section>
 
+      {customerSourceMode === 'EXTERNAL_ONLY' ? (
+        <Alert>
+          <AlertTitle>External-only customers</AlertTitle>
+          <AlertDescription>
+            Manual customer creation is disabled. Add or update customers via the integration API or party list sync in
+            company settings.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
-        <section
-          className="overflow-hidden rounded-2xl border shadow-sm"
-          style={{
-            backgroundColor: 'var(--surface-panel-soft)',
-            borderColor: 'var(--border-strong)',
-          }}
-        >
-          <div className="border-b px-5 py-4" style={{ borderColor: 'var(--border-strong)' }}>
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
-              Customer list
-            </h2>
-            <p className="mt-1 text-sm" style={{ color: 'var(--foreground-muted)' }}>
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Customer list</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Select a customer to review details and jobs. Double-click for the full record.
             </p>
           </div>
@@ -806,13 +716,9 @@ export default function CustomersPage() {
                       onClick={() => setSelectedCustomerId(customer.id)}
                       onDoubleClick={() => openCustomerDetails(customer.id)}
                       onContextMenu={(event) => openCustomerContextMenu(customer, event)}
-                      className={cx(
-                        'w-full rounded-2xl border px-4 py-3 text-left transition-colors',
-                        selected ? 'border-emerald-500/35 bg-emerald-500/10' : 'hover:bg-white/5',
-                      )}
-                      style={{
-                        borderColor: selected ? undefined : 'var(--border-strong)',
-                      }}
+                      className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
+                        selected ? 'border-primary/40 bg-primary/10' : 'border-border hover:bg-muted/40'
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -823,14 +729,12 @@ export default function CustomersPage() {
                             {customer.contactPerson || customer.email || customer.phone || 'No primary contact saved'}
                           </p>
                         </div>
-                        <span
-                          className={cx(
-                            'inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em]',
-                            customerStatusClasses(customer.isActive),
-                          )}
+                        <Badge
+                          variant={customer.isActive ? 'secondary' : 'outline'}
+                          className="inline-flex shrink-0 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide"
                         >
                           {customer.isActive ? 'Active' : 'Inactive'}
-                        </span>
+                        </Badge>
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--foreground-muted)' }}>
@@ -838,14 +742,14 @@ export default function CustomersPage() {
                         <span>{stats.variations} variation{stats.variations === 1 ? '' : 's'}</span>
                         <span>{stats.activeJobs} active</span>
                         {customer.source === 'PARTY_API_SYNC' ? (
-                          <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-sky-300">
+                          <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-[10px] uppercase tracking-wide text-sky-200">
                             Synced
-                          </span>
+                          </Badge>
                         ) : null}
                         {deferredSearch && stats.matchedJobs > 0 ? (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-300">
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] uppercase tracking-wide text-amber-200">
                             {stats.matchedJobs} job match{stats.matchedJobs === 1 ? '' : 'es'}
-                          </span>
+                          </Badge>
                         ) : null}
                       </div>
                     </button>
@@ -884,21 +788,19 @@ export default function CustomersPage() {
                 <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={cx(
-                          'inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em]',
-                          customerStatusClasses(selectedCustomer.isActive),
-                        )}
+                      <Badge
+                        variant={selectedCustomer.isActive ? 'secondary' : 'outline'}
+                        className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide"
                       >
                         {selectedCustomer.isActive ? 'Active' : 'Inactive'}
-                      </span>
+                      </Badge>
                       {selectedCustomer.source === 'PARTY_API_SYNC' ? (
                         <span className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-300">
                           Synced
                         </span>
                       ) : null}
                     </div>
-                    <h2 className="mt-3 truncate text-3xl font-semibold" style={{ color: 'var(--foreground)' }}>
+                    <h2 className="mt-3 truncate text-xl font-semibold" style={{ color: 'var(--foreground)' }}>
                       {selectedCustomer.name}
                     </h2>
                     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" style={{ color: 'var(--foreground-muted)' }}>
@@ -990,15 +892,14 @@ export default function CustomersPage() {
                                 {variations.length > 0 ? (
                                   <button
                                     type="button"
-                                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-xs"
-                                    style={{ borderColor: 'var(--border-strong)', color: 'var(--foreground-soft)' }}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border text-xs text-muted-foreground"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       toggleMainJob(job.id);
                                     }}
                                   >
                                     <svg
-                                      className={cx('h-3.5 w-3.5 transition-transform', expanded ? 'rotate-90' : '')}
+                                      className={cn('h-3.5 w-3.5 transition-transform', expanded ? 'rotate-90' : '')}
                                       viewBox="0 0 20 20"
                                       fill="currentColor"
                                       aria-hidden="true"
@@ -1030,14 +931,12 @@ export default function CustomersPage() {
                                   {variations.length} variation{variations.length === 1 ? '' : 's'}
                                 </span>
                               ) : null}
-                              <span
-                                className={cx(
-                                  'inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em]',
-                                  jobStatusClasses(job.status),
-                                )}
+                              <Badge
+                                variant="outline"
+                                className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide"
                               >
                                 {prettyJobStatus(job.status)}
-                              </span>
+                              </Badge>
                             </div>
                           </div>
 
@@ -1066,14 +965,12 @@ export default function CustomersPage() {
                                           {variation.site || variation.description || 'No site or description added'}
                                         </p>
                                       </div>
-                                      <span
-                                        className={cx(
-                                          'inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em]',
-                                          jobStatusClasses(variation.status),
-                                        )}
+                                      <Badge
+                                        variant="outline"
+                                        className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide"
                                       >
                                         {prettyJobStatus(variation.status)}
-                                      </span>
+                                      </Badge>
                                     </div>
                                   ))}
                               </div>
@@ -1124,7 +1021,7 @@ export default function CustomersPage() {
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)} size="sm">
               Cancel
             </Button>
-            <Button type="submit" form="customer-form" loading={saveLoading} size="sm">
+                    <Button type="submit" form="customer-form" disabled={saveLoading} size="sm">
               {formMode === 'edit' ? 'Save changes' : 'Create customer'}
             </Button>
           </div>
@@ -1136,7 +1033,7 @@ export default function CustomersPage() {
               Core record
             </h3>
             <p className="mt-1 text-sm" style={{ color: 'var(--foreground-muted)' }}>
-              Keep customer data aligned with the party lists structure so local and synced records stay consistent.
+              Legal identity, contacts, and status for this customer record.
             </p>
           </div>
 
@@ -1369,7 +1266,7 @@ export default function CustomersPage() {
               <Button type="button" variant="ghost" onClick={() => setDeleteModal({ open: false, customer: null, loading: false })}>
                 Cancel
               </Button>
-              <Button type="button" variant="danger" onClick={handleDelete} loading={deleteModal.loading || isDeleting}>
+              <Button type="button" variant="destructive" onClick={handleDelete} disabled={deleteModal.loading || isDeleting}>
                 Delete customer
               </Button>
             </div>
@@ -1417,7 +1314,12 @@ export default function CustomersPage() {
                 {deleteJobModal.canDelete ? 'Cancel' : 'Close'}
               </Button>
               {deleteJobModal.canDelete ? (
-                <Button type="button" variant="danger" onClick={handleDeleteJob} loading={deleteJobModal.loading || isDeletingJob}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleDeleteJob}
+                  disabled={deleteJobModal.loading || isDeletingJob}
+                >
                   Delete job
                 </Button>
               ) : null}

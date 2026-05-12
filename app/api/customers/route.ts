@@ -55,6 +55,17 @@ export async function POST(req: Request) {
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
   const companyId = session.user.activeCompanyId;
 
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { customerSourceMode: true },
+  });
+  if (company?.customerSourceMode === 'EXTERNAL_ONLY') {
+    return errorResponse(
+      'Manual customer creation is disabled. This company is set to external-only customers (use the integration API or party lists sync).',
+      403
+    );
+  }
+
   const body = await req.json();
   const parsed = CustomerSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);

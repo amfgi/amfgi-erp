@@ -1,14 +1,15 @@
 # Components, Print Builder, and Page Chrome Editor
 
-> 5 nodes · cohesion 0.50
+> 6 nodes Â· cohesion 0.60
 
 ## Key Concepts
 
-- **PageChromeEditor.tsx** (4 connections) — `components\print-builder\PageChromeEditor.tsx`
-- **patch()** (2 connections) — `components\print-builder\PageChromeEditor.tsx`
-- **uploadBackgroundImage()** (2 connections) — `components\print-builder\PageChromeEditor.tsx`
-- **resolveTemplateToken()** (1 connections) — `components\print-builder\PageChromeEditor.tsx`
-- **applyPick()** (1 connections) — `components\print-builder\PageChromeEditor.tsx`
+- **PageChromeEditor.tsx** (4 connections) â€” `components/print-builder/PageChromeEditor.tsx`
+- **PageChromeEditor.tsx** (4 connections) â€” `components/print-builder/PageChromeEditor.tsx`
+- **patch()** (3 connections) â€” `components/print-builder/PageChromeEditor.tsx`
+- **uploadBackgroundImage()** (3 connections) â€” `components/print-builder/PageChromeEditor.tsx`
+- **resolveTemplateToken()** (2 connections) â€” `components/print-builder/PageChromeEditor.tsx`
+- **applyPick()** (2 connections) â€” `components/print-builder/PageChromeEditor.tsx`
 
 ## Relationships
 
@@ -16,11 +17,11 @@
 
 ## Source Files
 
-- `components\print-builder\PageChromeEditor.tsx`
+- `components/print-builder/PageChromeEditor.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 10 (100%)
+- EXTRACTED: 18 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

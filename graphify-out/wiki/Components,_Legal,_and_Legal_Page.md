@@ -1,11 +1,12 @@
 # Components, Legal, and Legal Page
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **LegalPage.tsx** (1 connections) — `components\legal\LegalPage.tsx`
-- **LegalPage()** (1 connections) — `components\legal\LegalPage.tsx`
+- **LegalPage()** (2 connections) â€” `components/legal/LegalPage.tsx`
+- **LegalPage.tsx** (1 connections) â€” `components/legal/LegalPage.tsx`
+- **LegalPage.tsx** (1 connections) â€” `components/legal/LegalPage.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `components\legal\LegalPage.tsx`
+- `components/legal/LegalPage.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

@@ -35,12 +35,14 @@ if (!databaseUrl) {
 
 const prismaAdapter = createPostgresAdapter(databaseUrl);
 
-// After `prisma generate`, Next dev can still hold a pre-generate client on `global._prisma` (no `mediaAsset`).
+// After `prisma generate`, Next dev can still hold a pre-generate client on `global._prisma`.
 const existingPrisma: PrismaClient | undefined = global._prisma;
 if (
   process.env.NODE_ENV !== 'production' &&
   existingPrisma &&
-  !('mediaAsset' in (existingPrisma as PrismaClient & Record<string, unknown>))
+  !['mediaAsset', 'globalSetting'].every(
+    (modelName) => modelName in (existingPrisma as PrismaClient & Record<string, unknown>)
+  )
 ) {
   global._prisma = undefined;
 }

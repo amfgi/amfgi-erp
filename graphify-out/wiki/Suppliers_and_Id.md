@@ -1,11 +1,12 @@
 # Suppliers and Id
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **page.tsx** (1 connections) — `app\(app)\suppliers\[id]\edit\page.tsx`
-- **EditSupplierPage()** (1 connections) — `app\(app)\suppliers\[id]\edit\page.tsx`
+- **EditSupplierPage()** (2 connections) â€” `app/(app)/suppliers/[id]/edit/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/suppliers/[id]/edit/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/suppliers/[id]/edit/page.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\suppliers\[id]\edit\page.tsx`
+- `app/(app)/suppliers/[id]/edit/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

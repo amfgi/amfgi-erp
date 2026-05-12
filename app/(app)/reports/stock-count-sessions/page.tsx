@@ -1,9 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
-import { Badge } from '@/components/ui/Badge';
+
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import { Select } from '@/components/ui/shadcn/select';
+import { cn } from '@/lib/utils';
 import { useGetStockCountSessionsReportQuery } from '@/store/hooks';
 
 function formatQty(value: number) {
@@ -25,33 +32,71 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
-function sessionVariant(status: string) {
-  switch (status) {
-    case 'ADJUSTMENT_APPROVED':
-      return 'green' as const;
-    case 'ADJUSTMENT_REJECTED':
-      return 'red' as const;
-    case 'ADJUSTMENT_PENDING':
-      return 'yellow' as const;
-    case 'CANCELLED':
-      return 'gray' as const;
-    default:
-      return 'blue' as const;
-  }
+function SessionStatusBadge({ status, label }: { status: string; label: string }) {
+  const cls =
+    status === 'ADJUSTMENT_APPROVED'
+      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+      : status === 'ADJUSTMENT_REJECTED'
+        ? 'border-destructive/40 bg-destructive/10 text-destructive'
+        : status === 'ADJUSTMENT_PENDING'
+          ? 'border-amber-500/35 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+          : status === 'CANCELLED'
+            ? 'border-border bg-muted/50 text-muted-foreground'
+            : 'border-sky-500/35 bg-sky-500/10 text-sky-800 dark:text-sky-200';
+  return (
+    <Badge variant="outline" className={cn('w-fit text-[10px] font-semibold uppercase tracking-wide', cls)}>
+      {label}
+    </Badge>
+  );
 }
 
-function approvalVariant(status: string | null) {
-  switch (status) {
-    case 'APPROVED':
-      return 'green' as const;
-    case 'REJECTED':
-      return 'red' as const;
-    case 'PENDING':
-      return 'yellow' as const;
-    default:
-      return 'gray' as const;
-  }
+function LinkedAdjustmentBadge({ status }: { status: string }) {
+  const label = `Adjustment ${status}`;
+  const cls =
+    status === 'APPROVED'
+      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+      : status === 'REJECTED'
+        ? 'border-destructive/40 bg-destructive/10 text-destructive'
+        : status === 'PENDING'
+          ? 'border-amber-500/35 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+          : 'border-border bg-muted/50 text-muted-foreground';
+  return (
+    <Badge variant="outline" className={cn('w-fit text-[10px] font-semibold uppercase tracking-wide', cls)}>
+      {label}
+    </Badge>
+  );
 }
+
+function SummaryTile({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: ReactNode;
+  tone?: 'neutral' | 'sky' | 'yellow' | 'emerald' | 'destructive';
+}) {
+  const shell =
+    tone === 'destructive'
+      ? 'border-destructive/35 bg-destructive/10'
+      : tone === 'yellow'
+        ? 'border-yellow-500/35 bg-yellow-500/10'
+        : tone === 'emerald'
+          ? 'border-emerald-500/35 bg-emerald-500/10'
+          : tone === 'sky'
+            ? 'border-sky-500/35 bg-sky-500/10'
+            : 'border-border bg-muted/30';
+
+  return (
+    <div className={cn('rounded-lg border px-4 py-3', shell)}>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
+const SESSION_TABLE_ROW =
+  'border-b border-border odd:bg-background even:bg-muted/20 transition-colors hover:bg-muted/40';
 
 export default function StockCountSessionsReportPage() {
   const { data: session } = useSession();
@@ -96,236 +141,204 @@ export default function StockCountSessionsReportPage() {
 
   if (!canView) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Stock count sessions</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">You do not have permission to view this report.</p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Card>
+          <CardHeader>
+            <CardTitle>Stock count sessions</CardTitle>
+            <CardDescription>You do not have permission to view this report.</CardDescription>
+          </CardHeader>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">
-                Reports
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">
-                Stock count session report
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Review recount sessions, linked adjustment decisions, approval timing, and repeated variance patterns by material.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void refetch()}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-            >
-              Refresh
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-8">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Sessions</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{summary?.totalSessions ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900/40 dark:bg-blue-950/20">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-blue-700 dark:text-blue-300">Drafts</p>
-              <p className="mt-2 text-xl font-semibold text-blue-900 dark:text-blue-100">{summary?.draftCount ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 dark:border-yellow-900/40 dark:bg-yellow-950/20">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-yellow-700 dark:text-yellow-300">Pending</p>
-              <p className="mt-2 text-xl font-semibold text-yellow-900 dark:text-yellow-100">{summary?.pendingAdjustmentCount ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">Approved</p>
-              <p className="mt-2 text-xl font-semibold text-emerald-900 dark:text-emerald-100">{summary?.approvedAdjustmentCount ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900/40 dark:bg-red-950/20">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-red-700 dark:text-red-300">Rejected</p>
-              <p className="mt-2 text-xl font-semibold text-red-900 dark:text-red-100">{summary?.rejectedAdjustmentCount ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Variance lines</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{summary?.totalVarianceLines ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Shortage qty</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{formatQty(summary?.grossShortageQty ?? 0)}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Avg approval hrs</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                {summary?.avgApprovalHours == null ? '-' : summary.avgApprovalHours.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_180px_auto_auto]">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Search</label>
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Title, warehouse, evidence, requester..."
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-slate-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-slate-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-              >
-                <option value="all">All statuses</option>
-                <option value="DRAFT">Draft</option>
-                <option value="ADJUSTMENT_PENDING">Adjustment pending</option>
-                <option value="ADJUSTMENT_APPROVED">Adjustment approved</option>
-                <option value="ADJUSTMENT_REJECTED">Adjustment rejected</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-            </div>
-            <label className="flex items-end gap-2 pb-2 text-sm text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={varianceOnly}
-                onChange={(event) => setVarianceOnly(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-              />
-              Variance only
-            </label>
-            <div className="flex items-end">
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                Estimated value uses the count-session line cost snapshot.
-              </p>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reports</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Stock count session report</h1>
+          <p className="text-sm text-muted-foreground">
+            Review recount sessions, linked adjustment decisions, approval timing, and repeated variance patterns by
+            material.
+          </p>
         </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={() => void refetch()} disabled={isFetching}>
+            {isFetching ? 'Refreshing…' : 'Refresh'}
+          </Button>
+          <p className="w-full text-right text-xs tabular-nums text-muted-foreground sm:w-auto sm:pl-2">
+            {filteredRows.length} session{filteredRows.length === 1 ? '' : 's'}
+          </p>
+        </div>
+      </header>
 
-        <div className="p-4 sm:p-5">
-          {isError ? (
-            <p className="text-sm text-red-600 dark:text-red-400">Could not load the stock count session report. Try refresh.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-                    <th className="min-w-[160px] px-3 py-3">Created</th>
-                    <th className="min-w-[220px] px-3 py-3">Session</th>
-                    <th className="min-w-[120px] px-3 py-3">Status</th>
-                    <th className="min-w-[180px] px-3 py-3">Evidence / Adjustment</th>
-                    <th className="min-w-[110px] px-3 py-3 text-right">Lines</th>
-                    <th className="min-w-[120px] px-3 py-3 text-right">Excess qty</th>
-                    <th className="min-w-[120px] px-3 py-3 text-right">Shortage qty</th>
-                    <th className="min-w-[120px] px-3 py-3 text-right">Net qty</th>
-                    <th className="min-w-[140px] px-3 py-3 text-right">Est. value</th>
-                    <th className="min-w-[200px] px-3 py-3">Requester / Review</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isFetching && filteredRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
-                        Loading...
-                      </td>
-                    </tr>
-                  ) : filteredRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
-                        No count sessions match your filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRows.map((row) => (
-                      <tr
-                        key={row.id}
-                        className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
-                      >
-                        <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">
-                          <div>{formatDateTime(row.createdAt)}</div>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            Updated {formatDateTime(row.updatedAt)}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">
-                          <div className="font-medium text-slate-900 dark:text-white">{row.title}</div>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            {row.warehouseName} | revision {row.currentRevision}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex flex-col gap-1">
-                            <Badge label={row.statusLabel} variant={sessionVariant(row.status)} />
-                            {row.linkedAdjustmentStatus ? (
-                              <Badge label={`Adjustment ${row.linkedAdjustmentStatus}`} variant={approvalVariant(row.linkedAdjustmentStatus)} />
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">
-                          <div>{row.evidenceReference || '-'}</div>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            {row.linkedAdjustmentReferenceNumber || 'No linked adjustment'}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
-                          <div>{row.lineCount}</div>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            {row.varianceLineCount} variance
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
-                          {formatQty(row.grossExcessQty)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-red-700 dark:text-red-300">
-                          {formatQty(row.grossShortageQty)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
-                          {formatQty(row.netVarianceQty)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">
-                          {formatMoney(row.estimatedNetValue)}
-                        </td>
-                        <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">
-                          <div>{row.createdByName || '-'}</div>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            {row.reviewedByName
-                              ? `${row.reviewedByName} on ${formatDateTime(row.reviewedAt)}`
-                              : 'Awaiting review'}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            Approval hrs: {row.approvalHours == null ? '-' : row.approvalHours.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-8">
+        <SummaryTile label="Sessions" value={summary?.totalSessions ?? 0} />
+        <SummaryTile label="Drafts" value={summary?.draftCount ?? 0} tone="sky" />
+        <SummaryTile label="Pending" value={summary?.pendingAdjustmentCount ?? 0} tone="yellow" />
+        <SummaryTile label="Approved" value={summary?.approvedAdjustmentCount ?? 0} tone="emerald" />
+        <SummaryTile label="Rejected" value={summary?.rejectedAdjustmentCount ?? 0} tone="destructive" />
+        <SummaryTile label="Variance lines" value={summary?.totalVarianceLines ?? 0} />
+        <SummaryTile label="Shortage qty" value={formatQty(summary?.grossShortageQty ?? 0)} />
+        <SummaryTile
+          label="Avg approval hrs"
+          value={
+            summary?.avgApprovalHours == null
+              ? '-'
+              : summary.avgApprovalHours.toLocaleString('en-US', { maximumFractionDigits: 2 })
+          }
+        />
+      </div>
+
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_180px_auto_auto]">
+          <div className="space-y-2">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search</label>
+            <Input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Title, warehouse, evidence, requester…"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</label>
+            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="DRAFT">Draft</option>
+              <option value="ADJUSTMENT_PENDING">Adjustment pending</option>
+              <option value="ADJUSTMENT_APPROVED">Adjustment approved</option>
+              <option value="ADJUSTMENT_REJECTED">Adjustment rejected</option>
+              <option value="CANCELLED">Cancelled</option>
+            </Select>
+          </div>
+          <label className="flex cursor-pointer items-end gap-2 pb-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={varianceOnly}
+              onChange={(event) => setVarianceOnly(event.target.checked)}
+              className="size-4 rounded border border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            />
+            Variance only
+          </label>
+          <div className="flex items-end">
+            <p className="text-xs text-muted-foreground">Estimated value uses the count-session line cost snapshot.</p>
+          </div>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Warehouse variance trend</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+      {isError ? (
+        <Alert variant="destructive">
+          <AlertDescription>Could not load the stock count session report. Try refresh.</AlertDescription>
+        </Alert>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <th className="min-w-[160px] px-3 py-3">Created</th>
+                  <th className="min-w-[220px] px-3 py-3">Session</th>
+                  <th className="min-w-[120px] px-3 py-3">Status</th>
+                  <th className="min-w-[180px] px-3 py-3">Evidence / Adjustment</th>
+                  <th className="min-w-[110px] px-3 py-3 text-right">Lines</th>
+                  <th className="min-w-[120px] px-3 py-3 text-right">Excess qty</th>
+                  <th className="min-w-[120px] px-3 py-3 text-right">Shortage qty</th>
+                  <th className="min-w-[120px] px-3 py-3 text-right">Net qty</th>
+                  <th className="min-w-[140px] px-3 py-3 text-right">Est. value</th>
+                  <th className="min-w-[200px] px-3 py-3">Requester / Review</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isFetching && filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
+                      Loading…
+                    </td>
+                  </tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
+                      No count sessions match your filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRows.map((row) => (
+                    <tr key={row.id} className={SESSION_TABLE_ROW}>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <div>{formatDateTime(row.createdAt)}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">Updated {formatDateTime(row.updatedAt)}</div>
+                      </td>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <div className="font-medium text-foreground">{row.title}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {row.warehouseName} | revision {row.currentRevision}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-col gap-1.5">
+                          <SessionStatusBadge status={row.status} label={row.statusLabel} />
+                          {row.linkedAdjustmentStatus ? (
+                            <LinkedAdjustmentBadge status={row.linkedAdjustmentStatus} />
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <div>{row.evidenceReference || '-'}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {row.linkedAdjustmentReferenceNumber || 'No linked adjustment'}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">
+                        <div>{row.lineCount}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{row.varianceLineCount} variance</div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                        {formatQty(row.grossExcessQty)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-red-700 dark:text-red-300">
+                        {formatQty(row.grossShortageQty)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.netVarianceQty)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                        {formatMoney(row.estimatedNetValue)}
+                      </td>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <div>{row.createdByName || '-'}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {row.reviewedByName
+                            ? `${row.reviewedByName} on ${formatDateTime(row.reviewedAt)}`
+                            : 'Awaiting review'}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Approval hrs:{' '}
+                          {row.approvalHours == null
+                            ? '-'
+                            : row.approvalHours.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Warehouse variance trend</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Which warehouses are driving recount volume, shortages, and approval lag.
           </p>
         </div>
         <div className="p-4 sm:p-5">
-          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   <th className="min-w-[220px] px-3 py-3">Warehouse</th>
                   <th className="min-w-[90px] px-3 py-3 text-right">Sessions</th>
                   <th className="min-w-[90px] px-3 py-3 text-right">Variance</th>
@@ -342,34 +355,43 @@ export default function StockCountSessionsReportPage() {
               <tbody>
                 {warehouseRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
                       No warehouse variance trends yet.
                     </td>
                   </tr>
                 ) : (
                   warehouseRows.map((row) => (
-                    <tr
-                      key={row.warehouseId}
-                      className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
-                    >
-                      <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">
-                        <div className="font-medium text-slate-900 dark:text-white">{row.warehouseName}</div>
-                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <tr key={row.warehouseId} className={SESSION_TABLE_ROW}>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <div className="font-medium text-foreground">{row.warehouseName}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
                           {row.draftCount} draft, {row.rejectedCount} rejected
                         </div>
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{row.totalSessions}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{row.varianceSessionCount}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-yellow-700 dark:text-yellow-300">{row.pendingCount}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">{row.approvedCount}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">{formatQty(row.grossExcessQty)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-red-700 dark:text-red-300">{formatQty(row.grossShortageQty)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatQty(row.netVarianceQty)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatMoney(row.estimatedNetValue)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">
-                        {row.avgApprovalHours == null ? '-' : row.avgApprovalHours.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{row.totalSessions}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{row.varianceSessionCount}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-yellow-700 dark:text-yellow-300">
+                        {row.pendingCount}
                       </td>
-                      <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{formatDateTime(row.latestSessionAt)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                        {row.approvedCount}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                        {formatQty(row.grossExcessQty)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-red-700 dark:text-red-300">
+                        {formatQty(row.grossShortageQty)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.netVarianceQty)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                        {formatMoney(row.estimatedNetValue)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                        {row.avgApprovalHours == null
+                          ? '-'
+                          : row.avgApprovalHours.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-3 py-2.5 text-foreground">{formatDateTime(row.latestSessionAt)}</td>
                     </tr>
                   ))
                 )}
@@ -379,18 +401,16 @@ export default function StockCountSessionsReportPage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Recurring variance materials</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Materials that appear most often in count-session variances.
-          </p>
+      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Recurring variance materials</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Materials that appear most often in count-session variances.</p>
         </div>
         <div className="p-4 sm:p-5">
-          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   <th className="min-w-[220px] px-3 py-3">Material</th>
                   <th className="min-w-[90px] px-3 py-3 text-right">Sessions</th>
                   <th className="min-w-[120px] px-3 py-3 text-right">Excess qty</th>
@@ -403,26 +423,29 @@ export default function StockCountSessionsReportPage() {
               <tbody>
                 {materialRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                       No variance material patterns yet.
                     </td>
                   </tr>
                 ) : (
                   materialRows.map((row) => (
-                    <tr
-                      key={row.materialId}
-                      className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
-                    >
-                      <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">
-                        <div className="font-medium text-slate-900 dark:text-white">{row.materialName}</div>
-                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{row.unit}</div>
+                    <tr key={row.materialId} className={SESSION_TABLE_ROW}>
+                      <td className="px-3 py-2.5 text-foreground">
+                        <div className="font-medium text-foreground">{row.materialName}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{row.unit}</div>
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{row.sessionCount}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">{formatQty(row.grossExcessQty)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-red-700 dark:text-red-300">{formatQty(row.grossShortageQty)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatQty(row.netVarianceQty)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatMoney(row.estimatedNetValue)}</td>
-                      <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{formatDateTime(row.latestSessionAt)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{row.sessionCount}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                        {formatQty(row.grossExcessQty)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-red-700 dark:text-red-300">
+                        {formatQty(row.grossShortageQty)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.netVarianceQty)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                        {formatMoney(row.estimatedNetValue)}
+                      </td>
+                      <td className="px-3 py-2.5 text-foreground">{formatDateTime(row.latestSessionAt)}</td>
                     </tr>
                   ))
                 )}
@@ -432,13 +455,13 @@ export default function StockCountSessionsReportPage() {
         </div>
       </section>
 
-      <p className="text-xs text-slate-500 dark:text-slate-500">
+      <p className="text-xs leading-relaxed text-muted-foreground">
         Use{' '}
-        <Link href="/stock/count-session" className="text-slate-700 underline dark:text-slate-300">
+        <Link href="/stock/count-session" className="font-medium text-primary underline-offset-4 hover:underline">
           stock count sessions
         </Link>{' '}
         to continue recount work and{' '}
-        <Link href="/reports/stock-adjustments" className="text-slate-700 underline dark:text-slate-300">
+        <Link href="/reports/stock-adjustments" className="font-medium text-primary underline-offset-4 hover:underline">
           stock adjustments
         </Link>{' '}
         to review the resulting correction requests.

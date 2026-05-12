@@ -1,11 +1,12 @@
 # Providers and Session Provider
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **SessionProvider.tsx** (1 connections) — `providers\SessionProvider.tsx`
-- **SessionProvider()** (1 connections) — `providers\SessionProvider.tsx`
+- **SessionProvider()** (2 connections) â€” `providers/SessionProvider.tsx`
+- **SessionProvider.tsx** (1 connections) â€” `providers/SessionProvider.tsx`
+- **SessionProvider.tsx** (1 connections) â€” `providers/SessionProvider.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `providers\SessionProvider.tsx`
+- `providers/SessionProvider.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

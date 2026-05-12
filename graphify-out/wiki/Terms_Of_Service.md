@@ -1,11 +1,12 @@
 # Terms Of Service
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **page.tsx** (1 connections) — `app\terms-of-service\page.tsx`
-- **TermsOfServicePage()** (1 connections) — `app\terms-of-service\page.tsx`
+- **TermsOfServicePage()** (2 connections) â€” `app/terms-of-service/page.tsx`
+- **page.tsx** (1 connections) â€” `app/terms-of-service/page.tsx`
+- **page.tsx** (1 connections) â€” `app/terms-of-service/page.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\terms-of-service\page.tsx`
+- `app/terms-of-service/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

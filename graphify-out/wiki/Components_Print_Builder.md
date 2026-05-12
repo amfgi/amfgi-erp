@@ -1,32 +1,41 @@
 # Components Print Builder
 
-> 9 nodes · cohesion 0.28
+> 16 nodes Â· cohesion 0.26
 
 ## Key Concepts
 
-- **DocumentRenderer.tsx** (7 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **pt()** (3 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **wrapSectionChrome()** (3 connections) — `components\print-builder\sectionStyleWrap.tsx`
-- **previewPtToPx()** (2 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **u()** (2 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **shouldKeepCanvasPlacementInPrint()** (1 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **canSharePrintRow()** (1 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **flushRow()** (1 connections) — `components\print-builder\DocumentRenderer.tsx`
-- **sectionStyleWrap.tsx** (1 connections) — `components\print-builder\sectionStyleWrap.tsx`
+- **TemplateBuilder.tsx** (11 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **TemplateBuilder.tsx** (11 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **onKey()** (6 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **loadLayoutVersions()** (5 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **layoutSnapshotKey()** (4 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **layoutVersionsStorageKey()** (4 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **handleSave()** (4 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **cloneEditorSnapshot()** (3 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **persistLayoutVersions()** (3 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **formatScheduleTimeForPrint()** (3 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **undo()** (3 connections) â€” `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- **redo()** (3 connections) â€” `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- **onKeyDown()** (3 connections) â€” `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- **NavChip()** (2 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **requestClose()** (2 connections) â€” `components/print-builder/TemplateBuilder.tsx`
+- **newSectionGroupId()** (2 connections) â€” `components/print-builder/TemplateBuilder.tsx`
 
 ## Relationships
 
-- [[HR, Components, and Print]] (1 shared connections)
+- [[HR, Schedule, and Work Date]] (3 shared connections)
+- [[HR Schedule and Settings]] (2 shared connections)
+- [[Lib Utils and Types]] (2 shared connections)
 
 ## Source Files
 
-- `components\print-builder\DocumentRenderer.tsx`
-- `components\print-builder\sectionStyleWrap.tsx`
+- `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- `components/print-builder/TemplateBuilder.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 17 (81%)
-- INFERRED: 4 (19%)
+- EXTRACTED: 61 (88%)
+- INFERRED: 8 (12%)
 - AMBIGUOUS: 0 (0%)
 
 ---

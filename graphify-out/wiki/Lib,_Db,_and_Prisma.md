@@ -1,10 +1,10 @@
 # Lib, Db, and Prisma
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **prisma.ts** (0 connections) — `lib\db\prisma.ts`
+- **prisma.ts** (0 connections) â€” `lib/db/prisma.ts`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `lib\db\prisma.ts`
+- `lib/db/prisma.ts`
 
 ## Audit Trail
 

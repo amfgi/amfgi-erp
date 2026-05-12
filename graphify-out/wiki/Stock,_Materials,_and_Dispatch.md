@@ -1,11 +1,12 @@
 # Stock, Materials, and Dispatch
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **page.tsx** (1 connections) — `app\(app)\stock\materials\dispatch\page.tsx`
-- **DispatchMaterialsPage()** (1 connections) — `app\(app)\stock\materials\dispatch\page.tsx`
+- **DispatchMaterialsPage()** (2 connections) â€” `app/(app)/stock/materials/dispatch/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/stock/materials/dispatch/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/stock/materials/dispatch/page.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\stock\materials\dispatch\page.tsx`
+- `app/(app)/stock/materials/dispatch/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

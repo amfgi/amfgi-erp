@@ -1,11 +1,12 @@
 # Me and Attendance
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **page.tsx** (1 connections) — `app\(app)\me\attendance\page.tsx`
-- **EmployeeAttendancePage()** (1 connections) — `app\(app)\me\attendance\page.tsx`
+- **EmployeeAttendancePage()** (2 connections) â€” `app/(app)/me/attendance/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/me/attendance/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/me/attendance/page.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\me\attendance\page.tsx`
+- `app/(app)/me/attendance/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

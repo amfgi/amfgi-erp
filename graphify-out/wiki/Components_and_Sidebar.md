@@ -1,10 +1,10 @@
 # Components and Sidebar
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **Sidebar.tsx** (0 connections) — `components\layout\Sidebar.tsx`
+- **Sidebar.tsx** (0 connections) â€” `components/layout/Sidebar.tsx`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `components\layout\Sidebar.tsx`
+- `components/layout/Sidebar.tsx`
 
 ## Audit Trail
 

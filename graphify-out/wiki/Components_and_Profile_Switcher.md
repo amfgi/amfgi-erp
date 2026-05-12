@@ -1,11 +1,12 @@
 # Components and Profile Switcher
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **ProfileSwitcher.tsx** (1 connections) — `components\layout\ProfileSwitcher.tsx`
-- **ProfileSwitcher()** (1 connections) — `components\layout\ProfileSwitcher.tsx`
+- **ProfileSwitcher()** (2 connections) â€” `components/layout/ProfileSwitcher.tsx`
+- **ProfileSwitcher.tsx** (1 connections) â€” `components/layout/ProfileSwitcher.tsx`
+- **ProfileSwitcher.tsx** (1 connections) â€” `components/layout/ProfileSwitcher.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `components\layout\ProfileSwitcher.tsx`
+- `components/layout/ProfileSwitcher.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

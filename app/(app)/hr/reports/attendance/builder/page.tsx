@@ -242,7 +242,7 @@ export default function AttendanceReportBuilderPage() {
                   setSchema(preset.schema);
                   setPresetName(preset.name);
                 }}
-                className="min-w-[14rem] rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white shadow-sm"
+                className="min-w-56 rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white shadow-sm"
               >
                 <option value="">Select preset</option>
                 {savedPresets.map((preset) => (
@@ -311,7 +311,7 @@ export default function AttendanceReportBuilderPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <label className="min-w-[15rem] text-sm text-slate-300">
+                <label className="min-w-60 text-sm text-slate-300">
                   <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Preset name</span>
                   <input
                     value={presetName}
@@ -569,7 +569,7 @@ export default function AttendanceReportBuilderPage() {
               placeholder="Search employee or code"
               className="mt-4 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
             />
-            <div className="mt-4 max-h-[32rem] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-4 max-h-128 space-y-2 overflow-y-auto pr-1">
               {loading ? (
                 <div className="rounded-xl border border-white/10 bg-slate-950/50 px-4 py-5 text-sm text-slate-500">Loading employees...</div>
               ) : visibleEmployees.length === 0 ? (

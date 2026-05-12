@@ -1,11 +1,12 @@
 # Jobs
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **page.tsx** (1 connections) — `app\(app)\jobs\page.tsx`
-- **JobsRedirectPage()** (1 connections) — `app\(app)\jobs\page.tsx`
+- **JobsRedirectPage()** (2 connections) â€” `app/(app)/jobs/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/jobs/page.tsx`
+- **page.tsx** (1 connections) â€” `app/(app)/jobs/page.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\jobs\page.tsx`
+- `app/(app)/jobs/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

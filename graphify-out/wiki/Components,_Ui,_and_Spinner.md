@@ -1,23 +1,24 @@
 # Components, Ui, and Spinner
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **Spinner.tsx** (1 connections) — `components\ui\Spinner.tsx`
-- **Spinner()** (1 connections) — `components\ui\Spinner.tsx`
+- **Spinner.tsx** (2 connections) â€” `components/ui/Spinner.tsx`
+- **Spinner()** (2 connections) â€” `components/ui/Spinner.tsx`
+- **Spinner.tsx** (1 connections) â€” `components/ui/Spinner.tsx`
 
 ## Relationships
 
-- No strong cross-community connections detected
+- [[Jobs, Id, and Cost Engine]] (1 shared connections)
 
 ## Source Files
 
-- `components\ui\Spinner.tsx`
+- `components/ui/Spinner.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 5 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

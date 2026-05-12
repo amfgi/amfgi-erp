@@ -1,11 +1,12 @@
 # Components, Print Builder, and Data Fields Explorer
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **DataFieldsExplorer.tsx** (1 connections) — `components\print-builder\DataFieldsExplorer.tsx`
-- **copyPath()** (1 connections) — `components\print-builder\DataFieldsExplorer.tsx`
+- **copyPath()** (2 connections) â€” `components/print-builder/DataFieldsExplorer.tsx`
+- **DataFieldsExplorer.tsx** (1 connections) â€” `components/print-builder/DataFieldsExplorer.tsx`
+- **DataFieldsExplorer.tsx** (1 connections) â€” `components/print-builder/DataFieldsExplorer.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `components\print-builder\DataFieldsExplorer.tsx`
+- `components/print-builder/DataFieldsExplorer.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

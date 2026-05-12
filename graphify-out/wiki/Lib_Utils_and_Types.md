@@ -1,51 +1,53 @@
 # Lib Utils and Types
 
-> 32 nodes · cohesion 0.10
+> 36 nodes Â· cohesion 0.13
 
 ## Key Concepts
 
-- **canvasLayout.ts** (13 connections) — `lib\utils\canvasLayout.ts`
-- **CanvasPreview.tsx** (7 connections) — `components\print-builder\CanvasPreview.tsx`
-- **documentTemplate.ts** (7 connections) — `lib\types\documentTemplate.ts`
-- **isSectionLocked()** (6 connections) — `lib\types\documentTemplate.ts`
-- **onMove()** (5 connections) — `components\print-builder\CanvasPreview.tsx`
-- **contentWidthMm()** (5 connections) — `lib\utils\canvasLayout.ts`
-- **buildCanvasRectsFromSections()** (4 connections) — `lib\utils\canvasLayout.ts`
-- **snapCanvasRect()** (4 connections) — `lib\utils\canvasLayout.ts`
-- **getCanvasMoveIndicesForSection()** (3 connections) — `lib\types\documentTemplate.ts`
-- **getSectionTypeLabel()** (3 connections) — `lib\types\documentTemplate.ts`
-- **getSectionOrderDisplay()** (3 connections) — `lib\types\documentTemplate.ts`
-- **getPageDimensionsMm()** (3 connections) — `lib\utils\canvasLayout.ts`
-- **contentHeightMm()** (3 connections) — `lib\utils\canvasLayout.ts`
-- **marginBleedBox()** (3 connections) — `lib\utils\canvasLayout.ts`
-- **estimateSectionHeightMm()** (3 connections) — `lib\utils\canvasLayout.ts`
-- **ensureCanvasRects()** (3 connections) — `lib\utils\canvasLayout.ts`
-- **clampRectToContent()** (3 connections) — `lib\utils\canvasLayout.ts`
-- **handleFlowResizeStart()** (2 connections) — `components\print-builder\CanvasPreview.tsx`
-- **handleCanvasOverlayMouseDown()** (2 connections) — `components\print-builder\CanvasPreview.tsx`
-- **startCanvasResize()** (2 connections) — `components\print-builder\CanvasPreview.tsx`
-- **overlayChrome()** (2 connections) — `components\print-builder\CanvasPreview.tsx`
-- **getSectionOrderLabel()** (2 connections) — `lib\types\documentTemplate.ts`
-- **getSectionCustomNameInputValue()** (2 connections) — `lib\types\documentTemplate.ts`
-- **ptToMm()** (2 connections) — `lib\utils\canvasLayout.ts`
-- **resolveCanvasRectsForSections()** (2 connections) — `lib\utils\canvasLayout.ts`
-- *... and 7 more nodes in this community*
+- **canvasLayout.ts** (13 connections) â€” `lib/utils/canvasLayout.ts`
+- **canvasLayout.ts** (13 connections) â€” `lib/utils/canvasLayout.ts`
+- **documentTemplate.ts** (9 connections) â€” `lib/types/documentTemplate.ts`
+- **CanvasPreview.tsx** (7 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **isSectionLocked()** (7 connections) â€” `lib/types/documentTemplate.ts`
+- **CanvasPreview.tsx** (7 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **documentTemplate.ts** (7 connections) â€” `lib/types/documentTemplate.ts`
+- **onMove()** (6 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **contentWidthMm()** (6 connections) â€” `lib/utils/canvasLayout.ts`
+- **buildCanvasRectsFromSections()** (5 connections) â€” `lib/utils/canvasLayout.ts`
+- **snapCanvasRect()** (5 connections) â€” `lib/utils/canvasLayout.ts`
+- **getCanvasMoveIndicesForSection()** (4 connections) â€” `lib/types/documentTemplate.ts`
+- **getSectionTypeLabel()** (4 connections) â€” `lib/types/documentTemplate.ts`
+- **getSectionOrderDisplay()** (4 connections) â€” `lib/types/documentTemplate.ts`
+- **getPageDimensionsMm()** (4 connections) â€” `lib/utils/canvasLayout.ts`
+- **contentHeightMm()** (4 connections) â€” `lib/utils/canvasLayout.ts`
+- **marginBleedBox()** (4 connections) â€” `lib/utils/canvasLayout.ts`
+- **estimateSectionHeightMm()** (4 connections) â€” `lib/utils/canvasLayout.ts`
+- **ensureCanvasRects()** (4 connections) â€” `lib/utils/canvasLayout.ts`
+- **clampRectToContent()** (4 connections) â€” `lib/utils/canvasLayout.ts`
+- **handleFlowResizeStart()** (3 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **handleCanvasOverlayMouseDown()** (3 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **startCanvasResize()** (3 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **overlayChrome()** (3 connections) â€” `components/print-builder/CanvasPreview.tsx`
+- **getSectionOrderLabel()** (3 connections) â€” `lib/types/documentTemplate.ts`
+- *... and 11 more nodes in this community*
 
 ## Relationships
 
-- [[HR, Components, and Print]] (2 shared connections)
+- [[Settings API]] (2 shared connections)
+- [[Components Print Builder]] (2 shared connections)
+- [[Stock Dispatch]] (1 shared connections)
 
 ## Source Files
 
-- `components\print-builder\CanvasPreview.tsx`
-- `lib\types\documentTemplate.ts`
-- `lib\utils\canvasLayout.ts`
-- `lib\utils\documentDefaults.ts`
+- `components/print-builder/CanvasPreview.tsx`
+- `lib/types/documentTemplate.ts`
+- `lib/utils/canvasLayout.ts`
+- `lib/utils/documentDefaults.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 84 (81%)
-- INFERRED: 20 (19%)
+- EXTRACTED: 143 (88%)
+- INFERRED: 20 (12%)
 - AMBIGUOUS: 0 (0%)
 
 ---

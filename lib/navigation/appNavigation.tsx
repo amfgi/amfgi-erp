@@ -92,20 +92,6 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     ),
   },
   {
-    href: '/hr/geofence',
-    label: 'Geofence Attendance',
-    shortTitle: 'Geofence',
-    description: 'Manage factory polygon borders and gate zones for location-based attendance.',
-    category: 'People',
-    perm: 'hr.geofence.view',
-    icon: (
-      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 2l7 4v5c0 5.25-3.438 9.938-7 11-3.562-1.062-7-5.75-7-11V6l7-4z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9a2.5 2.5 0 110 5 2.5 2.5 0 010-5z" />
-      </svg>
-    ),
-  },
-  {
     href: '/me',
     label: 'My HR',
     shortTitle: 'My HR',
@@ -128,6 +114,24 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    ),
+  },
+  {
+    href: '/settings/media',
+    label: 'Media',
+    shortTitle: 'Media',
+    description: 'Review company uploads, usage links, and filters for the media library.',
+    category: 'Administration',
+    perm: 'settings.manage',
+    icon: (
+      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+        />
       </svg>
     ),
   },

@@ -1,18 +1,13 @@
 import { auth } from '@/auth';
-import { prisma } from '@/lib/db/prisma';
-import { Prisma } from '@prisma/client';
-import {
-  readCompanyGoogleDriveOAuthConfig,
-  writeCompanyGoogleDriveOAuthConfig,
-} from '@/lib/utils/companyPrintTemplates';
 import { exchangeGoogleDriveAuthorizationCode, explainGoogleDriveError } from '@/lib/utils/googleDrive';
+import { setGlobalGoogleDriveConfig } from '@/lib/utils/globalSettings';
 import { cookies } from 'next/headers';
 
 function redirectToSettings(request: Request, status: string, message?: string) {
   const url = new URL('/settings', request.url);
-  url.searchParams.set('tab', 'company');
-  url.searchParams.set('googleDrive', status);
-  if (message) url.searchParams.set('googleDriveMessage', message);
+  url.searchParams.set('tab', 'drive');
+  url.searchParams.set('driveConnected', status);
+  if (message) url.searchParams.set('driveMessage', message);
   return Response.redirect(url, 302);
 }
 
@@ -36,17 +31,14 @@ export async function GET(request: Request) {
   cookieStore.delete('google_drive_oauth_state');
 
   let expectedState = '';
-  let companyId = '';
   try {
-    const parsed = rawState ? (JSON.parse(rawState) as { state?: string; companyId?: string }) : null;
+    const parsed = rawState ? (JSON.parse(rawState) as { state?: string }) : null;
     expectedState = parsed?.state?.trim() ?? '';
-    companyId = parsed?.companyId?.trim() ?? '';
   } catch {
     expectedState = '';
-    companyId = '';
   }
 
-  if (!expectedState || expectedState !== state || !companyId) {
+  if (!expectedState || expectedState !== state) {
     return redirectToSettings(request, 'error', 'Google Drive authorization state mismatch');
   }
 
@@ -56,24 +48,10 @@ export async function GET(request: Request) {
       origin: url.origin,
     });
 
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { printTemplates: true },
-    });
-    if (!company) {
-      return redirectToSettings(request, 'error', 'Company not found');
-    }
-
-    const existing = readCompanyGoogleDriveOAuthConfig(company.printTemplates);
-    const merged = writeCompanyGoogleDriveOAuthConfig(company.printTemplates, {
+    await setGlobalGoogleDriveConfig({
       refreshToken,
       connectedAt: new Date().toISOString(),
-      connectedEmail: connectedEmail ?? existing?.connectedEmail ?? null,
-    });
-
-    await prisma.company.update({
-      where: { id: companyId },
-      data: { printTemplates: merged as Prisma.InputJsonValue },
+      connectedEmail: connectedEmail ?? null,
     });
 
     return redirectToSettings(request, 'connected', connectedEmail ?? 'Connected');

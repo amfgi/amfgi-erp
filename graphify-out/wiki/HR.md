@@ -1,11 +1,12 @@
 # HR
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **layout.tsx** (1 connections) — `app\(app)\hr\layout.tsx`
-- **HrLayout()** (1 connections) — `app\(app)\hr\layout.tsx`
+- **HrLayout()** (2 connections) â€” `app/(app)/hr/layout.tsx`
+- **layout.tsx** (1 connections) â€” `app/(app)/hr/layout.tsx`
+- **layout.tsx** (1 connections) â€” `app/(app)/hr/layout.tsx`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `app\(app)\hr\layout.tsx`
+- `app/(app)/hr/layout.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

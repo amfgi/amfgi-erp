@@ -16,6 +16,7 @@ import {
   useCancelReceiptEntryMutation,
   useDeleteReceiptEntryMutation,
   useGetReceiptEntriesQuery,
+  useGetStockValuationQuery,
   useLazyGetReceiptAdjustmentImpactQuery,
 } from '@/store/hooks';
 import type {
@@ -23,8 +24,8 @@ import type {
   ReceiptEntry,
 } from '@/store/api/endpoints/receipts';
 
-function formatMoney(value: number) {
-  return `AED ${value.toLocaleString('en-AE', {
+function formatMoney(value: number, currencyCode: string) {
+  return `${currencyCode} ${value.toLocaleString('en-AE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -126,6 +127,11 @@ export default function GoodsReceiptPage() {
     { filterType, date: selectedDate },
     { skip: !canView, refetchOnMountOrArgChange: 30 }
   );
+  const { data: stockValuation } = useGetStockValuationQuery(undefined, {
+    skip: !canView,
+    refetchOnMountOrArgChange: 30,
+  });
+  const currencyCode = stockValuation?.summary.currencyCode ?? 'AED';
   const [deleteReceiptEntry, { isLoading: isDeleting }] = useDeleteReceiptEntryMutation();
   const [cancelReceiptEntry, { isLoading: isCancelling }] = useCancelReceiptEntryMutation();
   const [adjustReceiptEntry, { isLoading: isAdjustingReceipt }] = useAdjustReceiptEntryMutation();
@@ -375,7 +381,7 @@ export default function GoodsReceiptPage() {
       header: 'Value',
       sortable: true,
       render: (entry) => (
-        <span className="font-medium text-slate-900 dark:text-white">{formatMoney(entry.totalValue)}</span>
+        <span className="font-medium text-slate-900 dark:text-white">{formatMoney(entry.totalValue, currencyCode)}</span>
       ),
     },
     {
@@ -444,7 +450,7 @@ export default function GoodsReceiptPage() {
             },
             {
               label: 'Receipt value',
-              value: formatMoney(receiptValue),
+              value: formatMoney(receiptValue, currencyCode),
               note: 'Combined value of visible receipts',
             },
             {
@@ -546,7 +552,7 @@ export default function GoodsReceiptPage() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-700 dark:bg-slate-950/70">
                   <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Value</p>
                   <p className="mt-1 font-semibold text-emerald-700 dark:text-emerald-300">
-                    {formatMoney(viewEntry.totalValue)}
+                    {formatMoney(viewEntry.totalValue, currencyCode)}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-700 dark:bg-slate-950/70">
@@ -588,7 +594,7 @@ export default function GoodsReceiptPage() {
                           {material.quantityReceived} {material.unit}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                          {formatMoney(material.unitCost)} / unit
+                          {formatMoney(material.unitCost, currencyCode)} / unit
                         </p>
                       </div>
                     </div>
@@ -597,7 +603,7 @@ export default function GoodsReceiptPage() {
                         Available after receipt: {material.quantityAvailable.toFixed(3)}
                       </span>
                       <span className="font-medium text-slate-700 dark:text-slate-300">
-                        {formatMoney(material.totalCost)}
+                        {formatMoney(material.totalCost, currencyCode)}
                       </span>
                     </div>
                   </div>

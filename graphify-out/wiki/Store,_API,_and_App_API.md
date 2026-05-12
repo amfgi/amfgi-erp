@@ -1,10 +1,10 @@
 # Store, API, and App API
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **appApi.ts** (0 connections) — `store\api\appApi.ts`
+- **appApi.ts** (0 connections) â€” `store/api/appApi.ts`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `store\api\appApi.ts`
+- `store/api/appApi.ts`
 
 ## Audit Trail
 

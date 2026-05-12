@@ -1,30 +1,36 @@
 # Providers Theme Provider and App Providers
 
-> 7 nodes · cohesion 0.29
+> 10 nodes Â· cohesion 0.27
 
 ## Key Concepts
 
-- **ThemeProvider.tsx** (3 connections) — `providers\ThemeProvider.tsx`
-- **AppProviders.tsx** (2 connections) — `providers\AppProviders.tsx`
-- **ThemeAwareToaster()** (2 connections) — `providers\AppProviders.tsx`
-- **useTheme()** (2 connections) — `providers\ThemeProvider.tsx`
-- **AppProviders()** (1 connections) — `providers\AppProviders.tsx`
-- **getStoredTheme()** (1 connections) — `providers\ThemeProvider.tsx`
-- **subscribe()** (1 connections) — `providers\ThemeProvider.tsx`
+- **ThemeProvider.tsx** (5 connections) â€” `providers/ThemeProvider.tsx`
+- **useTheme()** (5 connections) â€” `providers/ThemeProvider.tsx`
+- **HrScheduleDayPage()** (3 connections) â€” `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- **ThemeAwareToaster()** (3 connections) â€” `providers/AppProviders.tsx`
+- **ThemeProvider.tsx** (3 connections) â€” `providers/ThemeProvider.tsx`
+- **AppProviders.tsx** (2 connections) â€” `providers/AppProviders.tsx`
+- **AppProviders()** (2 connections) â€” `providers/AppProviders.tsx`
+- **getStoredTheme()** (2 connections) â€” `providers/ThemeProvider.tsx`
+- **subscribe()** (2 connections) â€” `providers/ThemeProvider.tsx`
+- **AppProviders.tsx** (2 connections) â€” `providers/AppProviders.tsx`
 
 ## Relationships
 
-- No strong cross-community connections detected
+- [[HR Schedule]] (2 shared connections)
+- [[Components, Lib, and Proxy]] (2 shared connections)
+- [[HR Schedule and Settings]] (1 shared connections)
 
 ## Source Files
 
-- `providers\AppProviders.tsx`
-- `providers\ThemeProvider.tsx`
+- `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- `providers/AppProviders.tsx`
+- `providers/ThemeProvider.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 10 (83%)
-- INFERRED: 2 (17%)
+- EXTRACTED: 26 (90%)
+- INFERRED: 3 (10%)
 - AMBIGUOUS: 0 (0%)
 
 ---

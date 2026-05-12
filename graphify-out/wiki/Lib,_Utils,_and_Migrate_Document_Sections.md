@@ -1,12 +1,13 @@
 # Lib, Utils, and Migrate Document Sections
 
-> 3 nodes · cohesion 0.67
+> 4 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **migrateDocumentSections.ts** (2 connections) — `lib\utils\migrateDocumentSections.ts`
-- **letterheadToImage()** (1 connections) — `lib\utils\migrateDocumentSections.ts`
-- **migrateLegacyDocumentSections()** (1 connections) — `lib\utils\migrateDocumentSections.ts`
+- **migrateDocumentSections.ts** (2 connections) â€” `lib/utils/migrateDocumentSections.ts`
+- **letterheadToImage()** (2 connections) â€” `lib/utils/migrateDocumentSections.ts`
+- **migrateLegacyDocumentSections()** (2 connections) â€” `lib/utils/migrateDocumentSections.ts`
+- **migrateDocumentSections.ts** (2 connections) â€” `lib/utils/migrateDocumentSections.ts`
 
 ## Relationships
 
@@ -14,11 +15,11 @@
 
 ## Source Files
 
-- `lib\utils\migrateDocumentSections.ts`
+- `lib/utils/migrateDocumentSections.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 4 (100%)
+- EXTRACTED: 8 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

@@ -1,10 +1,10 @@
 # Components, Ui, and Button
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **Button.tsx** (0 connections) — `components\ui\Button.tsx`
+- **Button.tsx** (0 connections) â€” `components/ui/Button.tsx`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `components\ui\Button.tsx`
+- `components/ui/Button.tsx`
 
 ## Audit Trail
 

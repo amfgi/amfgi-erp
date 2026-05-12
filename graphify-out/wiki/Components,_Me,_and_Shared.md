@@ -1,22 +1,23 @@
 # Components, Me, and Shared
 
-> 13 nodes · cohesion 0.15
+> 14 nodes Â· cohesion 0.26
 
 ## Key Concepts
 
-- **shared.tsx** (12 connections) — `components\me\shared.tsx`
-- **currentMonthValue()** (1 connections) — `components\me\shared.tsx`
-- **monthBounds()** (1 connections) — `components\me\shared.tsx`
-- **formatDate()** (1 connections) — `components\me\shared.tsx`
-- **formatTime()** (1 connections) — `components\me\shared.tsx`
-- **diffMinutes()** (1 connections) — `components\me\shared.tsx`
-- **formatHours()** (1 connections) — `components\me\shared.tsx`
-- **displayName()** (1 connections) — `components\me\shared.tsx`
-- **initials()** (1 connections) — `components\me\shared.tsx`
-- **statusTone()** (1 connections) — `components\me\shared.tsx`
-- **workLocationLabel()** (1 connections) — `components\me\shared.tsx`
-- **jobNumberLabel()** (1 connections) — `components\me\shared.tsx`
-- **upcomingDocument()** (1 connections) — `components\me\shared.tsx`
+- **shared.tsx** (12 connections) â€” `components/me/shared.tsx`
+- **shared.tsx** (12 connections) â€” `components/me/shared.tsx`
+- **currentMonthValue()** (2 connections) â€” `components/me/shared.tsx`
+- **monthBounds()** (2 connections) â€” `components/me/shared.tsx`
+- **formatDate()** (2 connections) â€” `components/me/shared.tsx`
+- **formatTime()** (2 connections) â€” `components/me/shared.tsx`
+- **diffMinutes()** (2 connections) â€” `components/me/shared.tsx`
+- **formatHours()** (2 connections) â€” `components/me/shared.tsx`
+- **displayName()** (2 connections) â€” `components/me/shared.tsx`
+- **initials()** (2 connections) â€” `components/me/shared.tsx`
+- **statusTone()** (2 connections) â€” `components/me/shared.tsx`
+- **workLocationLabel()** (2 connections) â€” `components/me/shared.tsx`
+- **jobNumberLabel()** (2 connections) â€” `components/me/shared.tsx`
+- **upcomingDocument()** (2 connections) â€” `components/me/shared.tsx`
 
 ## Relationships
 
@@ -24,11 +25,11 @@
 
 ## Source Files
 
-- `components\me\shared.tsx`
+- `components/me/shared.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 24 (100%)
+- EXTRACTED: 48 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

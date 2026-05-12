@@ -1,10 +1,10 @@
 # Lib, HR, and Employee Meta
 
-> 1 nodes · cohesion 1.00
+> 1 nodes Â· cohesion 1.00
 
 ## Key Concepts
 
-- **employeeMeta.ts** (0 connections) — `lib\hr\employeeMeta.ts`
+- **employeeMeta.ts** (0 connections) â€” `lib/hr/employeeMeta.ts`
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- `lib\hr\employeeMeta.ts`
+- `lib/hr/employeeMeta.ts`
 
 ## Audit Trail
 

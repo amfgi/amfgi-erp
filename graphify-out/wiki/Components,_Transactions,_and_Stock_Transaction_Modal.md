@@ -1,12 +1,13 @@
 # Components, Transactions, and Stock Transaction Modal
 
-> 3 nodes · cohesion 0.67
+> 4 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **StockTransactionModal.tsx** (2 connections) — `components\transactions\StockTransactionModal.tsx`
-- **qtyInBase()** (1 connections) — `components\transactions\StockTransactionModal.tsx`
-- **StockTransactionModal()** (1 connections) — `components\transactions\StockTransactionModal.tsx`
+- **StockTransactionModal.tsx** (2 connections) â€” `components/transactions/StockTransactionModal.tsx`
+- **qtyInBase()** (2 connections) â€” `components/transactions/StockTransactionModal.tsx`
+- **StockTransactionModal()** (2 connections) â€” `components/transactions/StockTransactionModal.tsx`
+- **StockTransactionModal.tsx** (2 connections) â€” `components/transactions/StockTransactionModal.tsx`
 
 ## Relationships
 
@@ -14,11 +15,11 @@
 
 ## Source Files
 
-- `components\transactions\StockTransactionModal.tsx`
+- `components/transactions/StockTransactionModal.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 4 (100%)
+- EXTRACTED: 8 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

@@ -4,9 +4,14 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import { Select } from '@/components/ui/shadcn/select';
 import Modal from '@/components/ui/Modal';
+import { cn } from '@/lib/utils';
 
 type ApiCredential = {
   id: string;
@@ -29,6 +34,32 @@ type IntegrationLog = {
   requestBody?: unknown;
   responseBody?: unknown;
 };
+
+function RevokedBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="text-[10px] font-semibold uppercase tracking-wide border-destructive/40 bg-destructive/10 text-destructive"
+    >
+      Revoked
+    </Badge>
+  );
+}
+
+function SummaryStat({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <div className="bg-card px-5 py-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="text-xs text-muted-foreground">{note}</p>
+    </div>
+  );
+}
+
+const textareaClass = cn(
+  'mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground',
+  'placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+);
 
 export default function SettingsApiPage() {
   const { data: session } = useSession();
@@ -96,7 +127,7 @@ export default function SettingsApiPage() {
         setLogsLoading(false);
       }
     },
-    [logFilterFrom, logFilterStatus, logFilterTo]
+    [logFilterFrom, logFilterStatus, logFilterTo],
   );
 
   useEffect(() => {
@@ -152,6 +183,11 @@ export default function SettingsApiPage() {
       label: cred.label,
       text: (cred.allowedDomains ?? []).join('\n'),
     });
+  };
+
+  const closeDomainModal = () => {
+    if (domainModalSaving) return;
+    setDomainModal({ open: false, id: null, label: '', text: '' });
   };
 
   const saveDomainModal = async () => {
@@ -211,9 +247,13 @@ export default function SettingsApiPage() {
 
   if (!canManage) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-        <h1 className="text-xl font-semibold text-slate-950 dark:text-white">API Center</h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">You do not have permission to manage API credentials.</p>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Card>
+          <CardHeader>
+            <CardTitle>API Center</CardTitle>
+            <CardDescription>You do not have permission to manage API credentials.</CardDescription>
+          </CardHeader>
+        </Card>
       </div>
     );
   }
@@ -221,97 +261,127 @@ export default function SettingsApiPage() {
   const selectedLog = selectedLogId ? integrationLogs.find((log) => log.id === selectedLogId) : null;
 
   return (
-    <div className="space-y-6">
-      <div className="overflow-hidden rounded-[2rem] border border-emerald-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
-        <div className="bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_35%),linear-gradient(135deg,#f8fafc,#ecfdf5)] p-6 dark:bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.24),transparent_34%),linear-gradient(135deg,#020617,#0f172a)] sm:p-8">
-          <Link href="/settings" className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 hover:text-emerald-600 dark:text-emerald-300 dark:hover:text-emerald-200">
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <Link
+            href="/settings"
+            className="w-fit text-xs font-medium uppercase tracking-wide text-primary underline-offset-4 hover:underline"
+          >
             Settings
           </Link>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-950 dark:text-white">API Center</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Manage external API credentials, allowed domains, and sync logs from one place. Job, customer,
-            and supplier upserts are live now; future application APIs can be added as separate route cards.
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">API Center</h1>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Manage external API credentials, allowed domains, and sync logs from one place. Job, customer, and supplier
+            upserts are live now; future application APIs can be added as separate route cards.
           </p>
         </div>
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 md:grid-cols-3">
-          {[
-            { label: 'Credentials', value: String(apiCredentials.filter((cred) => !cred.revokedAt).length), note: 'active keys' },
-            { label: 'Available routes', value: '3', note: 'job + party upserts' },
-            { label: 'Logs', value: String(integrationLogs.length), note: logsNextCursor ? 'more available' : 'loaded' },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-900">
-              <p className="text-xs text-slate-500">{item.label}</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">{item.value}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem] xl:items-start">
-        <main className="space-y-6">
-          <section className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
-            <h2 className="text-lg font-semibold text-white">API Credentials</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Keys apply only to <code className="text-emerald-300">/api/integrations/*</code>. Normal ERP routes still require a signed-in user session.
+        <div className="overflow-hidden rounded-lg border border-border shadow-sm">
+          <div className="grid divide-y divide-border bg-card md:grid-cols-3 md:divide-x md:divide-y-0">
+            {[
+              {
+                label: 'Credentials',
+                value: String(apiCredentials.filter((cred) => !cred.revokedAt).length),
+                note: 'active keys',
+              },
+              { label: 'Available routes', value: '3', note: 'job + party upserts' },
+              {
+                label: 'Logs',
+                value: String(integrationLogs.length),
+                note: logsNextCursor ? 'more available' : 'loaded',
+              },
+            ].map((item) => (
+              <SummaryStat key={item.label} label={item.label} value={item.value} note={item.note} />
+            ))}
+          </div>
+        </div>
+      </header>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <main className="flex flex-col gap-5">
+          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">API credentials</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keys apply only to <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">/api/integrations/*</code>.
+              Normal ERP routes still require a signed-in user session.
             </p>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-              <input
-                value={apiLabel}
-                onChange={(e) => setApiLabel(e.target.value)}
-                placeholder="Credential label (e.g. PM production)"
-                className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <Button onClick={handleCreateApiCredential}>Generate Key</Button>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1 space-y-2">
+                <label htmlFor="api-cred-label" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Label
+                </label>
+                <Input
+                  id="api-cred-label"
+                  value={apiLabel}
+                  onChange={(e) => setApiLabel(e.target.value)}
+                  placeholder="Credential label (e.g. PM production)"
+                />
+              </div>
+              <Button type="button" className="shrink-0" onClick={() => void handleCreateApiCredential()}>
+                Generate key
+              </Button>
             </div>
-            <label className="mt-4 block text-sm font-medium text-slate-300">
+            <label className="mt-4 block text-sm font-medium text-foreground">
               Allowed domains (optional)
               <textarea
                 value={apiAllowedDomainsCreate}
                 onChange={(e) => setApiAllowedDomainsCreate(e.target.value)}
                 rows={3}
                 placeholder={'One hostname per line or comma-separated, e.g.\npartner.com\napp.partner.com'}
-                className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 font-mono text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className={cn(textareaClass, 'font-mono text-xs')}
               />
             </label>
             {newApiKey ? (
-              <div className="mt-4 rounded-lg border border-amber-600/60 bg-amber-950/30 p-3">
-                <p className="text-xs text-amber-200">Copy now: this key will not be shown again.</p>
-                <code className="mt-2 block break-all text-sm text-amber-100">{newApiKey}</code>
-                <Button className="mt-2" size="sm" variant="ghost" onClick={() => void copyNewApiKey()}>
+              <div className="mt-4 rounded-lg border border-amber-500/35 bg-amber-500/10 p-4">
+                <p className="text-xs font-medium text-amber-900 dark:text-amber-100">Copy now: this key will not be shown again.</p>
+                <code className="mt-2 block break-all text-sm text-foreground">{newApiKey}</code>
+                <Button type="button" className="mt-3" size="sm" variant="secondary" onClick={() => void copyNewApiKey()}>
                   Copy API key
                 </Button>
               </div>
             ) : null}
           </section>
 
-          <section className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
-            <h2 className="text-lg font-semibold text-white">Existing Credentials</h2>
-            <div className="mt-4 space-y-2">
+          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">Existing credentials</h2>
+            <div className="mt-4 space-y-3">
               {apiLoading ? (
-                <p className="text-sm text-slate-400">Loading credentials...</p>
+                <p className="text-sm text-muted-foreground">Loading credentials…</p>
               ) : apiCredentials.length === 0 ? (
-                <p className="text-sm text-slate-400">No API credentials created yet.</p>
+                <p className="text-sm text-muted-foreground">No API credentials created yet.</p>
               ) : (
                 apiCredentials.map((cred) => (
-                  <div key={cred.id} className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-800/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div
+                    key={cred.id}
+                    className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
                     <div className="min-w-0">
-                      <p className="text-sm text-white">{cred.label}</p>
-                      <p className="text-xs text-slate-400">
-                        Prefix: <code>{cred.keyPrefix}</code> | Last used: {cred.lastUsedAt ? new Date(cred.lastUsedAt).toLocaleString() : 'Never'}
+                      <p className="text-sm font-medium text-foreground">{cred.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Prefix: <code className="font-mono">{cred.keyPrefix}</code> | Last used:{' '}
+                        {cred.lastUsedAt ? new Date(cred.lastUsedAt).toLocaleString() : 'Never'}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Domains: {cred.allowedDomains && cred.allowedDomains.length > 0 ? cred.allowedDomains.join(', ') : 'any (no allowlist)'}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Domains:{' '}
+                        {cred.allowedDomains && cred.allowedDomains.length > 0
+                          ? cred.allowedDomains.join(', ')
+                          : 'any (no allowlist)'}
                       </p>
                     </div>
                     {cred.revokedAt ? (
-                      <Badge label="Revoked" variant="red" />
+                      <RevokedBadge />
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openDomainModal(cred)}>
+                        <Button type="button" size="sm" variant="outline" onClick={() => openDomainModal(cred)}>
                           Domains
                         </Button>
-                        <Button size="sm" variant="danger" onClick={() => void handleRevokeApiCredential(cred.id)}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => void handleRevokeApiCredential(cred.id)}
+                        >
                           Revoke
                         </Button>
                       </div>
@@ -322,18 +392,26 @@ export default function SettingsApiPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-700 bg-slate-900 p-6">
-            <div className="flex items-center justify-between gap-3">
+          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-white">Recent Logs</h2>
-                <p className="mt-1 text-sm text-slate-400">Review inbound integration activity directly under the credential list.</p>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Recent logs</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review inbound integration activity directly under the credential list.
+                </p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => void loadIntegrationLogs()} disabled={logsLoading}>
-                Refresh
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void loadIntegrationLogs()}
+                disabled={logsLoading}
+              >
+                {logsLoading ? 'Refreshing…' : 'Refresh'}
               </Button>
             </div>
             <div className="mt-4 grid gap-2 md:grid-cols-2">
-              <select value={logFilterStatus} onChange={(e) => setLogFilterStatus(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white">
+              <Select value={logFilterStatus} onChange={(e) => setLogFilterStatus(e.target.value)}>
                 <option value="">All statuses</option>
                 <option value="success">success</option>
                 <option value="error">error</option>
@@ -341,33 +419,49 @@ export default function SettingsApiPage() {
                 <option value="forbidden">forbidden</option>
                 <option value="retry_success">retry_success</option>
                 <option value="retry_error">retry_error</option>
-              </select>
-              <Button size="sm" variant="secondary" onClick={() => void loadIntegrationLogs()} disabled={logsLoading} className="md:justify-self-end">
-                Apply Filters
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="md:justify-self-end"
+                onClick={() => void loadIntegrationLogs()}
+                disabled={logsLoading}
+              >
+                Apply filters
               </Button>
-              <input type="datetime-local" value={logFilterFrom} onChange={(e) => setLogFilterFrom(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white" />
-              <input type="datetime-local" value={logFilterTo} onChange={(e) => setLogFilterTo(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white" />
+              <Input type="datetime-local" value={logFilterFrom} onChange={(e) => setLogFilterFrom(e.target.value)} />
+              <Input type="datetime-local" value={logFilterTo} onChange={(e) => setLogFilterTo(e.target.value)} />
             </div>
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-3">
               {logsLoading ? (
-                <p className="text-sm text-slate-400">Loading logs...</p>
+                <p className="text-sm text-muted-foreground">Loading logs…</p>
               ) : integrationLogs.length === 0 ? (
-                <p className="text-sm text-slate-400">No integration logs yet.</p>
+                <p className="text-sm text-muted-foreground">No integration logs yet.</p>
               ) : (
                 integrationLogs.map((log) => (
-                  <div key={log.id} className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
-                    <p className="text-xs text-slate-300">
-                      {new Date(log.createdAt).toLocaleString()} | {log.status.toUpperCase()} | HTTP {log.httpStatus ?? '-'}
+                  <div key={log.id} className="rounded-lg border border-border bg-muted/20 p-4">
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(log.createdAt).toLocaleString()} | {log.status.toUpperCase()} | HTTP{' '}
+                      {log.httpStatus ?? '-'}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">{log.entityKey || '-'}</p>
-                    {log.errorMessage ? <p className="mt-1 break-all text-xs text-red-300">{log.errorMessage}</p> : null}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => setSelectedLogId(log.id)}>
+                    <p className="mt-1 text-xs text-muted-foreground">{log.entityKey || '-'}</p>
+                    {log.errorMessage ? (
+                      <p className="mt-1 break-all text-xs text-destructive">{log.errorMessage}</p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => setSelectedLogId(log.id)}>
                         Details
                       </Button>
                       {log.status !== 'success' && log.status !== 'retry_success' ? (
-                        <Button size="sm" variant="secondary" onClick={() => void retryIntegrationLog(log.id)} loading={retryingLogId === log.id}>
-                          Retry
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void retryIntegrationLog(log.id)}
+                          disabled={retryingLogId === log.id}
+                        >
+                          {retryingLogId === log.id ? 'Retrying…' : 'Retry'}
                         </Button>
                       ) : null}
                     </div>
@@ -375,55 +469,62 @@ export default function SettingsApiPage() {
                 ))
               )}
               {logsNextCursor ? (
-                <Button size="sm" variant="secondary" onClick={() => void loadIntegrationLogs({ append: true, cursor: logsNextCursor })} disabled={logsLoading}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void loadIntegrationLogs({ append: true, cursor: logsNextCursor })}
+                  disabled={logsLoading}
+                >
                   Load more
                 </Button>
               ) : null}
             </div>
           </section>
-
         </main>
 
-        <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <section className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">Docs</p>
-            <p className="mt-2 text-sm leading-6 text-slate-200">
+        <aside className="flex flex-col gap-5 xl:sticky xl:top-6 xl:self-start">
+          <section className="rounded-lg border border-primary/25 bg-primary/5 p-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-primary">Docs</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               Open the private API catalog for full request examples, auth headers, and integration payload references.
             </p>
-            <Link href="/docs/api" className="mt-4 inline-flex text-xs font-semibold text-emerald-300 underline underline-offset-4">
+            <Link href="/docs/api" className="mt-4 inline-flex text-xs font-semibold text-primary underline-offset-4 hover:underline">
               Open private route catalog
             </Link>
           </section>
 
-          <section className="rounded-2xl border border-slate-700 bg-slate-900 p-5">
-            <h2 className="text-sm font-semibold text-white">Available API Routes</h2>
+          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-foreground">Available API routes</h2>
             {[
               {
-                title: 'Job Upsert',
+                title: 'Job upsert',
                 body: 'Creates/updates parent jobs and variations. customerExternalId resolves against stored customer external IDs.',
                 path: 'POST /api/integrations/jobs/upsert',
               },
               {
-                title: 'Customer Upsert',
+                title: 'Customer upsert',
                 body: 'Creates/updates customers and stores externalPartyId for future job assignment.',
                 path: 'POST /api/integrations/customers/upsert',
               },
               {
-                title: 'Supplier Upsert',
+                title: 'Supplier upsert',
                 body: 'Creates/updates suppliers and stores externalPartyId for future stock and purchasing flows.',
                 path: 'POST /api/integrations/suppliers/upsert',
               },
             ].map((route) => (
-              <div key={route.path} className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">Live</p>
-                <h3 className="mt-1 text-sm font-semibold text-white">{route.title}</h3>
-                <p className="mt-2 text-xs leading-5 text-slate-400">{route.body}</p>
-                <code className="mt-3 block rounded-lg bg-slate-950 px-3 py-2 text-xs text-emerald-300">{route.path}</code>
+              <div key={route.path} className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Live</p>
+                <h3 className="mt-1 text-sm font-semibold text-foreground">{route.title}</h3>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{route.body}</p>
+                <code className="mt-3 block rounded-md border border-border bg-muted/50 px-3 py-2 font-mono text-xs text-foreground">
+                  {route.path}
+                </code>
               </div>
             ))}
-            <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Future</p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">
+            <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Future</p>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 Materials, stock, customers, HR, and reporting APIs can be added here as separate route cards.
               </p>
             </div>
@@ -432,11 +533,12 @@ export default function SettingsApiPage() {
       </div>
 
       {selectedLog ? (
-        <section className="rounded-2xl border border-slate-700 bg-slate-950 p-4">
+        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-white">Log Details</p>
-            <div className="flex gap-2">
+            <p className="text-sm font-semibold text-foreground">Log details</p>
+            <div className="flex flex-wrap gap-2">
               <Button
+                type="button"
                 size="sm"
                 variant="secondary"
                 onClick={() => {
@@ -451,20 +553,30 @@ export default function SettingsApiPage() {
               >
                 Download JSON
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelectedLogId(null)}>
+              <Button type="button" size="sm" variant="outline" onClick={() => setSelectedLogId(null)}>
                 Close
               </Button>
             </div>
           </div>
-          <p className="mt-2 text-xs text-slate-400">Idempotency: {selectedLog.idempotencyKey || '-'}</p>
+          <p className="mt-2 text-xs text-muted-foreground">Idempotency: {selectedLog.idempotencyKey || '-'}</p>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-muted-foreground">
               Request
-              <textarea value={JSON.stringify(selectedLog.requestBody ?? null, null, 2)} readOnly rows={10} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-emerald-300" />
+              <textarea
+                readOnly
+                rows={10}
+                value={JSON.stringify(selectedLog.requestBody ?? null, null, 2)}
+                className={cn(textareaClass, 'font-mono text-xs')}
+              />
             </label>
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-muted-foreground">
               Response
-              <textarea value={JSON.stringify(selectedLog.responseBody ?? null, null, 2)} readOnly rows={10} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-emerald-300" />
+              <textarea
+                readOnly
+                rows={10}
+                value={JSON.stringify(selectedLog.responseBody ?? null, null, 2)}
+                className={cn(textareaClass, 'font-mono text-xs')}
+              />
             </label>
           </div>
         </section>
@@ -472,31 +584,28 @@ export default function SettingsApiPage() {
 
       <Modal
         isOpen={domainModal.open}
-        onClose={() => {
-          if (domainModalSaving) return;
-          setDomainModal({ open: false, id: null, label: '', text: '' });
-        }}
-        title={domainModal.label ? `Allowed domains - ${domainModal.label}` : 'Allowed domains'}
+        onClose={closeDomainModal}
+        title={domainModal.label ? `Allowed domains — ${domainModal.label}` : 'Allowed domains'}
         size="lg"
         actions={
           <>
-            <Button variant="ghost" disabled={domainModalSaving} onClick={() => setDomainModal({ open: false, id: null, label: '', text: '' })}>
+            <Button type="button" variant="ghost" size="sm" disabled={domainModalSaving} onClick={closeDomainModal}>
               Cancel
             </Button>
-            <Button onClick={() => void saveDomainModal()} loading={domainModalSaving}>
-              Save
+            <Button type="button" size="sm" disabled={domainModalSaving} onClick={() => void saveDomainModal()}>
+              {domainModalSaving ? 'Saving…' : 'Save'}
             </Button>
           </>
         }
       >
-        <p className="mb-3 text-sm text-slate-400">
+        <p className="mb-3 text-sm text-muted-foreground">
           Add one hostname per line. When the list is empty, the API key is not restricted by Origin or Referer host.
         </p>
         <textarea
           value={domainModal.text}
           onChange={(e) => setDomainModal((current) => ({ ...current, text: e.target.value }))}
           rows={8}
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-white outline-none focus:ring-2 focus:ring-emerald-500"
+          className={cn(textareaClass, 'mt-0 font-mono text-sm')}
           placeholder={'partner.com\napp.partner.com'}
         />
       </Modal>

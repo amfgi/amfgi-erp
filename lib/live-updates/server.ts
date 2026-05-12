@@ -32,6 +32,45 @@ interface LiveUpdateRow {
 
 const LIVE_UPDATE_RETENTION_HOURS = 24;
 
+/** Reserved `Company` row so `LiveUpdateEvent.companyId` FK accepts `GLOBAL_LIVE_UPDATE_COMPANY_ID`. */
+const RESERVED_GLOBAL_COMPANY_NAME = '__system_live_updates';
+const RESERVED_GLOBAL_COMPANY_SLUG = '__system_live_updates';
+
+/**
+ * `LiveUpdateEvent` references `Company`. Broadcast events use id `GLOBAL`, which is not a normal tenant;
+ * ensure that row exists. For real companies, skip publishing if the id is missing (stale session after DB reset).
+ */
+async function ensureLiveUpdateCompanyFkTarget(companyId: string): Promise<boolean> {
+  if (companyId === GLOBAL_LIVE_UPDATE_COMPANY_ID) {
+    try {
+      await prisma.company.upsert({
+        where: { id: GLOBAL_LIVE_UPDATE_COMPANY_ID },
+        create: {
+          id: GLOBAL_LIVE_UPDATE_COMPANY_ID,
+          name: RESERVED_GLOBAL_COMPANY_NAME,
+          slug: RESERVED_GLOBAL_COMPANY_SLUG,
+          isActive: false,
+        },
+        update: {},
+      });
+      return true;
+    } catch (e) {
+      console.error('[live-updates] failed to ensure GLOBAL company row', e);
+      return false;
+    }
+  }
+
+  const row = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { id: true },
+  });
+  if (!row) {
+    console.warn('[live-updates] skip publish: company not found', companyId);
+    return false;
+  }
+  return true;
+}
+
 function mapRowToEvent(row: LiveUpdateRow): LiveUpdateEvent {
   return {
     id: row.id.toString(),
@@ -44,16 +83,27 @@ function mapRowToEvent(row: LiveUpdateRow): LiveUpdateEvent {
 }
 
 export async function publishLiveUpdate(event: Omit<LiveUpdateEvent, 'id' | 'at'>) {
-  await prisma.$executeRaw`
-    INSERT INTO "LiveUpdateEvent" ("companyId", "channel", "entity", "action")
-    VALUES (${event.companyId}, ${event.channel}, ${event.entity}, ${event.action})
-  `;
+  const ok = await ensureLiveUpdateCompanyFkTarget(event.companyId);
+  if (!ok) return;
 
-  const cutoff = new Date(Date.now() - LIVE_UPDATE_RETENTION_HOURS * 60 * 60 * 1000);
-  await prisma.$executeRaw`
-    DELETE FROM "LiveUpdateEvent"
-    WHERE "createdAt" < ${cutoff}
-  `;
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO "LiveUpdateEvent" ("companyId", "channel", "entity", "action")
+      VALUES (${event.companyId}, ${event.channel}, ${event.entity}, ${event.action})
+    `;
+  } catch (e) {
+    console.warn('[live-updates] INSERT failed', { companyId: event.companyId, channel: event.channel, e });
+  }
+
+  try {
+    const cutoff = new Date(Date.now() - LIVE_UPDATE_RETENTION_HOURS * 60 * 60 * 1000);
+    await prisma.$executeRaw`
+      DELETE FROM "LiveUpdateEvent"
+      WHERE "createdAt" < ${cutoff}
+    `;
+  } catch (e) {
+    console.warn('[live-updates] retention DELETE failed', e);
+  }
 }
 
 export async function getLatestLiveUpdateCursor(companyIds: string[]) {

@@ -1,11 +1,12 @@
 # Lib, Auth, and Require Session
 
-> 2 nodes · cohesion 1.00
+> 3 nodes Â· cohesion 0.67
 
 ## Key Concepts
 
-- **requireSession.ts** (1 connections) — `lib\auth\requireSession.ts`
-- **requireSession()** (1 connections) — `lib\auth\requireSession.ts`
+- **requireSession()** (2 connections) â€” `lib/auth/requireSession.ts`
+- **requireSession.ts** (1 connections) â€” `lib/auth/requireSession.ts`
+- **requireSession.ts** (1 connections) â€” `lib/auth/requireSession.ts`
 
 ## Relationships
 
@@ -13,11 +14,11 @@
 
 ## Source Files
 
-- `lib\auth\requireSession.ts`
+- `lib/auth/requireSession.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
