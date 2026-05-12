@@ -14,82 +14,82 @@
 - [[API Reports, Materials, and HR]] — 92 nodes
 - [[Lib Utils, HR, and Material Master Data]] — 66 nodes
 - [[API HR, Jobs, and Materials]] — 65 nodes
-- [[Reports, Components, and HR]] — 61 nodes
+- [[Components, HR, and Admin]] — 58 nodes
 - [[Lib, Scripts, and Settings]] — 56 nodes
 - [[HR Attendance]] — 56 nodes
-- [[HR Schedule, Attendance, and Employees]] — 53 nodes
 - [[Lib Integrations, Party Lists API, and Party List Sync]] — 50 nodes
+- [[HR, Reports, and Components]] — 47 nodes
+- [[Jobs, Id, and Cost Engine]] — 44 nodes
 - [[HR, Schedule, and Work Date]] — 41 nodes
 - [[Lib HR]] — 41 nodes
-- [[Jobs, Id, and Cost Engine]] — 41 nodes
 - [[Components Ui and Materials]] — 39 nodes
 - [[HR, Components, and Lib]] — 38 nodes
-- [[Admin, Components, and Settings]] — 38 nodes
 - [[Customers Jobs]] — 37 nodes
 - [[Lib Utils]] — 37 nodes
 - [[API HR, User, and Jobs]] — 36 nodes
 - [[Lib Utils and Types]] — 36 nodes
 - [[Docs, Architecture, and Database Scalability Blueprint]] — 36 nodes
-- [[Customers Jobs]] — 35 nodes
-- [[Stock, Dispatch, and Entry]] — 35 nodes
+- [[Admin, Components, and Settings]] — 36 nodes
+- [[Customers Jobs]] — 36 nodes
 - [[Tests and Readme]] — 34 nodes
-- [[Customers, Stock, and Reports]] — 32 nodes
-- [[Stock Dispatch]] — 32 nodes
+- [[Stock, Dispatch, and Entry]] — 34 nodes
+- [[API Companies, Settings, and Materials]] — 33 nodes
+- [[Customers, Stock, and Providers]] — 32 nodes
 - [[Settings API]] — 31 nodes
+- [[Stock Dispatch]] — 31 nodes
 - [[Reports, Settings, and HR]] — 30 nodes
 - [[Components HR]] — 28 nodes
 - [[API Party Lists]] — 28 nodes
 - [[Lib Utils]] — 27 nodes
 - [[Lib Utils, Job Costing, and Stock]] — 27 nodes
-- [[API Companies, Materials, and Suppliers]] — 27 nodes
-- [[Components, Lib, and Proxy]] — 26 nodes
-- [[Reports Stock Adjustments, Stock Count Sessions, and Stock Exceptions]] — 26 nodes
+- [[Stock Goods Receipt, Stock Batches, and Inter Company Transfers]] — 26 nodes
+- [[Components, Lib, and Proxy]] — 25 nodes
 - [[Components Ui and App Shell]] — 25 nodes
-- [[Suppliers]] — 24 nodes
-- [[HR, Stock, and Providers]] — 23 nodes
+- [[Lib Utils, Media, and HR]] — 23 nodes
+- [[Suppliers]] — 23 nodes
 - [[HR Schedule and Settings]] — 22 nodes
 - [[HR Schedule]] — 22 nodes
+- [[HR Schedule and Attendance]] — 22 nodes
+- [[Reports Stock Exceptions and Stock Adjustments]] — 22 nodes
 - [[Lib Utils and Job Costing]] — 21 nodes
 - [[Lib, Integrations, and Party Upsert Service]] — 21 nodes
-- [[Jobs, Id, and Cost Engine]] — 21 nodes
 - [[Components Company Switcher, Ui, and Sidebar Nav User]] — 20 nodes
-- [[Components Ui, Sidebar, and Sidebar Nav User]] — 18 nodes
+- [[Components Ui, Sidebar, and Sidebar Nav User]] — 19 nodes
 - [[API Job Sync]] — 17 nodes
-- [[Lib and API]] — 17 nodes
-- [[Stock Goods Receipt, Inter Company Transfers, and Dispatch]] — 17 nodes
+- [[Stock Manual Adjustments and Inter Company Transfers]] — 17 nodes
 - [[Components Print Builder]] — 16 nodes
 - [[Components, Ui, and Shadcn]] — 16 nodes
 - [[Stock]] — 16 nodes
+- [[Stock Goods Receipt, Inter Company Transfers, and Materials]] — 16 nodes
 - [[Components Jobs and Print Builder]] — 15 nodes
 - [[Dashboard]] — 15 nodes
 - [[Developer Guide]] — 15 nodes
-- [[Stock Manual Adjustments and Inter Company Transfers]] — 15 nodes
 - [[Components, Me, and Shared]] — 14 nodes
 - [[Scripts and Relabel Graphify Communities]] — 14 nodes
-- [[Lib Utils and Media]] — 14 nodes
 - [[Lib HR]] — 13 nodes
 - [[Lib, Live Updates, and Server]] — 13 nodes
 - [[Stock, Customers, and Jobs]] — 13 nodes
 - [[API Job Sync, API Party Lists, and Docs]] — 13 nodes
-- [[Community 62]] — 13 nodes
+- [[Community 61]] — 13 nodes
 - [[Store API]] — 12 nodes
 - [[Readme]] — 12 nodes
-- [[Lib Party List Record Payload and Integrations]] — 12 nodes
+- [[Lib Integrations]] — 12 nodes
+- [[Lib Integrations]] — 12 nodes
+- [[Stock Dispatch]] — 12 nodes
 - [[Components, Print Builder, and Section Editor]] — 12 nodes
 - [[Components Print Builder]] — 11 nodes
 - [[Components, Ui, and Flexible Table]] — 11 nodes
+- [[Lib Party List Record Payload and Integrations]] — 11 nodes
 - [[Stock, Daily Quantity Log, and Work Date]] — 11 nodes
 - [[Components, Stock, and Dispatch Line Grid]] — 11 nodes
 - [[Providers Theme Provider and App Providers]] — 10 nodes
 - [[Lib, Utils, and Receipt Cancellation]] — 10 nodes
 - [[Lib and Party Form Ui]] — 10 nodes
-- [[API and Lib]] — 10 nodes
-- [[Stock Stock Batches]] — 10 nodes
-- [[Stock Materials and Issue Reconcile]] — 10 nodes
-- [[Stock Dispatch]] — 10 nodes
+- [[Jobs, Id, and Cost Engine]] — 10 nodes
 - [[Readme]] — 9 nodes
 - [[Readme]] — 9 nodes
 - [[Lib and Party Contacts]] — 9 nodes
+- [[Stock Materials and Issue Reconcile]] — 9 nodes
 - [[API Transactions and Upload]] — 8 nodes
 - [[Components, Stock, and Issue Reconcile Form]] — 8 nodes
 - [[Lib Utils]] — 8 nodes
@@ -100,7 +100,6 @@
 - [[Developer Guide]] — 7 nodes
 - [[Developer Guide]] — 7 nodes
 - [[Readme]] — 7 nodes
-- [[Lib, Integrations, and Integration Route]] — 7 nodes
 - [[Components, Settings, and Settings Media Panel]] — 6 nodes
 - [[Auth and Login]] — 6 nodes
 - [[Lib, Utils, and Global Settings]] — 6 nodes
@@ -115,11 +114,11 @@
 - [[Lib, Utils, and Stock Count Session]] — 6 nodes
 - [[Tests Readme]] — 6 nodes
 - [[Me Profile]] — 5 nodes
-- [[API and Stock Exception Approvals]] — 5 nodes
-- [[API, Transactions, and Transfer]] — 5 nodes
-- [[API Settings]] — 5 nodes
-- [[Lib, Jobs, and Job Required Expertises]] — 5 nodes
 - [[Lib, Job Costing, and Job Item Assignments]] — 5 nodes
+- [[API, Transactions, and Transfer]] — 5 nodes
+- [[API and Stock Exception Approvals]] — 5 nodes
+- [[Lib, Jobs, and Job Required Expertises]] — 5 nodes
+- [[API Settings]] — 5 nodes
 - [[Docs and API]] — 5 nodes
 - [[Lib, HR, and Attendance Report Presets]] — 5 nodes
 - [[Developer Guide]] — 5 nodes
@@ -132,10 +131,10 @@
 - [[Components, Reports, and Job Consumption Table]] — 5 nodes
 - [[Developer Guide]] — 5 nodes
 - [[Lib, HR, and Work Date]] — 4 nodes
-- [[API, Jobs, and Id]] — 4 nodes
-- [[API, Transactions, and Non Stock Reconcile]] — 4 nodes
-- [[API, Reports, and Stock Count Sessions]] — 4 nodes
 - [[API Media]] — 4 nodes
+- [[API, Jobs, and Id]] — 4 nodes
+- [[API, Reports, and Stock Count Sessions]] — 4 nodes
+- [[API, Transactions, and Non Stock Reconcile]] — 4 nodes
 - [[Components, Jobs, and Consumption Costing Modal]] — 4 nodes
 - [[Components, Jobs, and Job Scope Filter]] — 4 nodes
 - [[Components, Print Builder, and Section Advanced Style Editor]] — 4 nodes
@@ -144,8 +143,9 @@
 - [[Lib, Utils, and Migrate Document Sections]] — 4 nodes
 - [[Providers and Double Click Selection Guard]] — 4 nodes
 - [[Readme]] — 4 nodes
-- [[Auth]] — 4 nodes
+- [[Jobs, Id, and Cost Engine]] — 4 nodes
 - [[Store, API, and Endpoints]] — 4 nodes
+- [[Jobs, Id, and Cost Engine]] — 4 nodes
 - [[API, Job Costing, and Formulas]] — 4 nodes
 - [[Public and Next]] — 4 nodes
 - [[Root Layout]] — 3 nodes
@@ -196,8 +196,8 @@
 - [[Readme]] — 3 nodes
 - [[Readme]] — 3 nodes
 - [[Lib, Utils, and Require Active Company In Db]] — 3 nodes
-- [[Components, Ui, and Spinner]] — 3 nodes
 - [[Print and Delivery Note]] — 3 nodes
+- [[Components, Ui, and Spinner]] — 3 nodes
 - [[Components, Stock, and Line Grid Column Settings]] — 3 nodes
 - [[Graphify Out and Graph Report]] — 3 nodes
 - [[Public and File]] — 3 nodes

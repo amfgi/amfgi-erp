@@ -9,7 +9,7 @@
 - **normalizeDraft()** (4 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
 - **createEmptySubTeam()** (3 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
 - **normalizeMemberList()** (3 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
-- **getInitialWorkProcessDetails()** (2 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
+- **resolveWorkProcessDetails()** (2 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
 - **nextSubTeamLabel()** (2 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
 - **printTemplateSession.ts** (2 connections) — `lib/utils/printTemplateSession.ts`
 - **EmpOpt** (1 connections) — `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx`
@@ -31,7 +31,7 @@
 
 - [[HR Schedule and Settings]] (5 shared connections)
 - [[Providers Theme Provider and App Providers]] (2 shared connections)
-- [[HR, Stock, and Providers]] (1 shared connections)
+- [[Customers, Stock, and Providers]] (1 shared connections)
 - [[Components, Ui, and Search Select]] (1 shared connections)
 - [[Lib, HR, and Workforce Profile]] (1 shared connections)
 - [[Lib Utils]] (1 shared connections)

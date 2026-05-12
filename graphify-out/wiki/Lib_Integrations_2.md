@@ -1,14 +1,10 @@
-# Lib and API
+# Lib Integrations
 
-> 17 nodes · cohesion 0.23
+> 12 nodes · cohesion 0.35
 
 ## Key Concepts
 
-- **route.ts** (10 connections) — `app/api/media/[id]/route.ts`
 - **route.ts** (9 connections) — `app/api/settings/api-credentials/[id]/route.ts`
-- **DELETE()** (8 connections) — `app/api/settings/api-credentials/[id]/route.ts`
-- **requireCompanySession.ts** (8 connections) — `lib/hr/requireCompanySession.ts`
-- **requireCompanySession()** (8 connections) — `lib/hr/requireCompanySession.ts`
 - **domainAllowlist.ts** (8 connections) — `lib/integrations/domainAllowlist.ts`
 - **integrationDomainCheck()** (7 connections) — `lib/integrations/domainAllowlist.ts`
 - **PATCH()** (6 connections) — `app/api/settings/api-credentials/[id]/route.ts`
@@ -19,34 +15,25 @@
 - **hasManagePermission()** (3 connections) — `app/api/settings/api-credentials/[id]/route.ts`
 - **normalizeDomainOrUrlToHostname()** (3 connections) — `lib/integrations/domainAllowlist.ts`
 - **isRequestHostAllowed()** (3 connections) — `lib/integrations/domainAllowlist.ts`
-- **canAccess()** (2 connections) — `app/api/media/[id]/route.ts`
 - **PatchCredentialSchema** (1 connections) — `app/api/settings/api-credentials/[id]/route.ts`
 
 ## Relationships
 
-- [[API Companies, Materials, and Suppliers]] (10 shared connections)
-- [[API HR, User, and Jobs]] (4 shared connections)
-- [[API HR, Jobs, and Materials]] (3 shared connections)
-- [[Lib Utils and Media]] (3 shared connections)
-- [[API and Lib]] (3 shared connections)
-- [[Auth]] (2 shared connections)
-- [[Lib Utils]] (2 shared connections)
-- [[API Reports, Materials, and HR]] (2 shared connections)
-- [[API HR, Materials, and Upload]] (2 shared connections)
-- [[API Media]] (1 shared connections)
-- [[Lib, Integrations, and Integration Route]] (1 shared connections)
+- [[API Companies, Settings, and Materials]] (6 shared connections)
+- [[Lib Utils, Media, and HR]] (4 shared connections)
+- [[API Reports, Materials, and HR]] (1 shared connections)
+- [[API HR, Materials, and Upload]] (1 shared connections)
+- [[Lib Integrations]] (1 shared connections)
 
 ## Source Files
 
-- `app/api/media/[id]/route.ts`
 - `app/api/settings/api-credentials/[id]/route.ts`
-- `lib/hr/requireCompanySession.ts`
 - `lib/integrations/domainAllowlist.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 84 (88%)
-- INFERRED: 11 (12%)
+- EXTRACTED: 56 (95%)
+- INFERRED: 3 (5%)
 - AMBIGUOUS: 0 (0%)
 
 ---

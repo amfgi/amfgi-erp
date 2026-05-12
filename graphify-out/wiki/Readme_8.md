@@ -4,9 +4,9 @@
 
 ## Key Concepts
 
-- **Database Setup** (3 connections) — `README.md`
-- **Prisma Schema** (1 connections) — `README.md`
-- **Key Constraints** (1 connections) — `README.md`
+- **Migration Notes** (2 connections) — `README.md`
+- **MongoDB → MySQL Completed ✅** (2 connections) — `README.md`
+- **code:bash (npx tsc --noEmit                    # 0 TypeScript errors)** (1 connections) — `README.md`
 
 ## Relationships
 

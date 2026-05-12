@@ -33,18 +33,18 @@
 
 ## Relationships
 
-- [[Reports, Components, and HR]] (27 shared connections)
+- [[Components, HR, and Admin]] (20 shared connections)
+- [[HR, Reports, and Components]] (17 shared connections)
 - [[Components Ui and App Shell]] (16 shared connections)
-- [[HR Schedule, Attendance, and Employees]] (13 shared connections)
-- [[Components Ui, Sidebar, and Sidebar Nav User]] (11 shared connections)
+- [[Components Ui, Sidebar, and Sidebar Nav User]] (12 shared connections)
 - [[Admin, Components, and Settings]] (8 shared connections)
-- [[Reports Stock Adjustments, Stock Count Sessions, and Stock Exceptions]] (8 shared connections)
+- [[HR Schedule and Attendance]] (7 shared connections)
 - [[Stock Dispatch]] (7 shared connections)
+- [[Reports Stock Exceptions and Stock Adjustments]] (6 shared connections)
 - [[Dashboard]] (6 shared connections)
-- [[HR, Stock, and Providers]] (4 shared connections)
+- [[Customers, Stock, and Providers]] (5 shared connections)
 - [[Jobs, Id, and Cost Engine]] (4 shared connections)
 - [[Stock, Dispatch, and Entry]] (4 shared connections)
-- [[Stock Stock Batches]] (4 shared connections)
 
 ## Source Files
 

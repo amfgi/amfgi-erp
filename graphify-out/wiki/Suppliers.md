@@ -1,6 +1,6 @@
 # Suppliers
 
-> 24 nodes · cohesion 0.13
+> 23 nodes · cohesion 0.13
 
 ## Key Concepts
 
@@ -8,7 +8,6 @@
 - **page.tsx** (12 connections) — `app/(app)/suppliers/page.tsx`
 - **SuppliersPage()** (8 connections) — `app/(app)/suppliers/page.tsx`
 - **Badge.tsx** (8 connections) — `components/ui/Badge.tsx`
-- **compactNumber()** (6 connections) — `app/(app)/suppliers/page.tsx`
 - **handleSyncPartySuppliers()** (3 connections) — `app/(app)/suppliers/page.tsx`
 - **compactNumber()** (2 connections) — `app/(app)/suppliers/page.tsx`
 - **deleteModalCopy()** (2 connections) — `app/(app)/suppliers/page.tsx`
@@ -31,16 +30,16 @@
 
 ## Relationships
 
-- [[Reports, Components, and HR]] (6 shared connections)
+- [[HR, Reports, and Components]] (6 shared connections)
 - [[Dashboard]] (6 shared connections)
 - [[Admin, Components, and Settings]] (5 shared connections)
 - [[Customers Jobs]] (5 shared connections)
-- [[Customers, Stock, and Reports]] (4 shared connections)
+- [[Components, HR, and Admin]] (4 shared connections)
 - [[Stock Dispatch]] (4 shared connections)
-- [[HR Schedule, Attendance, and Employees]] (3 shared connections)
 - [[Reports, Settings, and HR]] (3 shared connections)
-- [[Reports Stock Adjustments, Stock Count Sessions, and Stock Exceptions]] (2 shared connections)
-- [[HR, Stock, and Providers]] (2 shared connections)
+- [[Stock Goods Receipt, Stock Batches, and Inter Company Transfers]] (2 shared connections)
+- [[Customers, Stock, and Providers]] (2 shared connections)
+- [[Reports Stock Exceptions and Stock Adjustments]] (1 shared connections)
 - [[Settings API]] (1 shared connections)
 
 ## Source Files
@@ -50,7 +49,7 @@
 
 ## Audit Trail
 
-- EXTRACTED: 111 (100%)
+- EXTRACTED: 105 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

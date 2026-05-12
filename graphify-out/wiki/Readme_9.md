@@ -4,9 +4,9 @@
 
 ## Key Concepts
 
-- **Migration Notes** (2 connections) — `README.md`
-- **MongoDB → MySQL Completed ✅** (2 connections) — `README.md`
-- **code:bash (npx tsc --noEmit                    # 0 TypeScript errors)** (1 connections) — `README.md`
+- **Features** (3 connections) — `README.md`
+- **Core Modules** (1 connections) — `README.md`
+- **Key Features** (1 connections) — `README.md`
 
 ## Relationships
 

@@ -11,12 +11,10 @@
 
 ## Relationships
 
+- [[Lib Utils, Media, and HR]] (3 shared connections)
 - [[API Reports, Materials, and HR]] (2 shared connections)
 - [[API HR, Materials, and Upload]] (2 shared connections)
 - [[API HR, Jobs, and Materials]] (2 shared connections)
-- [[API Companies, Materials, and Suppliers]] (1 shared connections)
-- [[Lib Utils and Media]] (1 shared connections)
-- [[Lib and API]] (1 shared connections)
 
 ## Source Files
 

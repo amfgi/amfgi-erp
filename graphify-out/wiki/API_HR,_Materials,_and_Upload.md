@@ -39,12 +39,12 @@
 - [[Lib Utils]] (9 shared connections)
 - [[Lib Utils and Job Costing]] (8 shared connections)
 - [[Lib Integrations, Party Lists API, and Party List Sync]] (7 shared connections)
+- [[API Companies, Settings, and Materials]] (6 shared connections)
 - [[API Transactions and Upload]] (5 shared connections)
-- [[API Companies, Materials, and Suppliers]] (5 shared connections)
+- [[Lib Utils, Media, and HR]] (5 shared connections)
 - [[Lib Utils, HR, and Material Master Data]] (5 shared connections)
 - [[Lib HR]] (4 shared connections)
-- [[Lib Utils and Media]] (4 shared connections)
-- [[Lib, Integrations, and Party Upsert Service]] (4 shared connections)
+- [[Lib Integrations]] (4 shared connections)
 
 ## Source Files
 

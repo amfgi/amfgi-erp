@@ -32,7 +32,7 @@
 - [[Lib and Party Contacts]] (5 shared connections)
 - [[API HR, Materials, and Upload]] (4 shared connections)
 - [[Lib Utils, HR, and Material Master Data]] (2 shared connections)
-- [[API Companies, Materials, and Suppliers]] (1 shared connections)
+- [[Lib Utils, Media, and HR]] (1 shared connections)
 
 ## Source Files
 

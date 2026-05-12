@@ -1,34 +1,39 @@
-# Lib, Integrations, and Integration Route
+# Lib Integrations
 
-> 7 nodes · cohesion 0.62
+> 12 nodes · cohesion 0.33
 
 ## Key Concepts
 
 - **prepareIntegrationRequest()** (11 connections) — `lib/integrations/integrationRoute.ts`
+- **sha256()** (5 connections) — `lib/integrations/apiKeys.ts`
+- **resolveApiCredentialByKey()** (5 connections) — `lib/integrations/apiKeys.ts`
 - **integrationRoute.ts** (5 connections) — `lib/integrations/integrationRoute.ts`
 - **integrationRoute.ts** (5 connections) — `lib/integrations/integrationRoute.ts`
+- **apiKeys.ts** (4 connections) — `lib/integrations/apiKeys.ts`
+- **generateIntegrationApiKey()** (4 connections) — `lib/integrations/apiKeys.ts`
 - **readIntegrationApiKey()** (4 connections) — `lib/integrations/integrationRoute.ts`
 - **readIntegrationIdempotencyKey()** (4 connections) — `lib/integrations/integrationRoute.ts`
 - **verifyIntegrationCompany()** (4 connections) — `lib/integrations/integrationRoute.ts`
 - **parseIntegrationBody()** (3 connections) — `lib/integrations/integrationRoute.ts`
+- **apiKeys.ts** (3 connections) — `lib/integrations/apiKeys.ts`
 
 ## Relationships
 
-- [[API Companies, Materials, and Suppliers]] (3 shared connections)
+- [[API Companies, Settings, and Materials]] (5 shared connections)
+- [[API HR, Materials, and Upload]] (3 shared connections)
+- [[Lib Utils, HR, and Material Master Data]] (2 shared connections)
 - [[API Reports, Materials, and HR]] (2 shared connections)
-- [[API HR, Materials, and Upload]] (2 shared connections)
-- [[API and Lib]] (1 shared connections)
-- [[Lib and API]] (1 shared connections)
-- [[Lib Utils, HR, and Material Master Data]] (1 shared connections)
+- [[Lib Integrations]] (1 shared connections)
 
 ## Source Files
 
+- `lib/integrations/apiKeys.ts`
 - `lib/integrations/integrationRoute.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 26 (72%)
-- INFERRED: 10 (28%)
+- EXTRACTED: 44 (77%)
+- INFERRED: 13 (23%)
 - AMBIGUOUS: 0 (0%)
 
 ---
