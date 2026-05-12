@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { cn } from '@/lib/utils';
 import {
   buildManualAdjustmentLinesFromCount,
   buildStockCountDraftLines,
@@ -45,6 +48,9 @@ function formatQty(value: number) {
     maximumFractionDigits: 3,
   });
 }
+
+const controlClass =
+  'mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring';
 
 function emptyDraft(): DraftState {
   return {
@@ -302,37 +308,33 @@ export default function StockCountSessionPage() {
 
   if (!canAdjust) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Stock count session</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">You do not have permission to create stock count adjustments.</p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <header className="border-b border-border pb-4">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Stock count session</h1>
+        </header>
+        <Alert>
+          <AlertDescription>You do not have permission to create stock count adjustments.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="max-w-3xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-            Stock control
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">Stock count session</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-            Load a warehouse count sheet from live stock, enter counted quantities, review variances, then send only the
-            variance lines into the controlled bulk adjustment workflow.
-          </p>
-        </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock control</p>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Stock count session</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Load a warehouse count sheet from live stock, enter counted quantities, review variances, then send only the variance lines into the
+          controlled bulk adjustment workflow.
+        </p>
+      </header>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="grid gap-4 lg:grid-cols-2">
           <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Warehouse</label>
-            <select
-              value={draft.warehouseId}
-              onChange={(event) => setDraft((current) => ({ ...current, warehouseId: event.target.value }))}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-            >
+            <label className="block text-xs font-medium text-muted-foreground">Warehouse</label>
+            <select value={draft.warehouseId} onChange={(event) => setDraft((current) => ({ ...current, warehouseId: event.target.value }))} className={controlClass}>
               <option value="">Select warehouse</option>
               {activeWarehouses.map((warehouse) => (
                 <option key={warehouse.id} value={warehouse.id}>
@@ -342,62 +344,56 @@ export default function StockCountSessionPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Session title</label>
+            <label className="block text-xs font-medium text-muted-foreground">Session title</label>
             <input
               type="text"
               value={draft.sessionTitle}
               onChange={(event) => setDraft((current) => ({ ...current, sessionTitle: event.target.value }))}
               placeholder="Main warehouse monthly count"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              className={controlClass}
             />
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button type="button" onClick={loadWarehouseSheet}>
-            Load Count Sheet
+          <Button type="button" size="sm" onClick={loadWarehouseSheet}>
+            Load count sheet
           </Button>
-          <Button type="button" variant="outline" onClick={saveSession} loading={isSaving}>
-            {draft.sessionId ? 'Save Session' : 'Create Session'}
+          <Button type="button" variant="outline" size="sm" onClick={() => void saveSession()} disabled={isSaving}>
+            {isSaving ? 'Saving…' : draft.sessionId ? 'Save session' : 'Create session'}
           </Button>
-          <Button type="button" variant="outline" onClick={resetDraft}>
-            Reset Draft
+          <Button type="button" variant="outline" size="sm" onClick={resetDraft}>
+            Reset draft
           </Button>
-          <Link
-            href="/stock/manual-adjustments"
-            className="inline-flex items-center justify-center rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Open Manual Adjustments
+          <Link href="/stock/manual-adjustments" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}>
+            Manual adjustments
           </Link>
-          <Link
-            href="/reports/stock-count-sessions"
-            className="inline-flex items-center justify-center rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Open Count Report
+          <Link href="/reports/stock-count-sessions" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}>
+            Count report
           </Link>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Saved count sessions</h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <h2 className="text-lg font-semibold text-foreground">Saved count sessions</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Reload a prior draft, follow its adjustment link, or continue a rejected recount.
             </p>
           </div>
           {draft.sessionId ? (
-            <div className="text-xs text-slate-500 dark:text-slate-500">
+            <div className="text-xs text-muted-foreground">
               Revision {draft.currentRevision ?? 0}
               {draft.status ? ` | ${draft.status}` : ''}
             </div>
           ) : null}
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="min-w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+              <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-3">Updated</th>
                 <th className="px-3 py-3">Title</th>
                 <th className="px-3 py-3">Warehouse</th>
@@ -409,7 +405,7 @@ export default function StockCountSessionPage() {
             <tbody>
               {savedSessions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                     No saved count sessions yet.
                   </td>
                 </tr>
@@ -417,15 +413,18 @@ export default function StockCountSessionPage() {
                 savedSessions.map((row) => (
                   <tr
                     key={row.id}
-                    className={`cursor-pointer border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40 ${selectedSessionId === row.id ? 'ring-1 ring-emerald-500' : ''}`}
+                    className={cn(
+                      'cursor-pointer border-b border-border odd:bg-card even:bg-muted/20 dark:even:bg-muted/10',
+                      selectedSessionId === row.id && 'ring-1 ring-ring ring-inset',
+                    )}
                     onClick={() => setSelectedSessionId(row.id)}
                   >
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{new Date(row.updatedAt).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-slate-900 dark:text-white">{row.title}</td>
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{row.warehouseName}</td>
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{row.status}</td>
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{row.varianceLineCount ?? 0}</td>
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{row.linkedAdjustmentReferenceNumber || '-'}</td>
+                    <td className="px-3 py-2.5 text-foreground">{new Date(row.updatedAt).toLocaleString()}</td>
+                    <td className="px-3 py-2.5 font-medium text-foreground">{row.title}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{row.warehouseName}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{row.status}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{row.varianceLineCount ?? 0}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{row.linkedAdjustmentReferenceNumber || '-'}</td>
                   </tr>
                 ))
               )}
@@ -434,59 +433,67 @@ export default function StockCountSessionPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Count lines</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{draft.lines.length}</p>
-          </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/20">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">Variance lines</p>
-            <p className="mt-2 text-xl font-semibold text-amber-900 dark:text-amber-100">{adjustmentLines.length}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Largest negative</p>
-            <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{formatQty(maxNegativeVariance)}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">Draft persistence</p>
-            <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">Saved in browser</p>
-          </div>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Count lines</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{draft.lines.length}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-amber-900 dark:text-amber-200">Variance lines</p>
+              <p className="mt-2 text-xl font-semibold text-amber-950 dark:text-amber-50">{adjustmentLines.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Largest negative</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{formatQty(maxNegativeVariance)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Draft persistence</p>
+              <p className="mt-2 text-sm font-medium text-foreground">Saved in browser</p>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_220px_auto]">
           <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Search material</label>
+            <label className="block text-xs font-medium text-muted-foreground">Search material</label>
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Material name..."
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              className={controlClass}
             />
           </div>
           <div className="flex items-end">
-            <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <label className="inline-flex items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
                 checked={showVarianceOnly}
                 onChange={(event) => setShowVarianceOnly(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
               />
               Show variances only
             </label>
           </div>
           <div className="flex items-end">
-            <p className="text-xs text-slate-500 dark:text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Enter counted quantity. Variance is calculated as counted minus system quantity.
             </p>
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="min-w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+              <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="min-w-[240px] px-3 py-3">Material</th>
                 <th className="min-w-[120px] px-3 py-3 text-right">System qty</th>
                 <th className="min-w-[140px] px-3 py-3">Counted qty</th>
@@ -497,18 +504,21 @@ export default function StockCountSessionPage() {
             <tbody>
               {filteredLines.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
                     {draft.lines.length === 0 ? 'Load a warehouse count sheet to begin.' : 'No lines match your filters.'}
                   </td>
                 </tr>
               ) : (
                 filteredLines.map((line) => (
-                  <tr key={line.materialId} className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40">
+                  <tr
+                    key={line.materialId}
+                    className="border-b border-border odd:bg-card even:bg-muted/20 dark:even:bg-muted/10"
+                  >
                     <td className="px-3 py-2.5">
-                      <div className="font-medium text-slate-900 dark:text-white">{line.materialName}</div>
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{line.unit}</div>
+                      <div className="font-medium text-foreground">{line.materialName}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{line.unit}</div>
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(line.systemQty)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{formatQty(line.systemQty)}</td>
                     <td className="px-3 py-2.5">
                       <input
                         type="number"
@@ -523,13 +533,20 @@ export default function StockCountSessionPage() {
                           }))
                         }
                         placeholder="Enter counted qty"
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                        className={controlClass}
                       />
                     </td>
-                    <td className={`px-3 py-2.5 text-right tabular-nums ${line.varianceQty > 0.0005 ? 'text-emerald-700 dark:text-emerald-300' : line.varianceQty < -0.0005 ? 'text-red-700 dark:text-red-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                    <td
+                      className={cn(
+                        'px-3 py-2.5 text-right tabular-nums',
+                        line.varianceQty > 0.0005 && 'text-emerald-700 dark:text-emerald-300',
+                        line.varianceQty < -0.0005 && 'text-destructive',
+                        Math.abs(line.varianceQty) <= 0.0005 && 'text-muted-foreground',
+                      )}
+                    >
                       {formatQty(line.varianceQty)}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(line.unitCost)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{formatQty(line.unitCost)}</td>
                   </tr>
                 ))
               )}
@@ -539,25 +556,23 @@ export default function StockCountSessionPage() {
       </section>
 
       {selectedSession?.revisions?.length ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Session history</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              <h2 className="text-lg font-semibold text-foreground">Session history</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Recount saves, submit events, and approval outcomes for the selected session.
               </p>
             </div>
             {selectedSession.linkedAdjustmentReferenceNumber ? (
-              <div className="text-xs text-slate-500 dark:text-slate-500">
-                Adjustment {selectedSession.linkedAdjustmentReferenceNumber}
-              </div>
+              <div className="text-xs text-muted-foreground">Adjustment {selectedSession.linkedAdjustmentReferenceNumber}</div>
             ) : null}
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <th className="px-3 py-3">Revision</th>
                   <th className="px-3 py-3">Action</th>
                   <th className="px-3 py-3">By</th>
@@ -566,11 +581,14 @@ export default function StockCountSessionPage() {
               </thead>
               <tbody>
                 {selectedSession.revisions.map((revision) => (
-                  <tr key={revision.id} className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40">
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{revision.revisionNumber}</td>
-                    <td className="px-3 py-2.5 text-slate-900 dark:text-white">{revision.action}</td>
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{revision.savedByName || '-'}</td>
-                    <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{new Date(revision.createdAt).toLocaleString()}</td>
+                  <tr
+                    key={revision.id}
+                    className="border-b border-border odd:bg-card even:bg-muted/20 dark:even:bg-muted/10"
+                  >
+                    <td className="px-3 py-2.5 text-muted-foreground">{revision.revisionNumber}</td>
+                    <td className="px-3 py-2.5 font-medium text-foreground">{revision.action}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{revision.savedByName || '-'}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground">{new Date(revision.createdAt).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -579,16 +597,16 @@ export default function StockCountSessionPage() {
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="max-w-3xl">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Variance to adjustment request</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          <h2 className="text-lg font-semibold text-foreground">Variance to adjustment request</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             This submits only the variance lines into the existing manual adjustment approval flow with `Physical count` evidence.
           </p>
         </div>
 
         {maxNegativeVariance >= stockControlSettings.negativeEvidenceQtyThreshold ? (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
+          <div className="mt-4 rounded-lg border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
             Largest negative variance: {formatQty(maxNegativeVariance)}. Detailed evidence notes are required.
             {maxNegativeVariance >= stockControlSettings.negativeDecisionNoteQtyThreshold
               ? ' Approval will also require a decision note.'
@@ -598,41 +616,41 @@ export default function StockCountSessionPage() {
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Count sheet reference</label>
+            <label className="block text-xs font-medium text-muted-foreground">Count sheet reference</label>
             <input
               type="text"
               value={draft.evidenceReference}
               onChange={(event) => setDraft((current) => ({ ...current, evidenceReference: event.target.value }))}
               placeholder="COUNT-APR-WH1"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              className={controlClass}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Session notes</label>
+            <label className="block text-xs font-medium text-muted-foreground">Session notes</label>
             <input
               type="text"
               value={draft.notes}
               onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
               placeholder="Optional approval note"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+              className={controlClass}
             />
           </div>
         </div>
 
         <div className="mt-4">
-          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Evidence notes</label>
+          <label className="block text-xs font-medium text-muted-foreground">Evidence notes</label>
           <textarea
             value={draft.evidenceNotes}
             onChange={(event) => setDraft((current) => ({ ...current, evidenceNotes: event.target.value }))}
             rows={4}
             placeholder="Who counted, when, and what variance sheet supports this count?"
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+            className={cn(controlClass, 'mt-1')}
           />
         </div>
 
         <div className="mt-4 flex justify-end">
-          <Button type="button" loading={isLoading} onClick={submitCountAdjustment}>
-            {isSA ? 'Post Count Adjustment' : 'Submit Count Adjustment'}
+          <Button type="button" size="sm" disabled={isLoading} onClick={() => void submitCountAdjustment()}>
+            {isLoading ? 'Submitting…' : isSA ? 'Post count adjustment' : 'Submit count adjustment'}
           </Button>
         </div>
       </section>

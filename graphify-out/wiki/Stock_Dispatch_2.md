@@ -1,58 +1,46 @@
 # Stock Dispatch
 
-> 34 nodes · cohesion 0.11
+> 11 nodes · cohesion 0.27
 
 ## Key Concepts
 
-- **page.tsx** (56 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **page.tsx** (30 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **generateId()** (11 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
-- **loadTransaction()** (8 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **confirmChange()** (7 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
-- **hasData()** (6 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
-- **DeliveryNoteCreatePage()** (5 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **parseOverrideReason()** (5 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
-- **stripOverrideReason()** (5 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
-- **handleJobChange()** (5 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
-- **formatWarehouseStock()** (3 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **parseDeliveryNoteNumber()** (3 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **parseDeliveryContactPerson()** (3 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **getJobContactOptions()** (3 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **addCustomItem()** (3 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **handleDuplicate()** (3 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **generateId()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **getSelectedUom()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **getWarehouseBaseStock()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **showBaseStockLine()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **fetchNextNumber()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **removeCustomItem()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **duplicateCustomItem()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **updateCustomItem()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- **handleCreateContactPerson()** (2 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
-- *... and 9 more nodes in this community*
+- **page.tsx** (29 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **page.tsx** (8 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **parseCustomItems()** (6 connections) — `app/(app)/stock/dispatch/delivery-note/page.tsx`
+- **confirmDelete()** (5 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **parseJobContacts()** (4 connections) — `app/(app)/stock/dispatch/entry/page.tsx`
+- **getDeliveryNoteNumber()** (2 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **getBaseNotes()** (2 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **handleFilterTypeChange()** (2 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **Material** (1 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **Entry** (1 connections) — `app/(app)/stock/dispatch/page.tsx`
+- **parseJobContacts()** (1 connections) — `app/(app)/stock/dispatch/page.tsx`
 
 ## Relationships
 
-- [[Stock Dispatch]] (29 shared connections)
-- [[Stock Manual Adjustments and Inter Company Transfers]] (11 shared connections)
-- [[HR, Components, and Reports]] (6 shared connections)
-- [[Reports, Settings, and HR]] (4 shared connections)
-- [[Stock Goods Receipt and Inter Company Transfers]] (4 shared connections)
-- [[Components, Ui, and Search Select]] (1 shared connections)
-- [[Components, Stock, and Dispatch Line Grid]] (1 shared connections)
-- [[Suppliers]] (1 shared connections)
-- [[Admin Users, Roles, and Companies]] (1 shared connections)
-- [[HR Schedule and Settings]] (1 shared connections)
+- [[Components, Reports, and HR]] (4 shared connections)
+- [[Stock, Dispatch, and Entry]] (4 shared connections)
+- [[Stock Dispatch]] (4 shared connections)
+- [[HR Schedule and Attendance]] (3 shared connections)
+- [[Reports, Settings, and HR]] (3 shared connections)
+- [[Suppliers]] (3 shared connections)
+- [[Admin, Components, and Settings]] (3 shared connections)
+- [[Stock, Customers, and Store]] (2 shared connections)
+- [[Components Ui and Materials]] (1 shared connections)
+- [[Lib Utils]] (1 shared connections)
+- [[HR, Stock, and Providers]] (1 shared connections)
+- [[Lib Utils and Types]] (1 shared connections)
 
 ## Source Files
 
 - `app/(app)/stock/dispatch/delivery-note/page.tsx`
 - `app/(app)/stock/dispatch/entry/page.tsx`
+- `app/(app)/stock/dispatch/page.tsx`
 
 ## Audit Trail
 
-- EXTRACTED: 182 (99%)
-- INFERRED: 1 (1%)
+- EXTRACTED: 61 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

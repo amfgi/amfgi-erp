@@ -35,13 +35,13 @@
 
 - [[API Reports, Materials, and HR]] (9 shared connections)
 - [[API HR, Materials, and Upload]] (9 shared connections)
-- [[Lib Utils, Media, and Db]] (7 shared connections)
+- [[Lib Utils and Media]] (7 shared connections)
 - [[HR Schedule and Settings]] (4 shared connections)
 - [[API HR, Jobs, and Materials]] (4 shared connections)
+- [[API Media, Companies, and Materials]] (4 shared connections)
 - [[Settings API]] (3 shared connections)
-- [[API Settings, Companies, and Materials]] (3 shared connections)
 - [[Lib Utils, HR, and Material Master Data]] (3 shared connections)
-- [[API Media and Settings]] (2 shared connections)
+- [[Lib, API, and Auth]] (1 shared connections)
 - [[Lib, Scripts, and Settings]] (1 shared connections)
 - [[Lib, Utils, and Global Settings]] (1 shared connections)
 

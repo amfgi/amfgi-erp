@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import {
   mapManualStockAdjustmentImportRows,
@@ -339,40 +340,36 @@ export default function ManualStockAdjustmentsPage() {
 
   if (!canAdjust) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Manual stock adjustments</h1>
-        <div className="py-12 text-center">
-          <p className="text-slate-500 dark:text-slate-400">
-            You do not have permission to create manual stock adjustments.
-          </p>
-        </div>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <header className="border-b border-border pb-4">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Manual stock adjustments</h1>
+        </header>
+        <Alert>
+          <AlertDescription>You do not have permission to create manual stock adjustments.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="max-w-3xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-700 dark:text-amber-300/80">
-            Stock control
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-            Bulk manual stock adjustments
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-            Submit one approval request with multiple stock correction lines. Positive lines create new batches. Negative
-            lines consume open FIFO stock only after approval.
-          </p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-            Positive lines require unit cost. Negative lines at or above {stockControlSettings.negativeEvidenceQtyThreshold} require
-            detailed evidence, and lines at or above {stockControlSettings.negativeDecisionNoteQtyThreshold} require the approver
-            to leave a decision note.
-          </p>
-        </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock control</p>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Bulk manual stock adjustments</h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Submit one approval request with multiple stock correction lines. Positive lines create new batches. Negative
+          lines consume open FIFO stock only after approval.
+        </p>
+        <p className="max-w-3xl text-xs text-muted-foreground">
+          Positive lines require unit cost. Negative lines at or above {stockControlSettings.negativeEvidenceQtyThreshold}{' '}
+          require detailed evidence, and lines at or above {stockControlSettings.negativeDecisionNoteQtyThreshold} require
+          the approver to leave a decision note.
+        </p>
+      </header>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
@@ -547,24 +544,24 @@ export default function ManualStockAdjustmentsPage() {
             />
           </div>
           <div className="flex justify-end">
-            <Button type="submit" loading={isLoading}>
-              {isSA ? 'Post Bulk Adjustment' : 'Submit Bulk Request'}
+            <Button type="submit" size="sm" disabled={isLoading}>
+              {isLoading ? 'Submitting…' : isSA ? 'Post bulk adjustment' : 'Submit bulk request'}
             </Button>
           </div>
         </form>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Recent bulk adjustment requests</h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <h2 className="text-lg font-semibold text-foreground">Recent bulk adjustment requests</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Use the stock exception dashboard for full approval queue actions.
             </p>
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="min-w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">

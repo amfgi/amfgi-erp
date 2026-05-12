@@ -2,7 +2,7 @@
 
 import { useState, useEffect }    from 'react';
 import Modal                      from '@/components/ui/Modal';
-import { Button }                 from '@/components/ui/Button';
+import { Button }                 from '@/components/ui/shadcn/button';
 import toast                      from 'react-hot-toast';
 
 interface MaterialUomRow {
@@ -250,16 +250,16 @@ export default function StockTransactionModal({ isOpen, onClose, onSuccess, mode
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="button" variant="ghost" onClick={handleClose} fullWidth>
+          <Button type="button" variant="ghost" onClick={handleClose} className="flex-1">
             Cancel
           </Button>
           <Button
             type="submit"
-            loading={loading}
-            fullWidth
-            variant={mode === 'RETURN' ? 'secondary' : 'primary'}
+            disabled={loading}
+            className="flex-1"
+            variant={mode === 'RETURN' ? 'secondary' : 'default'}
           >
-            {titles[mode]}
+            {loading ? 'Working…' : titles[mode]}
           </Button>
         </div>
       </form>

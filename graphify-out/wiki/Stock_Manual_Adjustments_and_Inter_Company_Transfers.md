@@ -26,9 +26,10 @@
 
 ## Relationships
 
-- [[Stock Dispatch]] (23 shared connections)
+- [[Stock, Dispatch, and Entry]] (12 shared connections)
+- [[Stock Dispatch]] (11 shared connections)
 - [[Stock Goods Receipt and Inter Company Transfers]] (9 shared connections)
-- [[Reports Stock Exceptions, Job Profitability, and Stock Adjustments]] (4 shared connections)
+- [[Reports Stock Exceptions, Stock Adjustments, and Stock Count Sessions]] (4 shared connections)
 - [[Stock Count Session and Manual Adjustments]] (2 shared connections)
 - [[Lib, Utils, and Manual Stock Adjustment Import]] (2 shared connections)
 - [[HR Schedule and Settings]] (1 shared connections)

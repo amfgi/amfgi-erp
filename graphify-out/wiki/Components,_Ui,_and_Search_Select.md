@@ -14,10 +14,11 @@
 
 ## Relationships
 
-- [[Stock Dispatch]] (2 shared connections)
 - [[HR Attendance]] (1 shared connections)
 - [[HR Schedule]] (1 shared connections)
 - [[Jobs, Id, and Cost Engine]] (1 shared connections)
+- [[Stock Dispatch]] (1 shared connections)
+- [[Stock, Dispatch, and Entry]] (1 shared connections)
 
 ## Source Files
 

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import toast from 'react-hot-toast';
 import {
   ATTENDANCE_REPORT_BUILDER_FIELDS,
@@ -274,9 +274,9 @@ export default function AttendanceReportBuilderPage() {
                   setDownloadingAll(false);
                 }
               }}
-              loading={downloadingAll}
+              disabled={downloadingAll}
             >
-              Download full workbook
+              {downloadingAll ? 'Downloading…' : 'Download full workbook'}
             </Button>
             <Button
               type="button"
@@ -291,10 +291,9 @@ export default function AttendanceReportBuilderPage() {
                   setDownloadingEmployee(false);
                 }
               }}
-              disabled={!selectedEmployeeId}
-              loading={downloadingEmployee}
+              disabled={!selectedEmployeeId || downloadingEmployee}
             >
-              Download selected employee
+              {downloadingEmployee ? 'Downloading…' : 'Download selected employee'}
             </Button>
           </div>
         </div>

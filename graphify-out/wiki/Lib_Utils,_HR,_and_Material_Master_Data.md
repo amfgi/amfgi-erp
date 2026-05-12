@@ -33,18 +33,18 @@
 
 ## Relationships
 
-- [[HR, Components, and Reports]] (7 shared connections)
+- [[Components, Reports, and HR]] (6 shared connections)
 - [[API HR, Materials, and Upload]] (5 shared connections)
 - [[API Reports, Materials, and HR]] (4 shared connections)
 - [[Lib, Scripts, and Settings]] (4 shared connections)
-- [[Lib Utils, Media, and Db]] (3 shared connections)
+- [[Lib Utils and Media]] (3 shared connections)
 - [[Components HR]] (3 shared connections)
 - [[Lib Utils]] (3 shared connections)
 - [[Reports, Settings, and HR]] (2 shared connections)
-- [[API Settings, Companies, and Materials]] (2 shared connections)
-- [[Lib Live Updates and Warehouses]] (2 shared connections)
+- [[Lib, API, and Auth]] (2 shared connections)
+- [[Lib, Warehouses, and Company Warehouse Mode]] (2 shared connections)
 - [[API HR, Jobs, and Materials]] (2 shared connections)
-- [[Lib Integrations]] (2 shared connections)
+- [[Lib, Integrations, and Party Upsert Service]] (2 shared connections)
 
 ## Source Files
 

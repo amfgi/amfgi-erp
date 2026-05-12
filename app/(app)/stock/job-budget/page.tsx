@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import Spinner from '@/components/ui/Spinner';
+import { cn } from '@/lib/utils';
 import { useGetFormulaLibrariesQuery, useGetJobsQuery } from '@/store/hooks';
 
 const PAGE_SIZE = 10;
@@ -69,73 +72,76 @@ export default function StockJobBudgetPage() {
 
   if (!canView) {
     return (
-      <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-        You need job.view and material.view permission to open job budget and formulas.
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>
+            You need job.view and material.view permission to open job budget and formulas.
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-slate-800 sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300">
-                Stock Workspace
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Job budget and formulas</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                Manage formula templates and open parent contract jobs only: material budget lines live on the contract; dispatch and consumption on variations roll up in costing.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stock">
-                <Button variant="secondary">Back to Stock</Button>
-              </Link>
-              <Link href="/stock/job-budget/formulas">
-                <Button variant="secondary">Formula library</Button>
-              </Link>
-              {canManage ? (
-                <Link href="/stock/job-budget/formulas/new">
-                  <Button>New formula</Button>
-                </Link>
-              ) : null}
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock workspace</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Job budget and formulas</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Manage formula templates and open parent contract jobs only: material budget lines live on the contract;
+            dispatch and consumption on variations roll up in costing.
+          </p>
         </div>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <Link href="/stock" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+            Back to stock
+          </Link>
+          <Link href="/stock/job-budget/formulas" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+            Formula library
+          </Link>
+          {canManage ? (
+            <Link href="/stock/job-budget/formulas/new" className={cn(buttonVariants({ size: 'sm' }))}>
+              New formula
+            </Link>
+          ) : null}
+        </div>
+      </header>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 md:grid-cols-3">
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Formula templates</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-              {formulasLoading ? '...' : formatCount(formulas.length)}
+      <section className="grid min-w-0 gap-3 md:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Formula templates</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+              {formulasLoading ? '…' : formatCount(formulas.length)}
             </p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Fabrication types</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-              {formulasLoading ? '...' : formatCount(fabricationTypes)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Fabrication types</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+              {formulasLoading ? '…' : formatCount(fabricationTypes)}
             </p>
-          </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Active contract jobs</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-              {jobsLoading ? '...' : formatCount(parentContractJobs.length)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Active contract jobs</p>
+            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+              {jobsLoading ? '…' : formatCount(parentContractJobs.length)}
             </p>
-            <p className="mt-1 text-xs text-slate-500">Parent jobs only; variations are not listed here.</p>
-          </div>
-        </div>
+            <p className="mt-1 text-xs text-muted-foreground">Parent jobs only; variations are not listed here.</p>
+          </CardContent>
+        </Card>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.75fr)]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+        <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-                Contract job numbers
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Contract job numbers</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Search by job number, customer, project, site, or address. Budget is always managed on these parent jobs.
               </p>
             </div>
@@ -146,7 +152,7 @@ export default function StockJobBudgetPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search…"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-emerald-500/30 placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </label>
           </div>
@@ -156,36 +162,35 @@ export default function StockJobBudgetPage() {
               <Spinner size="lg" />
             </div>
           ) : parentContractJobs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700">
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
               No active parent contract jobs found.
             </div>
           ) : filteredJobs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700">
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
               No jobs match your search.
             </div>
           ) : (
             <>
-              <div className="divide-y divide-slate-200 dark:divide-slate-800">
+              <div className="divide-y divide-border">
                 {pageSlice.map((job) => (
                   <div key={job.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="font-mono text-base font-semibold tracking-tight text-slate-900 dark:text-white">
-                        {job.jobNumber}
-                      </p>
-                      <p className="mt-1 truncate text-sm text-slate-500">
+                      <p className="font-mono text-base font-semibold tracking-tight text-foreground">{job.jobNumber}</p>
+                      <p className="mt-1 truncate text-sm text-muted-foreground">
                         {job.customerName || job.projectName || job.description || 'Contract job'}
                       </p>
                     </div>
-                    <Link href={`/stock/job-budget/${job.id}`} className="shrink-0">
-                      <Button size="sm" variant="secondary">
-                        Open budget
-                      </Button>
+                    <Link
+                      href={`/stock/job-budget/${job.id}`}
+                      className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'shrink-0')}
+                    >
+                      Open budget
                     </Link>
                   </div>
                 ))}
               </div>
               {filteredJobs.length > PAGE_SIZE ? (
-                <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                   <p>
                     Page {safePage} of {totalPages} · {formatCount(filteredJobs.length)} job
                     {filteredJobs.length === 1 ? '' : 's'}
@@ -216,22 +221,25 @@ export default function StockJobBudgetPage() {
           )}
         </div>
 
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <Link
             href="/stock/job-budget/formulas"
-            className="block rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20"
+            className="block rounded-lg border border-primary/25 bg-primary/5 p-4 transition hover:border-primary/40 hover:bg-primary/10"
           >
-            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">Formula library</p>
-            <p className="mt-2 text-sm leading-6 text-emerald-800/80 dark:text-emerald-200/75">
+            <p className="text-sm font-semibold text-foreground">Formula library</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               Create and maintain reusable formulas for GRP, MEP, steel, and other fabrication scopes.
             </p>
           </Link>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Flow</h2>
-            <div className="mt-3 space-y-3 text-sm text-slate-600 dark:text-slate-400">
+          <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Flow</h2>
+            <div className="mt-3 space-y-3 text-sm text-muted-foreground">
               <p>Formula defines dynamic inputs and rules.</p>
-              <p>Only the parent contract job stores budget lines (job items); variations cannot receive new budget lines from the API.</p>
+              <p>
+                Only the parent contract job stores budget lines (job items); variations cannot receive new budget lines
+                from the API.
+              </p>
               <p>Opening a variation URL under stock job-budget redirects to the parent contract.</p>
             </div>
           </div>

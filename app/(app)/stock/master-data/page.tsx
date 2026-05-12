@@ -4,11 +4,13 @@ import { useState, useCallback, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import DataTable from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
 import toast from 'react-hot-toast';
+import { cn } from '@/lib/utils';
 import type { Column } from '@/components/ui/DataTable';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
@@ -392,7 +394,7 @@ function StockMasterDataContent() {
       key: 'name',
       header: 'Name',
       sortable: true,
-      render: (unit) => <span className="font-mono text-emerald-400">{unit.name}</span>,
+      render: (unit) => <span className="font-mono text-primary">{unit.name}</span>,
     },
   ];
 
@@ -401,7 +403,7 @@ function StockMasterDataContent() {
       key: 'name',
       header: 'Name',
       sortable: true,
-      render: (category) => <span className="font-mono text-emerald-400">{category.name}</span>,
+      render: (category) => <span className="font-mono text-primary">{category.name}</span>,
     },
   ];
 
@@ -410,7 +412,7 @@ function StockMasterDataContent() {
       key: 'name',
       header: 'Name',
       sortable: true,
-      render: (warehouse) => <span className="font-mono text-emerald-400">{warehouse.name}</span>,
+      render: (warehouse) => <span className="font-mono text-primary">{warehouse.name}</span>,
     },
     {
       key: 'location',
@@ -423,71 +425,78 @@ function StockMasterDataContent() {
 
   if (!canUse) {
     return (
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-6 py-12 text-center">
-        <h1 className="text-2xl font-semibold text-white">Stock master data</h1>
-        <p className="mt-3 text-sm text-slate-400">You do not have permission to view units, categories, or warehouses.</p>
-        <Link href="/stock" className="mt-4 inline-block text-emerald-400 hover:text-emerald-300 text-sm">
-          ← Back to Stock
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertDescription>
+            You do not have permission to view units, categories, or warehouses.
+          </AlertDescription>
+        </Alert>
+        <Link href="/stock" className={cn(buttonVariants({ variant: 'link', size: 'sm' }), 'w-fit p-0 h-auto')}>
+          ← Back to stock
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-400/90">Stock</p>
-          <h1 className="mt-2 text-2xl font-bold text-white">Master data</h1>
-          <p className="mt-1 text-sm text-slate-400">
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Master data</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
             Units, categories, and warehouses used across materials and stock movements.
           </p>
         </div>
-        <Link href="/stock">
-          <Button variant="secondary">Back to Stock</Button>
+        <Link href="/stock" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'shrink-0')}>
+          Back to stock
         </Link>
-      </div>
+      </header>
 
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-4 sm:p-5">
-        <div className="flex flex-wrap gap-2 border-b border-slate-700 pb-3 mb-4">
+      <div className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-border pb-3">
           {MASTER_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-xl px-3 py-2 text-left text-sm transition ${
+              className={cn(
+                'rounded-full px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide transition-colors',
                 activeTab === tab.id
-                  ? 'bg-emerald-500/15 text-white ring-1 ring-emerald-500/40'
-                  : 'bg-transparent text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
-              }`}
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-muted/40 text-muted-foreground hover:bg-muted/60',
+              )}
             >
               {tab.label}
             </button>
           ))}
         </div>
-        <p className="text-xs text-slate-500 mb-4">
-          <span className="font-medium text-slate-300">{activeTabMeta.label}</span> — {activeTabMeta.description}
+        <p className="mb-4 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{activeTabMeta.label}</span> — {activeTabMeta.description}
         </p>
 
         {activeTab === 'units' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-white">Units</h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg font-semibold text-foreground">Units</h2>
               <Button
+                type="button"
+                size="sm"
                 onClick={() => {
                   setUnitForm({ name: '' });
                   setUnitModal({ open: true, item: null });
                 }}
               >
-                + Add Unit
+                Add unit
               </Button>
             </div>
-            <p className="text-sm text-slate-400 -mt-2 mb-2">
-              Create labels like kg, drum, pallet here. On each material, set the <span className="text-slate-300">base unit</span>{' '}
-              (stock unit), then add conversions under Materials → edit material.
+            <p className="text-sm text-muted-foreground">
+              Create labels like kg, drum, or pallet here. On each material, set the{' '}
+              <span className="font-medium text-foreground">base unit</span> (stock unit), then add conversions under
+              Materials → edit material.
             </p>
             {unitsFetching && units.length === 0 ? (
-              <div className="overflow-x-auto rounded-xl border border-slate-700">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full">
                   <tbody>
                     <TableSkeleton rows={5} columns={unitColumns.length} />
@@ -509,19 +518,21 @@ function StockMasterDataContent() {
 
         {activeTab === 'categories' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-white">Categories</h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg font-semibold text-foreground">Categories</h2>
               <Button
+                type="button"
+                size="sm"
                 onClick={() => {
                   setCategoryForm({ name: '' });
                   setCategoryModal({ open: true, item: null });
                 }}
               >
-                + Add Category
+                Add category
               </Button>
             </div>
             {categoriesFetching && categories.length === 0 ? (
-              <div className="overflow-x-auto rounded-xl border border-slate-700">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full">
                   <tbody>
                     <TableSkeleton rows={5} columns={categoryColumns.length} />
@@ -543,22 +554,24 @@ function StockMasterDataContent() {
 
         {activeTab === 'warehouses' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-white">Warehouses</h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg font-semibold text-foreground">Warehouses</h2>
               <Button
+                type="button"
+                size="sm"
                 onClick={() => {
                   setWarehouseForm({ name: '', location: '' });
                   setWarehouseModal({ open: true, item: null });
                 }}
               >
-                + Add Warehouse
+                Add warehouse
               </Button>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-900/80 p-4 text-sm text-slate-400">
+            <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
               <p>Warehouse tracking is required. Every stock movement must select a warehouse.</p>
             </div>
             {warehousesFetching && warehouses.length === 0 ? (
-              <div className="overflow-x-auto rounded-xl border border-slate-700">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full">
                   <tbody>
                     <TableSkeleton rows={5} columns={warehouseColumns.length} />
@@ -603,11 +616,11 @@ function StockMasterDataContent() {
               required
             />
           </div>
-          <div className="flex gap-3 pt-2 border-t border-slate-700">
-            <Button type="button" variant="ghost" onClick={() => setUnitModal({ open: false, item: null })} fullWidth>
+          <div className="flex gap-3 border-t border-border pt-2">
+            <Button type="button" variant="ghost" className="flex-1" onClick={() => setUnitModal({ open: false, item: null })}>
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
+            <Button type="submit" className="flex-1">
               {unitModal.item ? 'Update' : 'Create'}
             </Button>
           </div>
@@ -638,11 +651,11 @@ function StockMasterDataContent() {
               required
             />
           </div>
-          <div className="flex gap-3 pt-2 border-t border-slate-700">
-            <Button type="button" variant="ghost" onClick={() => setCategoryModal({ open: false, item: null })} fullWidth>
+          <div className="flex gap-3 border-t border-border pt-2">
+            <Button type="button" variant="ghost" className="flex-1" onClick={() => setCategoryModal({ open: false, item: null })}>
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
+            <Button type="submit" className="flex-1">
               {categoryModal.item ? 'Update' : 'Create'}
             </Button>
           </div>
@@ -683,11 +696,11 @@ function StockMasterDataContent() {
               className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-emerald-500"
             />
           </div>
-          <div className="flex gap-3 pt-2 border-t border-slate-700">
-            <Button type="button" variant="ghost" onClick={() => setWarehouseModal({ open: false, item: null })} fullWidth>
+          <div className="flex gap-3 border-t border-border pt-2">
+            <Button type="button" variant="ghost" className="flex-1" onClick={() => setWarehouseModal({ open: false, item: null })}>
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
+            <Button type="submit" className="flex-1">
               {warehouseModal.item ? 'Update' : 'Create'}
             </Button>
           </div>
@@ -816,7 +829,11 @@ function StockMasterDataContent() {
 
 export default function StockMasterDataPage() {
   return (
-    <Suspense fallback={<div className="text-slate-400 p-6">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="flex w-full min-w-0 flex-col gap-3 p-6 text-sm text-muted-foreground">Loading…</div>
+      }
+    >
       <StockMasterDataContent />
     </Suspense>
   );

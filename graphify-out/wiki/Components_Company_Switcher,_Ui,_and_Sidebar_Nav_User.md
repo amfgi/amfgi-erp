@@ -28,10 +28,9 @@
 
 - [[Components Ui, Sidebar, and Sidebar Nav User]] (10 shared connections)
 - [[Components Ui and App Shell]] (5 shared connections)
+- [[Admin, Components, and Settings]] (3 shared connections)
 - [[Reports, Settings, and HR]] (3 shared connections)
-- [[Admin Users, Roles, and Companies]] (2 shared connections)
 - [[Components, Lib, and Proxy]] (2 shared connections)
-- [[HR, Components, and Reports]] (1 shared connections)
 - [[Providers and Store]] (1 shared connections)
 - [[Lib Utils, HR, and Material Master Data]] (1 shared connections)
 

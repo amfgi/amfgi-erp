@@ -1,6 +1,6 @@
 # Components, Lib, and Proxy
 
-> 26 nodes · cohesion 0.10
+> 27 nodes · cohesion 0.10
 
 ## Key Concepts
 
@@ -11,6 +11,7 @@
 - **proxy()** (4 connections) — `proxy.ts`
 - **RootPage()** (4 connections) — `app/page.tsx`
 - **UnauthorizedPage()** (4 connections) — `app/unauthorized/page.tsx`
+- **AppNavigationSidebar()** (4 connections) — `components/layout/Sidebar.tsx`
 - **SidebarTrigger()** (4 connections) — `components/ui/shadcn/sidebar.tsx`
 - **Header()** (3 connections) — `components/layout/Header.tsx`
 - **HoverTooltip.tsx** (3 connections) — `components/ui/HoverTooltip.tsx`
@@ -28,18 +29,17 @@
 - **SelfServiceCandidate** (1 connections) — `lib/auth/selfService.ts`
 - **proxy.ts** (1 connections) — `proxy.ts`
 - **page.tsx** (1 connections) — `app/page.tsx`
-- **page.tsx** (1 connections) — `app/unauthorized/page.tsx`
-- *... and 1 more nodes in this community*
+- *... and 2 more nodes in this community*
 
 ## Relationships
 
-- [[Components Ui, Sidebar, and Sidebar Nav User]] (7 shared connections)
+- [[Components Ui, Sidebar, and Sidebar Nav User]] (8 shared connections)
 - [[Components Ui and App Shell]] (3 shared connections)
 - [[Dashboard]] (3 shared connections)
 - [[Providers Theme Provider and App Providers]] (2 shared connections)
-- [[Admin Users, Roles, and Companies]] (2 shared connections)
+- [[Reports, Settings, and HR]] (2 shared connections)
+- [[Admin, Components, and Settings]] (2 shared connections)
 - [[Components Company Switcher, Ui, and Sidebar Nav User]] (2 shared connections)
-- [[Reports, Settings, and HR]] (1 shared connections)
 
 ## Source Files
 
@@ -54,8 +54,8 @@
 
 ## Audit Trail
 
-- EXTRACTED: 74 (86%)
-- INFERRED: 12 (14%)
+- EXTRACTED: 78 (87%)
+- INFERRED: 12 (13%)
 - AMBIGUOUS: 0 (0%)
 
 ---

@@ -25,7 +25,7 @@
 
 - [[Components Ui and App Shell]] (6 shared connections)
 - [[Reports, Settings, and HR]] (3 shared connections)
-- [[HR, Components, and Reports]] (1 shared connections)
+- [[Admin, Components, and Settings]] (1 shared connections)
 
 ## Source Files
 

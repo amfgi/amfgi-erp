@@ -17,10 +17,9 @@
 
 ## Relationships
 
+- [[Stock, Customers, and Store]] (3 shared connections)
 - [[Stock Goods Receipt and Inter Company Transfers]] (2 shared connections)
-- [[Customers, Stock, and Reports]] (2 shared connections)
-- [[Stock and Store]] (2 shared connections)
-- [[Reports Stock Exceptions, Job Profitability, and Stock Adjustments]] (1 shared connections)
+- [[HR Schedule and Attendance]] (2 shared connections)
 
 ## Source Files
 

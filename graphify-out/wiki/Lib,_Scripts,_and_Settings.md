@@ -36,15 +36,15 @@
 - [[API HR, Jobs, and Materials]] (4 shared connections)
 - [[Lib Utils, HR, and Material Master Data]] (4 shared connections)
 - [[Settings API]] (4 shared connections)
-- [[API Settings, Companies, and Materials]] (3 shared connections)
 - [[API Reports, Materials, and HR]] (3 shared connections)
+- [[API Media, Companies, and Materials]] (2 shared connections)
 - [[API HR, Materials, and Upload]] (2 shared connections)
 - [[Lib Utils, Job Costing, and Stock]] (2 shared connections)
 - [[HR Schedule and Settings]] (2 shared connections)
-- [[Admin Users, Roles, and Companies]] (1 shared connections)
-- [[HR, Components, and Reports]] (1 shared connections)
+- [[Admin, Components, and Settings]] (1 shared connections)
+- [[Components, Reports, and HR]] (1 shared connections)
+- [[Lib, API, and Auth]] (1 shared connections)
 - [[Stock Count Session and Manual Adjustments]] (1 shared connections)
-- [[Components HR]] (1 shared connections)
 
 ## Source Files
 

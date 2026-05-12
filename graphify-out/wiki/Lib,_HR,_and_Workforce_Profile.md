@@ -14,7 +14,7 @@
 
 ## Relationships
 
-- [[HR, Components, and Reports]] (3 shared connections)
+- [[Components, Reports, and HR]] (3 shared connections)
 - [[HR Schedule and Settings]] (2 shared connections)
 - [[Components HR]] (2 shared connections)
 - [[Lib HR]] (2 shared connections)

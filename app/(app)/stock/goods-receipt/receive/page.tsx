@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Card, CardContent } from '@/components/ui/shadcn/card';
 import FlexibleTable, { type FlexibleTableColumn } from '@/components/ui/FlexibleTable';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { useSession } from 'next-auth/react';
@@ -16,6 +18,7 @@ import {
   useGetSuppliersQuery,
   useGetWarehousesQuery,
 } from '@/store/hooks';
+import { cn } from '@/lib/utils';
 
 interface SupplierOption {
   id: string;
@@ -79,19 +82,19 @@ function extractErrorMessage(error: unknown, fallback: string) {
 }
 
 function inputClassName() {
-  return 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500';
+  return 'w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 }
 
 function tableInputClassName() {
-  return 'w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500';
+  return 'w-full border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 }
 
 function shellClassName() {
-  return 'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70';
+  return 'rounded-lg border border-border bg-card shadow-sm';
 }
 
 function sectionHeadingClassName() {
-  return 'text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300';
+  return 'text-sm font-semibold uppercase tracking-wide text-muted-foreground';
 }
 
 function ReceiptEditor({
@@ -508,79 +511,75 @@ function ReceiptEditor({
   };
 
   return (
-    <div className="space-y-3">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.08),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-4 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <Link
-                href="/stock/goods-receipt"
-                className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 transition-colors hover:text-emerald-600 dark:text-emerald-300/80 dark:hover:text-emerald-200"
-              >
-                Receiving Ledger
-              </Link>
-              <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[1.7rem]">
-                {isEditMode ? 'Edit goods receipt' : 'Receive stock'}
-              </h1>
-              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                {isEditMode
-                  ? 'Adjust the receipt header, quantities, and costs before reposting inventory.'
-                  : 'Build one receipt with all incoming lines, then post stock and cost updates together.'}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stock/goods-receipt">
-                <Button variant="ghost">Back to history</Button>
-              </Link>
-              <Button onClick={handleSubmit} loading={submitting}>
-                {isEditMode ? 'Update Receipt' : 'Post Receipt'}
-              </Button>
-            </div>
-          </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <Link
+            href="/stock/goods-receipt"
+            className={cn(buttonVariants({ variant: 'link', size: 'sm' }), 'h-auto p-0 text-xs font-medium uppercase tracking-wide')}
+          >
+            Receiving ledger
+          </Link>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {isEditMode ? 'Edit goods receipt' : 'Receive stock'}
+          </h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {isEditMode
+              ? 'Adjust the receipt header, quantities, and costs before reposting inventory.'
+              : 'Build one receipt with all incoming lines, then post stock and cost updates together.'}
+          </p>
         </div>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: 'Receipt number',
-              value: receiptNumber,
-              note: isEditMode ? 'Locked to existing receipt record' : 'Editable before posting',
-              mono: true,
-            },
-            {
-              label: 'Supplier',
-              value: getSupplierName(supplierId) || 'Not selected',
-              note: 'Vendor linked to this receipt',
-            },
-            {
-              label: 'Active lines',
-              value: String(totalQtyLines),
-              note: `${totalUnits.toFixed(2)} total quantity entered`,
-            },
-            {
-              label: 'Bill amount',
-              value: `AED ${billAmount.toFixed(2)}`,
-              note: includeTax ? 'VAT included in final total' : 'VAT excluded from final total',
-            },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-3 dark:bg-slate-950/80">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
-                {item.label}
-              </p>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link href="/stock/goods-receipt" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
+            Back to history
+          </Link>
+          <Button type="button" size="sm" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? 'Posting…' : isEditMode ? 'Update receipt' : 'Post receipt'}
+          </Button>
+        </div>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Receipt number',
+            value: receiptNumber,
+            note: isEditMode ? 'Locked to existing receipt record' : 'Editable before posting',
+            mono: true,
+          },
+          {
+            label: 'Supplier',
+            value: getSupplierName(supplierId) || 'Not selected',
+            note: 'Vendor linked to this receipt',
+          },
+          {
+            label: 'Active lines',
+            value: String(totalQtyLines),
+            note: `${totalUnits.toFixed(2)} total quantity entered`,
+          },
+          {
+            label: 'Bill amount',
+            value: `AED ${billAmount.toFixed(2)}`,
+            note: includeTax ? 'VAT included in final total' : 'VAT excluded from final total',
+          },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
               <p
-                className={[
-                  'mt-2 text-sm font-semibold text-slate-900 dark:text-white',
-                  item.mono ? 'font-mono text-base sm:text-sm' : '',
-                ].join(' ')}
+                className={cn(
+                  'mt-2 text-sm font-semibold text-foreground',
+                  item.mono && 'font-mono text-base sm:text-sm',
+                )}
               >
                 {item.value}
               </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       <form
         onSubmit={handleSubmit}
@@ -592,9 +591,9 @@ function ReceiptEditor({
             }
           }
         }}
-        className="space-y-3"
+        className="space-y-5"
       >
-        <div className="space-y-3">
+        <div className="space-y-5">
           <section className={shellClassName()}>
             <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="xl:col-span-2">
@@ -660,67 +659,62 @@ function ReceiptEditor({
               emptyState="No receipt lines yet."
               rowClassName={(line) => {
                 const isDuplicate = duplicateMaterials.includes(line.materialId);
-                return [
-                  'border-b border-slate-200 transition-colors dark:border-slate-800',
-                  isDuplicate ? 'bg-red-50 dark:bg-red-950/10' : 'hover:bg-slate-50 dark:hover:bg-slate-900/40',
-                ].join(' ');
+                return cn(
+                  'border-b border-border transition-colors',
+                  isDuplicate ? 'bg-destructive/10' : 'hover:bg-muted/50',
+                );
               }}
             />
           </section>
 
           <section className={shellClassName()}>
-            <div className="border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+            <div className="border-b border-border px-5 py-3">
               <h2 className={sectionHeadingClassName()}>Posting summary</h2>
             </div>
 
             <div className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-start">
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/70">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-                    Subtotal
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
-                    AED {subTotal.toFixed(2)}
-                  </p>
+                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Subtotal</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">AED {subTotal.toFixed(2)}</p>
                 </div>
 
-                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/70">
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
                   <input
                     type="checkbox"
                     checked={includeTax}
                     onChange={(e) => setIncludeTax(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-slate-600"
+                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-ring"
                   />
                   <span>
-                    <span className="block text-sm font-medium text-slate-900 dark:text-white">Include 5% VAT</span>
-                    <span className="mt-1 block text-xs text-slate-500 dark:text-slate-500">
+                    <span className="block text-sm font-medium text-foreground">Include 5% VAT</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
                       Tax is {includeTax ? 'added to' : 'excluded from'} the bill amount.
                     </span>
                   </span>
                 </label>
 
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 dark:text-slate-400">Tax</span>
-                    <span className="font-mono text-slate-900 dark:text-white">AED {taxAmount.toFixed(2)}</span>
+                    <span className="text-muted-foreground">Tax</span>
+                    <span className="font-mono text-foreground">AED {taxAmount.toFixed(2)}</span>
                   </div>
-                  <div className="mt-2 flex items-center justify-between border-t border-emerald-200 pt-2 dark:border-emerald-900/40">
-                    <span className="font-medium text-slate-900 dark:text-white">Bill amount</span>
-                    <span className="font-mono text-lg font-semibold text-emerald-700 dark:text-emerald-300">
-                      AED {billAmount.toFixed(2)}
-                    </span>
+                  <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+                    <span className="font-medium text-foreground">Bill amount</span>
+                    <span className="font-mono text-lg font-semibold text-primary">AED {billAmount.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 md:min-w-[10rem]">
-                <Button type="submit" loading={submitting} disabled={!canPost}>
-                  {isEditMode ? 'Update Receipt' : 'Post Receipt'}
+              <div className="flex flex-col gap-2 md:min-w-40">
+                <Button type="submit" size="sm" disabled={submitting || !canPost}>
+                  {submitting ? 'Posting…' : isEditMode ? 'Update receipt' : 'Post receipt'}
                 </Button>
-                <Link href="/stock/goods-receipt">
-                  <Button type="button" variant="ghost" fullWidth>
-                    Cancel
-                  </Button>
+                <Link
+                  href="/stock/goods-receipt"
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-full justify-center')}
+                >
+                  Cancel
                 </Link>
               </div>
             </div>
@@ -758,24 +752,38 @@ export default function ReceiveStockPage() {
   }, [receiptEntry]);
 
   if (isEditMode && isLoading) {
-    return <div className="text-sm text-slate-600 dark:text-slate-300">Loading receipt...</div>;
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <p className="text-sm text-muted-foreground">Loading receipt…</p>
+      </div>
+    );
   }
 
   if (isEditMode && editReceiptNumber && !receiptEntry) {
-    return <div className="text-sm text-slate-600 dark:text-slate-300">Receipt not found.</div>;
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert variant="destructive">
+          <AlertDescription>Receipt not found.</AlertDescription>
+        </Alert>
+        <Link href="/stock/goods-receipt" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'w-fit')}>
+          Back to history
+        </Link>
+      </div>
+    );
   }
 
   if (isEditMode && receiptEntry?.status === 'cancelled') {
     return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em]">Receipt cancelled</p>
-          <p className="mt-2 text-sm">
-            This receipt was already cancelled and can no longer be edited. Open the receipt history if you need to review the reversal trail.
-          </p>
-        </div>
-        <Link href="/stock/goods-receipt">
-          <Button variant="ghost">Back to history</Button>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <Alert>
+          <AlertTitle>Receipt cancelled</AlertTitle>
+          <AlertDescription>
+            This receipt was already cancelled and can no longer be edited. Open the receipt history if you need to review
+            the reversal trail.
+          </AlertDescription>
+        </Alert>
+        <Link href="/stock/goods-receipt" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'w-fit')}>
+          Back to history
         </Link>
       </div>
     );

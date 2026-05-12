@@ -35,10 +35,11 @@
 
 - [[Reports, Settings, and HR]] (16 shared connections)
 - [[Components Ui, Sidebar, and Sidebar Nav User]] (12 shared connections)
-- [[HR, Components, and Reports]] (7 shared connections)
 - [[Components, Ui, and Shadcn]] (6 shared connections)
 - [[Components Company Switcher, Ui, and Sidebar Nav User]] (5 shared connections)
+- [[Components, Reports, and HR]] (4 shared connections)
 - [[Components, Lib, and Proxy]] (3 shared connections)
+- [[Admin, Components, and Settings]] (3 shared connections)
 - [[HR Schedule and Settings]] (1 shared connections)
 
 ## Source Files

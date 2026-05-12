@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/Badge';
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
@@ -1574,7 +1574,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                   </p>
                   <p className="mt-1 text-xs text-slate-500 font-mono">{emp.userLink.id}</p>
                   {canEdit && (
-                    <Button type="button" variant="danger" className="mt-4" onClick={unlinkPortal}>
+                    <Button type="button" variant="destructive" className="mt-4" onClick={unlinkPortal}>
                       Unlink account
                     </Button>
                   )}

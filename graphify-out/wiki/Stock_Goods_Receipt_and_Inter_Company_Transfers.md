@@ -20,8 +20,9 @@
 ## Relationships
 
 - [[Stock Manual Adjustments and Inter Company Transfers]] (9 shared connections)
-- [[Stock Dispatch]] (9 shared connections)
-- [[Customers, Stock, and Reports]] (2 shared connections)
+- [[Stock, Dispatch, and Entry]] (5 shared connections)
+- [[Stock Dispatch]] (4 shared connections)
+- [[Stock, Customers, and Store]] (2 shared connections)
 - [[Stock Materials and Issue Reconcile]] (2 shared connections)
 - [[API Reports, Materials, and HR]] (1 shared connections)
 

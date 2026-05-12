@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import toast from 'react-hot-toast';
@@ -117,7 +117,7 @@ function formatNumber(value?: number | null) {
 }
 
 function inputClassName() {
-  return 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900/80 dark:text-white dark:placeholder-slate-500';
+  return 'w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 }
 
 function extractErrorMessage(error: unknown, fallback: string) {
@@ -144,10 +144,10 @@ function SectionShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">{description}</p> : null}
+    <section className="rounded-lg border border-border bg-card shadow-sm">
+      <div className="border-b border-border px-5 py-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
       <div className="p-5">{children}</div>
     </section>
@@ -167,8 +167,8 @@ function FieldShell({
 }) {
   return (
     <div className={wide ? 'md:col-span-2' : ''}>
-      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">{label}</label>
-      {hint ? <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{hint}</p> : null}
+      <label className="block text-sm font-medium text-foreground">{label}</label>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
       <div className="mt-2">{children}</div>
     </div>
   );
@@ -720,8 +720,8 @@ function MaterialEditor({
               <Button variant="secondary" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} loading={isLoading || isUploadingAssets}>
-                {submitButtonText}
+              <Button onClick={handleSave} disabled={isLoading || isUploadingAssets}>
+                {isLoading || isUploadingAssets ? 'Saving…' : submitButtonText}
               </Button>
             </div>
           </div>
@@ -993,8 +993,8 @@ function MaterialEditor({
               <Button type="button" variant="ghost" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} loading={isLoading || isUploadingAssets}>
-                {submitButtonText}
+              <Button onClick={handleSave} disabled={isLoading || isUploadingAssets}>
+                {isLoading || isUploadingAssets ? 'Saving…' : submitButtonText}
               </Button>
             </div>
 
@@ -1114,7 +1114,7 @@ function MaterialEditor({
                       <Button
                         type="button"
                         size="sm"
-                        variant="danger"
+                        variant="destructive"
                         onClick={() => setDeleteTarget({ kind: 'feature-image' })}
                       >
                         Delete
@@ -1204,7 +1204,7 @@ function MaterialEditor({
                           <Button
                             type="button"
                             size="sm"
-                            variant="danger"
+                            variant="destructive"
                             onClick={() => setDeleteTarget({ kind: 'gallery', index: idx, fileName: entry.fileName })}
                           >
                             Delete
@@ -1228,7 +1228,7 @@ function MaterialEditor({
                           <Button
                             type="button"
                             size="sm"
-                            variant="danger"
+                            variant="destructive"
                             onClick={() => setDeleteTarget({ kind: 'document', index: idx, fileName: entry.fileName })}
                           >
                             Delete
@@ -1241,8 +1241,8 @@ function MaterialEditor({
               </div>
 
               <div className="mt-5 flex justify-end">
-                <Button onClick={handleSave} loading={isLoading || isUploadingAssets}>
-                  {submitButtonText}
+                <Button onClick={handleSave} disabled={isLoading || isUploadingAssets}>
+                  {isLoading || isUploadingAssets ? 'Saving…' : submitButtonText}
                 </Button>
               </div>
             </SectionShell>
@@ -1537,10 +1537,10 @@ function MaterialEditor({
             autoFocus
           />
           <div className="flex gap-3">
-            <Button type="button" variant="ghost" onClick={() => setUnitModal(false)} fullWidth>
+            <Button type="button" variant="ghost" onClick={() => setUnitModal(false)} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
+            <Button type="submit" className="flex-1">
               Create
             </Button>
           </div>
@@ -1559,10 +1559,10 @@ function MaterialEditor({
             autoFocus
           />
           <div className="flex gap-3">
-            <Button type="button" variant="ghost" onClick={() => setCategoryModal(false)} fullWidth>
+            <Button type="button" variant="ghost" onClick={() => setCategoryModal(false)} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
+            <Button type="submit" className="flex-1">
               Create
             </Button>
           </div>
@@ -1588,10 +1588,10 @@ function MaterialEditor({
             className={inputClassName()}
           />
           <div className="flex gap-3">
-            <Button type="button" variant="ghost" onClick={() => setWarehouseModal(false)} fullWidth>
+            <Button type="button" variant="ghost" onClick={() => setWarehouseModal(false)} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" fullWidth>
+            <Button type="submit" className="flex-1">
               Create
             </Button>
           </div>
@@ -1605,14 +1605,14 @@ function MaterialEditor({
         size="sm"
       >
         <div className="space-y-4">
-          <p className="text-sm text-slate-600 dark:text-slate-300">
+          <p className="text-sm text-muted-foreground">
             This will remove the file from this material record after you save changes. This action cannot be undone.
           </p>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button type="button" variant="danger" onClick={confirmDeleteFile}>
+            <Button type="button" variant="destructive" onClick={confirmDeleteFile}>
               Delete
             </Button>
           </div>
@@ -1650,11 +1650,11 @@ export default function MaterialDetailPage() {
   });
 
   if (!isCreateMode && isLoadingMaterial) {
-    return <div className="text-sm text-slate-600 dark:text-slate-300">Loading material...</div>;
+    return <div className="text-sm text-muted-foreground">Loading material…</div>;
   }
 
   if (!isCreateMode && !material) {
-    return <div className="text-sm text-slate-600 dark:text-slate-300">Material not found.</div>;
+    return <div className="text-sm text-muted-foreground">Material not found.</div>;
   }
 
   return (

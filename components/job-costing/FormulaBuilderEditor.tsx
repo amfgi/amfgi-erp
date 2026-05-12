@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Spinner from '@/components/ui/Spinner';
@@ -18,6 +18,7 @@ import {
   useRestoreFormulaLibraryVersionMutation,
   useUpdateFormulaLibraryMutation,
 } from '@/store/hooks';
+import { cn } from '@/lib/utils';
 import type { FormulaLibrary, FormulaLibraryVersion } from '@/store/api/endpoints/jobs';
 import {
   ExpressionInput,
@@ -1568,8 +1569,8 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/stock/job-budget/formulas">
-              <Button variant="secondary">Back to formulas</Button>
+            <Link href="/stock/job-budget/formulas" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+              Back to formulas
             </Link>
             <Button variant="secondary" onClick={undoFormState} disabled={undoStack.length === 0}>
               Undo
@@ -1592,7 +1593,9 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
               }`} />
               <span>{formatAutoSaveLabel(autoSaveState, lastSavedAt)}</span>
             </div>
-            <Button onClick={() => void saveFormula({ mode: 'manual' })} loading={saving}>Save formula</Button>
+            <Button size="sm" variant="secondary" onClick={() => void saveFormula({ mode: 'manual' })} disabled={saving}>
+              {saving ? 'Saving…' : 'Save formula'}
+            </Button>
           </div>
         </div>
       </section>

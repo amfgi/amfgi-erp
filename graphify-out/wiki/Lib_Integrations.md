@@ -1,39 +1,40 @@
 # Lib Integrations
 
-> 12 nodes · cohesion 0.33
+> 12 nodes · cohesion 0.35
 
 ## Key Concepts
 
-- **prepareIntegrationRequest()** (11 connections) — `lib/integrations/integrationRoute.ts`
-- **sha256()** (5 connections) — `lib/integrations/apiKeys.ts`
-- **resolveApiCredentialByKey()** (5 connections) — `lib/integrations/apiKeys.ts`
-- **integrationRoute.ts** (5 connections) — `lib/integrations/integrationRoute.ts`
-- **integrationRoute.ts** (5 connections) — `lib/integrations/integrationRoute.ts`
-- **apiKeys.ts** (4 connections) — `lib/integrations/apiKeys.ts`
-- **generateIntegrationApiKey()** (4 connections) — `lib/integrations/apiKeys.ts`
-- **readIntegrationApiKey()** (4 connections) — `lib/integrations/integrationRoute.ts`
-- **readIntegrationIdempotencyKey()** (4 connections) — `lib/integrations/integrationRoute.ts`
-- **verifyIntegrationCompany()** (4 connections) — `lib/integrations/integrationRoute.ts`
-- **parseIntegrationBody()** (3 connections) — `lib/integrations/integrationRoute.ts`
-- **apiKeys.ts** (3 connections) — `lib/integrations/apiKeys.ts`
+- **route.ts** (9 connections) — `app/api/settings/api-credentials/[id]/route.ts`
+- **domainAllowlist.ts** (8 connections) — `lib/integrations/domainAllowlist.ts`
+- **integrationDomainCheck()** (7 connections) — `lib/integrations/domainAllowlist.ts`
+- **PATCH()** (6 connections) — `app/api/settings/api-credentials/[id]/route.ts`
+- **domainAllowlist.ts** (6 connections) — `lib/integrations/domainAllowlist.ts`
+- **normalizeAllowedDomainsList()** (5 connections) — `lib/integrations/domainAllowlist.ts`
+- **parseStoredAllowedDomains()** (4 connections) — `lib/integrations/domainAllowlist.ts`
+- **requestClientHost()** (4 connections) — `lib/integrations/domainAllowlist.ts`
+- **hasManagePermission()** (3 connections) — `app/api/settings/api-credentials/[id]/route.ts`
+- **normalizeDomainOrUrlToHostname()** (3 connections) — `lib/integrations/domainAllowlist.ts`
+- **isRequestHostAllowed()** (3 connections) — `lib/integrations/domainAllowlist.ts`
+- **PatchCredentialSchema** (1 connections) — `app/api/settings/api-credentials/[id]/route.ts`
 
 ## Relationships
 
-- [[API Settings, Companies, and Materials]] (5 shared connections)
-- [[API HR, Materials, and Upload]] (3 shared connections)
-- [[Lib Utils, HR, and Material Master Data]] (2 shared connections)
-- [[API Reports, Materials, and HR]] (2 shared connections)
-- [[Lib, Integrations, and Domain Allowlist]] (1 shared connections)
+- [[API Media, Companies, and Materials]] (5 shared connections)
+- [[Lib, API, and Auth]] (3 shared connections)
+- [[API and Lib]] (2 shared connections)
+- [[API Reports, Materials, and HR]] (1 shared connections)
+- [[API HR, Materials, and Upload]] (1 shared connections)
+- [[Lib, Integrations, and Integration Route]] (1 shared connections)
 
 ## Source Files
 
-- `lib/integrations/apiKeys.ts`
-- `lib/integrations/integrationRoute.ts`
+- `app/api/settings/api-credentials/[id]/route.ts`
+- `lib/integrations/domainAllowlist.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 44 (77%)
-- INFERRED: 13 (23%)
+- EXTRACTED: 56 (95%)
+- INFERRED: 3 (5%)
 - AMBIGUOUS: 0 (0%)
 
 ---

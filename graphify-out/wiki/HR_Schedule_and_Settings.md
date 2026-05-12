@@ -33,7 +33,7 @@
 - [[Components HR]] (8 shared connections)
 - [[HR, Schedule, and Work Date]] (8 shared connections)
 - [[HR Attendance]] (6 shared connections)
-- [[HR, Components, and Reports]] (6 shared connections)
+- [[Components, Reports, and HR]] (6 shared connections)
 - [[HR Schedule]] (5 shared connections)
 - [[API Reports, Materials, and HR]] (5 shared connections)
 - [[Lib HR]] (5 shared connections)

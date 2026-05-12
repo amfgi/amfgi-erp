@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import toast from 'react-hot-toast';
 import {
   useGetCompaniesQuery,
@@ -13,6 +13,7 @@ import {
   useGetWarehousesQuery,
   useReconcileNonStockMutation,
 } from '@/store/hooks';
+import { cn } from '@/lib/utils';
 
 type QtyMap = Record<string, string>;
 type WarehouseMap = Record<string, string>;
@@ -248,11 +249,11 @@ export function IssueReconcileForm() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Link href="/stock/issue-reconcile">
-                <Button variant="ghost">View history</Button>
+              <Link href="/stock/issue-reconcile" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
+                View history
               </Link>
-              <Button onClick={handleSubmit} loading={submitting}>
-                {editingTransactionId ? 'Save reconcile' : 'Post reconcile'}
+              <Button type="button" size="sm" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? 'Submitting…' : editingTransactionId ? 'Save reconcile' : 'Post reconcile'}
               </Button>
             </div>
           </div>

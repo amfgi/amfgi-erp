@@ -5,9 +5,11 @@ import { useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import Spinner from '@/components/ui/Spinner';
+import { cn } from '@/lib/utils';
 import { useGetDailyQuantityLogPendingQuery } from '@/store/hooks';
 
 type RowStatus = 'PENDING' | 'FINALIZED';
@@ -123,9 +125,7 @@ export default function DailyQuantityLogLandingPage() {
       toast.error('Pick a valid date');
       return;
     }
-    const finalizedSet = new Set(
-      rows.filter((r) => r.status === 'FINALIZED').map((r) => r.workDate)
-    );
+    const finalizedSet = new Set(rows.filter((r) => r.status === 'FINALIZED').map((r) => r.workDate));
     if (finalizedSet.has(createDate)) {
       toast(`That day is already finalized — opening in edit mode.`);
     }
@@ -140,99 +140,92 @@ export default function DailyQuantityLogLandingPage() {
 
   if (!canView) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Daily quantity log</h1>
-        <p className="text-slate-500 dark:text-slate-400">You do not have permission to view jobs.</p>
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <header className="border-b border-border pb-4">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Daily quantity log</h1>
+        </header>
+        <Alert>
+          <AlertDescription>You do not have permission to view jobs.</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-300/80">
-              Stock workspace
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[1.85rem]">
-              Daily quantity log
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              One row per calendar day. Click a <strong className="font-medium text-slate-700 dark:text-slate-300">Pending</strong> day to log
-              quantities, or a <strong className="font-medium text-slate-700 dark:text-slate-300">Finalized</strong> day to edit saved values.
-              Finalized days cannot accept new progress lines.
-            </p>
-          </div>
-          {canEdit ? (
-            <div className="flex shrink-0">
-              <Button
-                type="button"
-                onClick={() => {
-                  setCreateDate(todayYmd());
-                  setCreateModalOpen(true);
-                }}
-              >
-                + Create new
-              </Button>
-            </div>
-          ) : null}
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock workspace</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Daily quantity log</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            One row per calendar day. Click a <strong className="font-medium text-foreground">Pending</strong> day to log
+            quantities, or a <strong className="font-medium text-foreground">Finalized</strong> day to edit saved values.
+            Finalized days cannot accept new progress lines.
+          </p>
         </div>
+        {canEdit ? (
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              setCreateDate(todayYmd());
+              setCreateModalOpen(true);
+            }}
+          >
+            + Create new
+          </Button>
+        ) : null}
+      </header>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <FilterChip
-            label="All"
-            count={counts.total}
-            active={statusFilter === 'ALL'}
-            onClick={() => setFilter('ALL')}
-          />
-          <FilterChip
-            label="Pending"
-            count={counts.pending}
-            active={statusFilter === 'PENDING'}
-            onClick={() => setFilter('PENDING')}
-            tone="amber"
-          />
-          <FilterChip
-            label="Finalized"
-            count={counts.finalized}
-            active={statusFilter === 'FINALIZED'}
-            onClick={() => setFilter('FINALIZED')}
-            tone="emerald"
-          />
-        </div>
-      </section>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <FilterChip label="All" count={counts.total} active={statusFilter === 'ALL'} onClick={() => setFilter('ALL')} />
+        <FilterChip
+          label="Pending"
+          count={counts.pending}
+          active={statusFilter === 'PENDING'}
+          onClick={() => setFilter('PENDING')}
+          tone="amber"
+        />
+        <FilterChip
+          label="Finalized"
+          count={counts.finalized}
+          active={statusFilter === 'FINALIZED'}
+          onClick={() => setFilter('FINALIZED')}
+          tone="emerald"
+        />
+      </div>
 
       {errorMessage ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-700/40 dark:bg-red-950/30 dark:text-red-200">
-          {errorMessage}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
       ) : null}
 
       {isLoading ? (
-        <div className="flex h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/70">
+        <div className="flex h-64 items-center justify-center rounded-lg border border-border bg-card">
           <Spinner size="lg" />
         </div>
       ) : filteredRows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-950/70">
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center">
+          <p className="text-sm font-semibold text-foreground">
             {statusFilter === 'PENDING'
               ? 'No pending days right now.'
               : statusFilter === 'FINALIZED'
                 ? 'No finalized days yet.'
                 : 'Nothing here yet.'}
           </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             {canEdit
               ? 'Use “Create new” above to open a date and start logging.'
               : 'Ask an admin to schedule work or finalize a quantity log.'}
           </p>
         </div>
       ) : (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-              <thead className="bg-slate-50/60 dark:bg-slate-900/40">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
                   <Th>Status</Th>
                   <Th>Date</Th>
@@ -243,12 +236,12 @@ export default function DailyQuantityLogLandingPage() {
                   </Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y divide-border">
                 {pageRows.map((row) => (
                   <tr
                     key={`${row.status}-${row.workDate}-${row.scheduleId ?? 'fin'}`}
                     onClick={() => openDate(row.workDate)}
-                    className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/60"
+                    className="cursor-pointer transition-colors hover:bg-muted/50"
                   >
                     <td className="whitespace-nowrap px-4 py-3 align-middle">
                       {row.status === 'PENDING' ? (
@@ -258,33 +251,29 @@ export default function DailyQuantityLogLandingPage() {
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 align-middle">
-                      <span className="font-semibold text-slate-900 dark:text-white">{formatLongDate(row.workDate)}</span>
-                      <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">{row.workDate}</span>
+                      <span className="font-semibold text-foreground">{formatLongDate(row.workDate)}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{row.workDate}</span>
                     </td>
                     <td className="px-4 py-3 align-middle">
                       {row.status === 'PENDING' ? (
-                        <span className="text-sm text-slate-600 dark:text-slate-300">
+                        <span className="text-sm text-foreground">
                           {row.title || row.clientDisplayName || 'Work schedule'}
                         </span>
                       ) : (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                          Submitted {formatRelative(row.submittedAt)}
-                        </span>
+                        <span className="text-sm text-muted-foreground">Submitted {formatRelative(row.submittedAt)}</span>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right align-middle">
                       {row.assignmentCount !== null ? (
-                        <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                        <span className="rounded-full border border-border px-2 py-0.5 text-xs text-foreground">
                           {row.assignmentCount} {row.assignmentCount === 1 ? 'job' : 'jobs'}
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right align-middle">
-                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                        {row.status === 'PENDING' ? 'Open →' : 'Edit →'}
-                      </span>
+                      <span className="text-xs font-semibold text-primary">{row.status === 'PENDING' ? 'Open →' : 'Edit →'}</span>
                     </td>
                   </tr>
                 ))}
@@ -321,17 +310,17 @@ export default function DailyQuantityLogLandingPage() {
         }
       >
         <div className="space-y-3">
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            Pick a calendar date. We&apos;ll open the entry screen where you can add jobs and quantities. If the date is already finalized, you&apos;ll
-            land in edit mode.
+          <p className="text-sm text-muted-foreground">
+            Pick a calendar date. We&apos;ll open the entry screen where you can add jobs and quantities. If the date is
+            already finalized, you&apos;ll land in edit mode.
           </p>
-          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Work date
             <input
               type="date"
               value={createDate}
               onChange={(e) => setCreateDate(e.target.value)}
-              className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              className="mt-1.5 block w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
         </div>
@@ -344,9 +333,10 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return (
     <th
       scope="col"
-      className={`px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
+      className={cn(
+        'px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground',
+        align === 'right' ? 'text-right' : 'text-left',
+      )}
     >
       {children}
     </th>
@@ -367,7 +357,7 @@ function FilterChip({
   tone?: 'slate' | 'amber' | 'emerald';
 }) {
   const toneActive: Record<typeof tone, string> = {
-    slate: 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-white',
+    slate: 'border-border bg-muted text-foreground',
     amber: 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-600/60 dark:bg-amber-900/40 dark:text-amber-100',
     emerald: 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-600/60 dark:bg-emerald-900/40 dark:text-emerald-100',
   };
@@ -375,12 +365,12 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className={[
-        'flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors',
+      className={cn(
+        'flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors',
         active
           ? toneActive[tone]
-          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:bg-slate-900/60',
-      ].join(' ')}
+          : 'border-border bg-card text-foreground hover:bg-muted/50',
+      )}
     >
       <span className="text-sm font-semibold">{label}</span>
       <span className="text-xs font-semibold tabular-nums">{count}</span>
@@ -404,17 +394,16 @@ function Pagination({
   onPageChange: (next: number) => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/60 px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400 sm:flex-row">
+    <div className="flex flex-col items-center justify-between gap-3 border-t border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground sm:flex-row">
       <span>
-        Showing <strong className="text-slate-900 dark:text-white">{pageStart + 1}</strong>–
-        <strong className="text-slate-900 dark:text-white">{pageEnd}</strong> of{' '}
-        <strong className="text-slate-900 dark:text-white">{total}</strong>
+        Showing <strong className="text-foreground">{pageStart + 1}</strong>–<strong className="text-foreground">{pageEnd}</strong> of{' '}
+        <strong className="text-foreground">{total}</strong>
       </span>
       <div className="flex items-center gap-1">
         <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
           Previous
         </Button>
-        <span className="px-3 font-semibold text-slate-700 dark:text-slate-200">
+        <span className="px-3 font-semibold text-foreground">
           Page {page} of {totalPages}
         </span>
         <Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
