@@ -71,8 +71,9 @@ export default function StockCountSessionPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
-  const canAdjust = isSA || perms.includes('transaction.adjust');
-  const canViewMaterials = isSA || perms.includes('material.view') || perms.includes('transaction.adjust');
+  const canAdjust = isSA || perms.includes('stock.count_session.edit');
+  const canViewMaterials =
+    isSA || perms.includes('material.view') || perms.includes('stock.count_session.view');
 
   const { data: materials = [] } = useGetMaterialsQuery(undefined, {
     skip: !canViewMaterials,

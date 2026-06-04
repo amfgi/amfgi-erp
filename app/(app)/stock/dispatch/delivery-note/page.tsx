@@ -5,10 +5,9 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
-import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { Badge } from '@/components/ui/shadcn/badge';
 import SearchSelect from '@/components/ui/SearchSelect';
 import DispatchLineGrid from '@/components/stock/DispatchLineGrid';
-import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
@@ -54,63 +53,9 @@ interface Line {
   originalWarehouseId?: string;
 }
 
-function getSelectedUom(material: Material | undefined, quantityUomId: string) {
-  if (!material) return null;
-  if (!quantityUomId.trim()) {
-    return {
-      id: '',
-      unitName: material.unit,
-      factorToBase: 1,
-    };
-  }
-  const selected = material.materialUoms?.find((uom) => uom.id === quantityUomId);
-  return selected
-    ? {
-        id: selected.id,
-        unitName: selected.unitName,
-        factorToBase: selected.factorToBase,
-      }
-    : {
-        id: '',
-        unitName: material.unit,
-        factorToBase: 1,
-      };
-}
-
 function getWarehouseBaseStock(material: Material | undefined, warehouseId: string) {
   if (!material || !warehouseId) return 0;
   return material.materialWarehouseStocks?.find((stock) => stock.warehouseId === warehouseId)?.currentStock ?? 0;
-}
-
-function formatWarehouseStock(material: Material | undefined, warehouseId: string, quantityUomId: string) {
-  const selectedUom = getSelectedUom(material, quantityUomId);
-  const baseStock = getWarehouseBaseStock(material, warehouseId);
-  if (!selectedUom) {
-    return { quantity: 0, unitName: '' };
-  }
-  return {
-    quantity: baseStock / selectedUom.factorToBase,
-    unitName: selectedUom.unitName,
-  };
-}
-
-function showBaseStockLine(quantityUomId: string) {
-  return quantityUomId.trim().length > 0;
-}
-
-function getMaterialUomOptions(material: Material | undefined) {
-  if (!material) return [];
-  const extraUoms = (material.materialUoms ?? []).filter((uom) => !uom.isBase);
-  return [
-    {
-      value: '',
-      label: `${material.unit} (base)`,
-    },
-    ...extraUoms.map((uom) => ({
-      value: uom.id,
-      label: `${uom.unitName} (=${uom.factorToBase} ${material.unit})`,
-    })),
-  ];
 }
 
 function parseOverrideReason(notesText: string) {
@@ -138,11 +83,23 @@ interface JobContactOption {
   searchText: string;
 }
 
+/** Delivery notes are always keyed to the parent job (never a variation/child job id). */
+function resolveParentJobIdForDeliveryNote(
+  jobId: string,
+  jobList: { id: string; parentJobId?: string | null }[],
+): string {
+  if (!jobId) return '';
+  const job = jobList.find((j) => j.id === jobId);
+  if (!job) return jobId;
+  return job.parentJobId ?? job.id;
+}
+
 export default function DeliveryNoteCreatePage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const appliedUrlJobDatePresetKey = useRef<string | null>(null);
   const { data: jobs = [] } = useGetJobsQuery();
   const { data: customers = [] } = useGetCustomersQuery();
   const { data: materials = [] } = useGetMaterialsQuery();
@@ -153,6 +110,7 @@ export default function DeliveryNoteCreatePage() {
   const showWarehouseColumn = true;
 
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [editingDeliveryNoteId, setEditingDeliveryNoteId] = useState<string | null>(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [selectedJob, setSelectedJob] = useState('');
   const [selectedContactPerson, setSelectedContactPerson] = useState('');
@@ -195,6 +153,7 @@ export default function DeliveryNoteCreatePage() {
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [budgetWarning, setBudgetWarning] = useState<DispatchBudgetWarningResult | null>(null);
+  const [budgetWarningValidatedForKey, setBudgetWarningValidatedForKey] = useState<string | null>(null);
   const [signedCopyUrl, setSignedCopyUrl] = useState<string | null>(null);
   const [uploadingSignedCopy, setUploadingSignedCopy] = useState(false);
   const [changeWarningModal, setChangeWarningModal] = useState<{ open: boolean; pendingChange: PendingChange | null }>({
@@ -225,8 +184,12 @@ export default function DeliveryNoteCreatePage() {
 
   const { data: jobMaterials = [] } = useGetJobMaterialsQuery(selectedJob, { skip: !selectedJob });
   const selectableJobs = useMemo(
-    () => jobs.filter((job) => Boolean(job.parentJobId) && job.status !== 'COMPLETED' && job.status !== 'CANCELLED'),
-    [jobs]
+    () =>
+      jobs.filter(
+        (job) =>
+          !job.parentJobId && job.status !== 'COMPLETED' && job.status !== 'CANCELLED',
+      ),
+    [jobs],
   );
   const budgetWarningLines = useMemo(
     () =>
@@ -242,6 +205,41 @@ export default function DeliveryNoteCreatePage() {
             }))
             .filter((line) => line.quantity > 0),
     [lines, skipMaterialDispatch]
+  );
+
+  /** Any non-empty material grid field blocks enabling "custom items only" until the user clears rows. */
+  const materialRowsHaveData = useMemo(
+    () =>
+      lines.some(
+        (l) =>
+          Boolean(l.materialId?.trim()) ||
+          Boolean(l.dispatchQty?.trim()) ||
+          Boolean(l.returnQty?.trim()) ||
+          Boolean(l.warehouseId?.trim()) ||
+          Boolean(l.quantityUomId?.trim())
+      ),
+    [lines]
+  );
+
+  const cannotEnableSkipMaterialOnly = materialRowsHaveData && !skipMaterialDispatch;
+
+  const budgetWarningLinesKey = useMemo(() => JSON.stringify(budgetWarningLines), [budgetWarningLines]);
+
+  const budgetWarningScopeKey = useMemo(
+    () => `${selectedJob}::${date}::${budgetWarningLinesKey}`,
+    [selectedJob, date, budgetWarningLinesKey]
+  );
+
+  const budgetWarningAppliesToCurrentLines = useMemo(
+    () =>
+      !skipMaterialDispatch &&
+      Boolean(
+        budgetWarning &&
+          budgetWarningValidatedForKey === budgetWarningScopeKey &&
+          budgetWarning.applicable === true &&
+          (budgetWarning.warningCount ?? 0) > 0
+      ),
+    [budgetWarning, budgetWarningScopeKey, budgetWarningValidatedForKey, skipMaterialDispatch]
   );
 
   const overrideSignals = useMemo(() => {
@@ -268,18 +266,17 @@ export default function DeliveryNoteCreatePage() {
       }
     }
 
-    const budgetWarningCount = budgetWarning?.warningCount ?? 0;
+    const budgetWarningCount = budgetWarningAppliesToCurrentLines ? (budgetWarning?.warningCount ?? 0) : 0;
     return {
       negativeStockLineCount,
       budgetWarningCount,
       requiresReason: negativeStockLineCount > 0 || budgetWarningCount > 0,
     };
-  }, [budgetWarning, lines, materials, skipMaterialDispatch]);
+  }, [budgetWarning, budgetWarningAppliesToCurrentLines, lines, materials, skipMaterialDispatch]);
 
-  const materialLineCount = useMemo(() => lines.filter((l) => l.materialId.trim()).length, [lines]);
-  const filledCustomItemCount = useMemo(
-    () => customItems.filter((c) => c.name.trim()).length,
-    [customItems],
+  const budgetWarningMaterialIds = useMemo(
+    () => (budgetWarningAppliesToCurrentLines ? budgetWarning?.rows.map((row) => row.materialId) ?? [] : []),
+    [budgetWarning, budgetWarningAppliesToCurrentLines]
   );
 
   useEffect(() => {
@@ -293,6 +290,16 @@ export default function DeliveryNoteCreatePage() {
       setSelectedContactPerson(contacts[0].name);
     }
   }, [selectedJob, selectedContactPerson, jobs]);
+
+  useEffect(() => {
+    if (!selectedJob || jobs.length === 0) return;
+    const j = jobs.find((x) => x.id === selectedJob);
+    if (j?.parentJobId) {
+      const parentId = j.parentJobId;
+      setSelectedJob(parentId);
+      setLines((prev) => prev.map((l) => ({ ...l, jobId: parentId })));
+    }
+  }, [jobs, selectedJob]);
 
   // Parse delivery note number from notes
   const parseDeliveryNoteNumber = (notesText: string): number | null => {
@@ -407,10 +414,134 @@ export default function DeliveryNoteCreatePage() {
   useEffect(() => {
     const transactionId = searchParams.get('transactionId');
     const duplicateFromId = searchParams.get('duplicateFrom');
+    const deliveryNoteIdParam = searchParams.get('deliveryNoteId');
+    const duplicateDeliveryNoteId = searchParams.get('duplicateDeliveryNoteId');
+
+    const emptyLineTemplate = (): Line[] =>
+      Array.from({ length: 3 }, () => ({
+        id: generateId(),
+        jobId: '',
+        materialId: '',
+        dispatchQty: '',
+        returnQty: '',
+        quantityUomId: '',
+        warehouseId: '',
+      }));
+
+    const loadFromDeliveryNoteRecord = async (dnId: string, opts: { duplicate: boolean }) => {
+      setIsLoadingEdit(true);
+      try {
+        const res = await fetch(`/api/delivery-notes/${encodeURIComponent(dnId)}`);
+        const json = await res.json();
+        if (!res.ok || !json.data) {
+          toast.error(json.error || 'Failed to load delivery note');
+          router.push('/stock/dispatch');
+          return;
+        }
+        const d = json.data as {
+          id: string;
+          number: number;
+          jobId: string | null;
+          date: string;
+          documentNotes: string | null;
+          customItemsJson: unknown;
+          materialDispatchSkipped: boolean;
+          job: { contactPerson?: string | null } | null;
+          firstStockOutTransactionId: string | null;
+        };
+
+        const canonicalJobId = resolveParentJobIdForDeliveryNote(d.jobId || '', jobs);
+        setSelectedJob(canonicalJobId);
+        setSelectedContactPerson(d.job?.contactPerson?.trim() || '');
+        setDate(
+          opts.duplicate ? new Date().toISOString().split('T')[0] : new Date(d.date).toISOString().split('T')[0]
+        );
+        setNotes(d.documentNotes?.trim() || '');
+        setOverrideReason('');
+        setSignedCopyUrl(null);
+
+        const rows = Array.isArray(d.customItemsJson)
+          ? (d.customItemsJson as Array<Record<string, unknown>>).map((row) => ({
+              id: generateId(),
+              name: String(row.name ?? ''),
+              description: String(row.description ?? ''),
+              unit: String(row.unit ?? ''),
+              qty: String(row.qty ?? ''),
+            }))
+          : [];
+        setCustomItems(rows.length > 0 ? rows : [{ id: generateId(), name: '', description: '', unit: '', qty: '' }]);
+
+        setSkipMaterialDispatch(Boolean(d.materialDispatchSkipped));
+
+        if (!d.materialDispatchSkipped && d.firstStockOutTransactionId) {
+          const txnRes = await fetch(`/api/transactions/${d.firstStockOutTransactionId}`);
+          const txnJson = await txnRes.json();
+          if (txnRes.ok && txnJson.data) {
+            const txn = txnJson.data as {
+              material?: { id: string };
+              quantity: number;
+              warehouseId?: string | null;
+            };
+            if (txn.material) {
+              setLines([
+                {
+                  id: generateId(),
+                  jobId: canonicalJobId,
+                  materialId: txn.material.id,
+                  dispatchQty: String(txn.quantity),
+                  returnQty: '',
+                  quantityUomId: '',
+                  warehouseId: txn.warehouseId ?? '',
+                  originalDispatchQty: txn.quantity,
+                  originalWarehouseId: txn.warehouseId ?? '',
+                },
+              ]);
+            } else {
+              setLines(emptyLineTemplate());
+            }
+          } else {
+            setLines(emptyLineTemplate());
+          }
+        } else {
+          setLines(emptyLineTemplate());
+        }
+
+        if (opts.duplicate) {
+          setEditingTransactionId(null);
+          setEditingDeliveryNoteId(null);
+          try {
+            const numRes = await fetch('/api/delivery-notes/next-number');
+            const numData = await numRes.json();
+            if (numRes.ok && numData.data) {
+              setDeliveryNoteNumber(numData.data.nextNumber);
+            }
+          } catch {
+            console.error('Failed to fetch next delivery note number');
+          }
+        } else {
+          setEditingDeliveryNoteId(d.id);
+          setEditingTransactionId(d.firstStockOutTransactionId);
+          setDeliveryNoteNumber(d.number);
+        }
+      } catch (err) {
+        console.error('Failed to load delivery note:', err);
+        toast.error('Failed to load delivery note');
+        router.push('/stock/dispatch');
+      } finally {
+        setIsLoadingEdit(false);
+      }
+    };
+
+    if (duplicateDeliveryNoteId) {
+      void loadFromDeliveryNoteRecord(duplicateDeliveryNoteId, { duplicate: true });
+      return;
+    }
+
     const sourceId = transactionId || duplicateFromId;
     const isDuplicating = !!duplicateFromId;
 
     if (sourceId) {
+      setEditingDeliveryNoteId(null);
       // Only set editingTransactionId when actually editing (not duplicating)
       if (!isDuplicating) {
         setEditingTransactionId(sourceId);
@@ -424,7 +555,8 @@ export default function DeliveryNoteCreatePage() {
 
           if (res.ok && data.data) {
             const txn = data.data;
-            setSelectedJob(txn.jobId || '');
+            const canonicalJobId = resolveParentJobIdForDeliveryNote(txn.jobId || '', jobs);
+            setSelectedJob(canonicalJobId);
             setSelectedContactPerson(parseDeliveryContactPerson(txn.notes || ''));
             // Duplicates default to today's date; edits keep the original date
             setDate(isDuplicating
@@ -452,7 +584,7 @@ export default function DeliveryNoteCreatePage() {
               setLines([
                 {
                   id: generateId(),
-                  jobId: txn.jobId || '',
+                  jobId: canonicalJobId,
                   materialId: txn.material.id,
                   dispatchQty: txn.quantity.toString(),
                   returnQty: '',
@@ -496,6 +628,9 @@ export default function DeliveryNoteCreatePage() {
       };
 
       loadTransaction();
+    } else if (deliveryNoteIdParam) {
+      setEditingDeliveryNoteId(deliveryNoteIdParam);
+      void loadFromDeliveryNoteRecord(deliveryNoteIdParam, { duplicate: false });
     } else {
       // Create mode: load next delivery note number
       const fetchNextNumber = async () => {
@@ -511,21 +646,35 @@ export default function DeliveryNoteCreatePage() {
       };
       fetchNextNumber();
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, jobs]);
 
   // Load from query params if provided (create mode)
   useEffect(() => {
-    if (editingTransactionId) return; // Skip if editing
-    if (searchParams.get('duplicateFrom')) return; // Skip if duplicating (handled in load effect)
+    if (editingTransactionId || editingDeliveryNoteId) return;
+    if (searchParams.get('duplicateFrom')) return;
+    if (searchParams.get('duplicateDeliveryNoteId')) return;
 
     const jobId = searchParams.get('jobId');
     const dateParam = searchParams.get('date');
 
-    if (jobId && dateParam) {
-      setSelectedJob(jobId);
-      setDate(dateParam);
+    if (!jobId || !dateParam) {
+      appliedUrlJobDatePresetKey.current = null;
+      return;
     }
-  }, [searchParams, editingTransactionId]);
+    if (jobs.length === 0) return;
+
+    const key = `${jobId}::${dateParam}`;
+    if (appliedUrlJobDatePresetKey.current === key) return;
+    appliedUrlJobDatePresetKey.current = key;
+
+    setSelectedJob(resolveParentJobIdForDeliveryNote(jobId, jobs));
+    setDate(dateParam);
+  }, [searchParams, editingTransactionId, editingDeliveryNoteId, jobs]);
+
+  useEffect(() => {
+    setBudgetWarning(null);
+    setBudgetWarningValidatedForKey(null);
+  }, [selectedJob, date]);
 
   const hasData = () => customItems.some(item => item.name.trim()) || lines.some(l => l.materialId || l.dispatchQty);
 
@@ -544,10 +693,14 @@ export default function DeliveryNoteCreatePage() {
   useEffect(() => {
     if (!selectedJob || budgetWarningLines.length === 0) {
       setBudgetWarning(null);
+      setBudgetWarningValidatedForKey(null);
       return;
     }
 
+    setBudgetWarningValidatedForKey(null);
+
     let cancelled = false;
+    const requestScopeKey = budgetWarningScopeKey;
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
@@ -557,11 +710,13 @@ export default function DeliveryNoteCreatePage() {
             lines: budgetWarningLines,
           }).unwrap();
           if (!cancelled) {
+            setBudgetWarningValidatedForKey(requestScopeKey);
             setBudgetWarning(result.warningCount > 0 ? result : null);
           }
         } catch {
           if (!cancelled) {
             setBudgetWarning(null);
+            setBudgetWarningValidatedForKey(null);
           }
         }
       })();
@@ -571,7 +726,7 @@ export default function DeliveryNoteCreatePage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [budgetWarningLines, date, getDispatchBudgetWarning, selectedJob]);
+  }, [budgetWarningLines, budgetWarningScopeKey, date, getDispatchBudgetWarning, selectedJob]);
 
   const handleDateChange = (newDate: string) => {
     if (hasData()) {
@@ -865,14 +1020,23 @@ export default function DeliveryNoteCreatePage() {
         type: 'STOCK_OUT',
         jobId: selectedJob,
         notes: finalNotes || undefined,
+        baseNotes: notes?.trim() ? notes.trim() : '',
+        deliveryNoteCustomItems: validCustomItems.map((item) => ({
+          name: item.name.trim(),
+          description: item.description?.trim() || undefined,
+          unit: item.unit.trim(),
+          qty: item.qty.trim(),
+        })),
         overrideReason: overrideReason.trim() || undefined,
         date,
         isDeliveryNote: true,
         existingTransactionIds: editingTransactionId ? [editingTransactionId] : undefined,
+        existingDeliveryNoteId: editingDeliveryNoteId ?? undefined,
         lines: linesToSubmit,
       }).unwrap();
 
-      const actionText = editingTransactionId ? 'updated' : 'created';
+      const wasEditing = Boolean(editingTransactionId || editingDeliveryNoteId);
+      const actionText = wasEditing ? 'updated' : 'created';
       const materialsText = skipMaterialDispatch ? '0 material(s) (custom items only)' : `${validLines.length} material(s)`;
       toast.success(`Delivery Note #${deliveryNoteNumber} ${actionText} with ${materialsText} and ${validCustomItems.length} custom item(s)`);
       setSelectedJob('');
@@ -891,10 +1055,11 @@ export default function DeliveryNoteCreatePage() {
         warehouseId: '',
       })));
       setEditingTransactionId(null);
+      setEditingDeliveryNoteId(null);
       setDeliveryNoteNumber(null);
 
       // Refetch next number for create mode
-      if (!editingTransactionId) {
+      if (!wasEditing) {
         const res = await fetch('/api/delivery-notes/next-number');
         const data = await res.json();
         if (res.ok && data.data) {
@@ -917,11 +1082,13 @@ export default function DeliveryNoteCreatePage() {
     );
   }
 
-  const pageTitle = editingTransactionId ? 'Edit Delivery Note' : 'Create Delivery Note';
-  const pageDescription = editingTransactionId
+  const pageTitle = editingTransactionId || editingDeliveryNoteId ? 'Edit Delivery Note' : 'Create Delivery Note';
+  const pageDescription =
+    editingTransactionId || editingDeliveryNoteId
     ? 'Update the delivery note details and custom items'
     : 'Dispatch materials and add custom items for the delivery note';
-  const submitButtonText = editingTransactionId ? 'Update Delivery Note' : 'Create Delivery Note';
+  const submitButtonText =
+    editingTransactionId || editingDeliveryNoteId ? 'Update Delivery Note' : 'Create Delivery Note';
 
   const handleDuplicate = async () => {
     if (!selectedJob) {
@@ -968,6 +1135,7 @@ export default function DeliveryNoteCreatePage() {
 
     // Clear editing state immediately so save creates a new entry instead of updating
     setEditingTransactionId(null);
+    setEditingDeliveryNoteId(null);
     setDeliveryNoteNumber(null);
 
     // Fetch a fresh delivery note number for the new entry
@@ -989,7 +1157,7 @@ export default function DeliveryNoteCreatePage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 overflow-x-hidden">
-      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 space-y-1">
           <Link
             href="/stock/dispatch"
@@ -1000,8 +1168,19 @@ export default function DeliveryNoteCreatePage() {
           <h1 className="text-xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">{pageDescription}</p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-          {editingTransactionId ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {budgetWarningLoading ? (
+            <span className="text-xs tabular-nums text-muted-foreground">Checking budget…</span>
+          ) : budgetWarningAppliesToCurrentLines && budgetWarning ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+              title="Variation job material budget — see breakdown below the job fields"
+            >
+              {budgetWarning.warningCount} budget warning{budgetWarning.warningCount === 1 ? '' : 's'}
+            </Badge>
+          ) : null}
+          {editingTransactionId || editingDeliveryNoteId ? (
             <Button type="button" variant="outline" size="sm" onClick={() => void handleDuplicate()}>
               Duplicate
             </Button>
@@ -1024,45 +1203,12 @@ export default function DeliveryNoteCreatePage() {
         </div>
       </header>
 
-      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            label: 'Delivery note #',
-            value: deliveryNoteNumber != null ? `DN #${deliveryNoteNumber}` : '—',
-            note: editingTransactionId ? 'Editing existing' : 'New document',
-          },
-          {
-            label: 'Material lines',
-            value: String(materialLineCount),
-            note: skipMaterialDispatch ? 'Skipped (custom only)' : 'Rows with a material',
-          },
-          {
-            label: 'Custom items',
-            value: String(filledCustomItemCount),
-            note: `${customItems.length} row(s) in grid`,
-          },
-          {
-            label: 'Budget warnings',
-            value: budgetWarningLoading ? '…' : String(budgetWarning?.warningCount ?? 0),
-            note: 'Variation budget check',
-          },
-        ].map((item) => (
-          <Card key={item.label}>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </section>
-
       <form
         ref={formRef}
         onSubmit={handleSubmit}
         className="overflow-hidden rounded-lg border border-border bg-card shadow-sm"
       >
-        {budgetWarning && (
+        {budgetWarningAppliesToCurrentLines && budgetWarning ? (
           <div className="border-b border-amber-500/30 bg-amber-500/10 p-4">
             <p className="text-sm font-medium text-foreground">
               Budget warning: this delivery may exceed the variation job material budget.
@@ -1086,7 +1232,7 @@ export default function DeliveryNoteCreatePage() {
               Enter an override reason below if this extra issue is intentional.
             </p>
           </div>
-        )}
+        ) : null}
 
         {overrideSignals.negativeStockLineCount > 0 && (
           <div className="border-b border-destructive/40 bg-destructive/10 p-4">
@@ -1099,27 +1245,74 @@ export default function DeliveryNoteCreatePage() {
           </div>
         )}
 
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">Custom items only</p>
+            <p className="text-xs text-muted-foreground">
+              Skip material dispatch — delivery note for printing only (no stock movement)
+              {cannotEnableSkipMaterialOnly ? (
+                <span className="mt-1 block text-amber-700 dark:text-amber-200">
+                  Clear material lines above to turn this on.
+                </span>
+              ) : null}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={skipMaterialDispatch}
+            aria-disabled={cannotEnableSkipMaterialOnly}
+            title={
+              cannotEnableSkipMaterialOnly
+                ? 'Clear all material line fields before enabling custom items only'
+                : undefined
+            }
+            onClick={() => {
+              if (!skipMaterialDispatch && materialRowsHaveData) {
+                toast.error('Clear all material line fields before enabling custom items only.');
+                return;
+              }
+              setSkipMaterialDispatch(!skipMaterialDispatch);
+            }}
+            className={`relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background ${
+              skipMaterialDispatch ? 'bg-primary' : 'bg-muted'
+            } ${cannotEnableSkipMaterialOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                skipMaterialDispatch ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
         {/* Job & delivery */}
         <div className="border-b border-border p-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <div>
               <SearchSelect
                 label="Job"
                 required
                 value={selectedJob}
                 onChange={(id) => handleJobChange(id)}
-                placeholder="Search jobs by number or customer..."
+                placeholder="Search by job number…"
                 items={selectableJobs.map((j) => ({
-                    id: j.id,
-                    label: j.jobNumber,
-                    searchText: customers.find((c) => c.id === j.customerId)?.name || 'Unknown',
-                  }))}
-                renderItem={(item) => (
-                  <div>
-                    <div className="font-medium text-foreground">{item.label}</div>
-                    <div className="text-xs text-muted-foreground">{item.searchText}</div>
-                  </div>
-                )}
+                  id: j.id,
+                  label: j.jobNumber,
+                  searchText: `${j.jobNumber} ${customers.find((c) => c.id === j.customerId)?.name || 'Unknown'}`,
+                }))}
+                renderItem={(item) => {
+                  const j = selectableJobs.find((x) => x.id === item.id);
+                  const customerName = j
+                    ? customers.find((c) => c.id === j.customerId)?.name || 'Unknown'
+                    : '';
+                  return (
+                    <div>
+                      <div className="font-medium text-foreground">{item.label}</div>
+                      <div className="text-xs text-muted-foreground">{customerName}</div>
+                    </div>
+                  );
+                }}
               />
             </div>
             <div>
@@ -1141,16 +1334,6 @@ export default function DeliveryNoteCreatePage() {
                 <div className="flex items-center rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
                   <span className="font-semibold text-primary">
                   {deliveryNoteNumber ? `DN #${deliveryNoteNumber}` : 'Loading...'}
-                </span>
-              </div>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Budget Warnings
-              </label>
-              <div className="flex items-center rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
-                <span className="font-semibold text-amber-700 dark:text-amber-400">
-                  {budgetWarningLoading ? 'Checking…' : `${budgetWarning?.warningCount ?? 0} warning(s)`}
                 </span>
               </div>
             </div>
@@ -1188,7 +1371,7 @@ export default function DeliveryNoteCreatePage() {
                           <div className="flex flex-col">
                             <span className="font-medium">{item.label}</span>
                             {(full?.phone || full?.email) && (
-                              <span className="text-xs text-slate-400">
+                              <span className="text-xs text-muted-foreground">
                                 {[full.phone, full.email].filter(Boolean).join(' · ')}
                               </span>
                             )}
@@ -1197,7 +1380,7 @@ export default function DeliveryNoteCreatePage() {
                       }}
                     />
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[11px] text-muted-foreground">
                         Can&apos;t find contact? Add under this job.
                       </p>
                       <button
@@ -1221,16 +1404,16 @@ export default function DeliveryNoteCreatePage() {
                       </button>
                     </div>
                     {selectedContactOption && (
-                      <div className="space-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">
-                        <p className="text-sm font-semibold text-white">{selectedContactOption.name}</p>
+                      <div className="space-y-1 rounded-xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                        <p className="text-sm font-semibold text-foreground">{selectedContactOption.name}</p>
                         {(selectedContactOption.designation || selectedContactOption.contactLabel) && (
-                          <p className="text-slate-400">
+                          <p className="text-muted-foreground">
                             {selectedContactOption.designation || selectedContactOption.contactLabel}
                           </p>
                         )}
                         {selectedContactOption.phone && <p>{selectedContactOption.phone}</p>}
                         {selectedContactOption.email && (
-                          <p className="break-all text-slate-400">{selectedContactOption.email}</p>
+                          <p className="break-all text-muted-foreground">{selectedContactOption.email}</p>
                         )}
                       </div>
                     )}
@@ -1241,243 +1424,66 @@ export default function DeliveryNoteCreatePage() {
           </div>
         </div>
 
-        {/* Notes */}
+        {/* Notes & override (side by side on md+) */}
         <div className="border-b border-border p-5">
-          <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Notes
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional general notes"
-            rows={2}
-            className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <div className="mt-4">
-            <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Override Reason
-            </label>
-            <textarea
-              value={overrideReason}
-              onChange={(e) => setOverrideReason(e.target.value)}
-              placeholder={overrideSignals.requiresReason ? 'Required for this delivery note' : 'Only needed for exceptions'}
-              rows={2}
-              className={`w-full rounded-md border px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring ${
-                overrideSignals.requiresReason
-                  ? 'border-amber-500/50 bg-amber-500/10'
-                  : 'border-border bg-background'
-              }`}
-            />
-          </div>
-        </div>
-
-        {/* Skip Materials Toggle */}
-        <div className="border-b border-border p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="mb-1 text-sm font-medium text-foreground">
-                Custom Items Only
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Skip actual dispatch, create delivery note for printing purposes only
-              </p>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
+            <div className="min-w-0">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Notes
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional general notes"
+                rows={3}
+                className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
-            <button
-              type="button"
-              onClick={() => setSkipMaterialDispatch(!skipMaterialDispatch)}
-              className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background ${
-                skipMaterialDispatch ? 'bg-primary' : 'bg-muted'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  skipMaterialDispatch ? 'translate-x-6' : 'translate-x-0'
+            <div className="min-w-0">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Override reason
+              </label>
+              <textarea
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder={overrideSignals.requiresReason ? 'Required for this delivery note' : 'Only needed for exceptions'}
+                rows={3}
+                className={`w-full rounded-md border px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring ${
+                  overrideSignals.requiresReason
+                    ? 'border-amber-500/50 bg-amber-500/10'
+                    : 'border-border bg-background'
                 }`}
               />
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* Materials Section */}
+        {/* Materials Section — same Excel-style grid as /stock/dispatch/entry */}
         {!skipMaterialDispatch && (
-        <div className="overflow-x-auto border-b border-border">
-          <div className="border-b border-border bg-muted/40 p-4">
-            <h3 className="text-sm font-semibold text-foreground">Materials for Dispatch</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Add materials to be dispatched. This section affects inventory.</p>
+          <div className="border-b border-border">
+            <div className="border-b border-border bg-muted/40 p-4">
+              <h3 className="text-sm font-semibold text-foreground">Materials for Dispatch</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Add materials to be dispatched. This section affects inventory (same Excel-style grid as dispatch entry).
+              </p>
+            </div>
+            <DispatchLineGrid
+              lines={lines}
+              materials={materials}
+              warehouses={warehouses}
+              selectedJob={selectedJob}
+              showWarehouseColumn={showWarehouseColumn}
+              emptyMessage="No materials added yet. Click + Add row below to start."
+              onUpdateLine={updateLine}
+              persistScope="delivery-note"
+              budgetWarningMaterialIds={budgetWarningMaterialIds}
+            />
+            <div className="flex justify-end border-t border-border bg-card px-4 py-3">
+              <Button type="button" variant="outline" size="sm" onClick={addLine} disabled={!selectedJob}>
+                + Add row
+              </Button>
+            </div>
           </div>
-                    <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground w-8">#</th>
-                <th className="min-w-[200px] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material</th>
-                <th className="min-w-[128px] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">UOM</th>
-                <th className="w-28 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">In Stock</th>
-                <th className="w-32 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dispatch Qty</th>
-                <th className="w-32 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Return Qty</th>
-                {showWarehouseColumn ? (
-                  <th className="min-w-[170px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Warehouse</th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.length === 0 ? (
-                <tr>
-                  <td colSpan={showWarehouseColumn ? 7 : 6} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No materials added yet. Click "+ Add Material" to start.
-                  </td>
-                </tr>
-              ) : (
-                lines.map((line, idx) => {
-                  const mat = getMaterial(line.materialId);
-                  const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === line.warehouseId);
-                  const stockDisplay = formatWarehouseStock(mat, line.warehouseId, line.quantityUomId);
-                  const selectedUom = getSelectedUom(mat, line.quantityUomId);
-                  const selectedWarehouseBaseStock = getWarehouseBaseStock(mat, line.warehouseId);
-                  return (
-                    <tr key={line.id} className="border-b border-border hover:bg-muted/40">
-                      <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{idx + 1}</td>
-
-                      <td className="px-4 py-2">
-                        <SearchSelect
-                          value={line.materialId}
-                          onChange={(id) => updateLine(line.id, 'materialId', id)}
-                          placeholder="Search materials..."
-                          disabled={!selectedJob}
-                          allowClearButton={false}
-                          clearOnEmptyInput
-                          openOnFocus
-                          items={materials
-                            .filter((m) => m.isActive)
-                            .map((m) => ({
-                              id: m.id,
-                              label: m.name,
-                              searchText: `${m.currentStock} ${m.unit}`,
-                            }))}
-                          renderItem={(item) => (
-                            <div className="flex items-center justify-between w-full">
-                              <div className="font-medium text-white">{item.label}</div>
-                              <Badge label={item.searchText} variant="blue" />
-                            </div>
-                          )}
-                        />
-                      </td>
-
-                      <td className="px-3 py-2 text-center text-slate-400 text-xs min-w-[120px]">
-                        {line.materialId ? (
-                          <SearchSelect
-                            value={line.quantityUomId}
-                            onChange={(id) => updateLine(line.id, 'quantityUomId', id)}
-                            placeholder="UOM"
-                            disabled={!selectedJob}
-                            items={getMaterialUomOptions(mat).map((uom) => ({
-                              id: uom.value,
-                              label: uom.label,
-                            }))}
-                            dropdownInPortal
-                            allowClearButton={false}
-                            clearOnEmptyInput
-                            openOnFocus
-                            clearInputOnFocus
-                            inputProps={{
-                              className: 'max-w-44 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white',
-                            }}
-                          />
-                        ) : (
-                          <span>{mat?.unit ?? '—'}</span>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-2 text-right font-mono text-sm text-emerald-700 dark:text-emerald-300">
-                        {line.warehouseId && selectedUom ? `${stockDisplay.quantity.toFixed(3)} ${stockDisplay.unitName}` : '—'}
-                      </td>
-
-                      <td className="px-3 py-2">
-                        <input
-                          type="number"
-                          min="0.001"
-                          step="any"
-                          disabled={!selectedJob || !mat || !line.warehouseId}
-                          value={line.dispatchQty}
-                          onChange={(e) => updateLine(line.id, 'dispatchQty', e.target.value)}
-                          title={
-                            !mat
-                              ? ''
-                              : !line.warehouseId
-                                ? 'Select warehouse first'
-                                : ''
-                          }
-                          placeholder="0.00"
-                          className="w-full [appearance:textfield] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-right text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        />
-                      </td>
-
-                      <td className="px-3 py-2">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={line.returnQty}
-                          onChange={(e) => updateLine(line.id, 'returnQty', e.target.value)}
-                          placeholder="0.00"
-                          disabled={!selectedJob}
-                          className="w-full [appearance:textfield] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-right text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        />
-                      </td>
-                      {showWarehouseColumn ? (
-                        <td className="px-3 py-2">
-                          <SearchSelect
-                            value={line.warehouseId}
-                            onChange={(id) => updateLine(line.id, 'warehouseId', id)}
-                            placeholder="Select warehouse..."
-                            disabled={!selectedJob || !mat}
-                            dropdownInPortal
-                            allowClearButton={false}
-                            clearOnEmptyInput
-                            openOnFocus
-                            items={warehouses.map((warehouse) => {
-                              const warehouseStock = formatWarehouseStock(mat, warehouse.id, line.quantityUomId);
-                              return {
-                                id: warehouse.id,
-                                label: warehouse.name,
-                                searchText: `${warehouseStock.quantity.toFixed(3)} ${warehouseStock.unitName}${mat?.warehouseId === warehouse.id ? ' default' : ''}`,
-                              };
-                            })}
-                            renderItem={(item) => (
-                              <div className="flex w-full min-w-0 items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate font-medium text-slate-900 dark:text-white">{item.label}</div>
-                                  {mat?.warehouseId === item.id ? (
-                                    <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-300">
-                                      Default warehouse
-                                    </div>
-                                  ) : null}
-                                </div>
-                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                                  {item.searchText}
-                                </span>
-                              </div>
-                            )}
-                          />
-                          {selectedWarehouse && selectedUom ? (
-                            <div className="mt-1 space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                              {/* {mat?.warehouseId && line.warehouseId === mat.warehouseId ? (
-                                <p className="text-emerald-700 dark:text-emerald-300">Using material default warehouse</p>
-                              ) : null} */}
-                              <p>
-                                {selectedWarehouse.name}: {stockDisplay.quantity.toFixed(3)} {selectedUom.unitName} available
-                              </p>
-                            </div>
-                          ) : null}
-                        </td>
-                      ) : null}
-
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
         )}
 
         {/* Custom Items Section */}
@@ -1527,7 +1533,7 @@ export default function DeliveryNoteCreatePage() {
                           value={item.name}
                           onChange={(e) => updateCustomItem(item.id, 'name', e.target.value)}
                           placeholder="e.g., Steel Pipe"
-                          className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                       </td>
                       <td className="px-4 py-2">
@@ -1536,7 +1542,7 @@ export default function DeliveryNoteCreatePage() {
                           value={item.description}
                           onChange={(e) => updateCustomItem(item.id, 'description', e.target.value)}
                           placeholder="Optional description"
-                          className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                       </td>
                       <td className="px-3 py-2">
@@ -1545,7 +1551,7 @@ export default function DeliveryNoteCreatePage() {
                           value={item.unit}
                           onChange={(e) => updateCustomItem(item.id, 'unit', e.target.value)}
                           placeholder="Unit"
-                          className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-center text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded border border-border bg-background px-3 py-2 text-center text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                       </td>
                       <td className="px-3 py-2">
@@ -1554,14 +1560,14 @@ export default function DeliveryNoteCreatePage() {
                           value={item.qty}
                           onChange={(e) => updateCustomItem(item.id, 'qty', e.target.value)}
                           placeholder="Qty"
-                          className="w-full rounded border border-slate-200 bg-white px-3 py-2 text-right text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded border border-border bg-background px-3 py-2 text-right text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                       </td>
                       <td className="px-2 py-2">
                         <button
                           type="button"
                           onClick={() => duplicateCustomItem(item.id)}
-                          className="p-1 text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400"
+                          className="p-1 text-muted-foreground hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
                           title="Duplicate item row"
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1572,7 +1578,7 @@ export default function DeliveryNoteCreatePage() {
                           type="button"
                           onClick={() => removeCustomItem(item.id)}
                           disabled={customItems.length === 1}
-                          className="p-1 text-slate-400 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 dark:text-slate-500 dark:hover:text-red-400"
+                          className="p-1 text-muted-foreground hover:text-destructive disabled:cursor-not-allowed disabled:opacity-30"
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1598,15 +1604,15 @@ export default function DeliveryNoteCreatePage() {
 
         {/* Signed Copy Upload — Edit mode only */}
         {editingTransactionId && (
-          <div className="border border-slate-700 border-b-0 bg-slate-900">
-            <div className="bg-slate-800 border-b border-slate-700 p-4">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <div className="border border-border border-b-0 bg-card">
+            <div className="border-b border-border bg-muted/30 p-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 Signed Copy
               </h3>
-              <p className="text-xs text-slate-400 mt-1">Upload the signed physical copy (stored in Google Drive)</p>
+              <p className="text-xs text-muted-foreground mt-1">Upload the signed physical copy (stored in Google Drive)</p>
             </div>
             <div className="p-6">
               {signedCopyUrl ? (
@@ -1674,17 +1680,17 @@ export default function DeliveryNoteCreatePage() {
                       className="sr-only"
                       id="signed-copy-input"
                     />
-                    <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center cursor-pointer hover:border-slate-500 hover:bg-slate-800/50 transition-colors"
+                    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-muted-foreground/40 hover:bg-muted/40 transition-colors"
                          onDragOver={(e) => {
                            e.preventDefault();
-                           e.currentTarget.classList.add('border-blue-500', 'bg-blue-500/10');
+                           e.currentTarget.classList.add('border-primary', 'bg-primary/10');
                          }}
                          onDragLeave={(e) => {
-                           e.currentTarget.classList.remove('border-blue-500', 'bg-blue-500/10');
+                           e.currentTarget.classList.remove('border-primary', 'bg-primary/10');
                          }}
                          onDrop={(e) => {
                            e.preventDefault();
-                           e.currentTarget.classList.remove('border-blue-500', 'bg-blue-500/10');
+                           e.currentTarget.classList.remove('border-primary', 'bg-primary/10');
                            const file = e.dataTransfer.files?.[0];
                            if (file) {
                              const input = document.getElementById('signed-copy-input') as HTMLInputElement;
@@ -1694,13 +1700,13 @@ export default function DeliveryNoteCreatePage() {
                              input.dispatchEvent(new Event('change', { bubbles: true }));
                            }
                          }}>
-                      <svg className="mx-auto h-12 w-12 text-slate-500 mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                      <svg className="mx-auto h-12 w-12 text-muted-foreground mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                         <path d="M28 8H12a4 4 0 00-4 4v20a4 4 0 004 4h24a4 4 0 004-4V20m-8-8l-6.586-6.586A2 2 0 0028.172 2H28a2 2 0 00-2 2v6a2 2 0 002 2h6zm-4 6H12m0 8h16m-6 6H12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      <p className="text-sm font-medium text-slate-300 mb-1">
+                      <p className="text-sm font-medium text-foreground mb-1">
                         {uploadingSignedCopy ? 'Uploading...' : 'Click to upload or drag and drop'}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-muted-foreground">
                         Images (JPEG, PNG, WebP) or PDF, max 20 MB
                       </p>
                     </div>
@@ -1722,39 +1728,39 @@ export default function DeliveryNoteCreatePage() {
               setAddContactModal((prev) => ({ ...prev, open: false }));
             }}
           />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[92vw] max-w-md bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-1">Add Contact Person</h2>
-            <p className="text-xs text-slate-400 mb-4">This contact will be saved under the selected job.</p>
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[92vw] max-w-md rounded-xl border border-border bg-card p-5 text-card-foreground shadow-2xl">
+            <h2 className="text-lg font-semibold text-foreground mb-1">Add Contact Person</h2>
+            <p className="text-xs text-muted-foreground mb-4">This contact will be saved under the selected job.</p>
             <div className="space-y-3">
               <input
                 value={addContactModal.name}
                 onChange={(e) => setAddContactModal((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder="Name *"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-md text-white text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <input
                 value={addContactModal.number}
                 onChange={(e) => setAddContactModal((prev) => ({ ...prev, number: e.target.value }))}
                 placeholder="Phone number"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-md text-white text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <input
                 value={addContactModal.email}
                 onChange={(e) => setAddContactModal((prev) => ({ ...prev, email: e.target.value }))}
                 placeholder="Email"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-md text-white text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <input
                 value={addContactModal.designation}
                 onChange={(e) => setAddContactModal((prev) => ({ ...prev, designation: e.target.value }))}
                 placeholder="Designation"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-md text-white text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <input
                 value={addContactModal.label}
                 onChange={(e) => setAddContactModal((prev) => ({ ...prev, label: e.target.value }))}
                 placeholder="Label (e.g. Site / Procurement)"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-md text-white text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
             <div className="mt-5 flex justify-end gap-2">
@@ -1762,7 +1768,7 @@ export default function DeliveryNoteCreatePage() {
                 type="button"
                 disabled={addContactModal.saving}
                 onClick={() => setAddContactModal((prev) => ({ ...prev, open: false }))}
-                className="px-3 py-2 rounded-md bg-slate-700 text-slate-200 text-sm"
+                className="px-3 py-2 rounded-md bg-muted text-foreground text-sm hover:bg-muted/80"
               >
                 Cancel
               </button>
@@ -1786,9 +1792,9 @@ export default function DeliveryNoteCreatePage() {
             className="fixed inset-0 bg-black/50 z-40"
             onClick={() => setChangeWarningModal({ open: false, pendingChange: null })}
           />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-sm shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-2">Unsaved Changes</h2>
-            <p className="text-slate-300 text-sm mb-4">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground shadow-2xl">
+            <h2 className="text-lg font-semibold text-foreground mb-2">Unsaved Changes</h2>
+            <p className="text-muted-foreground text-sm mb-4">
               You have items added. Changing the {changeWarningModal.pendingChange.type} will clear all unsaved items.
             </p>
 
@@ -1801,7 +1807,7 @@ export default function DeliveryNoteCreatePage() {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setChangeWarningModal({ open: false, pendingChange: null })}
-                className="px-4 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-sm font-medium transition-colors"
+                className="px-4 py-2 rounded-lg bg-muted text-foreground hover:bg-muted/80 text-sm font-medium transition-colors"
               >
                 Cancel
               </button>

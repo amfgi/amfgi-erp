@@ -65,6 +65,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         include: { unit: { select: { id: true, name: true } } },
         orderBy: [{ isBase: 'desc' }, { createdAt: 'asc' }],
       },
+      materialWarehouseStocks: {
+        select: {
+          warehouseId: true,
+          currentStock: true,
+        },
+      },
     },
   });
 
@@ -72,10 +78,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     return errorResponse('Material not found', 404);
   }
 
-  const { materialUoms, ...rest } = material;
+  const { materialUoms, materialWarehouseStocks, ...rest } = material;
   return successResponse({
     ...rest,
     materialUoms: serializeMaterialUoms(materialUoms as MaterialUomWithUnit[]),
+    materialWarehouseStocks,
   });
 }
 

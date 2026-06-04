@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -14,7 +14,19 @@ import { Select } from '@/components/ui/shadcn/select';
 import { Skeleton } from '@/components/ui/shadcn/skeleton';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
-import { useDeleteJobMutation, useGetCustomersQuery, useGetJobsQuery } from '@/store/hooks';
+import JobVariationImportModal from '@/components/jobs/JobVariationImportModal';
+import ParentJobImportModal from '@/components/jobs/ParentJobImportModal';
+import { exportJobVariationsToXlsx } from '@/lib/import-export/exportJobVariations';
+import { exportParentJobsToXlsx } from '@/lib/import-export/exportParentJobs';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
+import {
+  useDeleteJobMutation,
+  useGetCustomersQuery,
+  useGetJobsPageQuery,
+  useLazyGetJobsForExportQuery,
+  JOB_PAGE_SIZE_OPTIONS,
+} from '@/store/hooks';
 import { cn } from '@/lib/utils';
 
 interface Job {
@@ -24,6 +36,7 @@ interface Job {
   source?: 'LOCAL' | 'EXTERNAL_API';
   jobNumber: string;
   customerId: string;
+  customerName?: string | null;
   description?: string;
   site?: string;
   status: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
@@ -86,9 +99,28 @@ function statusBadgeVariant(status: Job['status']): 'default' | 'secondary' | 'o
 export default function CustomerJobsPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { data: jobs = [], isFetching: jobsLoading } = useGetJobsQuery(undefined, {
-    refetchOnMountOrArgChange: 30,
-  });
+  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('ALL');
+  const [scopeFilter, setScopeFilter] = useState<JobScopeFilter>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const deferredSearch = useDeferredValue(searchQuery);
+
+  const { data: jobsPage, isFetching: jobsLoading } = useGetJobsPageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+      status: statusFilter,
+      scope: scopeFilter,
+    },
+    { refetchOnMountOrArgChange: 30 },
+  );
+  const jobs = jobsPage?.items ?? [];
+  const totalJobs = jobsPage?.total ?? 0;
+  const activeJobsTotal = jobsPage?.activeTotal ?? 0;
+
+  const [fetchJobsForExport] = useLazyGetJobsForExportQuery();
   const { data: customers = [] } = useGetCustomersQuery(undefined, {
     refetchOnMountOrArgChange: 30,
   });
@@ -100,12 +132,13 @@ export default function CustomerJobsPage() {
   const canCreate = isSA || perms.includes('job.create');
   const canEdit = isSA || perms.includes('job.edit');
   const canDelete = isSA || perms.includes('job.delete');
+  const canView = isSA || perms.includes('job.view');
+  const canImport = canCreate || canEdit;
 
-  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('ALL');
-  const [scopeFilter, setScopeFilter] = useState<JobScopeFilter>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
   type JobSourceModeUi = 'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY';
   const [jobSourceMode, setJobSourceMode] = useState<JobSourceModeUi>('HYBRID');
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [variationImportModalOpen, setVariationImportModalOpen] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
     job: Job | null;
@@ -134,6 +167,10 @@ export default function CustomerJobsPage() {
     };
   }, [session?.user?.activeCompanyId]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, statusFilter, scopeFilter, pageSize]);
+
   const customerNameById = useMemo(
     () => new Map(customers.map((customer: Customer) => [customer.id, customer.name])),
     [customers],
@@ -152,28 +189,13 @@ export default function CustomerJobsPage() {
     }
     return map;
   }, [jobs]);
-  const orderedJobRows = useMemo(() => {
-    if (scopeFilter === 'PARENT_ONLY') return rootJobs;
-    if (scopeFilter === 'VARIATION_ONLY') return variationJobs;
-    return rootJobs.flatMap((job) => [job, ...(variationsByParent.get(job.id) ?? [])]);
-  }, [rootJobs, scopeFilter, variationJobs, variationsByParent]);
+  const displayJobs = jobs;
 
-  const filteredJobs = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return orderedJobRows.filter((job) => {
-      const parentJob = job.parentJobId ? jobById.get(job.parentJobId) : null;
-      if (statusFilter !== 'ALL' && job.status !== statusFilter) return false;
-      if (!query) return true;
-      const customerName = customerNameById.get(job.customerId) ?? '';
-      const parentNumber = parentJob?.jobNumber ?? '';
-      const haystack = [job.jobNumber, parentNumber, job.description, job.site, customerName].join(' ').toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [customerNameById, jobById, orderedJobRows, searchQuery, statusFilter]);
+  const totalVariationsOnPage = useMemo(() => variationJobs.length, [variationJobs]);
+  const apiJobsOnPage = useMemo(() => rootJobs.filter((job) => job.source === 'EXTERNAL_API').length, [rootJobs]);
 
-  const totalVariations = useMemo(() => variationJobs.length, [variationJobs]);
-  const activeJobs = useMemo(() => jobs.filter((job) => job.status === 'ACTIVE').length, [jobs]);
-  const apiJobs = useMemo(() => rootJobs.filter((job) => job.source === 'EXTERNAL_API').length, [rootJobs]);
+  const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
+  const pageStart = totalJobs === 0 ? 0 : (page - 1) * pageSize;
 
   const handleCreateJob = () => {
     router.push('/customers/jobs/form?mode=create');
@@ -266,29 +288,24 @@ export default function CustomerJobsPage() {
 
   const statTiles = [
     {
-      label: 'All jobs',
-      value: compactNumber(jobs.length),
-      note: `${compactNumber(rootJobs.length)} parents · ${compactNumber(totalVariations)} variations`,
+      label: 'Matching filters',
+      value: compactNumber(totalJobs),
+      note: 'Total in directory (server count)',
     },
     {
       label: 'Active',
-      value: compactNumber(activeJobs),
-      note: 'Parents and variations in progress',
+      value: compactNumber(activeJobsTotal),
+      note: 'Matching search & scope (server count)',
     },
     {
-      label: 'API parents',
-      value: compactNumber(apiJobs),
+      label: 'API parents on page',
+      value: compactNumber(apiJobsOnPage),
       note: 'Synced from external API',
     },
     {
-      label: 'Rows shown',
-      value: compactNumber(filteredJobs.length),
-      note:
-        scopeFilter === 'ALL'
-          ? 'Matching current filters'
-          : scopeFilter === 'PARENT_ONLY'
-            ? 'Parent jobs only'
-            : 'Variations only',
+      label: 'Variations on page',
+      value: compactNumber(totalVariationsOnPage),
+      note: 'Current page only',
     },
   ];
 
@@ -306,6 +323,57 @@ export default function CustomerJobsPage() {
           <Button type="button" variant="outline" size="sm" onClick={() => router.push('/customers')}>
             Customers
           </Button>
+          {canView ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const allJobs = await fetchJobsForExport().unwrap();
+                const count = exportParentJobsToXlsx(allJobs);
+                if (count === 0) {
+                  toast.error('No parent jobs to export');
+                  return;
+                }
+                toast.success(`Exported ${count} parent job(s)`);
+              }}
+            >
+              Export parents
+            </Button>
+          ) : null}
+          {canImport ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setImportModalOpen(true)}>
+              Import parents
+            </Button>
+          ) : null}
+          {canView ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const allJobs = await fetchJobsForExport().unwrap();
+                const count = exportJobVariationsToXlsx(allJobs);
+                if (count === 0) {
+                  toast.error('No job variations to export');
+                  return;
+                }
+                toast.success(`Exported ${count} variation(s)`);
+              }}
+            >
+              Export variations
+            </Button>
+          ) : null}
+          {canImport ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setVariationImportModalOpen(true)}
+            >
+              Import variations
+            </Button>
+          ) : null}
           {canCreate && jobSourceMode !== 'EXTERNAL_ONLY' ? (
             <Button type="button" size="sm" onClick={handleCreateJob}>
               Add job
@@ -313,6 +381,12 @@ export default function CustomerJobsPage() {
           ) : null}
         </div>
       </header>
+
+      <ParentJobImportModal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} />
+      <JobVariationImportModal
+        isOpen={variationImportModalOpen}
+        onClose={() => setVariationImportModalOpen(false)}
+      />
 
       <div className="grid w-full min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
         {statTiles.map((item) => (
@@ -404,7 +478,7 @@ export default function CustomerJobsPage() {
                 </div>
               ))}
             </div>
-          ) : filteredJobs.length === 0 ? (
+          ) : displayJobs.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">No jobs match the current filters.</div>
           ) : (
             <>
@@ -419,11 +493,12 @@ export default function CustomerJobsPage() {
                 <span className="text-right">Actions</span>
               </div>
               <div className="divide-y divide-border">
-                {filteredJobs.map((job) => {
+                {displayJobs.map((job) => {
                   const variations = variationsByParent.get(job.id) ?? [];
                   const parentJob = job.parentJobId ? jobById.get(job.parentJobId) : null;
                   const isVariation = Boolean(job.parentJobId);
-                  const customerName = customerNameById.get(job.customerId) ?? 'Unknown customer';
+                  const customerName =
+                    job.customerName ?? customerNameById.get(job.customerId) ?? 'Unknown customer';
 
                   const typeLabel = isVariation ? 'Variation' : job.source === 'EXTERNAL_API' ? 'API parent' : 'Parent';
                   const lineageVariant = isVariation
@@ -504,6 +579,21 @@ export default function CustomerJobsPage() {
             </>
           )}
         </div>
+
+        <DirectoryListPagination
+          page={page}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          total={totalJobs}
+          pageStart={pageStart}
+          pageEnd={pageStart + displayJobs.length}
+          pageSizeOptions={JOB_PAGE_SIZE_OPTIONS}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
       </section>
 
       {deleteModal.open && deleteModal.job ? (

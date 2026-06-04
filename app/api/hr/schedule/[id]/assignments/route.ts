@@ -161,7 +161,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       companyId: true,
       workDate: true,
       clientDisplayName: true,
-      title: true,
       notes: true,
       status: true,
       publishedAt: true,

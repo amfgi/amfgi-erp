@@ -2,6 +2,7 @@ import { formatDate, formatCurrency } from './formatters';
 import type { ItemType } from '@/lib/types/documentTemplate';
 import { convertGoogleDriveUrl } from '@/lib/utils/googleDriveUrl';
 import { decimalToNumber } from './decimal';
+import { resolveDeliveryNoteNumber } from '@/lib/deliveryNoteNumber';
 
 export interface TemplateDataContext {
   company: {
@@ -348,10 +349,9 @@ export function jobTemplateSlice(job: Record<string, unknown> | null | undefined
   };
 }
 
-function parseDeliveryNoteNumber(notes?: string): string {
-  if (!notes) return 'N/A';
-  const match = notes.match(/--- DELIVERY NOTE #(\d+)/);
-  return match ? match[1] : 'N/A';
+function parseDeliveryNoteNumber(notes?: string, deliveryNote?: { number: number } | null): string {
+  const n = resolveDeliveryNoteNumber(notes, deliveryNote ?? null);
+  return n > 0 ? String(n) : 'N/A';
 }
 
 function parseDeliveryContactPerson(notes?: string): string | undefined {
@@ -465,7 +465,7 @@ export function buildDeliveryNoteTemplateData(
       description: company?.description,
     },
     dn: {
-      number: parseDeliveryNoteNumber(first.notes),
+      number: parseDeliveryNoteNumber(first.notes, first.deliveryNote),
       date: formatDate(first.date),
       notes: (first.notes ?? '').split('--- DELIVERY NOTE')[0].trim(),
       totalCost,
@@ -520,7 +520,7 @@ export function buildTemplateData(
       description: company?.description,
     },
     dn: {
-      number: parseDeliveryNoteNumber(transaction.notes),
+      number: parseDeliveryNoteNumber(transaction.notes, transaction.deliveryNote),
       date: formatDate(transaction.date),
       notes: (transaction.notes ?? '').split('--- DELIVERY NOTE')[0].trim(),
       totalCost: transaction.totalCost ?? 0,

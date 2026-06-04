@@ -17,6 +17,8 @@ import {
   useApproveJobCostingSnapshotMutation,
   useCalculateJobCostEngineMutation,
   useCreateJobCostingSnapshotMutation,
+  useDeleteJobCostingSnapshotMutation,
+  useRenameJobCostingSnapshotMutation,
   useDeleteJobItemMutation,
   useDeleteJobItemProgressEntryMutation,
   useGetFormulaLibrariesQuery,
@@ -26,10 +28,18 @@ import {
   useGetJobItemsQuery,
   useGetJobProgressEntriesForJobQuery,
   useGetMaterialsQuery,
+  useGetWarehousesQuery,
   useUpdateJobItemMutation,
   useUpdateJobMutation,
 } from '@/store/hooks';
 import type { Material } from '@/store/api/endpoints/materials';
+import {
+  buildManualBudgetSpecifications,
+  isManualBudgetSpecifications,
+  parseManualBudgetSpecifications,
+  validateManualBudgetForSave,
+  type JobItemManualBudget,
+} from '@/lib/job-costing/manualBudget';
 import type {
   FormulaLibrary,
   Job,
@@ -53,29 +63,66 @@ type BudgetField = {
   defaultMaterialId?: string;
 };
 
+type BudgetFormulaValue = {
+  key: string;
+  label: string;
+  value: string;
+  unit?: string;
+};
+
 type BudgetArea = {
   key: string;
   label: string;
+  dynamic: boolean;
   fields: BudgetField[];
+  formulaValues: BudgetFormulaValue[];
 };
 
 type BudgetSchema = {
   globalFields: BudgetField[];
+  formulaValues: BudgetFormulaValue[];
   areas: BudgetArea[];
+};
+
+type BudgetMode = 'formula' | 'manual';
+
+type ManualMaterialRow = {
+  id: string;
+  materialId: string;
+  quantity: string;
+  wastePercent: string;
+};
+
+type ManualLaborRow = {
+  id: string;
+  expertiseName: string;
+  estimatedHours: string;
+  crewSize: string;
 };
 
 type BudgetItemForm = {
   name: string;
   description: string;
+  budgetMode: BudgetMode;
   formulaLibraryId: string;
   values: Record<string, string>;
+  areaInstances: Record<string, BudgetAreaInstance[]>;
+  manualMaterials: ManualMaterialRow[];
+  manualLabor: ManualLaborRow[];
   trackingItems: Array<{
     id: string;
     sourceKey: string;
     label: string;
     unit: string;
     targetValue: string;
+    finishedGoodMaterialId: string;
+    finishedGoodWarehouseId: string;
   }>;
+};
+
+type BudgetAreaInstance = {
+  id: string;
+  label: string;
 };
 
 type ProgressForm = {
@@ -111,6 +158,14 @@ type TrackableSourceOption = {
 };
 
 type BudgetPageTab = 'overview' | 'consumption' | 'progress' | 'entries' | 'snapshots';
+
+const BUDGET_TAB_ITEMS: Array<{ id: BudgetPageTab; label: string; description: string }> = [
+  { id: 'overview', label: 'Overview', description: 'Budget setup and live costing' },
+  { id: 'consumption', label: 'Consumption', description: 'Material budget and stock gap' },
+  { id: 'progress', label: 'Progress', description: 'Job-wide roll-up and pace' },
+  { id: 'entries', label: 'Quantity log', description: 'All trackable and dated entries for this job' },
+  { id: 'snapshots', label: 'Snapshots', description: 'Saved versions and baseline drift' },
+];
 
 function normalizeNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -241,11 +296,11 @@ function JobExecutionScheduleEditor({
   const [form, setForm] = useState(() => jobToScheduleForm(job));
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+    <div className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Progress & schedule</h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <h3 className="text-sm font-semibold text-foreground">Progress & schedule</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
             Status and planned dates come from the job profile. Use this panel to record actual execution dates and manual progress for the cost engine.
           </p>
         </div>
@@ -260,41 +315,41 @@ function JobExecutionScheduleEditor({
           This job has trackable on one or more budget lines. Line-level % comes from dated entries; manual progress % is disabled while trackable exist.
         </div>
       ) : null}
-      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs dark:border-slate-700 dark:bg-slate-950">
+      <div className="mt-4 rounded-xl border border-border bg-white px-3 py-3 text-xs dark:border-border dark:bg-background">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+          <span className="font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Job profile values
           </span>
-          <span className="text-[11px] font-normal normal-case tracking-normal text-slate-400 dark:text-slate-500">
+          <span className="text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
             Edit on the job profile to change.
           </span>
         </div>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <div>
-            <span className="block font-medium text-slate-500 dark:text-slate-500">Status</span>
-            <span className="mt-1 inline-block rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            <span className="block font-medium text-muted-foreground">Status</span>
+            <span className="mt-1 inline-block rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-foreground dark:bg-muted dark:text-foreground">
               {progressStatusLabel(mapJobStatusToProgressStatus(job?.status, !!form.actualStartDate))}
               {job?.status ? ` · ${job.status.replace('_', ' ').toLowerCase()}` : ''}
             </span>
           </div>
           <div>
-            <span className="block font-medium text-slate-500 dark:text-slate-500">Planned start</span>
-            <span className="mt-1 block text-sm font-semibold text-slate-900 dark:text-white">
+            <span className="block font-medium text-muted-foreground">Planned start</span>
+            <span className="mt-1 block text-sm font-semibold text-foreground">
               {job?.startDate ? new Date(job.startDate).toLocaleDateString() : '—'}
             </span>
           </div>
           <div>
-            <span className="block font-medium text-slate-500 dark:text-slate-500">Planned end</span>
-            <span className="mt-1 block text-sm font-semibold text-slate-900 dark:text-white">
+            <span className="block font-medium text-muted-foreground">Planned end</span>
+            <span className="mt-1 block text-sm font-semibold text-foreground">
               {job?.endDate ? new Date(job.endDate).toLocaleDateString() : '—'}
             </span>
           </div>
         </div>
       </div>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Progress percent
-          <div className="mt-1.5 flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-300 dark:border-slate-700 dark:bg-slate-950">
+          <div className="mt-1.5 flex overflow-hidden rounded-xl border border-border bg-white focus-within:border-emerald-300 dark:border-border dark:bg-background">
             <input
               type="number"
               inputMode="decimal"
@@ -305,44 +360,44 @@ function JobExecutionScheduleEditor({
                 if (event.key === 'ArrowUp' || event.key === 'ArrowDown') event.preventDefault();
               }}
               disabled={!canEdit || hasAnyTrackedBudgetLine}
-              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:bg-slate-100 dark:text-white dark:disabled:bg-slate-900"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:bg-muted dark:disabled:bg-muted"
             />
-            <span className="border-l border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            <span className="border-l border-border px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-muted-foreground dark:border-border">
               %
             </span>
           </div>
         </label>
       </div>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Actual start
           <input
             type="date"
             value={form.actualStartDate}
             onChange={(event) => setForm((current) => ({ ...current, actualStartDate: event.target.value }))}
             disabled={!canEdit}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 disabled:bg-muted dark:border-border dark:bg-background dark:disabled:bg-muted"
           />
         </label>
-        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Actual end
           <input
             type="date"
             value={form.actualEndDate}
             onChange={(event) => setForm((current) => ({ ...current, actualEndDate: event.target.value }))}
             disabled={!canEdit}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 disabled:bg-muted dark:border-border dark:bg-background dark:disabled:bg-muted"
           />
         </label>
       </div>
-      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         Note
         <textarea
           value={form.progressNote}
           onChange={(event) => setForm((current) => ({ ...current, progressNote: event.target.value }))}
           rows={3}
           disabled={!canEdit}
-          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
+          className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 disabled:bg-muted dark:border-border dark:bg-background dark:disabled:bg-muted"
         />
       </label>
     </div>
@@ -362,10 +417,78 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function formulaValueToString(value: unknown) {
+  return typeof value === 'number' || typeof value === 'string' ? String(value) : '';
+}
+
+function parseFormulaOverrideValue(value: string) {
+  const trimmed = value.trim();
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : trimmed;
+}
+
+function buildFormulaValuesFromConfig(config: Record<string, unknown>): BudgetFormulaValue[] {
+  const values = new Map<string, BudgetFormulaValue>();
+  if (isRecord(config.variables)) {
+    for (const [key, value] of Object.entries(config.variables)) {
+      if (typeof value !== 'number' && typeof value !== 'string') continue;
+      values.set(key, { key, label: key, value: String(value) });
+    }
+  }
+  if (Array.isArray(config.constants)) {
+    for (const constant of config.constants) {
+      if (!isRecord(constant) || typeof constant.key !== 'string' || !constant.key.trim()) continue;
+      values.set(constant.key, {
+        key: constant.key,
+        label: typeof constant.label === 'string' && constant.label.trim() ? constant.label : constant.key,
+        value: formulaValueToString(constant.value),
+        unit: typeof constant.unit === 'string' ? constant.unit : undefined,
+      });
+    }
+  }
+  return Array.from(values.values());
+}
+
+function buildAreaFormulaValuesFromConfig(
+  schemaArea: Record<string, unknown>,
+  configArea?: Record<string, unknown>
+): BudgetFormulaValue[] {
+  const metadata = new Map<string, { label: string; unit?: string }>();
+  if (Array.isArray(schemaArea.formulaValues)) {
+    for (const field of schemaArea.formulaValues) {
+      if (!isRecord(field) || typeof field.key !== 'string' || !field.key.trim()) continue;
+      metadata.set(field.key, {
+        label: typeof field.label === 'string' && field.label.trim() ? field.label : field.key,
+        unit: typeof field.unit === 'string' ? field.unit : undefined,
+      });
+    }
+  }
+
+  const values = new Map<string, BudgetFormulaValue>();
+  if (isRecord(configArea?.variables)) {
+    for (const [key, value] of Object.entries(configArea.variables)) {
+      if (typeof value !== 'number' && typeof value !== 'string') continue;
+      const meta = metadata.get(key);
+      values.set(key, {
+        key,
+        label: meta?.label ?? key,
+        value: String(value),
+        unit: meta?.unit,
+      });
+    }
+  }
+  for (const [key, meta] of metadata.entries()) {
+    if (values.has(key)) continue;
+    values.set(key, { key, label: meta.label, value: '', unit: meta.unit });
+  }
+  return Array.from(values.values());
+}
+
 function parseBudgetSchema(formula?: FormulaLibrary | null): BudgetSchema {
   const schema = isRecord(formula?.specificationSchema) ? formula.specificationSchema : {};
   const config = isRecord(formula?.formulaConfig) ? formula.formulaConfig : {};
   const defaultMaterialSelections = isRecord(config.defaultMaterialSelections) ? config.defaultMaterialSelections : {};
+  const configAreas = Array.isArray(config.areas) ? config.areas.filter(isRecord) : [];
   const globalFields = Array.isArray(schema.globalFields)
     ? schema.globalFields.flatMap((field): BudgetField[] => {
         if (!isRecord(field) || typeof field.key !== 'string' || typeof field.label !== 'string') return [];
@@ -398,10 +521,17 @@ function parseBudgetSchema(formula?: FormulaLibrary | null): BudgetSchema {
               }];
             })
           : [];
-        return [{ key: area.key, label: area.label, fields }];
+        const configArea = configAreas.find((row) => row.key === area.key);
+        return [{
+          key: area.key,
+          label: area.label,
+          dynamic: area.dynamic === true,
+          fields,
+          formulaValues: buildAreaFormulaValuesFromConfig(area, configArea),
+        }];
       })
     : [];
-  return { globalFields, areas };
+  return { globalFields, formulaValues: buildFormulaValuesFromConfig(config), areas };
 }
 
 function buildInitialBudgetValues(schema: BudgetSchema) {
@@ -409,19 +539,51 @@ function buildInitialBudgetValues(schema: BudgetSchema) {
   for (const field of schema.globalFields) {
     values[`global.${field.key}`] = field.inputType === 'material' ? (field.defaultMaterialId ?? '') : '';
   }
+  for (const field of schema.formulaValues) {
+    values[`formulaOverride.global.${field.key}`] = '';
+  }
   for (const area of schema.areas) {
     for (const field of area.fields) {
       values[`area.${area.key}.${field.key}`] = '';
     }
+    for (const field of area.formulaValues) {
+      values[`formulaOverride.area.${area.key}.${field.key}`] = '';
+    }
   }
   return values;
+}
+
+function createBudgetAreaInstance(area: BudgetArea, index: number): BudgetAreaInstance {
+  return {
+    id: crypto.randomUUID(),
+    label: `${area.label || area.key || 'Area'} ${index + 1}`,
+  };
+}
+
+function buildInitialAreaInstances(schema: BudgetSchema): Record<string, BudgetAreaInstance[]> {
+  return Object.fromEntries(
+    schema.areas
+      .filter((area) => area.dynamic)
+      .map((area) => [area.key, [createBudgetAreaInstance(area, 0)]])
+  );
+}
+
+function areaInstanceValueKey(areaKey: string, instanceId: string, fieldKey: string) {
+  return `areaInstance.${areaKey}.${instanceId}.${fieldKey}`;
+}
+
+function legacyAreaInstanceId(areaKey: string) {
+  return `${areaKey}-legacy`;
 }
 
 function numericField(inputType?: string) {
   return ['number', 'percent', 'length', 'area', 'volume', 'count'].includes(inputType ?? 'number');
 }
 
-function buildTrackableSourceOptions(schema: BudgetSchema): TrackableSourceOption[] {
+function buildTrackableSourceOptions(
+  schema: BudgetSchema,
+  areaInstances: Record<string, BudgetAreaInstance[]>
+): TrackableSourceOption[] {
   const globalOptions = schema.globalFields
     .filter((field) => numericField(field.inputType))
     .map((field) => ({
@@ -430,13 +592,23 @@ function buildTrackableSourceOptions(schema: BudgetSchema): TrackableSourceOptio
       unit: field.unit,
     }));
   const areaOptions = schema.areas.flatMap((area) =>
-    area.fields
-      .filter((field) => numericField(field.inputType))
-      .map((field) => ({
-        key: `area.${area.key}.${field.key}`,
-        label: `${area.label} - ${field.label}`,
-        unit: field.unit,
-      }))
+    area.dynamic
+      ? (areaInstances[area.key] ?? []).flatMap((instance) =>
+          area.fields
+            .filter((field) => numericField(field.inputType))
+            .map((field) => ({
+              key: areaInstanceValueKey(area.key, instance.id, field.key),
+              label: `${area.label} - ${instance.label} - ${field.label}`,
+              unit: field.unit,
+            }))
+        )
+      : area.fields
+          .filter((field) => numericField(field.inputType))
+          .map((field) => ({
+            key: `area.${area.key}.${field.key}`,
+            label: `${area.label} - ${field.label}`,
+            unit: field.unit,
+          }))
   );
   return [...globalOptions, ...areaOptions];
 }
@@ -462,6 +634,8 @@ function createTrackableRow() {
     label: '',
     unit: '',
     targetValue: '',
+    finishedGoodMaterialId: '',
+    finishedGoodWarehouseId: '',
   };
 }
 
@@ -474,7 +648,11 @@ function parseInputValue(value: string, inputType?: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildSpecifications(schema: BudgetSchema, values: Record<string, string>) {
+function buildSpecifications(
+  schema: BudgetSchema,
+  values: Record<string, string>,
+  areaInstances: Record<string, BudgetAreaInstance[]>
+) {
   const global = Object.fromEntries(
     schema.globalFields.map((field) => [
       field.key,
@@ -489,6 +667,30 @@ function buildSpecifications(schema: BudgetSchema, values: Record<string, string
 
   const areas = Object.fromEntries(
     schema.areas.map((area) => {
+      if (area.dynamic) {
+        return [
+          area.key,
+          {
+            instances: (areaInstances[area.key] ?? []).map((instance) => {
+              const measurements: Record<string, unknown> = {};
+              const variables: Record<string, unknown> = {};
+              for (const field of area.fields) {
+                const target: Record<string, unknown> = field.storage === 'variable' ? variables : measurements;
+                target[field.key] = parseInputValue(
+                  values[areaInstanceValueKey(area.key, instance.id, field.key)] ?? '',
+                  field.inputType
+                );
+              }
+              return {
+                id: instance.id,
+                label: instance.label.trim() || area.label,
+                ...(Object.keys(measurements).length > 0 ? { measurements } : {}),
+                ...(Object.keys(variables).length > 0 ? { variables } : {}),
+              };
+            }),
+          },
+        ];
+      }
       const measurements: Record<string, unknown> = {};
       const variables: Record<string, unknown> = {};
       for (const field of area.fields) {
@@ -505,9 +707,32 @@ function buildSpecifications(schema: BudgetSchema, values: Record<string, string
     })
   );
 
+  const globalFormulaOverrides = Object.fromEntries(
+    schema.formulaValues.flatMap((field) => {
+      const rawValue = values[`formulaOverride.global.${field.key}`]?.trim();
+      return rawValue ? [[field.key, parseFormulaOverrideValue(rawValue)]] : [];
+    })
+  );
+  const areaFormulaOverrides = Object.fromEntries(
+    schema.areas.flatMap((area) => {
+      const overrides = Object.fromEntries(
+        area.formulaValues.flatMap((field) => {
+          const rawValue = values[`formulaOverride.area.${area.key}.${field.key}`]?.trim();
+          return rawValue ? [[field.key, parseFormulaOverrideValue(rawValue)]] : [];
+        })
+      );
+      return Object.keys(overrides).length > 0 ? [[area.key, overrides]] : [];
+    })
+  );
+  const formulaOverrides = {
+    ...(Object.keys(globalFormulaOverrides).length > 0 ? { global: globalFormulaOverrides } : {}),
+    ...(Object.keys(areaFormulaOverrides).length > 0 ? { areas: areaFormulaOverrides } : {}),
+  };
+
   return {
     ...(Object.keys(global).length > 0 ? { global } : {}),
     areas,
+    ...(Object.keys(formulaOverrides).length > 0 ? { formulaOverrides } : {}),
   };
 }
 
@@ -520,34 +745,168 @@ function buildValuesFromSpecifications(schema: BudgetSchema, specifications: unk
   const specs = isRecord(specifications) ? specifications : {};
   const global = isRecord(specs.global) ? specs.global : {};
   const areas = isRecord(specs.areas) ? specs.areas : {};
+  const formulaOverrides = isRecord(specs.formulaOverrides) ? specs.formulaOverrides : {};
+  const globalFormulaOverrides = isRecord(formulaOverrides.global) ? formulaOverrides.global : {};
+  const areaFormulaOverrides = isRecord(formulaOverrides.areas) ? formulaOverrides.areas : {};
   const values: Record<string, string> = {};
 
   for (const field of schema.globalFields) {
     const raw = valueToFormString(global[field.key]);
     values[`global.${field.key}`] = field.inputType === 'material' ? (raw || field.defaultMaterialId || '') : raw;
   }
+  for (const field of schema.formulaValues) {
+    values[`formulaOverride.global.${field.key}`] = valueToFormString(globalFormulaOverrides[field.key]);
+  }
 
   for (const area of schema.areas) {
     const rawAreaSpecs = areas[area.key];
     const areaSpecs: Record<string, unknown> = isRecord(rawAreaSpecs) ? rawAreaSpecs : {};
+    if (area.dynamic) {
+      const instances = Array.isArray(areaSpecs.instances) ? areaSpecs.instances : [];
+      const hydratedInstances = instances.length > 0
+        ? instances
+        : Object.keys(areaSpecs).some((key) => key === 'measurements' || key === 'variables')
+          ? [{ ...areaSpecs, id: legacyAreaInstanceId(area.key), label: `${area.label || area.key || 'Area'} 1` }]
+          : [];
+      hydratedInstances.forEach((rawInstance, index) => {
+        if (!isRecord(rawInstance)) return;
+        const instanceId = typeof rawInstance.id === 'string' && rawInstance.id.trim()
+          ? rawInstance.id
+          : `${area.key}-${index + 1}`;
+        const measurements = isRecord(rawInstance.measurements) ? rawInstance.measurements : {};
+        const variables = isRecord(rawInstance.variables) ? rawInstance.variables : {};
+        for (const field of area.fields) {
+          const source = field.storage === 'variable' ? variables : measurements;
+          values[areaInstanceValueKey(area.key, instanceId, field.key)] = valueToFormString(source[field.key]);
+        }
+      });
+      continue;
+    }
     const measurements = isRecord(areaSpecs.measurements) ? areaSpecs.measurements : {};
     const variables = isRecord(areaSpecs.variables) ? areaSpecs.variables : {};
+    const rawAreaOverrides = areaFormulaOverrides[area.key];
+    const areaOverrides: Record<string, unknown> = isRecord(rawAreaOverrides) ? rawAreaOverrides : {};
 
     for (const field of area.fields) {
       const source = field.storage === 'variable' ? variables : measurements;
       values[`area.${area.key}.${field.key}`] = valueToFormString(source[field.key]);
+    }
+    for (const field of area.formulaValues) {
+      values[`formulaOverride.area.${area.key}.${field.key}`] = valueToFormString(areaOverrides[field.key]);
     }
   }
 
   return values;
 }
 
-function emptyBudgetForm(): BudgetItemForm {
+function buildAreaInstancesFromSpecifications(
+  schema: BudgetSchema,
+  specifications: unknown
+): Record<string, BudgetAreaInstance[]> {
+  const specs = isRecord(specifications) ? specifications : {};
+  const areas = isRecord(specs.areas) ? specs.areas : {};
+  return Object.fromEntries(
+    schema.areas
+      .filter((area) => area.dynamic)
+      .map((area) => {
+        const rawAreaSpecs = areas[area.key];
+        const areaSpecs: Record<string, unknown> = isRecord(rawAreaSpecs) ? rawAreaSpecs : {};
+        const rawInstances: unknown[] = Array.isArray(areaSpecs.instances) ? areaSpecs.instances : [];
+        const hasLegacyValues = Object.keys(areaSpecs).some((key) => key === 'measurements' || key === 'variables');
+        const instances = rawInstances.flatMap((rawInstance, index): BudgetAreaInstance[] => {
+          if (!isRecord(rawInstance)) return [];
+          const id = typeof rawInstance.id === 'string' && rawInstance.id.trim()
+            ? rawInstance.id
+            : `${area.key}-${index + 1}`;
+          return [{
+            id,
+            label:
+              typeof rawInstance.label === 'string' && rawInstance.label.trim()
+                ? rawInstance.label
+                : `${area.label || area.key || 'Area'} ${index + 1}`,
+          }];
+        });
+        if (instances.length > 0) return [area.key, instances];
+        if (hasLegacyValues) {
+          return [area.key, [{ id: legacyAreaInstanceId(area.key), label: `${area.label || area.key || 'Area'} 1` }]];
+        }
+        return [area.key, [createBudgetAreaInstance(area, 0)]];
+      })
+  );
+}
+
+function createManualMaterialRow(): ManualMaterialRow {
+  return {
+    id: crypto.randomUUID(),
+    materialId: '',
+    quantity: '',
+    wastePercent: '',
+  };
+}
+
+function createManualLaborRow(): ManualLaborRow {
+  return {
+    id: crypto.randomUUID(),
+    expertiseName: '',
+    estimatedHours: '',
+    crewSize: '1',
+  };
+}
+
+function buildManualBudgetFromForm(form: BudgetItemForm): JobItemManualBudget {
+  return {
+    materials: form.manualMaterials.flatMap((row) => {
+      const quantity = Number(row.quantity);
+      if (!row.materialId.trim() || !Number.isFinite(quantity) || quantity <= 0) return [];
+      const wastePercent = Number(row.wastePercent);
+      return [{
+        id: row.id,
+        materialId: row.materialId.trim(),
+        quantity,
+        ...(Number.isFinite(wastePercent) && wastePercent > 0 ? { wastePercent } : {}),
+      }];
+    }),
+    labor: form.manualLabor.flatMap((row) => {
+      const estimatedHours = Number(row.estimatedHours);
+      if (!row.expertiseName.trim() || !Number.isFinite(estimatedHours) || estimatedHours <= 0) return [];
+      const crewSize = Number(row.crewSize);
+      return [{
+        id: row.id,
+        expertiseName: row.expertiseName.trim(),
+        estimatedHours,
+        ...(Number.isFinite(crewSize) && crewSize > 1 ? { crewSize: Math.ceil(crewSize) } : {}),
+      }];
+    }),
+  };
+}
+
+function manualBudgetToFormRows(manual: JobItemManualBudget): Pick<BudgetItemForm, 'manualMaterials' | 'manualLabor'> {
+  return {
+    manualMaterials: manual.materials.map((line) => ({
+      id: line.id,
+      materialId: line.materialId,
+      quantity: String(line.quantity),
+      wastePercent: line.wastePercent !== undefined ? String(line.wastePercent) : '',
+    })),
+    manualLabor: manual.labor.map((line) => ({
+      id: line.id,
+      expertiseName: line.expertiseName,
+      estimatedHours: String(line.estimatedHours),
+      crewSize: line.crewSize !== undefined ? String(line.crewSize) : '1',
+    })),
+  };
+}
+
+function emptyBudgetForm(budgetMode: BudgetMode = 'formula'): BudgetItemForm {
   return {
     name: '',
     description: '',
+    budgetMode,
     formulaLibraryId: '',
     values: {},
+    areaInstances: {},
+    manualMaterials: budgetMode === 'manual' ? [createManualMaterialRow()] : [],
+    manualLabor: budgetMode === 'manual' ? [createManualLaborRow()] : [],
     trackingItems: [],
   };
 }
@@ -583,6 +942,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   const { data: jobItemsData, isLoading: itemsLoading } = useGetJobItemsQuery(jobId, { skip: !jobId || !canViewJob });
   const { data: formulas = [] } = useGetFormulaLibrariesQuery(undefined, { skip: !canViewMaterialBudget });
   const { data: materials = [] } = useGetMaterialsQuery(undefined, { skip: !canViewMaterialBudget });
+  const { data: warehouses = [] } = useGetWarehousesQuery(undefined, { skip: !canViewMaterialBudget });
   const { data: costingSnapshots = [] } = useGetJobCostingSnapshotsQuery(jobId, {
     skip: !jobId || !canViewMaterialBudget,
   });
@@ -594,6 +954,8 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   const [calculate, { isLoading: calculating }] = useCalculateJobCostEngineMutation();
   const [createCostingSnapshot, { isLoading: savingSnapshot }] = useCreateJobCostingSnapshotMutation();
   const [approveSnapshot, { isLoading: approvingSnapshot }] = useApproveJobCostingSnapshotMutation();
+  const [renameSnapshot, { isLoading: renamingSnapshot }] = useRenameJobCostingSnapshotMutation();
+  const [deleteSnapshot, { isLoading: deletingSnapshot }] = useDeleteJobCostingSnapshotMutation();
   const [updateJob, { isLoading: updatingJob }] = useUpdateJobMutation();
 
   const [pricingMode, setPricingMode] = useState<PricingMode>('FIFO');
@@ -603,22 +965,50 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   const [customUnitCosts, setCustomUnitCosts] = useState<Record<string, string>>({});
   const [debouncedCustomUnitCosts, setDebouncedCustomUnitCosts] = useState<Record<string, number>>({});
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<BudgetPageTab>(embeddedTab ?? 'overview');
+  const [activeTabDraft, setActiveTab] = useState<BudgetPageTab>('overview');
   const [showBudgetItemModal, setShowBudgetItemModal] = useState(false);
+  const [showBudgetFormulaOverrides, setShowBudgetFormulaOverrides] = useState(false);
+  const [collapsedAreaInstanceIds, setCollapsedAreaInstanceIds] = useState<Record<string, boolean>>({});
   const [budgetForm, setBudgetForm] = useState<BudgetItemForm>(emptyBudgetForm);
   const [editingBudgetItemId, setEditingBudgetItemId] = useState<string | null>(null);
   const [progressEntryForm, setProgressEntryForm] = useState<ProgressEntryForm>(emptyProgressEntryForm);
   const [calculationRevision, setCalculationRevision] = useState(0);
+  const [snapshotDeleteTarget, setSnapshotDeleteTarget] = useState<JobCostingSnapshotMeta | null>(null);
+  const [snapshotDeleteStep, setSnapshotDeleteStep] = useState<1 | 2>(1);
+  const [snapshotRenameTarget, setSnapshotRenameTarget] = useState<JobCostingSnapshotMeta | null>(null);
+  const [snapshotRenameNote, setSnapshotRenameNote] = useState('');
   const itemSaving = addingItem || updatingItem;
+  const visibleTabItems = useMemo(
+    () => BUDGET_TAB_ITEMS.filter((tab) => !hiddenTabs?.includes(tab.id)),
+    [hiddenTabs],
+  );
+  const activeTab = useMemo(() => {
+    if (embeddedTab) return embeddedTab;
+    if (hiddenTabs?.includes(activeTabDraft)) return visibleTabItems[0]?.id ?? activeTabDraft;
+    return activeTabDraft;
+  }, [activeTabDraft, embeddedTab, hiddenTabs, visibleTabItems]);
 
   const isChildJob = Boolean(job?.parentJobId);
   const selectedItemIds = useMemo(
     () => (jobItemsData?.items ?? []).map((item) => item.id),
     [jobItemsData?.items]
   );
+  const isManualBudgetForm = budgetForm.budgetMode === 'manual';
   const selectedFormula = useMemo(
-    () => formulas.find((formula) => formula.id === budgetForm.formulaLibraryId) ?? null,
-    [budgetForm.formulaLibraryId, formulas]
+    () =>
+      isManualBudgetForm
+        ? null
+        : (formulas.find((formula) => formula.id === budgetForm.formulaLibraryId) ?? null),
+    [budgetForm.formulaLibraryId, formulas, isManualBudgetForm]
+  );
+  const searchableMaterialItems = useMemo(
+    () =>
+      materials.map((material) => ({
+        id: material.id,
+        label: material.name,
+        sublabel: material.unit ? `${material.unit}${material.category ? ` · ${material.category}` : ''}` : material.category,
+      })),
+    [materials]
   );
   const approvedBaseline = useMemo(
     () => costingSnapshots.find((snapshot) => snapshot.status === 'APPROVED') ?? null,
@@ -638,8 +1028,20 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
         !canViewMaterialBudget,
     }
   );
-  const selectedSchema = useMemo(() => parseBudgetSchema(selectedFormula), [selectedFormula]);
-  const trackableSourceOptions = useMemo(() => buildTrackableSourceOptions(selectedSchema), [selectedSchema]);
+  const selectedSchema = useMemo(
+    () => (isManualBudgetForm ? { globalFields: [], formulaValues: [], areas: [] } : parseBudgetSchema(selectedFormula)),
+    [isManualBudgetForm, selectedFormula]
+  );
+  const hasBudgetFormulaOverrides = useMemo(
+    () =>
+      selectedSchema.formulaValues.length > 0 ||
+      selectedSchema.areas.some((area) => area.formulaValues.length > 0),
+    [selectedSchema]
+  );
+  const trackableSourceOptions = useMemo(
+    () => buildTrackableSourceOptions(selectedSchema, budgetForm.areaInstances),
+    [budgetForm.areaInstances, selectedSchema]
+  );
   const hasAnyTrackedBudgetLine = useMemo(
     () => (jobItemsData?.items ?? []).some((item) => (item.trackingItems?.length ?? 0) > 0),
     [jobItemsData?.items]
@@ -672,6 +1074,27 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       })),
     [formulas]
   );
+  const searchableFinishedGoodMaterials = useMemo(
+    () =>
+      materials.map((material) => ({
+        id: material.id,
+        label: material.name,
+        searchText: [
+          material.name,
+          material.unit,
+          material.stockType,
+          material.category,
+          material.warehouse,
+          material.externalItemName,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        unit: material.unit,
+        stockType: material.stockType,
+        warehouse: material.warehouse,
+      })),
+    [materials]
+  );
   const displayResult = selectedSnapshotData?.result ?? result;
   const livePricingSnapshots = useMemo(() => result?.pricingSnapshots ?? [], [result?.pricingSnapshots]);
   const activePricingMode = selectedSnapshotData?.snapshot.pricingMode ?? pricingMode;
@@ -679,31 +1102,6 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   const comparisonBaseline = selectedSnapshotData?.snapshot.status === 'APPROVED'
     ? selectedSnapshotData
     : approvedBaselineData;
-  const tabItems: Array<{ id: BudgetPageTab; label: string; description: string }> = [
-    { id: 'overview', label: 'Overview', description: 'Budget setup and live costing' },
-    { id: 'consumption', label: 'Consumption', description: 'Material budget and stock gap' },
-    { id: 'progress', label: 'Progress', description: 'Job-wide roll-up and pace' },
-    { id: 'entries', label: 'Quantity log', description: 'All trackable and dated entries for this job' },
-    { id: 'snapshots', label: 'Snapshots', description: 'Saved versions and baseline drift' },
-  ];
-  const visibleTabItems = useMemo(
-    () => tabItems.filter((tab) => !hiddenTabs?.includes(tab.id)),
-    [hiddenTabs, tabItems],
-  );
-
-  useEffect(() => {
-    if (embeddedTab && activeTab !== embeddedTab) {
-      setActiveTab(embeddedTab);
-    }
-  }, [embeddedTab, activeTab]);
-
-  useEffect(() => {
-    if (embeddedTab) return;
-    if (hiddenTabs && hiddenTabs.includes(activeTab) && visibleTabItems.length > 0) {
-      setActiveTab(visibleTabItems[0].id);
-    }
-  }, [embeddedTab, hiddenTabs, activeTab, visibleTabItems]);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (pricingMode !== 'CUSTOM') {
@@ -917,6 +1315,30 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
     return items[0]?.progress?.scheduleStatus;
   }, [displayResult?.items]);
 
+  const headerOverviewStats = useMemo(() => {
+    const items = jobItemsData?.items ?? [];
+    const linesWithTrackables = items.filter((item) => (item.trackingItems?.length ?? 0) > 0).length;
+    const totalTrackables = items.reduce((sum, item) => sum + (item.trackingItems?.length ?? 0), 0);
+    const stockLinkedTrackables = items.reduce(
+      (sum, item) =>
+        sum + (item.trackingItems ?? []).filter((tracker) => Boolean(tracker.finishedGoodMaterialId)).length,
+      0,
+    );
+    const savedSnapshots = costingSnapshots.filter((snapshot) => snapshot.status === 'SAVED').length;
+    const approvedSnapshot = costingSnapshots.find((snapshot) => snapshot.status === 'APPROVED') ?? null;
+    const supersededSnapshots = costingSnapshots.filter((snapshot) => snapshot.status === 'SUPERSEDED').length;
+
+    return {
+      itemCount: items.length,
+      linesWithTrackables,
+      totalTrackables,
+      stockLinkedTrackables,
+      savedSnapshots,
+      approvedSnapshot,
+      supersededSnapshots,
+    };
+  }, [costingSnapshots, jobItemsData?.items]);
+
   const flatTrackableRows = useMemo(() => {
     const out: Array<{
       jobItemId: string;
@@ -977,23 +1399,37 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
     totalToProcureQuantity: procurementRows.reduce((sum, row) => sum + row.toProcureQuantity, 0),
   }), [procurementRows]);
 
-  const openBudgetItemModal = () => {
+  const openBudgetItemModal = (budgetMode: BudgetMode = 'formula') => {
     setEditingBudgetItemId(null);
-    setBudgetForm(emptyBudgetForm());
+    setBudgetForm(emptyBudgetForm(budgetMode));
+    setShowBudgetFormulaOverrides(false);
+    setCollapsedAreaInstanceIds({});
     setProgressEntryForm(emptyProgressEntryForm());
     setEntryFormJobItemId('');
     setShowBudgetItemModal(true);
   };
 
   const openEditBudgetItemModal = (item: JobItem) => {
-    const formula = formulas.find((row) => row.id === item.formulaLibraryId) ?? item.formulaLibrary ?? null;
+    const isManual = !item.formulaLibraryId || isManualBudgetSpecifications(item.specifications);
+    const formula = isManual
+      ? null
+      : (formulas.find((row) => row.id === item.formulaLibraryId) ?? item.formulaLibrary ?? null);
     const schema = parseBudgetSchema(formula);
+    const manualBudget = isManual ? parseManualBudgetSpecifications(item.specifications) : null;
     setEditingBudgetItemId(item.id);
     setBudgetForm({
       name: item.name,
       description: item.description ?? '',
-      formulaLibraryId: item.formulaLibraryId,
-      values: buildValuesFromSpecifications(schema, item.specifications),
+      budgetMode: isManual ? 'manual' : 'formula',
+      formulaLibraryId: item.formulaLibraryId ?? '',
+      values: isManual ? {} : buildValuesFromSpecifications(schema, item.specifications),
+      areaInstances: isManual ? {} : buildAreaInstancesFromSpecifications(schema, item.specifications),
+      manualMaterials: manualBudget && manualBudget.materials.length > 0
+        ? manualBudgetToFormRows(manualBudget).manualMaterials
+        : [createManualMaterialRow()],
+      manualLabor: manualBudget && manualBudget.labor.length > 0
+        ? manualBudgetToFormRows(manualBudget).manualLabor
+        : [createManualLaborRow()],
       trackingItems:
         item.trackingItems?.map((tracker) => ({
           id: tracker.id,
@@ -1001,6 +1437,8 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
           label: tracker.label,
           unit: tracker.unit ?? '',
           targetValue: String(tracker.targetValue),
+          finishedGoodMaterialId: tracker.finishedGoodMaterialId ?? '',
+          finishedGoodWarehouseId: tracker.finishedGoodWarehouseId ?? '',
         })) ??
         (item.trackingEnabled && item.trackingLabel
           ? [{
@@ -1012,9 +1450,13 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                 item.trackingTargetValue === null || item.trackingTargetValue === undefined
                   ? ''
                   : String(item.trackingTargetValue),
+              finishedGoodMaterialId: '',
+              finishedGoodWarehouseId: '',
             }]
           : []),
     });
+    setShowBudgetFormulaOverrides(false);
+    setCollapsedAreaInstanceIds({});
     setShowBudgetItemModal(true);
     setProgressEntryForm({
       ...emptyProgressEntryForm(),
@@ -1025,13 +1467,169 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   const closeBudgetItemModal = () => {
     if (itemSaving) return;
     setShowBudgetItemModal(false);
+    setShowBudgetFormulaOverrides(false);
+    setCollapsedAreaInstanceIds({});
     setBudgetForm(emptyBudgetForm());
     setEditingBudgetItemId(null);
     setProgressEntryForm(emptyProgressEntryForm());
     setEntryFormJobItemId('');
   };
 
+  const addDynamicAreaInstance = (area: BudgetArea) => {
+    setBudgetForm((current) => {
+      const currentInstances = current.areaInstances[area.key] ?? [];
+      const instance = createBudgetAreaInstance(area, currentInstances.length);
+      return {
+        ...current,
+        areaInstances: {
+          ...current.areaInstances,
+          [area.key]: [...currentInstances, instance],
+        },
+      };
+    });
+  };
+
+  const duplicateDynamicAreaInstance = (area: BudgetArea, sourceInstance: BudgetAreaInstance) => {
+    setBudgetForm((current) => {
+      const currentInstances = current.areaInstances[area.key] ?? [];
+      const instance = {
+        id: crypto.randomUUID(),
+        label: `${sourceInstance.label || area.label} Copy`,
+      };
+      const nextValues = { ...current.values };
+      for (const field of area.fields) {
+        nextValues[areaInstanceValueKey(area.key, instance.id, field.key)] =
+          current.values[areaInstanceValueKey(area.key, sourceInstance.id, field.key)] ?? '';
+      }
+      return {
+        ...current,
+        values: nextValues,
+        areaInstances: {
+          ...current.areaInstances,
+          [area.key]: [
+            ...currentInstances,
+            instance,
+          ],
+        },
+      };
+    });
+  };
+
+  const removeDynamicAreaInstance = (area: BudgetArea, instanceId: string) => {
+    setBudgetForm((current) => {
+      const nextValues = { ...current.values };
+      for (const field of area.fields) {
+        delete nextValues[areaInstanceValueKey(area.key, instanceId, field.key)];
+      }
+      const nextInstances = (current.areaInstances[area.key] ?? []).filter((instance) => instance.id !== instanceId);
+      return {
+        ...current,
+        values: nextValues,
+        areaInstances: {
+          ...current.areaInstances,
+          [area.key]: nextInstances,
+        },
+      };
+    });
+    setCollapsedAreaInstanceIds((current) => {
+      const next = { ...current };
+      delete next[instanceId];
+      return next;
+    });
+  };
+
+  const updateDynamicAreaInstanceLabel = (areaKey: string, instanceId: string, label: string) => {
+    setBudgetForm((current) => ({
+      ...current,
+      areaInstances: {
+        ...current.areaInstances,
+        [areaKey]: (current.areaInstances[areaKey] ?? []).map((instance) =>
+          instance.id === instanceId ? { ...instance, label } : instance
+        ),
+      },
+    }));
+  };
+
   const saveBudgetItem = async () => {
+    if (!budgetForm.name.trim() && !isManualBudgetForm && !selectedFormula) {
+      toast.error('Enter an item name or select a formula');
+      return;
+    }
+    if (isManualBudgetForm) {
+      const manualBudget = buildManualBudgetFromForm(budgetForm);
+      const validationError = validateManualBudgetForSave(manualBudget);
+      if (validationError) {
+        toast.error(validationError);
+        return;
+      }
+      const trackingItems = budgetForm.trackingItems.flatMap((tracker) => {
+        const targetValue = Number(tracker.targetValue || '0');
+        const label = tracker.label.trim();
+        const unit = tracker.unit.trim();
+        const finishedGoodMaterialId = tracker.finishedGoodMaterialId.trim();
+        const defaultWarehouseId = materials.find((material) => material.id === finishedGoodMaterialId)?.warehouseId ?? '';
+        const finishedGoodWarehouseId = finishedGoodMaterialId
+          ? (tracker.finishedGoodWarehouseId.trim() || defaultWarehouseId || null)
+          : null;
+        if (!label || !Number.isFinite(targetValue) || targetValue <= 0) return [];
+        return [{
+          id: tracker.id,
+          label,
+          unit: unit || null,
+          targetValue,
+          sourceKey: null,
+          finishedGoodMaterialId: finishedGoodMaterialId || null,
+          finishedGoodWarehouseId,
+        }];
+      });
+      if (budgetForm.trackingItems.some((tracker) => {
+        const targetValue = Number(tracker.targetValue || '0');
+        return !tracker.label.trim() || !Number.isFinite(targetValue) || targetValue <= 0;
+      })) {
+        toast.error('Each trackable item needs a label and target greater than zero');
+        return;
+      }
+      const name = budgetForm.name.trim() || 'Manual budget item';
+      try {
+        const data = {
+          name,
+          description: budgetForm.description.trim() || undefined,
+          formulaLibraryId: null,
+          specifications: buildManualBudgetSpecifications(manualBudget),
+          trackingItems,
+          trackingEnabled: trackingItems.length > 0,
+          trackingLabel: trackingItems[0]?.label ?? null,
+          trackingUnit: trackingItems[0]?.unit ?? null,
+          trackingTargetValue: trackingItems[0]?.targetValue ?? null,
+          trackingSourceKey: null,
+        };
+        if (editingBudgetItemId) {
+          await updateJobItem({ jobId, itemId: editingBudgetItemId, data }).unwrap();
+          toast.success('Budget item updated');
+        } else {
+          await addJobItem({
+            jobId,
+            data: { ...data, sortOrder: jobItemsData?.items?.length ?? 0 },
+          }).unwrap();
+          toast.success('Manual budget item added');
+        }
+        setCalculationRevision((current) => current + 1);
+        closeBudgetItemModal();
+      } catch (error) {
+        const message =
+          typeof error === 'object' &&
+          error !== null &&
+          'data' in error &&
+          typeof (error as { data?: { error?: unknown } }).data?.error === 'string'
+            ? (error as { data: { error: string } }).data.error
+            : editingBudgetItemId
+              ? 'Failed to update budget item'
+              : 'Failed to add budget item';
+        toast.error(message);
+      }
+      return;
+    }
+
     if (!budgetForm.formulaLibraryId || !selectedFormula) {
       toast.error('Select a formula first');
       return;
@@ -1044,6 +1642,26 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       return;
     }
     for (const area of selectedSchema.areas) {
+      if (area.dynamic) {
+        const instances = budgetForm.areaInstances[area.key] ?? [];
+        if (instances.length === 0) {
+          toast.error(`${area.label}: add at least one area instance`);
+          return;
+        }
+        const missingInstance = instances.flatMap((instance) => {
+          const missingField = area.fields.find(
+            (field) =>
+              field.required !== false &&
+              isEmptyBudgetValue(field, budgetForm.values[areaInstanceValueKey(area.key, instance.id, field.key)])
+          );
+          return missingField ? [{ instance, field: missingField }] : [];
+        })[0];
+        if (missingInstance) {
+          toast.error(`${area.label} - ${missingInstance.instance.label}: ${missingInstance.field.label} is required`);
+          return;
+        }
+        continue;
+      }
       const missingAreaField = area.fields.find(
         (field) => field.required !== false && isEmptyBudgetValue(field, budgetForm.values[`area.${area.key}.${field.key}`])
       );
@@ -1057,6 +1675,11 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       const targetValue = tracker.sourceKey ? source.targetValue : Number(tracker.targetValue || '0');
       const label = tracker.sourceKey ? (source.option?.label ?? '') : tracker.label.trim();
       const unit = tracker.sourceKey ? (source.option?.unit ?? '') : tracker.unit.trim();
+      const finishedGoodMaterialId = tracker.finishedGoodMaterialId.trim();
+      const defaultWarehouseId = materials.find((material) => material.id === finishedGoodMaterialId)?.warehouseId ?? '';
+      const finishedGoodWarehouseId = finishedGoodMaterialId
+        ? (tracker.finishedGoodWarehouseId.trim() || defaultWarehouseId || null)
+        : null;
       if (!label || !Number.isFinite(targetValue) || targetValue <= 0) return [];
       return [{
         id: tracker.id,
@@ -1064,6 +1687,8 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
         unit: unit || null,
         targetValue,
         sourceKey: tracker.sourceKey || null,
+        finishedGoodMaterialId: finishedGoodMaterialId || null,
+        finishedGoodWarehouseId,
       }];
     });
 
@@ -1082,7 +1707,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
         name,
         description: budgetForm.description.trim() || undefined,
         formulaLibraryId: selectedFormula.id,
-        specifications: buildSpecifications(selectedSchema, budgetForm.values),
+        specifications: buildSpecifications(selectedSchema, budgetForm.values, budgetForm.areaInstances),
         trackingItems,
         trackingEnabled: trackingItems.length > 0,
         trackingLabel: trackingItems[0]?.label ?? null,
@@ -1304,10 +1929,81 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
     }
   };
 
+  const openRenameSnapshot = (snapshot: JobCostingSnapshotMeta) => {
+    setSnapshotRenameTarget(snapshot);
+    setSnapshotRenameNote(snapshot.note?.trim() || `Version ${snapshot.versionNumber}`);
+  };
+
+  const closeRenameSnapshot = () => {
+    setSnapshotRenameTarget(null);
+    setSnapshotRenameNote('');
+  };
+
+  const saveSnapshotRename = async () => {
+    if (!snapshotRenameTarget) return;
+    const note = snapshotRenameNote.trim();
+    if (!note) {
+      toast.error('Enter a label for this cost version');
+      return;
+    }
+    try {
+      await renameSnapshot({ jobId, snapshotId: snapshotRenameTarget.id, note }).unwrap();
+      toast.success('Cost version renamed');
+      closeRenameSnapshot();
+    } catch (error) {
+      const message =
+        typeof error === 'object' &&
+        error !== null &&
+        'data' in error &&
+        typeof (error as { data?: { error?: unknown } }).data?.error === 'string'
+          ? (error as { data: { error: string } }).data.error
+          : 'Failed to rename cost version';
+      toast.error(message);
+    }
+  };
+
+  const openDeleteSnapshot = (snapshot: JobCostingSnapshotMeta) => {
+    setSnapshotDeleteTarget(snapshot);
+    setSnapshotDeleteStep(1);
+  };
+
+  const closeDeleteSnapshot = () => {
+    setSnapshotDeleteTarget(null);
+    setSnapshotDeleteStep(1);
+  };
+
+  const confirmDeleteSnapshotStep = async () => {
+    if (!snapshotDeleteTarget) return;
+    if (snapshotDeleteStep === 1) {
+      setSnapshotDeleteStep(2);
+      return;
+    }
+    try {
+      await deleteSnapshot({ jobId, snapshotId: snapshotDeleteTarget.id }).unwrap();
+      if (selectedSnapshotId === snapshotDeleteTarget.id) {
+        setSelectedSnapshotId(null);
+      }
+      toast.success(`Deleted cost version ${snapshotDeleteTarget.versionNumber}`);
+      closeDeleteSnapshot();
+    } catch (error) {
+      const message =
+        typeof error === 'object' &&
+        error !== null &&
+        'data' in error &&
+        typeof (error as { data?: { error?: unknown } }).data?.error === 'string'
+          ? (error as { data: { error: string } }).data.error
+          : 'Failed to delete cost version';
+      toast.error(message);
+    }
+  };
+
+  const snapshotDisplayTitle = (snapshot: JobCostingSnapshotMeta) =>
+    snapshot.note?.trim() ? snapshot.note.trim() : `Version ${snapshot.versionNumber}`;
+
   if (!canViewJob) {
     return (
       <div className="py-12 text-center">
-        <p className="text-slate-500 dark:text-slate-400">You do not have permission to view this job.</p>
+        <p className="text-muted-foreground">You do not have permission to view this job.</p>
       </div>
     );
   }
@@ -1321,7 +2017,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   }
 
   if (!job) {
-    return <div className="py-12 text-center text-slate-500 dark:text-slate-400">Job not found.</div>;
+    return <div className="py-12 text-center text-muted-foreground">Job not found.</div>;
   }
 
   return (
@@ -1346,7 +2042,10 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             ) : null}
             <Link
               href={`/jobs/${jobId}`}
-              className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+              className={cn(
+                buttonVariants({ variant: 'link', size: 'sm' }),
+                'h-auto p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+              )}
             >
               {isChildJob ? 'Variation workspace' : 'Contract job'}
             </Link>
@@ -1357,9 +2056,14 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
             {canEdit ? (
-              <Button type="button" size="sm" onClick={openBudgetItemModal}>
-                Add Budget Item
-              </Button>
+              <>
+                <Button type="button" size="sm" onClick={() => openBudgetItemModal('formula')}>
+                  Add Budget Item
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => openBudgetItemModal('manual')}>
+                  Add Manual Budget
+                </Button>
+              </>
             ) : null}
             <Link href="/stock/job-budget/formulas" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
               Formula Library
@@ -1370,7 +2074,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
           </div>
         </header>
 
-        <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
             <CardContent className="p-4">
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -1382,27 +2086,39 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Job items</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{jobItemsData?.items?.length ?? 0}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{formatQty(overallProgress)}% weighted progress</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Budget & tracking</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{headerOverviewStats.itemCount}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatQty(overallProgress)}% weighted progress
+                {headerOverviewStats.itemCount > 0
+                  ? ` · ${headerOverviewStats.linesWithTrackables}/${headerOverviewStats.itemCount} lines with trackables`
+                  : ''}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {headerOverviewStats.totalTrackables > 0
+                  ? `${headerOverviewStats.totalTrackables} trackable item${headerOverviewStats.totalTrackables === 1 ? '' : 's'} · ${headerOverviewStats.stockLinkedTrackables}/${headerOverviewStats.totalTrackables} stock linked`
+                  : 'No trackable items yet'}
+              </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Estimated material cost</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Cost & snapshots</p>
               <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
                 {formatMoney(displayResult?.summary.totalQuotedMaterialCost ?? 0)}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">{pricingModeLabel(activePricingMode)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Estimated completion</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
-                {formatDays(displayResult?.summary.totalEstimatedCompletionDays ?? 0)}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {pricingModeLabel(activePricingMode)} · {formatDays(displayResult?.summary.totalEstimatedCompletionDays ?? 0)}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">Sundays skipped by company setting</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {headerOverviewStats.savedSnapshots} saved
+                {headerOverviewStats.approvedSnapshot
+                  ? ` · approved baseline v${headerOverviewStats.approvedSnapshot.versionNumber}`
+                  : ' · no approved baseline'}
+                {headerOverviewStats.supersededSnapshots > 0
+                  ? ` · ${headerOverviewStats.supersededSnapshots} superseded`
+                  : ''}
+              </p>
             </CardContent>
           </Card>
         </section>
@@ -1410,21 +2126,22 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {!embeddedTab && visibleTabItems.length > 0 ? (
-      <section className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-4">
+      <section className="rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4">
         <div className="flex flex-wrap gap-2">
           {visibleTabItems.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-2xl border px-4 py-3 text-left transition ${
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left text-sm transition-colors',
                 activeTab === tab.id
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900/60'
-              }`}
+                  ? 'border-primary bg-primary/10 shadow-sm'
+                  : 'border-border bg-card hover:bg-muted/50',
+              )}
             >
-              <div className="text-sm font-semibold">{tab.label}</div>
-              <div className="mt-1 text-xs text-current/70">{tab.description}</div>
+              <div className={cn('font-semibold', activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground')}>{tab.label}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{tab.description}</div>
             </button>
           ))}
         </div>
@@ -1432,40 +2149,47 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {calculating ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           <Spinner size="sm" />
           Recalculating material budget and costing...
         </div>
       ) : null}
 
       {errorMessage ? (
-        <div className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {errorMessage}
         </div>
       ) : null}
 
       {(activeTab === 'overview' || activeTab === 'snapshots') ? (
-      <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70 sm:p-5">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_200px]">
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div
+          className={cn(
+            'grid gap-4',
+            activeTab === 'snapshots' ? 'lg:grid-cols-[minmax(0,1fr)_200px]' : 'max-w-sm',
+          )}
+        >
+          {activeTab === 'snapshots' ? (
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Posting Date
+              </label>
+              <input
+                type="date"
+                value={postingDate}
+                onChange={(event) => setPostingDate(event.target.value)}
+                className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 dark:border-border dark:bg-background"
+              />
+            </div>
+          ) : null}
           <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">
-              Posting Date
-            </label>
-            <input
-              type="date"
-              value={postingDate}
-              onChange={(event) => setPostingDate(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Pricing Mode
             </label>
             <select
               value={pricingMode}
               onChange={(event) => handlePricingModeChange(event.target.value as PricingMode)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 dark:border-border dark:bg-background"
             >
               <option value="FIFO">FIFO</option>
               <option value="MOVING_AVERAGE">Moving average</option>
@@ -1490,9 +2214,9 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
           </div>
         ) : null}
 
-        {activeTab === 'overview' && !selectedSnapshotData ? (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
-            Live calculation is using posting date {new Date(activePostingDate).toLocaleDateString()}. Save a cost version when you want to freeze this price basis and compare it later against current prices.
+        {activeTab === 'snapshots' && !selectedSnapshotData ? (
+          <div className="mt-4 rounded-2xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground dark:border-border dark:bg-muted/30">
+            Live calculation uses posting date {new Date(activePostingDate).toLocaleDateString()}. Save a cost version to freeze this price basis and compare it later.
           </div>
         ) : null}
 
@@ -1515,21 +2239,21 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-emerald-200 bg-white/80 px-4 py-3 dark:border-emerald-500/20 dark:bg-slate-950/40">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">Material drift</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                <p className="mt-1 text-lg font-semibold text-foreground">
                   {formatMoney(displayResult.summary.totalQuotedMaterialCost - comparisonBaseline.result.summary.totalQuotedMaterialCost)}
                 </p>
               </div>
-              <div className="rounded-2xl border border-emerald-200 bg-white/80 px-4 py-3 dark:border-emerald-500/20 dark:bg-slate-950/40">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">Timeline drift</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                <p className="mt-1 text-lg font-semibold text-foreground">
                   {formatDays(displayResult.summary.totalEstimatedCompletionDays - comparisonBaseline.result.summary.totalEstimatedCompletionDays)}
                 </p>
               </div>
-              <div className="rounded-2xl border border-emerald-200 bg-white/80 px-4 py-3 dark:border-emerald-500/20 dark:bg-slate-950/40">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-800 dark:text-emerald-200">Baseline mode</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                <p className="mt-1 text-lg font-semibold text-foreground">
                   {pricingModeLabel(comparisonBaseline.snapshot.pricingMode)}
                 </p>
               </div>
@@ -1538,11 +2262,11 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
         ) : null}
 
         {activeTab === 'overview' && pricingMode === 'CUSTOM' && !selectedSnapshotData ? (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">Custom material prices</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-sm font-semibold text-foreground">Custom material prices</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Override the unit cost used in this costing run. Saved cost versions keep these prices fixed until you recalculate again.
                 </p>
               </div>
@@ -1556,12 +2280,12 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {livePricingSnapshots.map((snapshot) => (
-                <label key={snapshot.materialId} className="rounded-2xl border border-slate-200 bg-white p-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                <label key={snapshot.materialId} className="rounded-2xl border border-border bg-card p-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground dark:border-border">
                   {snapshot.materialName}
-                  <div className="mt-1 text-[11px] normal-case tracking-normal text-slate-500 dark:text-slate-400">
+                  <div className="mt-1 text-[11px] normal-case tracking-normal text-muted-foreground">
                     {snapshot.baseUnit} · posting-date base {formatMoney(snapshot.baseUnitCost)}
                   </div>
-                  <div className="mt-2 flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-300 dark:border-slate-700 dark:bg-slate-950">
+                  <div className="mt-2 flex overflow-hidden rounded-xl border border-border bg-white focus-within:border-emerald-300 dark:border-border dark:bg-background">
                     <input
                       type="number"
                       inputMode="decimal"
@@ -1577,16 +2301,16 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                       onKeyDown={(event) => {
                         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') event.preventDefault();
                       }}
-                      className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:text-white"
+                      className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
-                    <span className="border-l border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    <span className="border-l border-border px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-muted-foreground dark:border-border">
                       AED
                     </span>
                   </div>
                 </label>
               ))}
               {livePricingSnapshots.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm normal-case tracking-normal text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm normal-case tracking-normal text-muted-foreground dark:border-border">
                   No material price rows yet. Add budget items first so the costing engine knows which materials to price.
                 </div>
               ) : null}
@@ -1595,11 +2319,11 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
         ) : null}
 
         {activeTab === 'snapshots' ? (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/70">
+        <div className="mt-4 rounded-2xl border border-border bg-white p-4 dark:border-border dark:bg-card">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">Saved cost versions</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-sm font-semibold text-foreground">Saved cost versions</p>
+              <p className="mt-1 text-xs text-muted-foreground">
                 Save a frozen price snapshot so later material price changes do not overwrite what was calculated today.
               </p>
             </div>
@@ -1613,12 +2337,15 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
           </div>
           <div className="mt-4 space-y-2">
             {costingSnapshots.map((snapshot: JobCostingSnapshotMeta) => (
-              <div key={snapshot.id} className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60 sm:flex-row sm:items-center sm:justify-between">
+              <div key={snapshot.id} className="flex flex-col gap-2 rounded-2xl border border-border bg-muted/40 px-4 py-3 dark:border-border dark:bg-muted/30 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-medium text-slate-900 dark:text-white">
-                    Version {snapshot.versionNumber} · {pricingModeLabel(snapshot.pricingMode)}
+                  <p className="font-medium text-foreground">
+                    {snapshotDisplayTitle(snapshot)}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      v{snapshot.versionNumber} · {pricingModeLabel(snapshot.pricingMode)}
+                    </span>
                   </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Posting date {new Date(snapshot.postingDate).toLocaleDateString()} · saved {new Date(snapshot.createdAt).toLocaleString()}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1626,32 +2353,51 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                       snapshot.status === 'APPROVED'
                         ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200'
                         : snapshot.status === 'SUPERSEDED'
-                          ? 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                          ? 'bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground'
                           : 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200'
                     }`}>
                       {snapshot.status === 'APPROVED' ? 'Execution baseline' : snapshot.status}
                     </span>
                     {snapshot.approvedAt ? (
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="text-[11px] text-muted-foreground">
                         approved {new Date(snapshot.approvedAt).toLocaleString()}
                       </span>
                     ) : null}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <div className="text-right text-xs text-muted-foreground sm:mr-2">
                     <div>{formatMoney(snapshot.totalQuotedMaterialCost)}</div>
                     <div>{formatDays(snapshot.totalEstimatedCompletionDays)}</div>
                   </div>
                   {canEdit ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={approvingSnapshot || snapshot.status === 'APPROVED'}
-                      onClick={() => approveAsBaseline(snapshot.id)}
-                    >
-                      {snapshot.status === 'APPROVED' ? 'Approved' : 'Approve'}
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={approvingSnapshot || snapshot.status === 'APPROVED'}
+                        onClick={() => approveAsBaseline(snapshot.id)}
+                      >
+                        {snapshot.status === 'APPROVED' ? 'Approved' : 'Approve'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={renamingSnapshot}
+                        onClick={() => openRenameSnapshot(snapshot)}
+                      >
+                        Rename
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        disabled={deletingSnapshot}
+                        onClick={() => openDeleteSnapshot(snapshot)}
+                      >
+                        Delete
+                      </Button>
+                    </>
                   ) : null}
                   <Button
                     size="sm"
@@ -1664,7 +2410,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
               </div>
             ))}
             {costingSnapshots.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-500">
+              <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground dark:border-border">
                 No saved cost versions yet.
               </div>
             ) : null}
@@ -1675,53 +2421,30 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {activeTab === 'overview' ? (
-      <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 dark:border-border sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Budget Items</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">Budget Items</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Add one item per scope, such as GRP lining, MEP, steel, or finishing.
             </p>
           </div>
           {canEdit ? (
-            <Button size="sm" onClick={openBudgetItemModal}>Add Budget Item</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => openBudgetItemModal('formula')}>Add Budget Item</Button>
+              <Button size="sm" variant="secondary" onClick={() => openBudgetItemModal('manual')}>
+                Add Manual Budget
+              </Button>
+            </div>
           ) : null}
         </div>
-        {job ? (
-          <div className="border-b border-slate-200 bg-slate-50/90 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/50">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Job progress & schedule</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    {progressStatusLabel(job.executionProgressStatus)}
-                  </span>
-                  {!job.executionActualEndDate ? (
-                    <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
-                      {scheduleStatusLabel(jobScheduleRollupStatus)}
-                    </span>
-                  ) : null}
-                  <span className="text-slate-500 dark:text-slate-400">
-                    Manual / roll-up {formatQty(Number(job.executionProgressPercent ?? 0))}%
-                    {hasAnyTrackedBudgetLine ? ' · line % from trackable' : ''}
-                  </span>
-                </div>
-              </div>
-              {canEdit ? (
-                <Button size="sm" variant="secondary" onClick={() => setActiveTab('progress')}>
-                  Edit on Progress tab
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+        <div className="divide-y divide-border dark:divide-border">
           {(jobItemsData?.items ?? []).map((item) => (
             <div key={item.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="font-semibold text-slate-900 dark:text-white">{item.name}</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
-                  {item.formulaLibrary?.name ?? 'Formula'} {item.description ? `- ${item.description}` : ''}
+                <p className="font-semibold text-foreground">{item.name}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {item.formulaLibrary?.name ?? 'Manual budget'} {item.description ? `- ${item.description}` : ''}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                   {(item.trackingItems?.length ?? 0) > 0 ? (
@@ -1729,19 +2452,17 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                       {item.trackingItems?.length} trackable item{item.trackingItems?.length === 1 ? '' : 's'}
                     </span>
                   ) : (
-                    <span className="text-slate-500 dark:text-slate-400">No trackables</span>
+                    <span className="text-muted-foreground">No trackables</span>
                   )}
+                  {(item.trackingItems?.length ?? 0) > 0 ? (
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-800 dark:bg-blue-500/20 dark:text-blue-200">
+                      {(item.trackingItems ?? []).filter((tracker) => tracker.finishedGoodMaterialId).length} stock linked
+                    </span>
+                  ) : null}
                 </div>
               </div>
               {canEdit ? (
                 <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setActiveTab('progress')}
-                    >
-                      Progress
-                    </Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1762,7 +2483,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             </div>
           ))}
           {(jobItemsData?.items ?? []).length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-500">
+            <div className="px-5 py-8 text-center text-sm text-muted-foreground">
               No budget items yet. Add one budget item, choose a formula, then enter the measurements.
             </div>
           ) : null}
@@ -1771,16 +2492,16 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {activeTab === 'consumption' ? (
-      <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Material Budget</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
+      <section className="rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4 dark:border-border">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">Material Budget</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Base-unit normalized estimate vs actual dispatch consumption, ready to compare with issue reconcile activity.
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
+            <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Material</th>
                 <th className="px-4 py-3 text-right">Estimated</th>
@@ -1797,22 +2518,22 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             </thead>
             <tbody>
               {aggregatedMaterials.map((material) => (
-                <tr key={material.materialId} className="border-t border-slate-200 dark:border-slate-800">
+                <tr key={material.materialId} className="border-t border-border dark:border-border">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-900 dark:text-white">{material.materialName}</div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{material.baseUnit}</div>
+                    <div className="font-medium text-foreground">{material.materialName}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{material.baseUnit}</div>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(material.estimatedBaseQuantity)} {material.baseUnit}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(material.expectedIssuedBaseQuantity)} {material.baseUnit}
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{formatMoney(material.expectedIssuedCost)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{formatMoney(material.expectedIssuedCost)}</div>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatMoney(material.quotedCost)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">{formatMoney(material.quotedCost)}</td>
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(material.actualIssuedBaseQuantity)} {material.baseUnit}
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{formatMoney(material.actualIssuedCost)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{formatMoney(material.actualIssuedCost)}</div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className={
@@ -1820,18 +2541,18 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                         ? 'text-amber-600 dark:text-amber-300'
                         : material.issuePaceStatus === 'UNDER_ISSUED'
                           ? 'text-sky-600 dark:text-sky-300'
-                          : 'text-slate-700 dark:text-slate-300'
+                          : 'text-foreground'
                     }>
                       {issuePaceLabel(material.issuePaceStatus)}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       {formatQty(material.issuePaceVariance)} {material.baseUnit}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(material.remainingRequiredQuantity)} {material.baseUnit}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(material.currentStock)} {material.baseUnit}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -1848,7 +2569,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                           ? 'Partial short'
                           : 'No stock'}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       {material.stockGapQuantity > 0
                         ? `${formatQty(material.stockGapQuantity)} ${material.baseUnit} gap`
                         : '0 gap'}
@@ -1858,14 +2579,14 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                     <div className={material.quantityVariance >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}>
                       {formatQty(material.quantityVariance)} {material.baseUnit}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{formatMoney(material.costVariance)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{formatMoney(material.costVariance)}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500">{material.pricingSource.replaceAll('_', ' ')}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{material.pricingSource.replaceAll('_', ' ')}</td>
                 </tr>
               ))}
               {aggregatedMaterials.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-500">
+                  <td colSpan={11} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No material budget rows yet. Add formula-based job items first.
                   </td>
                 </tr>
@@ -1877,32 +2598,32 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {activeTab === 'consumption' ? (
-      <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">Procurement Need</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-500">
+      <section className="rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4 dark:border-border">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">Procurement Need</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Materials still required to complete the current budget, after considering what is already on hand.
           </p>
         </div>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 md:grid-cols-3">
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Short materials</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{procurementSummary.shortageCount}</p>
+        <div className="grid gap-px bg-border dark:bg-border md:grid-cols-3">
+          <div className="bg-card px-5 py-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Short materials</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{procurementSummary.shortageCount}</p>
           </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">To procure qty</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{formatQty(procurementSummary.totalToProcureQuantity)}</p>
+          <div className="bg-card px-5 py-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">To procure qty</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{formatQty(procurementSummary.totalToProcureQuantity)}</p>
           </div>
-          <div className="bg-white px-5 py-4 dark:bg-slate-950/80">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">Procurement exposure</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{formatMoney(procurementSummary.totalToProcureCost)}</p>
+          <div className="bg-card px-5 py-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Procurement exposure</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{formatMoney(procurementSummary.totalToProcureCost)}</p>
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
+            <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Material</th>
                 <th className="px-4 py-3 text-right">Remaining need</th>
@@ -1913,28 +2634,28 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             </thead>
             <tbody>
               {procurementRows.map((row) => (
-                <tr key={row.materialId} className="border-t border-slate-200 dark:border-slate-800">
+                <tr key={row.materialId} className="border-t border-border dark:border-border">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-900 dark:text-white">{row.materialName}</div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">{row.baseUnit}</div>
+                    <div className="font-medium text-foreground">{row.materialName}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{row.baseUnit}</div>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(row.remainingRequiredQuantity)} {row.baseUnit}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatQty(row.currentStock)} {row.baseUnit}
                   </td>
                   <td className="px-4 py-3 text-right font-medium text-amber-700 dark:text-amber-300">
                     {formatQty(row.toProcureQuantity)} {row.baseUnit}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 text-right text-foreground">
                     {formatMoney(row.estimatedProcurementCost)}
                   </td>
                 </tr>
               ))}
               {procurementRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No procurement gap right now. Current stock covers the remaining planned need.
                   </td>
                 </tr>
@@ -1946,13 +2667,13 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {activeTab === 'progress' ? (
-      <section className="rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-100 px-4 py-4 dark:border-slate-800 sm:px-6">
-          <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-white">Progress</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+      <section className="rounded-2xl border border-border/90 bg-card shadow-sm dark:border-border">
+        <div className="border-b border-border px-4 py-4 dark:border-border sm:px-6">
+          <h2 className="text-base font-semibold tracking-tight text-foreground">Progress</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
             Roll-up across every budget line from the current costing result. Weighted % follows internal material budget by line.
             Internal budget is from the cost engine; LPO / contract value comes from the job record. Pace uses HR attendance once for the whole job. Status, dates, and notes below apply to the entire job. Dated quantities are on the{' '}
-            <span className="font-medium text-slate-700 dark:text-slate-300">Quantity log</span> tab.
+            <span className="font-medium text-foreground">Quantity log</span> tab.
           </p>
         </div>
         <div className="space-y-5 p-4 sm:p-6">
@@ -1965,7 +2686,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             onPersist={persistJobSchedule}
           />
           {(displayResult?.items?.length ?? 0) === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-muted-foreground">
               Run costing (or open a snapshot) to see progress after budget lines exist in the result.
             </p>
           ) : (
@@ -1979,15 +2700,15 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                 </div>
               ) : null}
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Budget lines</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Budget lines</p>
                 <div className="mt-2 flex flex-nowrap items-stretch gap-2 overflow-x-auto pb-1">
                   {(displayResult?.items ?? []).map((row) => (
                     <div
                       key={row.itemId}
-                      className="inline-flex min-w-[10.5rem] shrink-0 flex-col gap-0.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/50"
+                      className="inline-flex min-w-42 shrink-0 flex-col gap-0.5 rounded-xl border border-border bg-muted/40 px-3 py-2 dark:border-border dark:bg-muted/30"
                     >
-                      <span className="text-sm font-semibold text-slate-900 dark:text-white">{row.itemName}</span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                      <span className="text-sm font-semibold text-foreground">{row.itemName}</span>
+                      <span className="text-xs text-muted-foreground">
                         {formatQty(row.progress?.percentComplete ?? 0)}% · {progressStatusLabel(row.progress?.status)}
                       </span>
                     </div>
@@ -1995,43 +2716,43 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                 </div>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Combined summary</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Combined summary</p>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Weighted progress</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Weighted progress</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.weightedPercent)}%
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Budget lines</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Budget lines</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.lineCount)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Internal material budget</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Internal material budget</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatMoney(combinedProgressStats.internalMaterialBudget)}
                     </p>
                     {combinedProgressStats.lpoRemainingAfterConsumption !== null ? (
-                      <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-xs text-slate-600 dark:border-slate-600 dark:text-slate-300">
+                      <div className="mt-2 space-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
                         <p>
-                          <span className="text-slate-500 dark:text-slate-400">LPO − consumption: </span>
-                          <span className="font-semibold tabular-nums text-slate-900 dark:text-white">
+                          <span className="text-muted-foreground">LPO − consumption: </span>
+                          <span className="font-semibold tabular-nums text-foreground">
                             {formatMoney(combinedProgressStats.lpoRemainingAfterConsumption)}
                           </span>
                         </p>
                         {combinedProgressStats.internalBudgetVsLpoRemaining !== null ? (
                           <p>
-                            <span className="text-slate-500 dark:text-slate-400">Internal − (LPO − consumption): </span>
+                            <span className="text-muted-foreground">Internal − (LPO − consumption): </span>
                             <span
                               className={`font-semibold tabular-nums ${
                                 combinedProgressStats.internalBudgetVsLpoRemaining > 0
                                   ? 'text-amber-700 dark:text-amber-300'
                                   : combinedProgressStats.internalBudgetVsLpoRemaining < 0
                                     ? 'text-emerald-700 dark:text-emerald-300'
-                                    : 'text-slate-900 dark:text-white'
+                                    : 'text-foreground'
                               }`}
                             >
                               {formatMoney(combinedProgressStats.internalBudgetVsLpoRemaining)}
@@ -2040,75 +2761,75 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                         ) : null}
                       </div>
                     ) : (
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Set LPO value on the job to compare with contract headroom after consumption.</p>
+                      <p className="mt-2 text-xs text-muted-foreground">Set LPO value on the job to compare with contract headroom after consumption.</p>
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">LPO / contract value</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">LPO / contract value</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {combinedProgressStats.lpoValue !== null ? formatMoney(combinedProgressStats.lpoValue) : '—'}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">From job LPO</p>
+                    <p className="mt-1 text-xs text-muted-foreground">From job LPO</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Actual consumption</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Actual consumption</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatMoney(combinedProgressStats.totalActualMaterialCost)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       All job issues and returns (budgeted materials plus extras from dispatch / delivery notes, each material once)
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Remaining internal budget</p>
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Remaining internal budget</p>
                     <p
                       className={`mt-1.5 text-2xl font-semibold tabular-nums ${
                         combinedProgressStats.remainingInternalBudget < 0
                           ? 'text-rose-700 dark:text-rose-300'
-                          : 'text-slate-900 dark:text-white'
+                          : 'text-foreground'
                       }`}
                     >
                       {formatMoney(combinedProgressStats.remainingInternalBudget)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Internal plan total minus actual consumption (quoted plan vs issued cost)
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance work days (job)</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Attendance work days (job)</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.sumWorkedDays)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {combinedProgressStats.hasJobWideAttendance
                         ? `${combinedProgressStats.linesWithTracking} line(s) with tracking`
                         : 'Recalculate cost to refresh job-wide attendance'}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Worked hours (job)</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Worked hours (job)</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.sumHours)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Workers (distinct)</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workers (distinct)</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.maxWorkers)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Avg {formatQty(combinedProgressStats.avgWorkersPerDay)} per attendance day
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Tracked quantity (sum)</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tracked quantity (sum)</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.sumTrackedComplete)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Lines awaiting pace</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">
+                  <div className="rounded-xl border border-border bg-muted/40/90 px-4 py-3 dark:border-border dark:bg-muted/30">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lines awaiting pace</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                       {formatQty(combinedProgressStats.linesAwaitingAttendance)}
                     </p>
                   </div>
@@ -2121,20 +2842,20 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       {activeTab === 'entries' ? (
-        <section className="rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-          <div className="border-b border-slate-100 px-4 py-4 dark:border-slate-800 sm:px-6">
-            <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-white">Quantity log</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+        <section className="rounded-2xl border border-border/90 bg-card shadow-sm dark:border-border">
+          <div className="border-b border-border px-4 py-4 dark:border-border sm:px-6">
+            <h2 className="text-base font-semibold tracking-tight text-foreground">Quantity log</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
               One job-wide view: every trackable target and every dated quantity entry, across all budget lines.
             </p>
           </div>
           <div className="space-y-8 p-4 sm:p-6">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Trackable targets</h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Progress % and completed qty come from the latest costing result when available.</p>
-              <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+              <h3 className="text-sm font-semibold text-foreground">Trackable targets</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Progress % and completed qty come from the latest costing result when available.</p>
+              <div className="mt-3 overflow-x-auto rounded-xl border border-border dark:border-border">
                 <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.14em] text-slate-500 dark:bg-slate-900/80 dark:text-slate-400">
+                  <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2.5">Budget line</th>
                       <th className="px-3 py-2.5">Trackable</th>
@@ -2149,21 +2870,21 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                   <tbody>
                     {flatTrackableRows.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-500 dark:text-slate-500">
+                        <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
                           No trackable items on this job yet. Enable tracking on a budget line in Edit.
                         </td>
                       </tr>
                     ) : (
                       flatTrackableRows.map((row) => (
-                        <tr key={`${row.jobItemId}-${row.trackerId}`} className="border-t border-slate-200 dark:border-slate-800">
-                          <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-white">{row.jobItemName}</td>
-                          <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{row.label}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(row.targetValue)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(row.completedValue)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(Math.max(row.targetValue - row.completedValue, 0))}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(row.percentComplete)}</td>
-                          <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400">{row.unit ?? '—'}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(row.entryCount)}</td>
+                        <tr key={`${row.jobItemId}-${row.trackerId}`} className="border-t border-border dark:border-border">
+                          <td className="px-3 py-2.5 font-medium text-foreground">{row.jobItemName}</td>
+                          <td className="px-3 py-2.5 text-foreground">{row.label}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.targetValue)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.completedValue)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(Math.max(row.targetValue - row.completedValue, 0))}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.percentComplete)}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground">{row.unit ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(row.entryCount)}</td>
                         </tr>
                       ))
                     )}
@@ -2173,10 +2894,10 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             </div>
 
             {canEdit ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Add quantity entry</h3>
+              <div className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                <h3 className="text-sm font-semibold text-foreground">Add quantity entry</h3>
                 <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_1fr_140px_minmax(0,1fr)_120px]">
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Budget line
                     <select
                       value={entryFormJobItemId}
@@ -2189,7 +2910,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                           trackerId: trackers[0]?.id ?? '',
                         }));
                       }}
-                      className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
                     >
                       <option value="">Select budget line</option>
                       {(jobItemsData?.items ?? [])
@@ -2201,12 +2922,12 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                         ))}
                     </select>
                   </label>
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Trackable
                     <select
                       value={progressEntryForm.trackerId}
                       onChange={(event) => setProgressEntryForm((current) => ({ ...current, trackerId: event.target.value }))}
-                      className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
                     >
                       <option value="">Select trackable</option>
                       {entryFormTrackers.map((tracker) => (
@@ -2216,26 +2937,26 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                       ))}
                     </select>
                   </label>
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Entry date
                     <input
                       type="date"
                       value={progressEntryForm.entryDate}
                       onChange={(event) => setProgressEntryForm((current) => ({ ...current, entryDate: event.target.value }))}
-                      className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
                     />
                   </label>
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Note
                     <input
                       value={progressEntryForm.note}
                       onChange={(event) => setProgressEntryForm((current) => ({ ...current, note: event.target.value }))}
-                      className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
                     />
                   </label>
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Quantity
-                    <div className="mt-1.5 flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-300 dark:border-slate-700 dark:bg-slate-950">
+                    <div className="mt-1.5 flex overflow-hidden rounded-xl border border-border bg-white focus-within:border-emerald-300 dark:border-border dark:bg-background">
                       <input
                         type="number"
                         inputMode="decimal"
@@ -2245,10 +2966,10 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                         onKeyDown={(event) => {
                           if (event.key === 'ArrowUp' || event.key === 'ArrowDown') event.preventDefault();
                         }}
-                        className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:text-white"
+                        className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
                       {entryFormTrackers.find((t) => t.id === progressEntryForm.trackerId)?.unit ? (
-                        <span className="border-l border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        <span className="border-l border-border px-3 py-2.5 text-sm font-medium text-muted-foreground dark:border-border">
                           {entryFormTrackers.find((t) => t.id === progressEntryForm.trackerId)?.unit}
                         </span>
                       ) : null}
@@ -2264,15 +2985,15 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             ) : null}
 
             <div>
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">All dated entries</h3>
-              <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+              <h3 className="text-sm font-semibold text-foreground">All dated entries</h3>
+              <div className="mt-3 overflow-x-auto rounded-xl border border-border dark:border-border">
                 {jobProgressEntriesLoading ? (
-                  <div className="flex items-center gap-2 px-4 py-8 text-sm text-slate-500">
+                  <div className="flex items-center gap-2 px-4 py-8 text-sm text-muted-foreground">
                     <Spinner size="sm" /> Loading entries…
                   </div>
                 ) : (
                   <table className="w-full min-w-[800px] text-left text-sm">
-                    <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.14em] text-slate-500 dark:bg-slate-900/80 dark:text-slate-400">
+                    <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2.5">Date</th>
                         <th className="px-3 py-2.5">Budget line</th>
@@ -2285,13 +3006,13 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                     </thead>
                     <tbody>
                       {jobProgressEntries.map((entry) => (
-                        <tr key={entry.id} className="border-t border-slate-200 dark:border-slate-800">
-                          <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{new Date(entry.entryDate).toLocaleDateString()}</td>
-                          <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-white">{entry.jobItemName}</td>
-                          <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{entry.trackerLabel}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">{formatQty(entry.quantity)}</td>
-                          <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400">{entry.trackerUnit ?? '—'}</td>
-                          <td className="px-3 py-2.5 text-slate-600 dark:text-slate-400">{entry.note || '—'}</td>
+                        <tr key={entry.id} className="border-t border-border dark:border-border">
+                          <td className="px-3 py-2.5 text-foreground">{new Date(entry.entryDate).toLocaleDateString()}</td>
+                          <td className="px-3 py-2.5 font-medium text-foreground">{entry.jobItemName}</td>
+                          <td className="px-3 py-2.5 text-foreground">{entry.trackerLabel}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground">{formatQty(entry.quantity)}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground">{entry.trackerUnit ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground">{entry.note || '—'}</td>
                           {canEdit ? (
                             <td className="px-3 py-2.5 text-right">
                               <Button
@@ -2311,7 +3032,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                   </table>
                 )}
                 {!jobProgressEntriesLoading && jobProgressEntries.length === 0 ? (
-                  <p className="px-3 py-6 text-center text-sm text-slate-500 dark:text-slate-500">No quantity entries yet.</p>
+                  <p className="px-3 py-6 text-center text-sm text-muted-foreground">No quantity entries yet.</p>
                 ) : null}
               </div>
             </div>
@@ -2320,61 +3041,407 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
       ) : null}
 
       <Modal
+        isOpen={Boolean(snapshotRenameTarget)}
+        onClose={closeRenameSnapshot}
+        title="Rename cost version"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <label className="block text-sm font-medium text-foreground">
+            Label
+            <input
+              type="text"
+              value={snapshotRenameNote}
+              onChange={(event) => setSnapshotRenameNote(event.target.value)}
+              maxLength={500}
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm text-foreground outline-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 dark:border-border dark:bg-background"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={closeRenameSnapshot}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveSnapshotRename} disabled={renamingSnapshot}>
+              {renamingSnapshot ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(snapshotDeleteTarget)}
+        onClose={closeDeleteSnapshot}
+        title={snapshotDeleteStep === 1 ? 'Delete cost version?' : 'Confirm deletion'}
+        size="sm"
+      >
+        {snapshotDeleteTarget ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {snapshotDeleteStep === 1 ? (
+                <>
+                  Delete <span className="font-semibold text-foreground">{snapshotDisplayTitle(snapshotDeleteTarget)}</span>{' '}
+                  (v{snapshotDeleteTarget.versionNumber})? This removes the frozen costing snapshot.
+                </>
+              ) : (
+                <>
+                  This cannot be undone. Permanently delete version {snapshotDeleteTarget.versionNumber}
+                  {snapshotDeleteTarget.status === 'APPROVED' ? ' (current execution baseline)' : ''}?
+                </>
+              )}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={closeDeleteSnapshot}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={confirmDeleteSnapshotStep}
+                disabled={deletingSnapshot}
+              >
+                {deletingSnapshot
+                  ? 'Deleting…'
+                  : snapshotDeleteStep === 1
+                    ? 'Continue'
+                    : 'Delete permanently'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
         isOpen={showBudgetItemModal}
         onClose={closeBudgetItemModal}
-        title={editingBudgetItemId ? 'Edit Budget Item' : 'Add Budget Item'}
-        size="xl"
+        title={
+          editingBudgetItemId
+            ? 'Edit Budget Item'
+            : isManualBudgetForm
+              ? 'Add Manual Budget Item'
+              : 'Add Budget Item'
+        }
+        size="2xl"
       >
-        <div className="max-h-[76vh] space-y-4 overflow-y-auto pr-1">
+        <div className="max-h-[min(82dvh,100%)] space-y-4 overflow-y-auto pr-1">
+          {!editingBudgetItemId ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={isManualBudgetForm ? 'secondary' : 'default'}
+                onClick={() => setBudgetForm(emptyBudgetForm('formula'))}
+              >
+                Formula-based
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={isManualBudgetForm ? 'default' : 'secondary'}
+                onClick={() => setBudgetForm(emptyBudgetForm('manual'))}
+              >
+                Manual budget
+              </Button>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-              Formula
-              <div className="mt-1.5">
-                <SearchSelect
-                  items={searchableFormulaItems}
-                  value={budgetForm.formulaLibraryId}
-                  onChange={(id) => {
-                    const formula = formulas.find((row) => row.id === id);
-                    const schema = parseBudgetSchema(formula);
-                    setBudgetForm({
-                      name: formula?.name ?? '',
-                      description: '',
-                      formulaLibraryId: id,
-                      values: buildInitialBudgetValues(schema),
-                      trackingItems: [],
-                    });
-                  }}
-                  placeholder="Select formula"
-                  openOnFocus
-                  dropdownInPortal
-                  clearOnEmptyInput
-                />
+            {!isManualBudgetForm ? (
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Formula
+                <div className="mt-1.5">
+                  <SearchSelect
+                    items={searchableFormulaItems}
+                    value={budgetForm.formulaLibraryId}
+                    onChange={(id) => {
+                      const formula = formulas.find((row) => row.id === id);
+                      const schema = parseBudgetSchema(formula);
+                      setBudgetForm((current) => ({
+                        ...current,
+                        budgetMode: 'formula',
+                        name: formula?.name ?? '',
+                        description: '',
+                        formulaLibraryId: id,
+                        values: buildInitialBudgetValues(schema),
+                        areaInstances: buildInitialAreaInstances(schema),
+                        trackingItems: [],
+                        manualMaterials: [],
+                        manualLabor: [],
+                      }));
+                      setShowBudgetFormulaOverrides(false);
+                      setCollapsedAreaInstanceIds({});
+                    }}
+                    placeholder="Select formula"
+                    openOnFocus
+                    dropdownInPortal
+                    clearOnEmptyInput
+                  />
+                </div>
+              </label>
+            ) : (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-3 text-xs text-emerald-950 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100">
+                <p className="font-semibold">Manual material and labor budget</p>
+                <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">
+                  Enter planned material quantities and labor hours directly. No formula is required for one-off projects.
+                </p>
               </div>
-            </label>
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+            )}
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Item Name
               <input
                 value={budgetForm.name}
                 onChange={(event) => setBudgetForm((current) => ({ ...current, name: event.target.value }))}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
               />
             </label>
           </div>
 
-          <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+          <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Description
             <input
               value={budgetForm.description}
               onChange={(event) => setBudgetForm((current) => ({ ...current, description: event.target.value }))}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
             />
           </label>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+          {isManualBudgetForm ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Material budget</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Planned quantities in each material&apos;s base unit. Waste % is optional.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() =>
+                      setBudgetForm((current) => ({
+                        ...current,
+                        manualMaterials: [...current.manualMaterials, createManualMaterialRow()],
+                      }))
+                    }
+                  >
+                    Add material
+                  </Button>
+                </div>
+                <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white dark:border-border dark:bg-card">
+                  <table className="w-full min-w-[40rem] text-left text-sm">
+                    <thead className="bg-muted/50 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2.5 font-semibold">#</th>
+                        <th className="min-w-[18rem] px-3 py-2.5 font-semibold">Material</th>
+                        <th className="w-36 px-3 py-2.5 font-semibold text-right">Quantity</th>
+                        <th className="w-28 px-3 py-2.5 font-semibold text-right">Waste %</th>
+                        <th className="w-28 px-3 py-2.5 font-semibold text-right">Unit</th>
+                        <th className="w-24 px-3 py-2.5 text-right font-semibold" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {budgetForm.manualMaterials.map((row, index) => {
+                        const materialMeta = materials.find((material) => material.id === row.materialId);
+                        return (
+                          <tr key={row.id} className="border-t border-border dark:border-border">
+                            <td className="px-3 py-2 text-muted-foreground">{index + 1}</td>
+                            <td className="px-3 py-2">
+                              <SearchSelect
+                                items={searchableMaterialItems}
+                                value={row.materialId}
+                                onChange={(materialId) =>
+                                  setBudgetForm((current) => ({
+                                    ...current,
+                                    manualMaterials: current.manualMaterials.map((entry) =>
+                                      entry.id === row.id ? { ...entry, materialId } : entry
+                                    ),
+                                  }))
+                                }
+                                placeholder="Search material"
+                                openOnFocus
+                                dropdownInPortal
+                                clearOnEmptyInput
+                                inputProps={{
+                                  className:
+                                    'rounded-lg border-border bg-background px-2.5 py-2 text-sm dark:border-border dark:bg-background',
+                                }}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                value={row.quantity}
+                                onChange={(event) =>
+                                  setBudgetForm((current) => ({
+                                    ...current,
+                                    manualMaterials: current.manualMaterials.map((entry) =>
+                                      entry.id === row.id ? { ...entry, quantity: event.target.value } : entry
+                                    ),
+                                  }))
+                                }
+                                className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-right text-sm text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                value={row.wastePercent}
+                                onChange={(event) =>
+                                  setBudgetForm((current) => ({
+                                    ...current,
+                                    manualMaterials: current.manualMaterials.map((entry) =>
+                                      entry.id === row.id ? { ...entry, wastePercent: event.target.value } : entry
+                                    ),
+                                  }))
+                                }
+                                placeholder="0"
+                                className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-right text-sm text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">
+                              {materialMeta?.unit ?? '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setBudgetForm((current) => ({
+                                    ...current,
+                                    manualMaterials: current.manualMaterials.filter((entry) => entry.id !== row.id),
+                                  }))
+                                }
+                              >
+                                Remove
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {budgetForm.manualMaterials.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                            No material lines yet. Click Add material to start.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Labor budget</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Enter estimated labor hours by trade or expertise. Crew size defaults to one worker.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() =>
+                      setBudgetForm((current) => ({
+                        ...current,
+                        manualLabor: [...current.manualLabor, createManualLaborRow()],
+                      }))
+                    }
+                  >
+                    Add labor
+                  </Button>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {budgetForm.manualLabor.map((row, index) => (
+                    <div key={row.id} className="rounded-2xl border border-border bg-white p-3 dark:border-border dark:bg-card">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">Labor {index + 1}</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setBudgetForm((current) => ({
+                              ...current,
+                              manualLabor: current.manualLabor.filter((entry) => entry.id !== row.id),
+                            }))
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          Expertise / trade
+                          <input
+                            value={row.expertiseName}
+                            onChange={(event) =>
+                              setBudgetForm((current) => ({
+                                ...current,
+                                manualLabor: current.manualLabor.map((entry) =>
+                                  entry.id === row.id ? { ...entry, expertiseName: event.target.value } : entry
+                                ),
+                              }))
+                            }
+                            placeholder="e.g. GRP Laminator"
+                            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                          />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          Estimated hours
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            value={row.estimatedHours}
+                            onChange={(event) =>
+                              setBudgetForm((current) => ({
+                                ...current,
+                                manualLabor: current.manualLabor.map((entry) =>
+                                  entry.id === row.id ? { ...entry, estimatedHours: event.target.value } : entry
+                                ),
+                              }))
+                            }
+                            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                          />
+                        </label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          Crew size
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={row.crewSize}
+                            onChange={(event) =>
+                              setBudgetForm((current) => ({
+                                ...current,
+                                manualLabor: current.manualLabor.map((entry) =>
+                                  entry.id === row.id ? { ...entry, crewSize: event.target.value } : entry
+                                ),
+                              }))
+                            }
+                            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                  {budgetForm.manualLabor.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No labor lines yet.</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Track work progress</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <h3 className="text-sm font-semibold text-foreground">Track work progress</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Add one or more trackable targets so daily progress entries can calculate average output and pace forecast.
                 </p>
               </div>
@@ -2400,10 +3467,13 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                   const resolvedLabel = tracker.sourceKey ? (source.option?.label ?? '') : tracker.label;
                   const resolvedUnit = tracker.sourceKey ? (source.option?.unit ?? '') : tracker.unit;
                   const resolvedTarget = tracker.sourceKey ? String(source.targetValue) : tracker.targetValue;
+                  const finishedGoodMaterial = materials.find((material) => material.id === tracker.finishedGoodMaterialId);
+                  const effectiveFinishedGoodWarehouseId =
+                    tracker.finishedGoodWarehouseId || finishedGoodMaterial?.warehouseId || '';
                   return (
-                    <div key={tracker.id} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/70">
+                    <div key={tracker.id} className="rounded-2xl border border-border bg-white p-3 dark:border-border dark:bg-card">
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Trackable item {index + 1}</p>
+                        <p className="text-sm font-semibold text-foreground">Trackable item {index + 1}</p>
                         <Button
                           type="button"
                           size="sm"
@@ -2419,29 +3489,31 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                         </Button>
                       </div>
                       <div className="grid gap-3 md:grid-cols-2">
-                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
-                          Track from formula input
-                          <select
-                            value={tracker.sourceKey}
-                            onChange={(event) =>
-                              setBudgetForm((current) => ({
-                                ...current,
-                                trackingItems: current.trackingItems.map((entry) =>
-                                  entry.id === tracker.id ? { ...entry, sourceKey: event.target.value } : entry
-                                ),
-                              }))
-                            }
-                            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          >
-                            <option value="">Custom trackable target</option>
-                            {trackableSourceOptions.map((option) => (
-                              <option key={option.key} value={option.key}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                        {!isManualBudgetForm ? (
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            Track from formula input
+                            <select
+                              value={tracker.sourceKey}
+                              onChange={(event) =>
+                                setBudgetForm((current) => ({
+                                  ...current,
+                                  trackingItems: current.trackingItems.map((entry) =>
+                                    entry.id === tracker.id ? { ...entry, sourceKey: event.target.value } : entry
+                                  ),
+                                }))
+                              }
+                              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                            >
+                              <option value="">Custom trackable target</option>
+                              {trackableSourceOptions.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                           Tracking label
                           <input
                             value={resolvedLabel ?? ''}
@@ -2454,10 +3526,10 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                               }))
                             }
                             disabled={Boolean(tracker.sourceKey)}
-                            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+                            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 disabled:bg-muted disabled:text-muted-foreground dark:border-border dark:bg-background dark:disabled:bg-muted dark:disabled:text-muted-foreground"
                           />
                         </label>
-                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                           Tracking unit
                           <input
                             value={resolvedUnit ?? ''}
@@ -2470,12 +3542,12 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                               }))
                             }
                             disabled={Boolean(tracker.sourceKey)}
-                            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 outline-none focus:border-emerald-300 disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+                            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 disabled:bg-muted disabled:text-muted-foreground dark:border-border dark:bg-background dark:disabled:bg-muted dark:disabled:text-muted-foreground"
                           />
                         </label>
-                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                           Tracking target
-                          <div className="mt-1.5 flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-300 dark:border-slate-700 dark:bg-slate-950">
+                          <div className="mt-1.5 flex overflow-hidden rounded-xl border border-border bg-white focus-within:border-emerald-300 dark:border-border dark:bg-background">
                             <input
                               type="number"
                               inputMode="decimal"
@@ -2489,14 +3561,91 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                                 }))
                               }
                               disabled={Boolean(tracker.sourceKey)}
-                              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-slate-900 outline-none [appearance:textfield] disabled:bg-slate-100 disabled:text-slate-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:text-white dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+                              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-foreground outline-none [appearance:textfield] disabled:bg-muted disabled:text-muted-foreground [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:disabled:bg-muted dark:disabled:text-muted-foreground"
                             />
                             {(resolvedUnit ?? '') ? (
-                              <span className="border-l border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                              <span className="border-l border-border px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-muted-foreground dark:border-border">
                                 {resolvedUnit}
                               </span>
                             ) : null}
                           </div>
+                        </label>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            Finished goods material
+                          </p>
+                          <div className="mt-1.5">
+                            <SearchSelect
+                              items={searchableFinishedGoodMaterials}
+                              value={tracker.finishedGoodMaterialId}
+                              onChange={(materialId) => {
+                                const material = materials.find((entry) => entry.id === materialId);
+                                setBudgetForm((current) => ({
+                                  ...current,
+                                  trackingItems: current.trackingItems.map((entry) =>
+                                    entry.id === tracker.id
+                                      ? {
+                                          ...entry,
+                                          finishedGoodMaterialId: materialId,
+                                          finishedGoodWarehouseId: material?.warehouseId ?? '',
+                                        }
+                                      : entry
+                                  ),
+                                }));
+                              }}
+                              placeholder="Search finished goods material"
+                              openOnFocus
+                              clearOnEmptyInput
+                              dropdownInPortal
+                              inputProps={{
+                                className:
+                                  'rounded-xl border-border bg-white px-3 py-2.5 font-normal text-foreground focus:ring-0 focus:border-emerald-300 dark:border-border dark:bg-background',
+                              }}
+                              renderItem={(item) => (
+                                <div>
+                                  <div className="font-medium">{item.label}</div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                                    {[item.unit, item.stockType, item.warehouse ? `WH: ${item.warehouse}` : null]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </div>
+                                </div>
+                              )}
+                            />
+                          </div>
+                          {finishedGoodMaterial ? (
+                            <p className="mt-1 text-[11px] normal-case tracking-normal text-muted-foreground">
+                              Default warehouse: {finishedGoodMaterial.warehouse || 'none'}
+                            </p>
+                          ) : null}
+                          {!tracker.finishedGoodMaterialId ? (
+                            <p className="mt-1 text-[11px] normal-case tracking-normal text-muted-foreground">
+                              Progress only - no stock update.
+                            </p>
+                          ) : null}
+                        </div>
+                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          Finished goods warehouse
+                          <select
+                            value={effectiveFinishedGoodWarehouseId}
+                            onChange={(event) =>
+                              setBudgetForm((current) => ({
+                                ...current,
+                                trackingItems: current.trackingItems.map((entry) =>
+                                  entry.id === tracker.id ? { ...entry, finishedGoodWarehouseId: event.target.value } : entry
+                                ),
+                              }))
+                            }
+                            disabled={!tracker.finishedGoodMaterialId}
+                            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 disabled:bg-muted disabled:text-muted-foreground dark:border-border dark:bg-background dark:disabled:bg-muted dark:disabled:text-muted-foreground"
+                          >
+                            <option value="">Use material default warehouse</option>
+                            {warehouses.map((warehouse) => (
+                              <option key={warehouse.id} value={warehouse.id}>
+                                {warehouse.name}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                       </div>
                     </div>
@@ -2504,17 +3653,17 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                 })}
               </div>
             ) : (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 px-4 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-500">
+              <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground dark:border-border">
                 No trackable items yet.
               </div>
             )}
           </div>
 
-          {selectedFormula ? (
+          {!isManualBudgetForm && selectedFormula ? (
             <div className="space-y-4">
               {selectedSchema.globalFields.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Global Measurements</h3>
+                <div className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                  <h3 className="text-sm font-semibold text-foreground">Global Measurements</h3>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {selectedSchema.globalFields.map((field) => (
                       <BudgetInput
@@ -2534,38 +3683,212 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
                 </div>
               ) : null}
 
-              {selectedSchema.areas.map((area) => (
-                <div key={area.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{area.label}</h3>
+              {hasBudgetFormulaOverrides ? (
+                <div className="rounded-2xl border border-cyan-200 bg-background p-4 dark:border-cyan-500/20 dark:bg-background/60">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Stored formula value overrides</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Keep hidden unless this budget item needs values different from the formula defaults.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setShowBudgetFormulaOverrides((current) => !current)}
+                    >
+                      {showBudgetFormulaOverrides ? 'Hide override input boxes' : 'View override input boxes'}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {showBudgetFormulaOverrides && selectedSchema.formulaValues.length > 0 ? (
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/10">
+                  <h3 className="text-sm font-semibold text-foreground">Stored formula value overrides</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Leave blank to use the formula default. Override values can be fixed numbers or expressions.
+                  </p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {area.fields.map((field) => (
-                      <BudgetInput
-                        key={`${area.key}.${field.key}`}
+                    {selectedSchema.formulaValues.map((field) => (
+                      <FormulaOverrideInput
+                        key={field.key}
                         field={field}
-                        materials={materials}
-                        value={budgetForm.values[`area.${area.key}.${field.key}`] ?? ''}
+                        token={`formula.${field.key}`}
+                        value={budgetForm.values[`formulaOverride.global.${field.key}`] ?? ''}
                         onChange={(value) =>
                           setBudgetForm((current) => ({
                             ...current,
-                            values: { ...current.values, [`area.${area.key}.${field.key}`]: value },
+                            values: { ...current.values, [`formulaOverride.global.${field.key}`]: value },
                           }))
                         }
                       />
                     ))}
                   </div>
-                  {area.fields.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-500">
+                </div>
+              ) : null}
+
+              {selectedSchema.areas.map((area) => (
+                <div key={area.key} className="rounded-2xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">{area.label}</h3>
+                      {area.dynamic ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Repeat this area for each separate measurement set. Formulas run once per instance and totals are combined.
+                        </p>
+                      ) : null}
+                    </div>
+                    {area.dynamic ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={() => addDynamicAreaInstance(area)}>
+                        Add {area.label || 'area'}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {area.dynamic ? (
+                    <div className="mt-3 space-y-3">
+                      {(budgetForm.areaInstances[area.key] ?? []).map((instance, instanceIndex) => {
+                        const collapsed = Boolean(collapsedAreaInstanceIds[instance.id]);
+                        return (
+                          <div
+                            key={instance.id}
+                            className="rounded-2xl border border-border bg-background p-3 dark:border-border dark:bg-background/60"
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <label className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                Instance label
+                                <input
+                                  value={instance.label}
+                                  onChange={(event) => updateDynamicAreaInstanceLabel(area.key, instance.id, event.target.value)}
+                                  placeholder={`${area.label || 'Area'} ${instanceIndex + 1}`}
+                                  className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-foreground outline-none focus:border-emerald-300 dark:border-border dark:bg-background"
+                                />
+                              </label>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    setCollapsedAreaInstanceIds((current) => ({
+                                      ...current,
+                                      [instance.id]: !current[instance.id],
+                                    }))
+                                  }
+                                >
+                                  {collapsed ? 'Expand' : 'Collapse'}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => duplicateDynamicAreaInstance(area, instance)}
+                                >
+                                  Duplicate
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => removeDynamicAreaInstance(area, instance.id)}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+                            {!collapsed ? (
+                              area.fields.length > 0 ? (
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                  {area.fields.map((field) => (
+                                    <BudgetInput
+                                      key={`${area.key}.${instance.id}.${field.key}`}
+                                      field={field}
+                                      materials={materials}
+                                      value={budgetForm.values[areaInstanceValueKey(area.key, instance.id, field.key)] ?? ''}
+                                      onChange={(value) =>
+                                        setBudgetForm((current) => ({
+                                          ...current,
+                                          values: {
+                                            ...current.values,
+                                            [areaInstanceValueKey(area.key, instance.id, field.key)]: value,
+                                          },
+                                        }))
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-3 text-sm text-muted-foreground">
+                                  This formula area has no input fields yet.
+                                </p>
+                              )
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {(budgetForm.areaInstances[area.key] ?? []).length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-border bg-background/60 px-4 py-6 text-center text-sm text-muted-foreground dark:border-border">
+                          No {area.label || 'area'} instances yet. Add one to enter measurements.
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : area.fields.length > 0 ? (
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {area.fields.map((field) => (
+                        <BudgetInput
+                          key={`${area.key}.${field.key}`}
+                          field={field}
+                          materials={materials}
+                          value={budgetForm.values[`area.${area.key}.${field.key}`] ?? ''}
+                          onChange={(value) =>
+                            setBudgetForm((current) => ({
+                              ...current,
+                              values: { ...current.values, [`area.${area.key}.${field.key}`]: value },
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">
                       This formula area has no input fields yet.
                     </p>
+                  )}
+                  {showBudgetFormulaOverrides && area.formulaValues.length > 0 ? (
+                    <div className="mt-4 rounded-2xl border border-cyan-200 bg-background/70 p-3 dark:border-cyan-500/20 dark:bg-background/40">
+                      <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
+                        Area stored value overrides
+                      </h4>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {area.formulaValues.map((field) => (
+                          <FormulaOverrideInput
+                            key={`${area.key}.${field.key}`}
+                            field={field}
+                            token={`area.formula.${field.key}`}
+                            value={budgetForm.values[`formulaOverride.area.${area.key}.${field.key}`] ?? ''}
+                            onChange={(value) =>
+                              setBudgetForm((current) => ({
+                                ...current,
+                                values: {
+                                  ...current.values,
+                                  [`formulaOverride.area.${area.key}.${field.key}`]: value,
+                                },
+                              }))
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-500">
-              Select a formula to load the measurement fields.
+          ) : !isManualBudgetForm ? (
+            <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground dark:border-border">
+              Select a formula to load the measurement fields, or switch to manual budget for one-off projects.
             </div>
-          )}
+          ) : null}
 
           <div className="flex gap-3">
             <Button type="button" variant="ghost" className="w-full" onClick={closeBudgetItemModal} disabled={itemSaving}>
@@ -2595,14 +3918,14 @@ function BudgetInput({
   if (field.inputType === 'boolean') {
     const enabled = value === 'true';
     return (
-      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {field.label}
-        <div className="mt-1.5 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-950">
+        <div className="mt-1.5 flex items-center justify-between rounded-xl border border-border bg-white px-3 py-3 dark:border-border dark:bg-background">
           <div>
-            <p className="text-sm font-medium normal-case tracking-normal text-slate-900 dark:text-white">
+            <p className="text-sm font-medium normal-case tracking-normal text-foreground">
               {enabled ? 'Yes' : 'No'}
             </p>
-            <p className="mt-0.5 text-[11px] font-normal normal-case tracking-normal text-slate-500 dark:text-slate-400">
+            <p className="mt-0.5 text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
               Boolean input
             </p>
           </div>
@@ -2612,7 +3935,7 @@ function BudgetInput({
             aria-checked={enabled}
             onClick={() => onChange(enabled ? 'false' : 'true')}
             className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
-              enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+              enabled ? 'bg-emerald-500' : 'bg-muted-foreground/25 dark:bg-muted-foreground/40'
             }`}
           >
             <span
@@ -2634,7 +3957,7 @@ function BudgetInput({
       description: `${material.unit} - AED ${Number(material.unitCost ?? 0).toFixed(2)}`,
     }));
     return (
-      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {field.label}
         <div className="mt-1.5">
           <SearchSelect
@@ -2652,9 +3975,9 @@ function BudgetInput({
   }
 
   return (
-    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">
+    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
       {field.label}
-      <div className="mt-1.5 flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-300 dark:border-slate-700 dark:bg-slate-950">
+      <div className="mt-1.5 flex overflow-hidden rounded-xl border border-border bg-white focus-within:border-emerald-300 dark:border-border dark:bg-background">
         <input
           type={numericField(field.inputType) ? 'number' : 'text'}
           value={value}
@@ -2671,13 +3994,46 @@ function BudgetInput({
                 }
               : undefined
           }
-          className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:text-white"
+          className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-normal text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         {field.unit ? (
-          <span className="border-l border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          <span className="border-l border-border px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-muted-foreground dark:border-border">
             {field.unit}
           </span>
         ) : null}
+      </div>
+    </label>
+  );
+}
+
+function FormulaOverrideInput({
+  field,
+  token,
+  value,
+  onChange,
+}: {
+  field: BudgetFormulaValue;
+  token: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      {field.label || field.key}
+      <div className="mt-1.5 overflow-hidden rounded-xl border border-border bg-white focus-within:border-cyan-300 dark:border-border dark:bg-background">
+        <input
+          type="text"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={`Default: ${field.value || '0'}`}
+          className="w-full bg-transparent px-3 py-2.5 font-mono text-sm font-normal normal-case tracking-normal text-foreground outline-none"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-2 text-[11px] font-normal normal-case tracking-normal text-muted-foreground dark:border-border">
+          <span className="font-mono text-cyan-700 dark:text-cyan-300">{token}</span>
+          <span>
+            Default {field.value || '0'}{field.unit ? ` ${field.unit}` : ''}
+          </span>
+        </div>
       </div>
     </label>
   );

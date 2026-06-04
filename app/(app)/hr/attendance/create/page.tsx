@@ -1,11 +1,19 @@
 ﻿'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import AttendanceEntryGrid, {
+  type AttendanceGridDraftRow,
+  type AttendanceGridEmployee,
+} from '@/components/hr/AttendanceEntryGrid';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
-import { Button } from '@/components/ui/shadcn/button';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
+import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 interface EmployeeRow {
@@ -29,6 +37,9 @@ interface AssignmentRow {
   label: string;
   jobNumberSnapshot: string | null;
   siteNameSnapshot: string | null;
+  customerName: string | null;
+  siteName: string | null;
+  projectDetails: string | null;
   shiftStart: string | null;
   shiftEnd: string | null;
   breakWindow: string | null;
@@ -38,17 +49,69 @@ interface AssignmentRow {
   members?: Array<{ employeeId?: string }>;
 }
 
-interface AttendanceDraftRow {
-  employeeId: string;
-  workAssignmentId: string;
-  jobNumber: string;
-  status: 'PRESENT' | 'ABSENT' | 'LEAVE' | 'HALF_DAY' | 'MISSING_PUNCH';
-  checkInAt: string;
-  checkOutAt: string;
-  breakInAt: string;
-  breakOutAt: string;
-  source: 'existing' | 'schedule' | 'manual';
+function assignmentFromScheduleRaw(
+  raw: Record<string, unknown>,
+  scheduleClientDisplayName?: string | null
+): AssignmentRow {
+  const job = (raw.job as Record<string, unknown> | null) ?? null;
+  const customer = (job?.customer as Record<string, unknown> | null) ?? null;
+  const customerName =
+    String(raw.clientNameSnapshot ?? '').trim() ||
+    String(customer?.name ?? '').trim() ||
+    String(scheduleClientDisplayName ?? '').trim() ||
+    null;
+  const siteName = String(raw.siteNameSnapshot ?? '').trim() || String(job?.site ?? '').trim() || null;
+  const projectDetails =
+    String(raw.projectDetailsSnapshot ?? '').trim() || String(job?.projectDetails ?? '').trim() || null;
+  const jobNumber =
+    String(raw.jobNumberSnapshot ?? '').trim() || String(job?.jobNumber ?? '').trim() || null;
+
+  return {
+    id: String(raw.id),
+    label: String(raw.label ?? ''),
+    jobNumberSnapshot: jobNumber,
+    siteNameSnapshot: raw.siteNameSnapshot != null ? String(raw.siteNameSnapshot) : null,
+    customerName,
+    siteName,
+    projectDetails,
+    shiftStart: (raw.shiftStart as string | null | undefined) ?? null,
+    shiftEnd: (raw.shiftEnd as string | null | undefined) ?? null,
+    breakWindow: (raw.breakWindow as string | null | undefined) ?? null,
+    teamLeaderEmployeeId: (raw.teamLeaderEmployeeId as string | null | undefined) ?? null,
+    driver1EmployeeId: (raw.driver1EmployeeId as string | null | undefined) ?? null,
+    driver2EmployeeId: (raw.driver2EmployeeId as string | null | undefined) ?? null,
+    members: Array.isArray(raw.members) ? (raw.members as AssignmentRow['members']) : [],
+  };
 }
+
+function assignmentFromAttendanceWorkAssignment(raw: Record<string, unknown>): AssignmentRow {
+  const costing = (raw.costingSnapshot as Record<string, unknown> | null) ?? null;
+  const customerName =
+    String(costing?.customerName ?? raw.clientNameSnapshot ?? '').trim() || null;
+  const siteName = String(costing?.siteName ?? raw.siteNameSnapshot ?? '').trim() || null;
+  const projectDetails =
+    String(costing?.projectDetails ?? raw.projectDetailsSnapshot ?? '').trim() || null;
+  const jobNumber = String(costing?.jobNumber ?? raw.jobNumberSnapshot ?? '').trim() || null;
+
+  return {
+    id: String(raw.id),
+    label: String(raw.label ?? ''),
+    jobNumberSnapshot: jobNumber,
+    siteNameSnapshot: raw.siteNameSnapshot != null ? String(raw.siteNameSnapshot) : null,
+    customerName,
+    siteName,
+    projectDetails,
+    shiftStart: (raw.shiftStart as string | null | undefined) ?? null,
+    shiftEnd: (raw.shiftEnd as string | null | undefined) ?? null,
+    breakWindow: (raw.breakWindow as string | null | undefined) ?? null,
+    teamLeaderEmployeeId: null,
+    driver1EmployeeId: null,
+    driver2EmployeeId: null,
+    members: [],
+  };
+}
+
+type AttendanceDraftRow = AttendanceGridDraftRow;
 
 const EMPLOYEE_TYPE_ORDER: Record<NonNullable<EmployeeRow['employeeType']>, number> = {
   LABOUR_WORKER: 0,
@@ -57,24 +120,72 @@ const EMPLOYEE_TYPE_ORDER: Record<NonNullable<EmployeeRow['employeeType']>, numb
   OFFICE_STAFF: 3,
 };
 
-const EMPLOYEE_TYPE_ROW_TONE: Record<NonNullable<EmployeeRow['employeeType']>, string> = {
-  LABOUR_WORKER: 'bg-emerald-600/18 hover:bg-emerald-600/24 dark:bg-emerald-500/[0.07] dark:hover:bg-emerald-500/[0.12]',
-  DRIVER: 'bg-sky-600/18 hover:bg-sky-600/24 dark:bg-sky-500/[0.07] dark:hover:bg-sky-500/[0.12]',
-  HYBRID_STAFF: 'bg-violet-600/18 hover:bg-violet-600/24 dark:bg-violet-500/[0.07] dark:hover:bg-violet-500/[0.12]',
-  OFFICE_STAFF: 'bg-amber-500/18 hover:bg-amber-500/24 dark:bg-amber-500/[0.07] dark:hover:bg-amber-500/[0.12]',
-};
-
 interface SchedulePayload {
   id?: string;
   status?: string;
-  title?: string | null;
   clientDisplayName?: string | null;
   assignments?: AssignmentRow[];
   absences?: Array<{ employee?: { id?: string } }>;
 }
 
+function scheduleStatusBadgeProps(status: string | undefined) {
+  if (!status) {
+    return {
+      label: 'No schedule',
+      className:
+        'border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100',
+    };
+  }
+  if (status === 'PUBLISHED') {
+    return {
+      label: 'Published',
+      className:
+        'border-emerald-600/40 bg-emerald-500/15 text-emerald-950 dark:text-emerald-100',
+    };
+  }
+  if (status === 'LOCKED') {
+    return {
+      label: 'Locked',
+      className: 'border-border bg-muted text-foreground',
+    };
+  }
+  return {
+    label: 'Draft',
+    className:
+      'border-sky-600/40 bg-sky-500/15 text-sky-950 dark:text-sky-100',
+  };
+}
+
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function formatWorkDateLabel(ymd: string): string {
+  const d = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return ymd;
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function cloneDraftRows(rows: AttendanceDraftRow[]): AttendanceDraftRow[] {
+  return rows.map((row) => ({ ...row }));
+}
+
+const TOOLBAR_TAG_CLASS =
+  'inline-flex h-auto shrink-0 items-center rounded border px-1.5 py-0.5 text-[9px] font-medium leading-none tracking-wide transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+
+const DAY_SHEET_FIELD_CLASS =
+  'h-7 min-h-7 rounded-md border border-border bg-background px-2 py-0 text-xs leading-7 text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring';
+
+function applyAbsentToDraft(draft: AttendanceDraftRow): AttendanceDraftRow {
+  return {
+    ...draft,
+    status: 'ABSENT',
+    checkInAt: '',
+    checkOutAt: '',
+    breakInAt: '',
+    breakOutAt: '',
+    source: draft.source === 'existing' ? 'existing' : 'manual',
+  };
 }
 
 function toLocalTimeInput(iso: string | null | undefined): string {
@@ -83,67 +194,6 @@ function toLocalTimeInput(iso: string | null | undefined): string {
   if (Number.isNaN(dt.getTime())) return '';
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-}
-
-function formatTimeForDisplay(timeVal: string): string {
-  if (!/^\d{2}:\d{2}$/.test(timeVal)) return timeVal;
-  const [hoursRaw, minutesRaw] = timeVal.split(':');
-  const hours = Number(hoursRaw);
-  const minutes = Number(minutesRaw);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return timeVal;
-  const suffix = hours >= 12 ? 'PM' : 'AM';
-  const hour12 = hours % 12 || 12;
-  return `${String(hour12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${suffix}`;
-}
-
-function parseFlexibleTimeInput(raw: string): string | null {
-  const trimmed = raw.trim().toLowerCase();
-  if (!trimmed) return '';
-
-  const normalized = trimmed.replace(/\s+/g, '').replace(/\./g, ':');
-  const meridiemMatch = normalized.match(/[ap]/);
-  const meridiem = meridiemMatch?.[0] ?? null;
-  const numericPart = normalized.replace(/[^0-9:]/g, '');
-  if (!numericPart) return null;
-
-  let hours: number | null = null;
-  let minutes = 0;
-
-  if (numericPart.includes(':')) {
-    const [hourPart, minutePart] = numericPart.split(':');
-    if (!hourPart || minutePart == null || minutePart === '') return null;
-    hours = Number(hourPart);
-    minutes = Number(minutePart);
-  } else if (/^\d{3,4}$/.test(numericPart)) {
-    const normalized = numericPart.padStart(4, '0');
-    hours = Number(normalized.slice(0, 2));
-    minutes = Number(normalized.slice(2, 4));
-  } else if (/^\d{1,2}$/.test(numericPart)) {
-    hours = Number(numericPart);
-    minutes = 0;
-  }
-
-  if (hours == null || !Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  if (minutes < 0 || minutes > 59) return null;
-
-  if (meridiem) {
-    if (hours < 1 || hours > 12) return null;
-    let hours24 = hours % 12;
-    if (meridiem === 'p') hours24 += 12;
-    return `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
-
-  if (numericPart.includes(':')) {
-    if (hours < 0 || hours > 23) return null;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
-
-  if (numericPart.length >= 3) {
-    if (hours < 0 || hours > 23) return null;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
-
-  return null;
 }
 
 function parseBreakWindow(raw: string | null | undefined): { breakInAt: string; breakOutAt: string } {
@@ -186,81 +236,6 @@ function formatHourValue(minutes: number): string {
   const hours = minutes / 60;
   const rounded = Math.round(hours * 100) / 100;
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)} h`;
-}
-
-function workedHourTone(minutes: number): string {
-  const hours = minutes / 60;
-  if (hours > 14) return 'bg-red-600/22 text-red-900 ring-1 ring-red-400/40 dark:bg-red-500/18 dark:text-red-100 dark:ring-red-400/30';
-  if (hours > 12) return 'bg-amber-500/24 text-amber-950 ring-1 ring-amber-400/45 dark:bg-amber-500/18 dark:text-amber-100 dark:ring-amber-400/30';
-  if (hours < 6) return 'bg-sky-500/22 text-sky-950 ring-1 ring-sky-400/45 dark:bg-sky-500/18 dark:text-sky-100 dark:ring-sky-400/30';
-  return 'bg-transparent text-slate-900 dark:text-white';
-}
-
-function TimeEntryInput({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  const [rawValue, setRawValue] = useState(value ? formatTimeForDisplay(value) : '');
-  const [isEditing, setIsEditing] = useState(false);
-  const [isInvalid, setIsInvalid] = useState(false);
-  const displayValue = isEditing ? rawValue : value ? formatTimeForDisplay(value) : '';
-
-  const commitValue = () => {
-    const parsed = parseFlexibleTimeInput(rawValue);
-    if (parsed == null) {
-      if (rawValue.trim()) setIsInvalid(true);
-      return;
-    }
-    setIsInvalid(false);
-    setIsEditing(false);
-    onChange(parsed);
-    setRawValue(parsed ? formatTimeForDisplay(parsed) : '');
-  };
-
-  const inputClassName = [
-    'w-full min-w-[88px] rounded-lg border px-2 py-1.5 text-[11px] outline-none transition-colors',
-    isInvalid
-      ? 'border-red-400 bg-red-50 text-red-900 ring-1 ring-red-300 dark:border-red-400 dark:bg-red-500/10 dark:text-red-100'
-      : 'border-slate-200 bg-white text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-white',
-  ].join(' ');
-
-  return (
-    <input
-      type="text"
-      value={displayValue}
-      disabled={disabled}
-      placeholder="--:--"
-      onFocus={(e) => {
-        setRawValue(value ? formatTimeForDisplay(value) : '');
-        setIsEditing(true);
-        e.currentTarget.select();
-      }}
-      onChange={(e) => {
-        setRawValue(e.target.value);
-        if (isInvalid) setIsInvalid(false);
-      }}
-      onBlur={commitValue}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          commitValue();
-          (e.target as HTMLInputElement).blur();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          setIsInvalid(false);
-          setIsEditing(false);
-          setRawValue(value ? formatTimeForDisplay(value) : '');
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className={inputClassName}
-    />
-  );
 }
 
 function employeeDisplayName(employee: EmployeeRow | undefined): string {
@@ -377,15 +352,11 @@ function buildDraftFromExistingRow(
   };
 }
 
-const STATUS_OPTIONS: Array<AttendanceDraftRow['status']> = ['PRESENT', 'ABSENT', 'LEAVE', 'HALF_DAY', 'MISSING_PUNCH'];
-
 export default function AttendanceCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const initialDate = searchParams.get('workDate') || todayYmd();
-
-  const [workDate, setWorkDate] = useState(initialDate);
+  const workDate = searchParams.get('workDate') || todayYmd();
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [schedule, setSchedule] = useState<SchedulePayload | null>(null);
@@ -395,6 +366,9 @@ export default function AttendanceCreatePage() {
   const [search, setSearch] = useState('');
   const [scopeFilter, setScopeFilter] = useState<'all' | 'assigned' | 'exceptions'>('all');
   const [insertEmployeeId, setInsertEmployeeId] = useState('');
+  const [bulkAbsentSnapshot, setBulkAbsentSnapshot] = useState<AttendanceDraftRow[] | null>(null);
+  const [bulkAbsentConfirm, setBulkAbsentConfirm] = useState<'mark' | 'undo' | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -404,47 +378,47 @@ export default function AttendanceCreatePage() {
   const canEdit = isSA || perms.includes('hr.attendance.edit');
 
   useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (bulkAbsentConfirm !== null) return;
+      const key = e.key.toLowerCase();
+      if (key !== 'f' || (!e.ctrlKey && !e.metaKey) || e.shiftKey || e.altKey) return;
+
+      e.preventDefault();
+      const input = searchInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [bulkAbsentConfirm]);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!canView) {
         if (!cancelled) setLoading(false);
         return;
       }
-      if (!cancelled) setLoading(true);
+      if (!cancelled) {
+        setLoading(true);
+        setBulkAbsentSnapshot(null);
+      }
 
-      const [empRes, scheduleRes, attendanceRes] = await Promise.all([
-        fetch('/api/hr/employees?status=ACTIVE', { cache: 'no-store' }),
+      const [scheduleRes, attendanceRes] = await Promise.all([
         fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' }),
         fetch(`/api/hr/attendance?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' }),
       ]);
-      const [empJson, scheduleJson, attendanceJson] = await Promise.all([
-        empRes.json(),
-        scheduleRes.json(),
-        attendanceRes.json(),
-      ]);
+      const [scheduleJson, attendanceJson] = await Promise.all([scheduleRes.json(), attendanceRes.json()]);
       if (cancelled) return;
 
-      const activeEmployees: EmployeeRow[] = empRes.ok && empJson?.success ? empJson.data : [];
       const scheduleData: SchedulePayload | null = scheduleRes.ok && scheduleJson?.success ? scheduleJson.data : null;
       const asgs: AssignmentRow[] = Array.isArray(scheduleData?.assignments)
-        ? scheduleData.assignments.map((assignment) => ({
-            id: String(assignment.id),
-            label: String(assignment.label ?? ''),
-            jobNumberSnapshot: assignment.jobNumberSnapshot ?? null,
-            siteNameSnapshot: assignment.siteNameSnapshot ?? null,
-            shiftStart: assignment.shiftStart ?? null,
-            shiftEnd: assignment.shiftEnd ?? null,
-            breakWindow: assignment.breakWindow ?? null,
-            teamLeaderEmployeeId: assignment.teamLeaderEmployeeId ?? null,
-            driver1EmployeeId: assignment.driver1EmployeeId ?? null,
-            driver2EmployeeId: assignment.driver2EmployeeId ?? null,
-            members: Array.isArray(assignment.members) ? assignment.members : [],
-          }))
+        ? scheduleData.assignments.map((assignment) =>
+            assignmentFromScheduleRaw(assignment as unknown as Record<string, unknown>, scheduleData?.clientDisplayName)
+          )
         : [];
-
-      setEmployees(activeEmployees);
-      setAssignments(asgs);
-      setSchedule(scheduleData);
 
       const existingByEmp = new Map<string, Record<string, unknown>>();
       const existingEmployees = new Map<string, EmployeeRow>();
@@ -464,8 +438,17 @@ export default function AttendanceCreatePage() {
             basicHoursPerDay: Number((employee?.basicHoursPerDay as number | undefined) ?? 0) || undefined,
             defaultTiming: (employee?.defaultTiming as EmployeeRow['defaultTiming'] | undefined) ?? null,
           });
+
+          const workAssignment = (row.workAssignment as Record<string, unknown> | null) ?? null;
+          const assignmentId = String((workAssignment?.id as string | undefined) ?? '');
+          if (workAssignment && assignmentId && !asgs.some((item) => item.id === assignmentId)) {
+            asgs.push(assignmentFromAttendanceWorkAssignment(workAssignment));
+          }
         }
       }
+
+      setAssignments(asgs);
+      setSchedule(scheduleData);
 
       const assignedByEmp = new Map<string, AssignmentRow[]>();
       for (const assignment of asgs) {
@@ -491,11 +474,23 @@ export default function AttendanceCreatePage() {
           : []
       );
 
+      const hasExistingAttendance = existingByEmp.size > 0;
+
+      let activeEmployees: EmployeeRow[] = [];
+      if (!hasExistingAttendance) {
+        const empRes = await fetch('/api/hr/employees?status=ACTIVE', { cache: 'no-store' });
+        const empJson = await empRes.json();
+        if (empRes.ok && empJson?.success) {
+          activeEmployees = empJson.data as EmployeeRow[];
+        }
+      }
+
+      if (cancelled) return;
+
       const nextEmployees = new Map<string, EmployeeRow>();
       for (const employee of activeEmployees) nextEmployees.set(employee.id, employee);
       for (const [employeeId, employee] of existingEmployees) nextEmployees.set(employeeId, employee);
 
-      const hasExistingAttendance = existingByEmp.size > 0;
       const nextDrafts = hasExistingAttendance
         ? [...existingByEmp.entries()].map(([employeeId, row]) =>
             buildDraftFromExistingRow(nextEmployees.get(employeeId) ?? existingEmployees.get(employeeId)!, row)
@@ -507,23 +502,55 @@ export default function AttendanceCreatePage() {
       setEmployees([...nextEmployees.values()]);
       setDrafts(nextDrafts);
       setLoading(false);
+
+      if (hasExistingAttendance) {
+        void fetch('/api/hr/employees?status=ACTIVE', { cache: 'no-store' })
+          .then(async (empRes) => {
+            const empJson = await empRes.json();
+            if (cancelled || !empRes.ok || !empJson?.success) return;
+            setEmployees((prev) => {
+              const merged = new Map(prev.map((employee) => [employee.id, employee]));
+              for (const employee of empJson.data as EmployeeRow[]) {
+                merged.set(employee.id, employee);
+              }
+              return [...merged.values()];
+            });
+          })
+          .catch(() => undefined);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [canView, workDate]);
 
+  const assignmentsById = useMemo(
+    () => new Map(assignments.map((assignment) => [assignment.id, assignment])),
+    [assignments]
+  );
+
   const assignmentOptions = useMemo(
     () =>
       assignments.map((assignment) => ({
         value: assignment.id,
         label: assignment.jobNumberSnapshot || '',
-        searchText: `${assignment.jobNumberSnapshot || ''} ${assignment.label} ${assignment.siteNameSnapshot || ''}`,
+        searchText: [
+          assignment.jobNumberSnapshot,
+          assignment.label,
+          assignment.customerName,
+          assignment.siteName,
+          assignment.projectDetails,
+        ]
+          .filter(Boolean)
+          .join(' '),
       })),
     [assignments]
   );
 
-  const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  const employeeById = useMemo(
+    () => new Map<string, AttendanceGridEmployee>(employees.map((employee) => [employee.id, employee])),
+    [employees]
+  );
 
   const insertableEmployees = useMemo(
     () =>
@@ -555,6 +582,9 @@ export default function AttendanceCreatePage() {
     return drafts
       .filter((draft) => {
         const employee = employeeById.get(draft.employeeId);
+        const assignment = draft.workAssignmentId
+          ? assignmentsById.get(draft.workAssignmentId)
+          : undefined;
         const matchesSearch =
           !deferredSearch ||
           [
@@ -562,6 +592,9 @@ export default function AttendanceCreatePage() {
             employee?.preferredName ?? '',
             employee?.employeeCode ?? '',
             draft.jobNumber,
+            assignment?.customerName ?? '',
+            assignment?.siteName ?? '',
+            assignment?.projectDetails ?? '',
             draft.status,
           ]
             .join(' ')
@@ -581,7 +614,7 @@ export default function AttendanceCreatePage() {
           sensitivity: 'base',
         });
       });
-  }, [deferredSearch, drafts, employeeById, scopeFilter]);
+  }, [assignmentsById, deferredSearch, drafts, employeeById, scopeFilter]);
 
   const updateDraft = (employeeId: string, patch: Partial<AttendanceDraftRow>) => {
     setDrafts((prev) =>
@@ -638,6 +671,25 @@ export default function AttendanceCreatePage() {
     setInsertEmployeeId('');
   };
 
+  const openBulkAbsentConfirm = () => {
+    if (!canEdit || drafts.length === 0) return;
+    setBulkAbsentConfirm(bulkAbsentSnapshot ? 'undo' : 'mark');
+  };
+
+  const confirmBulkAbsent = () => {
+    if (!bulkAbsentConfirm) return;
+
+    if (bulkAbsentConfirm === 'undo' && bulkAbsentSnapshot) {
+      setDrafts(cloneDraftRows(bulkAbsentSnapshot));
+      setBulkAbsentSnapshot(null);
+    } else if (bulkAbsentConfirm === 'mark') {
+      setBulkAbsentSnapshot(cloneDraftRows(drafts));
+      setDrafts((prev) => prev.map(applyAbsentToDraft));
+    }
+
+    setBulkAbsentConfirm(null);
+  };
+
   const saveAll = async () => {
     if (!canEdit) return;
     setSaving(true);
@@ -681,438 +733,221 @@ export default function AttendanceCreatePage() {
   if (loading) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
-        <div className="h-32 animate-pulse rounded-lg border border-border bg-muted/30" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
-          ))}
-        </div>
-        <div className="h-40 animate-pulse rounded-lg border border-border bg-muted/30" />
-        <div className="h-96 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="h-20 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="h-[28rem] animate-pulse rounded-lg border border-border bg-muted/30" />
       </div>
     );
   }
 
-  const handleWorkDateChange = (nextDate: string) => {
-    setWorkDate(nextDate);
-    router.replace(`/hr/attendance/create?workDate=${encodeURIComponent(nextDate)}`);
-  };
-
   return (
-		<div className='space-y-6'>
-			<section className='rounded-3xl border border-white/10 bg-linear-to-br from-slate-950 via-slate-900 to-slate-900/80 p-6 shadow-2xl shadow-black/20'>
-				<div className='flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between'>
-					<div className='max-w-3xl'>
-						<button
-							type='button'
-							onClick={() =>
-								router.push(
-									`/hr/attendance?workDate=${encodeURIComponent(workDate)}`,
-								)
-							}
-							className='text-xs text-emerald-400 hover:text-emerald-300'
-						>
-							Back to attendance overview
-						</button>
-						<h1 className='mt-3 text-3xl font-semibold text-white'>
-							Attendance day sheet
-						</h1>
-						<p className='mt-2 text-sm leading-6 text-slate-400'>
-							The editor now preloads each employee from the
-							selected schedule when available, so attendance can
-							be reviewed as a continuation of planning instead of
-							starting from a blank sheet.
-						</p>
-					</div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <Link
+            href={`/hr/attendance?workDate=${encodeURIComponent(workDate)}`}
+            className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            ← Attendance
+          </Link>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Attendance day sheet · {formatWorkDateLabel(workDate)}
+          </h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Preloads from the schedule when available. Edit duty times, job assignments, and status in one worksheet.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {(() => {
+            const scheduleTag = scheduleStatusBadgeProps(schedule?.status);
+            return (
+              <Link
+                href={`/hr/schedule?workDate=${encodeURIComponent(workDate)}`}
+                title="Open work schedule for this date"
+                className={cn(
+                  'inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  scheduleTag.className
+                )}
+              >
+                Schedule · {scheduleTag.label}
+              </Link>
+            );
+          })()}
+          <Badge variant="outline" className="tabular-nums">
+            {stats.total} rows
+          </Badge>
+          {stats.exceptions > 0 ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+            >
+              {stats.exceptions} exception{stats.exceptions === 1 ? '' : 's'}
+            </Badge>
+          ) : null}
+          {canEdit ? (
+            <button
+              type="button"
+              disabled={drafts.length === 0}
+              onClick={openBulkAbsentConfirm}
+              className={cn(
+                TOOLBAR_TAG_CLASS,
+                bulkAbsentSnapshot
+                  ? 'border-border bg-primary text-primary-foreground'
+                  : 'border-destructive/45 bg-destructive/12 text-destructive dark:text-destructive-foreground'
+              )}
+            >
+              {bulkAbsentSnapshot ? 'Undo all absent' : 'Mark all absent'}
+            </button>
+          ) : null}
+          <Link
+            href={`/hr/attendance?workDate=${encodeURIComponent(workDate)}`}
+            className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
+          >
+            Cancel
+          </Link>
+          {canEdit ? (
+            <Button type="submit" form="attendance-create-form" size="sm" disabled={saving}>
+              {saving ? 'Saving…' : 'Save attendance'}
+            </Button>
+          ) : null}
+        </div>
+      </header>
 
-					<div className='flex flex-wrap items-end gap-3'>
-						<label className='text-sm text-slate-300'>
-							<span className='mb-1 block text-xs uppercase tracking-wide text-slate-500'>
-								Work date
-							</span>
-							<input
-								type='date'
-								value={workDate}
-								onChange={(e) =>
-									handleWorkDateChange(e.target.value)
-								}
-								className='rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white'
-							/>
-						</label>
-						<Button
-							type='button'
-							variant='outline'
-							onClick={() =>
-								router.push(`/hr/schedule/${workDate}`)
-							}
-						>
-							Open schedule
-						</Button>
-						{canEdit && (
-							<Button
-								type='button'
-								onClick={saveAll}
-								disabled={saving}
-							>
-								{saving ? 'Saving…' : 'Save attendance'}
-							</Button>
-						)}
-					</div>
-				</div>
-			</section>
+      <form
+        id="attendance-create-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void saveAll();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+            e.preventDefault();
+          }
+        }}
+        className="flex flex-col"
+      >
+        <AttendanceEntryGrid
+          rows={visibleDrafts}
+          employeesById={employeeById}
+          assignmentsById={assignmentsById}
+          assignmentOptions={assignmentOptions}
+          canEdit={canEdit}
+          emptyMessage="No employees match the current filters."
+          onUpdateRow={updateDraft}
+          onAssignmentChange={onAssignmentChange}
+          filters={
+            <>
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search… (Ctrl+F)"
+                aria-label="Search employees"
+                className={cn(DAY_SHEET_FIELD_CLASS, 'w-36 min-w-[8.5rem] sm:w-44')}
+              />
+              <select
+                value={scopeFilter}
+                onChange={(e) =>
+                  setScopeFilter(e.target.value as 'all' | 'assigned' | 'exceptions')
+                }
+                aria-label="Scope filter"
+                className={cn(DAY_SHEET_FIELD_CLASS, 'w-32 min-w-[7.5rem]')}
+              >
+                <option value="all">All employees</option>
+                <option value="assigned">Assigned only</option>
+                <option value="exceptions">Exceptions only</option>
+              </select>
+              <div className="min-w-[9rem] max-w-[14rem] flex-1">
+                <SearchSelect
+                  items={insertableEmployees.map((employee) => ({
+                    id: employee.id,
+                    label: employeeDisplayName(employee),
+                    searchText: `${employee.employeeCode} ${employee.fullName} ${employee.employeeType ?? ''}`,
+                  }))}
+                  value={insertEmployeeId}
+                  onChange={setInsertEmployeeId}
+                  placeholder="Add employee…"
+                  minCharactersToSearch={0}
+                  openOnFocus
+                  dropdownInPortal
+                  inputProps={{
+                    className: cn(
+                      DAY_SHEET_FIELD_CLASS,
+                      'w-full !rounded-md !border-border !bg-background !px-2 !py-0 !text-xs !leading-7 focus:!ring-2 focus:!ring-ring dark:!bg-background'
+                    ),
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 px-2 text-xs"
+                onClick={insertEmployeeRow}
+                disabled={!insertEmployeeId || !canEdit}
+              >
+                Insert
+              </Button>
+            </>
+          }
+          chromeStats={
+            <>
+              <Badge variant="secondary" className="h-auto px-1.5 py-0.5 text-[9px] font-normal tabular-nums">
+                {stats.assigned} assigned
+              </Badge>
+              <Badge variant="secondary" className="h-auto px-1.5 py-0.5 text-[9px] font-normal tabular-nums">
+                {stats.existing} saved
+              </Badge>
+              <span className="text-[9px] text-muted-foreground">
+                Showing {visibleDrafts.length} of {drafts.length}
+              </span>
+            </>
+          }
+        />
+      </form>
 
-			<section className='grid gap-3 sm:grid-cols-2 xl:grid-cols-6'>
-				<div className='rounded-2xl border border-white/10 bg-slate-900/40 p-4'>
-					<p className='text-[11px] uppercase tracking-[0.18em] text-slate-500'>
-						Active employees
-					</p>
-					<p className='mt-2 text-2xl font-semibold text-white'>
-						{stats.total}
-					</p>
-				</div>
-				<div className='rounded-2xl border border-white/10 bg-slate-900/40 p-4'>
-					<p className='text-[11px] uppercase tracking-[0.18em] text-slate-500'>
-						Assigned from schedule
-					</p>
-					<p className='mt-2 text-2xl font-semibold text-emerald-300'>
-						{stats.assigned}
-					</p>
-				</div>
-				<div className='rounded-2xl border border-white/10 bg-slate-900/40 p-4'>
-					<p className='text-[11px] uppercase tracking-[0.18em] text-slate-500'>
-						Rows already existed
-					</p>
-					<p className='mt-2 text-2xl font-semibold text-white'>
-						{stats.existing}
-					</p>
-				</div>
-				<div className='rounded-2xl border border-white/10 bg-slate-900/40 p-4'>
-					<p className='text-[11px] uppercase tracking-[0.18em] text-slate-500'>
-						Exceptions to review
-					</p>
-					<p className='mt-2 text-2xl font-semibold text-amber-300'>
-						{stats.exceptions}
-					</p>
-				</div>
-				<div className='rounded-2xl border border-white/10 bg-slate-900/40 p-4 sm:col-span-2 xl:col-span-2'>
-					<p className='text-[11px] uppercase tracking-[0.18em] text-slate-500'>
-						Worked Hour Colors
-					</p>
-					<div className='mt-3 flex flex-wrap gap-2'>
-						<span className='inline-flex rounded-full bg-sky-500/22 px-3 py-1 text-xs font-medium text-sky-950 ring-1 ring-sky-400/45 dark:bg-sky-500/18 dark:text-sky-100 dark:ring-sky-400/30'>
-							Less than 6 h
-						</span>
-						<span className='inline-flex rounded-full bg-amber-500/24 px-3 py-1 text-xs font-medium text-amber-950 ring-1 ring-amber-400/45 dark:bg-amber-500/18 dark:text-amber-100 dark:ring-amber-400/30'>
-							More than 12 h
-						</span>
-						<span className='inline-flex rounded-full bg-red-600/22 px-3 py-1 text-xs font-medium text-red-900 ring-1 ring-red-400/40 dark:bg-red-500/18 dark:text-red-100 dark:ring-red-400/30'>
-							More than 14 h
-						</span>
-					</div>
-					<p className='mt-3 text-xs text-slate-500'>
-						Worked cells are highlighted automatically when a row
-						falls into these review ranges.
-					</p>
-				</div>
-			</section>
-
-			<section className='rounded-2xl border border-white/10 bg-slate-900/40 p-5'>
-				<div className='mt-2 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]'>
-					<SearchSelect
-						items={insertableEmployees.map((employee) => ({
-							id: employee.id,
-							label: employeeDisplayName(employee),
-							searchText: `${employee.employeeCode} ${employee.fullName} ${employee.employeeType ?? ''}`,
-						}))}
-						value={insertEmployeeId}
-						onChange={setInsertEmployeeId}
-						placeholder='Insert new row for leftover employee'
-						minCharactersToSearch={0}
-						openOnFocus
-					/>
-					<Button
-						type='button'
-						variant='outline'
-						onClick={insertEmployeeRow}
-						disabled={!insertEmployeeId}
-					>
-						Insert row
-					</Button>
-				</div>
-			</section>
-			<section className='rounded-2xl border border-white/10 bg-slate-900/40 p-5'>
-				<div className='flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'>
-					<div>
-						<h2 className='text-lg font-semibold text-white'>
-							Editing context
-						</h2>
-						<p className='mt-1 text-sm text-slate-400'>
-							{schedule?.status
-								? `Schedule status: ${schedule.status}`
-								: 'No schedule created yet'}
-						</p>
-					</div>
-					<div className='grid gap-3 sm:grid-cols-3'>
-						<input
-							type='search'
-							value={search}
-							onChange={(e) => setSearch(e.target.value)}
-							placeholder='Search employee, code, job, or status'
-							className='rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white sm:col-span-2'
-						/>
-						<select
-							value={scopeFilter}
-							onChange={(e) =>
-								setScopeFilter(
-									e.target.value as
-										| 'all'
-										| 'assigned'
-										| 'exceptions',
-								)
-							}
-							className='rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white'
-						>
-							<option value='all'>All employees</option>
-							<option value='assigned'>Assigned only</option>
-							<option value='exceptions'>Exceptions only</option>
-						</select>
-					</div>
-				</div>
-			</section>
-
-			<div className='overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-900/40'>
-				<table className='w-full min-w-[1380px] text-left text-sm absolute'>
-					<thead className='sticky top-0 z-20 border-b border-slate-200/90 bg-white/95 text-xs uppercase tracking-wide text-slate-500 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/95'>
-						<tr>
-							<th className='px-4 py-3'>Employee</th>
-							<th className='px-4 py-3'>Job Num</th>
-							<th className='w-[104px] px-3 py-3'>Duty in</th>
-							<th className='w-[104px] px-3 py-3'>Break out</th>
-							<th className='w-[104px] px-3 py-3'>Break in</th>
-							<th className='w-[104px] px-3 py-3'>Duty out</th>
-							<th className='px-4 py-3'>Basic Hr</th>
-							<th className='px-4 py-3'>Total Hr</th>
-							<th className='px-4 py-3'>Overtime</th>
-							<th className='px-4 py-3'>Status</th>
-						</tr>
-					</thead>
-					<tbody className='divide-y divide-slate-200/70 text-slate-700 dark:divide-white/5 dark:text-slate-200'>
-						{visibleDrafts.length === 0 ? (
-							<tr>
-								<td
-									colSpan={10}
-									className='px-4 py-10 text-center text-slate-500'
-								>
-									No employees match the current filters.
-								</td>
-							</tr>
-						) : (
-							visibleDrafts.map((draft) => {
-								const employee = employeeById.get(
-									draft.employeeId,
-								);
-								const basicMinutes = Math.round(
-									(employee?.basicHoursPerDay ?? 0) * 60,
-								);
-								const workedMinutes =
-									calculateWorkedMinutes(draft);
-								const overtimeMinutes =
-									draft.status === 'ABSENT' ||
-									draft.status === 'LEAVE'
-										? 0
-										: Math.max(
-												0,
-												workedMinutes - basicMinutes,
-											);
-								const sourceTone =
-									draft.source === 'existing'
-										? 'bg-emerald-500/15 text-emerald-300'
-										: draft.source === 'schedule'
-											? 'bg-cyan-500/15 text-cyan-300'
-											: 'bg-slate-500/15 text-slate-300';
-								const employeeType =
-									employee?.employeeType ?? 'LABOUR_WORKER';
-								const rowTone =
-									EMPLOYEE_TYPE_ROW_TONE[employeeType];
-
-								return (
-									<tr
-										key={draft.employeeId}
-										className={[
-											'border border-white dark:border-white/10',
-											draft.status === 'ABSENT'
-												? 'bg-red-600/20 hover:bg-red-600/26 dark:bg-red-500/18 dark:hover:bg-red-500/24'
-												: rowTone,
-										].join(' ')}
-									>
-										<td className='px-4 py-3'>
-											<p className='font-medium text-slate-900 dark:text-white'>
-												{employee?.preferredName ||
-													employee?.fullName ||
-													'Unknown employee'}
-											</p>
-											<div className='mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500'>
-												<span>
-													{employee?.employeeCode ||
-														''}
-												</span>
-												{employee?.status &&
-												employee.status !== 'ACTIVE' ? (
-													<span className='rounded-full bg-amber-500/20 px-2 py-0.5 text-amber-700 dark:text-amber-300'>
-														{employee.status.replace(
-															'_',
-															' ',
-														)}
-													</span>
-												) : null}
-												<span
-													className={`rounded-full px-2 py-0.5 ${sourceTone}`}
-												>
-													{draft.source}
-												</span>
-											</div>
-										</td>
-										<td className='px-4 py-3'>
-											<SearchSelect
-												items={[
-													{
-														id: '',
-														label: '',
-														searchText: '',
-													},
-													...assignmentOptions.map(
-														(option) => ({
-															id: option.value,
-															label: option.label,
-															searchText:
-																option.searchText,
-														}),
-													),
-												]}
-												value={draft.workAssignmentId}
-												onChange={(value) =>
-													onAssignmentChange(
-														draft.employeeId,
-														value,
-													)
-												}
-												onBlurInputValue={(value) => {
-													if (value.trim() === '') {
-														onAssignmentChange(
-															draft.employeeId,
-															'',
-														);
-													}
-												}}
-												placeholder='Search job num'
-												disabled={!canEdit}
-												openOnFocus
-												minCharactersToSearch={0}
-											/>
-										</td>
-										<td className='px-3 py-2'>
-											<TimeEntryInput
-												value={draft.checkInAt}
-												onChange={(value) =>
-													updateDraft(
-														draft.employeeId,
-														{ checkInAt: value },
-													)
-												}
-												disabled={!canEdit}
-											/>
-										</td>
-										<td className='px-3 py-2'>
-											<TimeEntryInput
-												value={draft.breakInAt}
-												onChange={(value) =>
-													updateDraft(
-														draft.employeeId,
-														{ breakInAt: value },
-													)
-												}
-												disabled={!canEdit}
-											/>
-										</td>
-										<td className='px-3 py-2'>
-											<TimeEntryInput
-												value={draft.breakOutAt}
-												onChange={(value) =>
-													updateDraft(
-														draft.employeeId,
-														{ breakOutAt: value },
-													)
-												}
-												disabled={!canEdit}
-											/>
-										</td>
-										<td className='px-3 py-2'>
-											<TimeEntryInput
-												value={draft.checkOutAt}
-												onChange={(value) =>
-													updateDraft(
-														draft.employeeId,
-														{ checkOutAt: value },
-													)
-												}
-												disabled={!canEdit}
-											/>
-										</td>
-										<td className='px-4 py-3'>
-											<div className='text-sm text-slate-800 dark:text-slate-200'>
-												{formatHourValue(basicMinutes)}
-											</div>
-										</td>
-										<td className='px-4 py-3'>
-											<div
-												className={`inline-flex rounded-lg px-2.5 py-1 text-sm font-medium ${workedHourTone(workedMinutes)}`}
-											>
-												{formatHourValue(workedMinutes)}
-											</div>
-										</td>
-										<td className='px-4 py-3'>
-											<div
-												className={`text-sm font-medium ${overtimeMinutes > 0 ? 'text-emerald-300' : 'text-slate-300'}`}
-											>
-												{formatHourValue(
-													overtimeMinutes,
-												)}
-											</div>
-										</td>
-										<td className='px-4 py-3'>
-											<select
-												value={draft.status}
-												onChange={(e) =>
-													updateDraft(
-														draft.employeeId,
-														{
-															status: e.target
-																.value as AttendanceDraftRow['status'],
-														},
-													)
-												}
-												disabled={!canEdit}
-												className='w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-white'
-											>
-												{STATUS_OPTIONS.map(
-													(status) => (
-														<option
-															key={status}
-															value={status}
-														>
-															{status}
-														</option>
-													),
-												)}
-											</select>
-										</td>
-									</tr>
-								);
-							})
-						)}
-					</tbody>
-				</table>
-			</div>
-		</div>
+      <Modal
+        isOpen={bulkAbsentConfirm !== null}
+        onClose={() => setBulkAbsentConfirm(null)}
+        title={bulkAbsentConfirm === 'undo' ? 'Undo all absent?' : 'Mark all employees absent?'}
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setBulkAbsentConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={bulkAbsentConfirm === 'mark' ? 'destructive' : 'default'}
+              onClick={confirmBulkAbsent}
+            >
+              {bulkAbsentConfirm === 'undo' ? 'Restore rows' : 'Mark all absent'}
+            </Button>
+          </>
+        }
+      >
+        {bulkAbsentConfirm === 'mark' ? (
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              You are about to mark all <strong className="text-foreground">{drafts.length}</strong> employees
+              absent for <strong className="text-foreground">{formatWorkDateLabel(workDate)}</strong>.
+            </p>
+            <Alert variant="destructive">
+              <AlertDescription>
+                Check-in, check-out, and break times will be cleared on every row. Changes are not saved until you
+                click Save. You can undo from the toolbar before saving.
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : bulkAbsentConfirm === 'undo' ? (
+          <p className="text-sm text-muted-foreground">
+            Restore attendance rows for{' '}
+            <strong className="text-foreground">{formatWorkDateLabel(workDate)}</strong> to how they were before
+            marking all absent?
+          </p>
+        ) : null}
+      </Modal>
+    </div>
   );
 }

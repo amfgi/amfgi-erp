@@ -2,8 +2,10 @@ import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 const scheduleDetailSelect = {
@@ -11,7 +13,6 @@ const scheduleDetailSelect = {
   companyId: true,
   workDate: true,
   clientDisplayName: true,
-  title: true,
   notes: true,
   status: true,
   publishedAt: true,
@@ -52,43 +53,117 @@ export async function GET(req: Request) {
   const workDateRaw = searchParams.get('workDate');
 
   if (!workDateRaw) {
+    const limitParam = searchParams.get('limit');
+    const offset = parseListOffset(searchParams.get('offset'));
+    const q = searchParams.get('q')?.trim() ?? '';
+    const status = searchParams.get('status');
+    const monthRaw = searchParams.get('month')?.trim().slice(0, 7) ?? '';
+
+    const where: Prisma.WorkScheduleWhereInput = { companyId };
+    if (status && status !== 'ALL') {
+      where.status = status as 'DRAFT' | 'PUBLISHED' | 'LOCKED';
+    }
+    if (q) {
+      where.clientDisplayName = { contains: q, mode: 'insensitive' };
+    }
+    if (/^\d{4}-\d{2}$/.test(monthRaw)) {
+      const [y, m] = monthRaw.split('-').map((x) => Number(x));
+      if (m >= 1 && m <= 12) {
+        where.workDate = {
+          gte: new Date(Date.UTC(y, m - 1, 1)),
+          lt: new Date(Date.UTC(y, m, 1)),
+        };
+      }
+    }
+
+    const mapRow = async (rows: Array<{
+      id: string;
+      workDate: Date;
+      status: string;
+      clientDisplayName: string | null;
+      createdAt: Date;
+      publishedAt: Date | null;
+      lockedAt: Date | null;
+      _count: { assignments: number; absences: number };
+    }>) => {
+      const attendanceByDate = new Map<string, number>();
+      if (rows.length > 0) {
+        const attendanceRows = await prisma.attendanceEntry.groupBy({
+          by: ['workDate'],
+          where: {
+            companyId,
+            workDate: { in: rows.map((row) => row.workDate) },
+          },
+          _count: { _all: true },
+        });
+        for (const row of attendanceRows) {
+          attendanceByDate.set(row.workDate.toISOString().slice(0, 10), row._count._all);
+        }
+      }
+      return rows.map((row) => ({
+        ...row,
+        attendanceRows: attendanceByDate.get(row.workDate.toISOString().slice(0, 10)) ?? 0,
+      }));
+    };
+
+    if (/^\d{4}-\d{2}$/.test(monthRaw)) {
+      const rows = await prisma.workSchedule.findMany({
+        where,
+        orderBy: { workDate: 'desc' },
+        select: {
+          id: true,
+          workDate: true,
+          status: true,
+          clientDisplayName: true,
+          createdAt: true,
+          publishedAt: true,
+          lockedAt: true,
+          _count: { select: { assignments: true, absences: true } },
+        },
+      });
+      return successResponse(await mapRow(rows));
+    }
+
+    if (limitParam !== null) {
+      const limit = parseListLimit(limitParam);
+      const [total, rows] = await Promise.all([
+        prisma.workSchedule.count({ where }),
+        prisma.workSchedule.findMany({
+          where,
+          orderBy: { workDate: 'desc' },
+          select: {
+            id: true,
+            workDate: true,
+            status: true,
+            clientDisplayName: true,
+            createdAt: true,
+            publishedAt: true,
+            lockedAt: true,
+            _count: { select: { assignments: true, absences: true } },
+          },
+          skip: offset,
+          take: limit,
+        }),
+      ]);
+      return successResponse({ items: await mapRow(rows), total });
+    }
+
     const rows = await prisma.workSchedule.findMany({
-      where: { companyId },
+      where,
       orderBy: { workDate: 'desc' },
       select: {
         id: true,
         workDate: true,
         status: true,
-        title: true,
         clientDisplayName: true,
         createdAt: true,
         publishedAt: true,
         lockedAt: true,
         _count: { select: { assignments: true, absences: true } },
       },
-      take: 100,
+      take: 500,
     });
-    const attendanceByDate = new Map<string, number>();
-    if (rows.length > 0) {
-      const attendanceRows = await prisma.attendanceEntry.groupBy({
-        by: ['workDate'],
-        where: {
-          companyId,
-          workDate: { in: rows.map((row) => row.workDate) },
-        },
-        _count: { _all: true },
-      });
-      for (const row of attendanceRows) {
-        attendanceByDate.set(row.workDate.toISOString().slice(0, 10), row._count._all);
-      }
-    }
-
-    return successResponse(
-      rows.map((row) => ({
-        ...row,
-        attendanceRows: attendanceByDate.get(row.workDate.toISOString().slice(0, 10)) ?? 0,
-      }))
-    );
+    return successResponse(await mapRow(rows));
   }
 
   let workDateYmd: string;
@@ -107,7 +182,6 @@ export async function GET(req: Request) {
 
 const PostSchema = z.object({
   workDate: z.string().min(1),
-  title: z.string().max(200).optional().nullable(),
   clientDisplayName: z.string().max(200).optional().nullable(),
 });
 
@@ -139,7 +213,6 @@ export async function POST(req: Request) {
     data: {
       companyId,
       workDate,
-      title: parsed.data.title?.trim() || null,
       clientDisplayName: parsed.data.clientDisplayName?.trim() || null,
       status: 'DRAFT',
       createdById: session.user.id,

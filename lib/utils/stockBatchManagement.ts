@@ -3,6 +3,7 @@
  * Handles creation and management of material batches
  */
 
+import type { Prisma } from '@prisma/client';
 import { generateBatchNumber } from './fifoConsumption';
 
 export interface CreateBatchInput {
@@ -15,6 +16,7 @@ export interface CreateBatchInput {
   receivedDate: Date;
   expiryDate?: Date;
   notes?: string;
+  meta?: Prisma.InputJsonValue;
 }
 
 export interface UpdateBatchInput {
@@ -41,6 +43,7 @@ export function createBatchData(input: CreateBatchInput) {
     receivedDate: input.receivedDate,
     expiryDate: input.expiryDate,
     notes: input.notes,
+    meta: input.meta,
   };
 }
 

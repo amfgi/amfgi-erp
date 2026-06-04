@@ -1,15 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Input } from '@/components/ui/shadcn/input';
 import { Card, CardContent } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import { Badge } from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
 import { cn } from '@/lib/utils';
 import type { Column } from '@/components/ui/DataTable';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
@@ -18,7 +20,8 @@ import {
   useAdjustReceiptEntryMutation,
   useCancelReceiptEntryMutation,
   useDeleteReceiptEntryMutation,
-  useGetReceiptEntriesQuery,
+  useGetReceiptEntriesPageQuery,
+  RECEIPT_ENTRY_PAGE_SIZE_OPTIONS,
   useGetStockValuationQuery,
   useLazyGetReceiptAdjustmentImpactQuery,
 } from '@/store/hooks';
@@ -102,6 +105,10 @@ export default function GoodsReceiptPage() {
   const canDelete = isSA || perms.includes('transaction.stock_in');
 
   const [filterType, setFilterType] = useState<'day' | 'month' | 'all'>('month');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearch = useDeferredValue(searchQuery);
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date().toISOString().split('T')[0];
     return `${d.slice(0, 7)}-01`;
@@ -195,10 +202,22 @@ export default function GoodsReceiptPage() {
     [filterType, router],
   );
 
-  const { data: entries = [], isFetching } = useGetReceiptEntriesQuery(
-    { filterType, date: selectedDate },
-    { skip: !canView, refetchOnMountOrArgChange: 30 }
+  const { data: entriesPage, isFetching } = useGetReceiptEntriesPageQuery(
+    {
+      filterType,
+      date: selectedDate,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+    },
+    { skip: !canView, refetchOnMountOrArgChange: 30 },
   );
+  const entries = entriesPage?.items ?? [];
+  const totalEntries = entriesPage?.total ?? 0;
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, filterType, selectedDate, pageSize]);
   const { data: stockValuation } = useGetStockValuationQuery(undefined, {
     skip: !canView,
     refetchOnMountOrArgChange: 30,
@@ -506,8 +525,8 @@ export default function GoodsReceiptPage() {
       <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
-            label: 'Receipts in view',
-            value: String(entries.length),
+            label: 'Receipts in period',
+            value: String(totalEntries),
             note: filterType === 'all' ? 'All available records' : periodFilterLabel(filterType),
           },
           {
@@ -587,8 +606,23 @@ export default function GoodsReceiptPage() {
                 Showing every receipt for this company. Narrow by month or day when you need a smaller window.
               </p>
             )}
-            <p className="text-xs text-muted-foreground sm:text-right">Table search filters the rows below.</p>
+            <p className="text-xs text-muted-foreground sm:text-right">
+              {totalEntries} receipt{totalEntries === 1 ? '' : 's'} in this period
+            </p>
           </div>
+        </div>
+
+        <div className="mb-3 max-w-md">
+          <label htmlFor="receipt-search" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Search receipts
+          </label>
+          <Input
+            id="receipt-search"
+            className="mt-1.5"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Receipt number, supplier, notes…"
+          />
         </div>
 
         <DataTable
@@ -596,10 +630,20 @@ export default function GoodsReceiptPage() {
           data={entries}
           loading={isFetching && entries.length === 0}
           emptyText="No receipts found."
-          searchKeys={['receiptNumber', 'supplier', 'notes']}
           onRowContextMenu={handleContextMenu}
           onRowDoubleClick={(entry) => setViewEntry(entry)}
           onRowClick={(entry) => setViewEntry(entry)}
+          serverPagination={{
+            page,
+            pageSize,
+            total: totalEntries,
+            pageSizeOptions: RECEIPT_ENTRY_PAGE_SIZE_OPTIONS,
+            onPageChange: setPage,
+            onPageSizeChange: (size) => {
+              setPageSize(size);
+              setPage(1);
+            },
+          }}
         />
       </SectionShell>
 

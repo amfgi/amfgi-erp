@@ -4,14 +4,19 @@ import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySessi
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
+const LogEntrySchema = z
+  .object({
+    driverEmployeeId: z.string().min(1).optional(),
+    guestDriverName: z.string().min(1).max(200).optional(),
+    routeText: z.string().max(20000),
+    sequence: z.number().int().min(0).optional(),
+  })
+  .refine((entry) => Boolean(entry.driverEmployeeId) || Boolean(entry.guestDriverName?.trim()), {
+    message: 'Each log must have a driver employee or guest driver name',
+  });
+
 const PutSchema = z.object({
-  logs: z.array(
-    z.object({
-      driverEmployeeId: z.string().min(1),
-      routeText: z.string().max(20000),
-      sequence: z.number().int().min(0).optional(),
-    })
-  ),
+  logs: z.array(LogEntrySchema),
 });
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -32,19 +37,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const parsed = PutSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const ids = [...new Set(parsed.data.logs.map((l) => l.driverEmployeeId))];
-  const cnt = await prisma.employee.count({ where: { companyId, id: { in: ids } } });
-  if (cnt !== ids.length) return errorResponse('Invalid driver employee id', 422);
+  const employeeIds = [
+    ...new Set(
+      parsed.data.logs.map((l) => l.driverEmployeeId).filter((id): id is string => Boolean(id))
+    ),
+  ];
+  if (employeeIds.length > 0) {
+    const cnt = await prisma.employee.count({ where: { companyId, id: { in: employeeIds } } });
+    if (cnt !== employeeIds.length) return errorResponse('Invalid driver employee id', 422);
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.driverRunLog.deleteMany({ where: { workScheduleId: scheduleId } });
     let seq = 0;
     for (const l of parsed.data.logs) {
+      const guestName = l.guestDriverName?.trim() || null;
+      const employeeId = l.driverEmployeeId?.trim() || null;
       await tx.driverRunLog.create({
         data: {
           companyId,
           workScheduleId: scheduleId,
-          driverEmployeeId: l.driverEmployeeId,
+          driverEmployeeId: guestName ? null : employeeId,
+          guestDriverName: guestName,
           routeText: l.routeText.trim(),
           sequence: l.sequence ?? seq++,
         },

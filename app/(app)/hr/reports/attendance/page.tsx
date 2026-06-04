@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/shadcn/button';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import toast from 'react-hot-toast';
+import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import {
   DEFAULT_ATTENDANCE_REPORT_COLUMNS,
   DEFAULT_ATTENDANCE_REPORT_FORMATS,
@@ -168,6 +170,8 @@ export default function HrAttendanceReportPage() {
   const [savedPresets, setSavedPresets] = useState<AttendanceReportPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [selectedPresetSchema, setSelectedPresetSchema] = useState<AttendanceReportBuilderColumn[] | null>(null);
+  const [employeePage, setEmployeePage] = useState(1);
+  const [employeePageSize, setEmployeePageSize] = useState<number>(DEFAULT_LIST_PAGE_SIZE);
   const hasReportRef = useRef(false);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
@@ -231,6 +235,10 @@ export default function HrAttendanceReportPage() {
     }
   }, [report, selectedEmployeeId]);
 
+  useEffect(() => {
+    setEmployeePage(1);
+  }, [search, month, employeePageSize]);
+
   const visibleEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q || !report) return report?.employeeSummaries ?? [];
@@ -238,6 +246,16 @@ export default function HrAttendanceReportPage() {
       [employee.employeeName, employee.employeeCode].join(' ').toLowerCase().includes(q)
     );
   }, [report, search]);
+
+  const employeeTotal = visibleEmployees.length;
+  const employeeTotalPages = Math.max(1, Math.ceil(employeeTotal / employeePageSize));
+  const safeEmployeePage = Math.min(employeePage, employeeTotalPages);
+  const employeeListOffset = (safeEmployeePage - 1) * employeePageSize;
+  const employeePageRows = visibleEmployees.slice(employeeListOffset, employeeListOffset + employeePageSize);
+
+  useEffect(() => {
+    if (employeePage !== safeEmployeePage) setEmployeePage(safeEmployeePage);
+  }, [employeePage, safeEmployeePage]);
 
   if (!canView) return <div className="text-slate-400">Forbidden</div>;
 
@@ -459,7 +477,7 @@ export default function HrAttendanceReportPage() {
               ) : visibleEmployees.length === 0 ? (
                 <div className="rounded-xl border border-white/10 bg-slate-950/50 px-4 py-5 text-sm text-slate-500">No attendance found for this month.</div>
               ) : (
-                visibleEmployees.map((employee) => (
+                employeePageRows.map((employee) => (
                   <button
                     key={employee.employeeId}
                     type="button"
@@ -481,6 +499,20 @@ export default function HrAttendanceReportPage() {
                 ))
               )}
             </div>
+            {employeeTotal > 0 ? (
+              <DirectoryListPagination
+                page={safeEmployeePage}
+                pageSize={employeePageSize}
+                totalPages={employeeTotalPages}
+                total={employeeTotal}
+                pageStart={employeeListOffset}
+                pageEnd={employeeListOffset + employeePageRows.length}
+                pageSizeOptions={LIST_PAGE_SIZE_OPTIONS}
+                onPageChange={setEmployeePage}
+                onPageSizeChange={setEmployeePageSize}
+                className="mt-4 rounded-xl border border-white/10"
+              />
+            ) : null}
           </div>
         </aside>
       </section>

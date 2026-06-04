@@ -178,7 +178,6 @@ export const ITEM_TYPE_FIELDS: Record<KnownItemType, FieldDef[]> = {
     { path: 'job.projectDetails', label: 'Primary Project Details', category: 'Job' },
     { path: 'job.workProcessDetails', label: 'Primary Work Process Details', category: 'Job' },
     { path: 'job.locationLabel', label: 'Primary Job Location', category: 'Job' },
-    { path: 'schedule.title', label: 'Document Title', category: 'Schedule' },
     { path: 'schedule.workDate', label: 'Work Date (ISO)', category: 'Schedule' },
     { path: 'schedule.workDateLabel', label: 'Work Date Label', category: 'Schedule' },
     { path: 'schedule.status', label: 'Schedule Status', category: 'Schedule' },

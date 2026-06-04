@@ -5,8 +5,17 @@ import { useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
-import { Card, CardContent } from '@/components/ui/shadcn/card';
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/shadcn/table';
 import Spinner from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
 import { useDeleteFormulaLibraryMutation, useGetFormulaLibrariesQuery } from '@/store/hooks';
@@ -42,7 +51,7 @@ export default function StockFormulaLibraryPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
-  const canView = isSA || (perms.includes('job.view') && perms.includes('material.view'));
+  const canView = isSA || perms.includes('stock.formula.view');
   const canManage = isSA || perms.includes('settings.manage');
 
   const { data: formulas = [], isLoading } = useGetFormulaLibrariesQuery(undefined, { skip: !canView });
@@ -56,6 +65,16 @@ export default function StockFormulaLibraryPage() {
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [formulas]);
+
+  const tableRows = useMemo(
+    () =>
+      [...formulas].sort((a, b) => {
+        const groupCompare = a.fabricationType.localeCompare(b.fabricationType);
+        if (groupCompare !== 0) return groupCompare;
+        return a.name.localeCompare(b.name);
+      }),
+    [formulas]
+  );
 
   const remove = async (id: string, name: string) => {
     if (!window.confirm(`Delete formula "${name}"? Existing job items using this formula may stop calculating.`)) return;
@@ -106,7 +125,7 @@ export default function StockFormulaLibraryPage() {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <Alert>
-          <AlertDescription>You need job.view and material.view permission to view formulas.</AlertDescription>
+          <AlertDescription>You need the Stock — Formula → View permission to view formulas.</AlertDescription>
         </Alert>
       </div>
     );
@@ -118,7 +137,10 @@ export default function StockFormulaLibraryPage() {
         <div className="min-w-0 space-y-1">
           <Link
             href="/stock/job-budget"
-            className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+            className={cn(
+              buttonVariants({ variant: 'link', size: 'sm' }),
+              'h-auto p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+            )}
           >
             ← Job budget
           </Link>
@@ -139,25 +161,6 @@ export default function StockFormulaLibraryPage() {
         </div>
       </header>
 
-      {!isLoading && grouped.length > 0 ? (
-        <section className="grid min-w-0 gap-3 sm:grid-cols-2">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Templates</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{formulas.length}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Saved formula libraries</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Fabrication scopes</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{grouped.length}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Distinct fabrication groupings</p>
-            </CardContent>
-          </Card>
-        </section>
-      ) : null}
-
       {isLoading ? (
         <div className="flex h-64 items-center justify-center rounded-lg border border-border bg-card">
           <Spinner size="lg" />
@@ -167,76 +170,74 @@ export default function StockFormulaLibraryPage() {
           No formulas yet.
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
-          {grouped.map(([fabricationType, items]) => (
-            <section key={fabricationType} className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">{fabricationType}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {items.length} formula{items.length === 1 ? '' : 's'}
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                {items.map((formula) => {
-                  const counts = countRules(formula.formulaConfig);
-                  return (
-                    <div
-                      key={formula.id}
-                      className="rounded-lg border border-border bg-muted/30 p-4 dark:bg-muted/15"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="font-semibold text-foreground">{formula.name}</h3>
-                          <p className="mt-1 font-mono text-xs text-muted-foreground">{formula.slug}</p>
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex flex-col gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Saved formulas</h2>
+              <p className="text-xs text-muted-foreground">
+                {formulas.length} template{formulas.length === 1 ? '' : 's'} across {grouped.length} fabrication scope
+                {grouped.length === 1 ? '' : 's'}.
+              </p>
+            </div>
+          </div>
+          <Table>
+            <TableCaption>Formula templates sorted by fabrication scope and name.</TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Formula</TableHead>
+                <TableHead>Fabrication scope</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Areas</TableHead>
+                <TableHead className="text-right">Materials</TableHead>
+                <TableHead className="text-right">Labor</TableHead>
+                {canManage ? <TableHead className="text-right">Actions</TableHead> : null}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tableRows.map((formula) => {
+                const counts = countRules(formula.formulaConfig);
+                return (
+                  <TableRow key={formula.id}>
+                    <TableCell className="min-w-56">
+                      <div className="font-medium text-foreground">{formula.name}</div>
+                      <div className="mt-1 font-mono text-xs text-muted-foreground">{formula.slug}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{formula.fabricationType || 'Unassigned'}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-md text-muted-foreground">
+                      <span className="line-clamp-2">{formula.description || 'No description yet.'}</span>
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{counts.areas}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{counts.materials}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{counts.labor}</TableCell>
+                    {canManage ? (
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Link
+                            href={`/stock/job-budget/formulas/${formula.id}/edit`}
+                            className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
+                          >
+                            Edit
+                          </Link>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={deleting}
+                            onClick={() => remove(formula.id, formula.name)}
+                          >
+                            Delete
+                          </Button>
                         </div>
-                        {canManage ? (
-                          <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                            <Link
-                              href={`/stock/job-budget/formulas/${formula.id}/edit`}
-                              className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
-                            >
-                              Edit
-                            </Link>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={deleting}
-                              onClick={() => remove(formula.id, formula.name)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <p className="mt-3 text-sm text-muted-foreground">
-                        {formula.description || 'No description yet.'}
-                      </p>
-                      <div className="mt-4 grid grid-cols-3 gap-2">
-                        <div className="rounded-md border border-border bg-background px-3 py-2">
-                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Areas</p>
-                          <p className="mt-1 font-semibold tabular-nums text-foreground">{counts.areas}</p>
-                        </div>
-                        <div className="rounded-md border border-border bg-background px-3 py-2">
-                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            Materials
-                          </p>
-                          <p className="mt-1 font-semibold tabular-nums text-foreground">{counts.materials}</p>
-                        </div>
-                        <div className="rounded-md border border-border bg-background px-3 py-2">
-                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Labor</p>
-                          <p className="mt-1 font-semibold tabular-nums text-foreground">{counts.labor}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
-        </div>
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </section>
       )}
     </div>
   );

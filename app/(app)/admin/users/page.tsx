@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
@@ -11,12 +11,14 @@ import { isEmployeeSelfServiceAccount } from '@/lib/auth/selfService';
 import { cn } from '@/lib/utils';
 import type { Column } from '@/components/ui/DataTable';
 import type { User } from '@/store/api/adminEndpoints/users';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
 import {
-  useGetUsersQuery,
+  useGetUsersPageQuery,
   useGetCompaniesQuery,
   useGetRolesQuery,
   useCreateUserMutation,
   useUpdateUserMutation,
+  USER_PAGE_SIZE_OPTIONS,
 } from '@/store/hooks';
 import toast from 'react-hot-toast';
 
@@ -31,13 +33,6 @@ const selectClass =
 const formSelectClass =
   'flex-1 min-h-9 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50';
 
-function userMatchesCompanyFilter(u: User, companyId: string): boolean {
-  if (companyId === 'all') return true;
-  if (u.isSuperAdmin) return true;
-  if (u.activeCompanyId === companyId) return true;
-  return (u.companyAccess ?? []).some((a) => a.companyId === companyId);
-}
-
 export default function AdminUsersPage() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
@@ -45,10 +40,28 @@ export default function AdminUsersPage() {
   const [userTab, setUserTab] = useState<UserTab>('erp');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const { data: users = [], isLoading: usersLoading } = useGetUsersQuery(undefined, {
-    refetchOnMountOrArgChange: 30,
-  });
+  const { data: usersPage, isLoading: usersLoading } = useGetUsersPageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+      status: statusFilter,
+      tab: userTab,
+      companyId: companyFilter,
+    },
+    { refetchOnMountOrArgChange: 30 },
+  );
+  const users = usersPage?.items ?? [];
+  const totalUsers = usersPage?.total ?? 0;
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, statusFilter, companyFilter, userTab, pageSize]);
   const { data: companies = [], isLoading: companiesInitialLoading } = useGetCompaniesQuery(undefined, {
     refetchOnMountOrArgChange: 30,
   });
@@ -66,28 +79,6 @@ export default function AdminUsersPage() {
   const [password, setPassword] = useState('');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [accessRows, setAccessRows] = useState<{ companyId: string; roleId: string }[]>([]);
-
-  const counts = useMemo(() => {
-    let erp = 0;
-    let self = 0;
-    for (const u of users) {
-      if (isEmployeeSelfServiceAccount(u)) self += 1;
-      else erp += 1;
-    }
-    return { erp, self, total: users.length };
-  }, [users]);
-
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const inTab =
-        userTab === 'self-service' ? isEmployeeSelfServiceAccount(u) : !isEmployeeSelfServiceAccount(u);
-      if (!inTab) return false;
-      if (statusFilter === 'active' && !u.isActive) return false;
-      if (statusFilter === 'inactive' && u.isActive) return false;
-      if (!userMatchesCompanyFilter(u, companyFilter)) return false;
-      return true;
-    });
-  }, [users, userTab, statusFilter, companyFilter]);
 
   const openCreate = () => {
     setEditing(null);
@@ -241,7 +232,7 @@ export default function AdminUsersPage() {
   ];
 
   const emptyText =
-    users.length === 0 ? 'No users found.' : 'No users match the current tab and filters.';
+    totalUsers === 0 ? 'No users found.' : 'No users match the current tab and filters.';
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
@@ -250,7 +241,7 @@ export default function AdminUsersPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Administration</p>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">User management</h1>
           <p className="text-sm text-muted-foreground">
-            {counts.total} user{counts.total !== 1 ? 's' : ''} · {counts.erp} ERP · {counts.self} self-service
+            {totalUsers} user{totalUsers !== 1 ? 's' : ''} matching filters in this tab
           </p>
         </div>
         {userTab === 'erp' ? (
@@ -276,7 +267,7 @@ export default function AdminUsersPage() {
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            ERP users ({counts.erp})
+            ERP users
           </button>
           <button
             type="button"
@@ -288,11 +279,23 @@ export default function AdminUsersPage() {
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            Self-service ({counts.self})
+            Self-service
           </button>
         </div>
 
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:min-w-[14rem]">
+            <label htmlFor="user-search" className={labelClass}>
+              Search
+            </label>
+            <Input
+              id="user-search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Name or email"
+              disabled={usersLoading}
+            />
+          </div>
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="user-filter-status" className={labelClass}>
               Status
@@ -329,18 +332,28 @@ export default function AdminUsersPage() {
             </select>
           </div>
           <p className="text-xs text-muted-foreground sm:ml-auto sm:self-center">
-            Showing {filteredUsers.length} of {userTab === 'erp' ? counts.erp : counts.self} in this tab
+            Showing {users.length} of {totalUsers} in this tab
           </p>
         </div>
       </div>
 
       <DataTable
         columns={columns}
-        data={filteredUsers}
+        data={users}
         loading={dataTableLoading}
         emptyText={emptyText}
-        searchKeys={['name', 'email']}
         preferenceKey={`admin-users-${userTab}`}
+        serverPagination={{
+          page,
+          pageSize,
+          total: totalUsers,
+          pageSizeOptions: USER_PAGE_SIZE_OPTIONS,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => {
+            setPageSize(size);
+            setPage(1);
+          },
+        }}
       />
 
       <Modal

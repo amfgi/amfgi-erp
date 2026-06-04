@@ -8,6 +8,8 @@ import {
   primaryFromPartyContacts,
   prismaPartyFieldsFromBody,
 } from '@/lib/partyListRecordPayload';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 /** Body matches party lists API field names for license/TRN/contacts; see API-party-lists.md */
@@ -21,7 +23,51 @@ const CustomerSchema = z
   })
   .merge(partyListPartyFieldsSchema);
 
-export async function GET() {
+async function buildCustomerListWhere(
+  companyId: string,
+  opts: {
+    status: string | null;
+    search: string;
+  },
+): Promise<Prisma.CustomerWhereInput> {
+  const where: Prisma.CustomerWhereInput = { companyId };
+
+  if (opts.status === 'active') where.isActive = true;
+  if (opts.status === 'inactive') where.isActive = false;
+
+  if (!opts.search) return where;
+
+  const searchOr: Prisma.CustomerWhereInput[] = [
+    { name: { contains: opts.search, mode: 'insensitive' } },
+    { contactPerson: { contains: opts.search, mode: 'insensitive' } },
+    { phone: { contains: opts.search, mode: 'insensitive' } },
+    { email: { contains: opts.search, mode: 'insensitive' } },
+    { address: { contains: opts.search, mode: 'insensitive' } },
+  ];
+
+  const jobsWithMatch = await prisma.job.findMany({
+    where: {
+      companyId,
+      OR: [
+        { jobNumber: { contains: opts.search, mode: 'insensitive' } },
+        { description: { contains: opts.search, mode: 'insensitive' } },
+        { site: { contains: opts.search, mode: 'insensitive' } },
+        { projectName: { contains: opts.search, mode: 'insensitive' } },
+      ],
+    },
+    select: { customerId: true },
+    distinct: ['customerId'],
+  });
+
+  const customerIdsFromJobs = jobsWithMatch.map((job) => job.customerId);
+  if (customerIdsFromJobs.length > 0) {
+    searchOr.push({ id: { in: customerIdsFromJobs } });
+  }
+
+  return { ...where, OR: searchOr };
+}
+
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!session.user.isSuperAdmin && !session.user.permissions.includes('customer.view')) {
@@ -31,18 +77,52 @@ export async function GET() {
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
   const companyId = session.user.activeCompanyId;
 
-  const customers = await prisma.customer.findMany({
-    where: {
-      companyId,
-    },
-    orderBy: { name: 'asc' },
-    include: {
-      contacts: {
-        orderBy: { sortOrder: 'asc' },
+  const { searchParams } = new URL(req.url);
+  const limitParam = searchParams.get('limit');
+
+  try {
+    if (limitParam !== null) {
+      const limit = parseListLimit(limitParam);
+      const offset = parseListOffset(searchParams.get('offset'));
+      const search = searchParams.get('search')?.trim() ?? '';
+      const status = searchParams.get('status');
+
+      const where = await buildCustomerListWhere(companyId, { status, search });
+
+      const [total, customers] = await Promise.all([
+        prisma.customer.count({ where }),
+        prisma.customer.findMany({
+          where,
+          orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+          skip: offset,
+          take: limit,
+          include: {
+            contacts: {
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
+        }),
+      ]);
+
+      return successResponse({
+        items: customers.map(serializeCustomerWithContacts),
+        total,
+      });
+    }
+
+    const customers = await prisma.customer.findMany({
+      where: { companyId },
+      orderBy: { name: 'asc' },
+      include: {
+        contacts: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
-    },
-  });
-  return successResponse(customers.map(serializeCustomerWithContacts));
+    });
+    return successResponse(customers.map(serializeCustomerWithContacts));
+  } catch {
+    return errorResponse('Failed to fetch customers', 500);
+  }
 }
 
 export async function POST(req: Request) {

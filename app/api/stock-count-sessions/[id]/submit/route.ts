@@ -1,3 +1,4 @@
+import { canEditStockCountSession } from '@/lib/permissions/stockModuleAccess';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { createManualStockAdjustmentRequest } from '@/lib/utils/manualStockAdjustmentRequest';
@@ -11,7 +12,7 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes('transaction.adjust')) {
+  if (!canEditStockCountSession(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);

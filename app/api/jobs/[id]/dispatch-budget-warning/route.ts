@@ -1,7 +1,8 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
-import { buildJobItemEstimate } from '@/lib/job-costing/formulaEngine';
+import { buildStoredJobItemEstimate } from '@/lib/job-costing/buildStoredJobItemEstimate';
+import { getBudgetMaterialIdsFromJobItem } from '@/lib/job-costing/jobItemBudgetMaterialIds';
 import { resolvePricingSnapshot, getFactorToBase } from '@/lib/job-costing/pricing';
 import { normalizeJobCostingSettings } from '@/lib/job-costing/settings';
 import type { FormulaConfig, JobItemSpecifications, MaterialPricingSnapshot } from '@/lib/job-costing/types';
@@ -34,10 +35,27 @@ function getTransactionCost(txn: {
   return { quantity: direction * decimalToNumberOrZero(txn.quantity), cost: direction * cost };
 }
 
-function getSelectedMaterialIdsFromSpecifications(specifications: JobItemSpecifications) {
-  return Object.values(specifications.global ?? {}).filter(
-    (value): value is string => typeof value === 'string' && value.trim().length > 0
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function mergeDefaultMaterialSelections(specificationSchema: unknown, formulaConfig: FormulaConfig) {
+  const schema = isRecord(specificationSchema) ? specificationSchema : {};
+  const schemaFields = Array.isArray(schema.globalFields) ? schema.globalFields : [];
+  const schemaDefaults = Object.fromEntries(
+    schemaFields.flatMap((field) => {
+      if (!isRecord(field) || typeof field.key !== 'string') return [];
+      const materialId =
+        typeof field.defaultMaterialId === 'string' && field.defaultMaterialId.trim()
+          ? field.defaultMaterialId.trim()
+          : '';
+      return materialId ? [[field.key, materialId]] : [];
+    })
   );
+  return {
+    ...(formulaConfig.defaultMaterialSelections ?? {}),
+    ...schemaDefaults,
+  };
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -106,20 +124,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const budgetMaterialIds = Array.from(
-      new Set(
-        jobItems.flatMap((item) => {
-          const config = item.formulaLibrary.formulaConfig as FormulaConfig;
-          const staticMaterialIds = Array.isArray(config?.areas)
-            ? config.areas.flatMap((area) =>
-                area.materials.flatMap((material) => (material.materialId ? [material.materialId] : []))
-              )
-            : [];
-          const selectedMaterialIds = getSelectedMaterialIdsFromSpecifications(
-            item.specifications as JobItemSpecifications
-          );
-          return [...staticMaterialIds, ...selectedMaterialIds];
-        })
-      )
+      new Set(jobItems.flatMap((item) => getBudgetMaterialIdsFromJobItem(item)))
     );
 
     const transactions = await prisma.transaction.findMany({
@@ -198,18 +203,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const settings = normalizeJobCostingSettings(company?.jobCostingSettings);
     const estimates = jobItems.map((item) =>
-      buildJobItemEstimate({
+      buildStoredJobItemEstimate({
         jobId: budgetJob.id,
         jobNumber: budgetJob.jobNumber,
         postingDate,
         nonWorkingWeekdays: settings.nonWorkingWeekdays,
         pricingMode: 'FIFO',
-        formulaLibrary: {
-          id: item.formulaLibrary.id,
-          name: item.formulaLibrary.name,
-          fabricationType: item.formulaLibrary.fabricationType,
-          formulaConfig: item.formulaLibrary.formulaConfig as FormulaConfig,
-        },
+        formulaLibrary: item.formulaLibrary
+          ? {
+              id: item.formulaLibrary.id,
+              name: item.formulaLibrary.name,
+              fabricationType: item.formulaLibrary.fabricationType,
+              formulaConfig: {
+                ...(item.formulaLibrary.formulaConfig as FormulaConfig),
+                defaultMaterialSelections: mergeDefaultMaterialSelections(
+                  item.formulaLibrary.specificationSchema,
+                  item.formulaLibrary.formulaConfig as FormulaConfig
+                ),
+              },
+            }
+          : null,
         jobItem: {
           id: item.id,
           name: item.name,

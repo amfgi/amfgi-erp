@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/shadcn/input';
 import DataTable from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
-import { PERMISSION_GROUPS, ROLE_PRESETS } from '@/lib/permissions';
+import { PERMISSION_GROUPS, ROLE_PRESET_LABELS, ROLE_PRESETS } from '@/lib/permissions';
 import type { Column } from '@/components/ui/DataTable';
 import {
   useGetRolesQuery,
@@ -185,8 +185,8 @@ export default function AdminRolesPage() {
             <p className={labelClass}>Quick presets</p>
             <div className="flex flex-wrap gap-2">
               {(Object.keys(ROLE_PRESETS) as Array<keyof typeof ROLE_PRESETS>).map((preset) => (
-                <Button key={preset} type="button" variant="outline" size="sm" className="capitalize" onClick={() => applyPreset(preset)}>
-                  {preset.replace('_', ' ')}
+                <Button key={preset} type="button" variant="outline" size="sm" onClick={() => applyPreset(preset)}>
+                  {ROLE_PRESET_LABELS[preset]}
                 </Button>
               ))}
               <Button type="button" variant="outline" size="sm" className="text-muted-foreground" onClick={() => setPermissions(new Set())}>

@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from');
   const to = searchParams.get('to');
-  const jobIds = searchParams.getAll('jobId');
+  const jobIds = [...new Set([...searchParams.getAll('jobId'), ...searchParams.getAll('jobId[]')].map((id) => id.trim()).filter(Boolean))];
 
   try {
     const companyId = session.user.activeCompanyId;

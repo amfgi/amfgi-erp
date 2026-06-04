@@ -1,11 +1,22 @@
 'use client';
 
-import { type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import { Separator } from '@/components/ui/shadcn/separator';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Spinner from '@/components/ui/Spinner';
@@ -40,6 +51,8 @@ import {
   buildPlaygroundBaseValues,
   buildPlaygroundNumericValues,
   buildPlaygroundPreview,
+  buildAreaFormulaOverrideMap,
+  buildGlobalFormulaOverrideMap,
   addScopedAreaPlaygroundValues,
   applyResolvedFormulaFields,
   evaluatePlaygroundExpression,
@@ -97,6 +110,39 @@ type AreaFormulaValueEditorState = {
   initialDraft: FormulaConstantField;
 };
 
+type ImportedFormulaJson = {
+  formula?: unknown;
+  data?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  fabricationType?: unknown;
+  description?: unknown;
+  specificationSchema?: unknown;
+  formulaConfig?: unknown;
+};
+
+function BuilderMetricCard({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string | number;
+  description?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="p-4 pb-2">
+        <CardDescription className="text-[11px] font-medium uppercase tracking-wide">{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 pt-0">
+        <p className="text-2xl font-semibold tabular-nums text-foreground">{value}</p>
+        {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function parseField(value: unknown): DynamicField | null {
   if (!isRecord(value)) return null;
   return {
@@ -119,7 +165,7 @@ function parseFormula(row?: FormulaLibrary | null): BuilderState {
   const configAreas = Array.isArray(config.areas) ? config.areas : [];
   const areaMap = new Map<string, AreaRule>();
   const areaFormulaValueMetadata = new Map<string, Array<{ id: string; key: string; label: string; unit: string }>>();
-  const areaIdentityMetadata = new Map<string, { id: string }>();
+  const areaIdentityMetadata = new Map<string, { id: string; dynamic: boolean }>();
 
   for (const rawArea of schemaAreas) {
     if (!isRecord(rawArea)) continue;
@@ -127,6 +173,7 @@ function parseFormula(row?: FormulaLibrary | null): BuilderState {
     if (!key) continue;
     areaIdentityMetadata.set(key, {
       id: typeof rawArea.id === 'string' && rawArea.id.trim() ? rawArea.id : uid('area'),
+      dynamic: rawArea.dynamic === true,
     });
     const formulaValues = Array.isArray(rawArea.formulaValues)
       ? rawArea.formulaValues.flatMap((field) => {
@@ -179,6 +226,7 @@ function parseFormula(row?: FormulaLibrary | null): BuilderState {
       id: areaIdentity?.id ?? uid('area'),
       key,
       label: typeof rawArea.label === 'string' ? rawArea.label : key,
+      dynamic: areaIdentity?.dynamic ?? rawArea.dynamic === true,
       fields: [],
       formulaValues: isRecord(rawArea.variables)
         ? (() => {
@@ -232,6 +280,7 @@ function parseFormula(row?: FormulaLibrary | null): BuilderState {
       ...existing,
       key,
       label: typeof rawArea.label === 'string' ? rawArea.label : existing.label,
+      dynamic: rawArea.dynamic === true || existing.dynamic,
       fields,
     });
   }
@@ -306,6 +355,47 @@ function parseFormulaConstantValue(value: string) {
   return Number.isFinite(parsed) ? parsed : trimmed;
 }
 
+function buildFormulaJsonFileName(form: BuilderState) {
+  const slug = slugify(form.slug || form.name) || 'costing-formula';
+  return `${slug}.formula.json`;
+}
+
+function normalizeImportedFormulaJson(value: unknown): FormulaLibrary {
+  if (!isRecord(value)) throw new Error('Formula JSON must be an object.');
+  const payload = value as ImportedFormulaJson;
+  const source = isRecord(payload.formula)
+    ? payload.formula
+    : isRecord(payload.data)
+      ? payload.data
+      : payload;
+  if (!isRecord(source)) throw new Error('Formula JSON file is missing formula data.');
+
+  const specificationSchema = source.specificationSchema;
+  const formulaConfig = source.formulaConfig;
+  if (!isRecord(specificationSchema) || !isRecord(formulaConfig)) {
+    throw new Error('Formula JSON must include specificationSchema and formulaConfig objects.');
+  }
+
+  const name = typeof source.name === 'string' && source.name.trim() ? source.name.trim() : 'Imported formula';
+  const slug = typeof source.slug === 'string' && source.slug.trim() ? source.slug.trim() : slugify(name);
+
+  return {
+    id: 'imported-formula',
+    companyId: '',
+    name,
+    slug,
+    fabricationType:
+      typeof source.fabricationType === 'string' && source.fabricationType.trim()
+        ? source.fabricationType.trim()
+        : 'Imported',
+    description: typeof source.description === 'string' ? source.description : null,
+    specificationSchema,
+    formulaConfig,
+    isActive: true,
+    createdBy: '',
+  };
+}
+
 function suggestDuplicateAreaKey(areas: AreaRule[], sourceArea: AreaRule) {
   const baseKey = normalizeFormulaKey(sourceArea.key || sourceArea.label || 'area') || 'area';
   const existing = new Set(areas.map((area) => area.key.trim()).filter(Boolean));
@@ -362,6 +452,7 @@ function buildPayload(form: BuilderState, playgroundValues: PlaygroundValues) {
         id: area.id,
         key: area.key.trim(),
         label: area.label.trim(),
+        dynamic: area.dynamic || undefined,
         fields: area.fields
           .filter((field) => field.key.trim() && field.label.trim())
           .map((field) => ({
@@ -398,6 +489,7 @@ function buildPayload(form: BuilderState, playgroundValues: PlaygroundValues) {
       .map((area) => ({
         key: area.key.trim(),
         label: area.label.trim(),
+        dynamic: area.dynamic || undefined,
         variables: Object.fromEntries(
           area.formulaValues
             .filter((field) => field.key.trim() && field.label.trim() && field.value.trim())
@@ -534,8 +626,14 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
   const router = useRouter();
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
-  const canManage = (session?.user?.isSuperAdmin ?? false) || perms.includes('settings.manage');
-  const canView = (session?.user?.isSuperAdmin ?? false) || (perms.includes('job.view') && perms.includes('material.view'));
+  const canManage =
+    (session?.user?.isSuperAdmin ?? false) ||
+    perms.includes('stock.formula.edit') ||
+    perms.includes('settings.manage');
+  const canView =
+    (session?.user?.isSuperAdmin ?? false) ||
+    perms.includes('stock.formula.view') ||
+    (perms.includes('job.view') && perms.includes('material.view'));
   const [activeFormulaId, setActiveFormulaId] = useState(formulaId);
 
   const { data: formula, isLoading: formulaLoading } = useGetFormulaLibraryByIdQuery(activeFormulaId ?? '', {
@@ -590,6 +688,7 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
   const hydratedDraftKeyRef = useRef<string | null>(null);
   const hydratedPlaygroundFormulaIdRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
+  const formulaJsonFileInputRef = useRef<HTMLInputElement | null>(null);
   const historyLimitRef = useRef(80);
   const formulaConstantBackdropRef = useRef<HTMLButtonElement | null>(null);
   const formulaConstantPanelRef = useRef<HTMLDivElement | null>(null);
@@ -671,8 +770,6 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
       .slice(0, 8);
   }, [formulaEditor, formulaEditorCursor]);
   const inlineFormulaSuggestion = formulaEditorSuggestions[0] ?? null;
-  const formulaEditorBeforeCursor = formulaEditor ? formulaEditor.value.slice(0, formulaEditorCursor) : '';
-  const formulaEditorAfterCursor = formulaEditor ? formulaEditor.value.slice(formulaEditorCursor) : '';
   const formulaEditorPossibleOutput = useMemo(() => {
     if (!formulaEditor?.resolvePreview) return null;
     return formulaEditor.resolvePreview(formulaEditor.value);
@@ -845,8 +942,18 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
       const rawValue = playgroundValues[`area.${area.id}.${field.key}`] ?? '';
       resolvedValues[`area.${fieldKey}`] = parsePlaygroundValue(rawValue, field.inputType);
     }
-    applyResolvedFormulaFields(resolvedValues, form.formulaConstants, 'formula.');
-    applyResolvedFormulaFields(resolvedValues, area.formulaValues ?? [], 'area.formula.');
+    applyResolvedFormulaFields(
+      resolvedValues,
+      form.formulaConstants,
+      'formula.',
+      buildGlobalFormulaOverrideMap(form.formulaConstants, playgroundValues)
+    );
+    applyResolvedFormulaFields(
+      resolvedValues,
+      area.formulaValues ?? [],
+      'area.formula.',
+      buildAreaFormulaOverrideMap(area.id, area.formulaValues ?? [], playgroundValues)
+    );
     return { area, resolvedValues };
   };
 
@@ -1367,12 +1474,53 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
     });
   };
 
+  const exportFormulaJson = () => {
+    if (typeof window === 'undefined') return;
+
+    const filePayload = {
+      kind: 'AMFGI_JOB_COSTING_FORMULA',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      formula: saveBody,
+    };
+    const blob = new Blob([JSON.stringify(filePayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = buildFormulaJsonFileName(form);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Formula JSON exported');
+  };
+
+  const importFormulaJson = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      const importedFormula = normalizeImportedFormulaJson(parsed);
+      const nextDraft = parseFormula(importedFormula);
+      setUndoStack((current) => [...current.slice(-(historyLimitRef.current - 1)), cloneBuilderState(form)]);
+      setRedoStack([]);
+      setDraft(nextDraft);
+      setPlaygroundValues(parsePlaygroundValues(importedFormula));
+      setSlugEdited(true);
+      setAutoSaveState('draft');
+      toast.success('Formula JSON imported. Review and save to apply it.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not import formula JSON');
+    }
+  };
+
   const handleRestoreVersion = async (version: FormulaLibraryVersion) => {
     if (!activeFormulaId) return;
     try {
       const restored = await restoreFormulaVersion({ id: activeFormulaId, versionId: version.id }).unwrap();
       const nextDraft = parseFormula(restored);
-      const nextPayload = buildPayload(nextDraft, parsePlaygroundValues(restored));
       applyRestoredFormState(nextDraft);
       if (typeof window !== 'undefined') {
         const savedAt = new Date().toISOString();
@@ -1543,213 +1691,248 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
   };
 
   if (!canView || !canManage) {
-    return <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">You do not have permission to manage formula library entries.</div>;
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Permission required</AlertTitle>
+        <AlertDescription>You do not have permission to manage formula library entries.</AlertDescription>
+      </Alert>
+    );
   }
 
   if (formulaLoading && !formula && !draft) {
-    return <div className="flex h-64 items-center justify-center"><Spinner size="lg" /></div>;
+    return (
+      <Card>
+        <CardContent className="flex h-64 items-center justify-center">
+          <Spinner size="lg" />
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
     <div
       onContextMenuCapture={(event) => event.stopPropagation()}
-      className="-mx-4 -my-4 min-h-[calc(100dvh-4rem)] overflow-x-hidden bg-[linear-gradient(180deg,#f8fafc_0%,#f0fdfa_45%,#f8fafc_100%)] px-4 py-4 text-select dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_52%,#020617_100%)] sm:-mx-5 sm:-my-5 sm:px-5 sm:py-5 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6 [&_*]:selection:bg-cyan-200/70 [&_*]:selection:text-slate-950 [&_input]:select-text [&_input]:context-menu [&_p]:select-text [&_pre]:select-text [&_span]:select-text [&_textarea]:select-text"
+      className="flex w-full min-w-0 flex-col gap-5 overflow-x-hidden text-select [&_input]:select-text [&_input]:context-menu [&_p]:select-text [&_pre]:select-text [&_span]:select-text [&_textarea]:select-text"
     >
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex flex-col gap-4 border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_38%),linear-gradient(135deg,#ffffff,#f8fafc)] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.18),transparent_38%),linear-gradient(135deg,#0f172a,#020617)] lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-3xl">
-            <Link href="/stock/job-budget/formulas" className="text-[11px] font-semibold uppercase tracking-[0.26em] text-emerald-700 dark:text-emerald-300">
-              Stock / Job Budget / Formula Library
-            </Link>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
-              {formulaId ? 'Edit costing formula' : 'Create costing formula'}
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Build reusable job costing logic. Keep consumption math in the formula, then let each job choose its own resin, gelcoat, fiber, catalyst, and other brand materials.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/stock/job-budget/formulas" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
-              Back to formulas
-            </Link>
-            <Button variant="secondary" onClick={undoFormState} disabled={undoStack.length === 0}>
-              Undo
-            </Button>
-            <Button variant="secondary" onClick={redoFormState} disabled={redoStack.length === 0}>
-              Redo
-            </Button>
-            <Button variant="secondary" onClick={() => setVersionHistoryOpen(true)} disabled={!activeFormulaId}>
-              Version history
-            </Button>
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-              <span className={`inline-block h-2.5 w-2.5 rounded-full ${
-                autoSaveState === 'error'
-                  ? 'bg-rose-500'
-                  : autoSaveState === 'saving'
-                    ? 'bg-amber-500'
-                    : autoSaveState === 'saved'
-                      ? 'bg-emerald-500'
-                      : 'bg-slate-300 dark:bg-slate-600'
-              }`} />
-              <span>{formatAutoSaveLabel(autoSaveState, lastSavedAt)}</span>
-            </div>
-            <Button size="sm" variant="secondary" onClick={() => void saveFormula({ mode: 'manual' })} disabled={saving}>
-              {saving ? 'Saving…' : 'Save formula'}
-            </Button>
-          </div>
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <Link
+            href="/stock/job-budget/formulas"
+            className={cn(
+              buttonVariants({ variant: 'link', size: 'sm' }),
+              'h-auto p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+            )}
+          >
+            Stock / Job Budget / Formula Library
+          </Link>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+            {formulaId ? 'Edit costing formula' : 'Create costing formula'}
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Build reusable job costing logic. Keep consumption math in the formula, then let each job choose its own
+            resin, gelcoat, fiber, catalyst, and other brand materials.
+          </p>
         </div>
-      </section>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <input
+            ref={formulaJsonFileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => void importFormulaJson(event)}
+          />
+          <Badge variant={autoSaveState === 'error' ? 'destructive' : autoSaveState === 'saved' ? 'secondary' : 'outline'}>
+            {formatAutoSaveLabel(autoSaveState, lastSavedAt)}
+          </Badge>
+          <Link href="/stock/job-budget/formulas" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+            Back to formulas
+          </Link>
+          <Button size="sm" variant="outline" onClick={undoFormState} disabled={undoStack.length === 0}>
+            Undo
+          </Button>
+          <Button size="sm" variant="outline" onClick={redoFormState} disabled={redoStack.length === 0}>
+            Redo
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setVersionHistoryOpen(true)} disabled={!activeFormulaId}>
+            Version history
+          </Button>
+          <Button size="sm" variant="outline" onClick={exportFormulaJson}>
+            Export JSON
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => formulaJsonFileInputRef.current?.click()}>
+            Import JSON
+          </Button>
+          <Button size="sm" onClick={() => void saveFormula({ mode: 'manual' })} disabled={saving}>
+            {saving ? 'Saving…' : 'Save formula'}
+          </Button>
+        </div>
+      </header>
 
-      <section className="mt-5 space-y-5">
+      <section className="flex flex-col gap-5">
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Inputs</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">{form.globalFields.length}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Areas</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">{form.areas.length}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Material rules</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">{form.areas.reduce((sum, area) => sum + area.materials.length, 0)}</p>
-          </div>
-          <div className={`rounded-2xl border px-4 py-3 shadow-sm ${
-            validationIssue
-              ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
-          }`}>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em]">Save readiness</p>
-            <p className="mt-1 text-sm font-semibold">{validationIssue ?? 'Ready to save'}</p>
-          </div>
+          <BuilderMetricCard label="Inputs" value={form.globalFields.length} description="Job-level fields" />
+          <BuilderMetricCard label="Areas" value={form.areas.length} description="Budget calculation scopes" />
+          <BuilderMetricCard
+            label="Material rules"
+            value={form.areas.reduce((sum, area) => sum + area.materials.length, 0)}
+            description="Linked stock consumption"
+          />
+          <Card className={cn(validationIssue ? 'border-destructive/30' : 'border-primary/30')}>
+            <CardHeader className="p-4 pb-2">
+              <CardDescription className="text-[11px] font-medium uppercase tracking-wide">Save readiness</CardDescription>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <p className="text-sm font-semibold text-foreground">{validationIssue ?? 'Ready to save'}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {validationIssue ? 'Fix this before saving.' : 'Required formula details are complete.'}
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="grid min-w-0 gap-3">
-          <div className="rounded-3xl border border-sky-200 bg-white p-4 text-sm text-slate-600 shadow-sm dark:border-sky-500/20 dark:bg-slate-950 dark:text-slate-400">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">Advanced mode</p>
-            <p className="mt-2">This mode exposes raw keys, tokens, and formula-oriented editing controls for power users.</p>
-          </div>
-          <div className="rounded-3xl border border-emerald-200 bg-white p-4 text-slate-700 shadow-sm dark:border-emerald-400/20 dark:bg-slate-950 dark:text-slate-300">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300">Recommended flow</p>
-            <div className="mt-3 grid gap-3 text-sm md:grid-cols-3">
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                <p className="font-semibold text-slate-950 dark:text-white">1. Name the formula</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">Use the fabrication type for grouping, like GRP Lining or Steel Fabrication.</p>
+        <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)]">
+          <Alert>
+            <AlertTitle>Advanced mode</AlertTitle>
+            <AlertDescription>
+              This mode exposes raw keys, tokens, and formula-oriented editing controls for power users.
+            </AlertDescription>
+          </Alert>
+
+          <Card>
+            <CardHeader className="p-4 pb-3">
+              <CardTitle className="text-base">Recommended flow</CardTitle>
+              <CardDescription>Create the formula in small, testable steps.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 px-4 pb-4 pt-0 md:grid-cols-3">
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="font-medium text-foreground">1. Name the formula</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use the fabrication type for grouping, like GRP Lining or Steel Fabrication.
+                </p>
               </div>
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                <p className="font-semibold text-slate-950 dark:text-white">2. Add job inputs</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">Use material dropdown fields for brand choices and number fields for kg/sqm rates.</p>
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="font-medium text-foreground">2. Add job inputs</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use material dropdown fields for brand choices and number fields for kg/sqm rates.
+                </p>
               </div>
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-                <p className="font-semibold text-slate-950 dark:text-white">3. Add area rules</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">Each area can calculate material, labor, and waste separately.</p>
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="font-medium text-foreground">3. Add area rules</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Each area can calculate material, labor, and waste separately.
+                </p>
               </div>
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 md:col-span-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2">
+            <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="font-semibold text-slate-900 dark:text-white">Formula key rules</p>
-                <p className="mt-1 text-xs text-slate-500">Keys support letters, numbers, hyphen, and underscore. Spaces are converted to underscore.</p>
+                <p className="font-medium text-foreground">Formula key rules</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Keys support letters, numbers, hyphen, and underscore. Spaces are converted to underscore.
+                </p>
               </div>
               <div className="grid gap-2 font-mono text-[11px] sm:grid-cols-3">
-                <p className="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-900">area.area_sqm</p>
-                <p className="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-900">specs.global.resin_kg_per_sqm</p>
-                <p className="rounded-xl bg-slate-100 px-3 py-2 dark:bg-slate-900">formula.resin_use_rate</p>
+                <Badge variant="outline" className="justify-center rounded-md px-3 py-1.5 font-mono">
+                  area.area_sqm
+                </Badge>
+                <Badge variant="outline" className="justify-center rounded-md px-3 py-1.5 font-mono">
+                  specs.global.resin_kg_per_sqm
+                </Badge>
+                <Badge variant="outline" className="justify-center rounded-md px-3 py-1.5 font-mono">
+                  formula.resin_use_rate
+                </Badge>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="min-w-0 space-y-5">
-            <div className="rounded-[1.75rem] border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
-              <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-5">
+            <Card>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300">Foundation</p>
-                  <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">Formula details</h2>
+                  <CardDescription className="text-[11px] font-medium uppercase tracking-wide">Foundation</CardDescription>
+                  <CardTitle className="mt-1 text-lg">Formula details</CardTitle>
+                  <CardDescription className="mt-1 max-w-2xl">
+                    These details help users find the right formula when issuing a budget for a job variation.
+                  </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                  <p className="max-w-md text-sm text-slate-500 dark:text-slate-400">These details help users find the right formula when issuing a budget for a job variation.</p>
-                  <Button size="sm" variant="secondary" onClick={() => setFoundationCollapsed((current) => !current)}>
-                    {foundationCollapsed ? 'Expand' : 'Collapse'}
-                  </Button>
-                </div>
-              </div>
+                <Button size="sm" variant="outline" onClick={() => setFoundationCollapsed((current) => !current)}>
+                  {foundationCollapsed ? 'Expand' : 'Collapse'}
+                </Button>
+              </CardHeader>
               {!foundationCollapsed ? (
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Formula name
-                  <input
-                    value={form.name}
-                    placeholder="GRP Lining - Walls and Floor"
-                    onChange={(event) =>
-                      setFormState((current) => ({
-                        ...current,
-                        name: event.target.value,
-                        slug: slugEdited ? current.slug : slugify(event.target.value),
-                      }))
-                    }
-                    className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  URL key / slug
-                  <input
-                    value={form.slug}
-                    placeholder="grp-lining-wall-floor"
-                    onChange={(event) => {
-                      setSlugEdited(true);
-                      setFormState((current) => ({ ...current, slug: normalizeSlugInput(event.target.value) }));
-                    }}
-                    className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm font-normal text-slate-900 outline-none transition focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
-                  />
-                  <div className={`mt-2 rounded-xl border px-3 py-2 text-xs normal-case tracking-normal ${
-                    !form.slug.trim()
-                      ? 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400'
-                      : slugExists
-                        ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200'
-                        : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
-                  }`}>
-                    {!form.slug.trim()
-                      ? 'Enter a slug or type formula name to generate one.'
-                      : slugExists
-                        ? `Duplicate slug. Suggested: ${suggestedSlug}`
-                        : 'Slug is available.'}
-                    {slugExists ? (
-                      <button
-                        type="button"
-                        className="ml-2 font-semibold underline"
-                        onClick={() => {
+                <>
+                  <Separator />
+                  <CardContent className="grid gap-4 pt-6 lg:grid-cols-2">
+                    <label className="flex flex-col gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Formula name
+                      <Input
+                        value={form.name}
+                        placeholder="GRP Lining - Walls and Floor"
+                        onChange={(event) =>
+                          setFormState((current) => ({
+                            ...current,
+                            name: event.target.value,
+                            slug: slugEdited ? current.slug : slugify(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      URL key / slug
+                      <Input
+                        value={form.slug}
+                        placeholder="grp-lining-wall-floor"
+                        onChange={(event) => {
                           setSlugEdited(true);
-                          setFormState((current) => ({ ...current, slug: suggestedSlug }));
+                          setFormState((current) => ({ ...current, slug: normalizeSlugInput(event.target.value) }));
                         }}
-                      >
-                        Use suggestion
-                      </button>
-                    ) : null}
-                  </div>
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Fabrication group
-                  <input
-                    value={form.fabricationType}
-                    placeholder="GRP Lining"
-                    onChange={(event) => setFormState((current) => ({ ...current, fabricationType: event.target.value }))}
-                    className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
-                  />
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Internal note
-                  <input
-                    value={form.description}
-                    placeholder="Explains where this formula should be used"
-                    onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))}
-                    className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
-                  />
-                </label>
-              </div>
+                        className="font-mono"
+                      />
+                      <Alert variant={slugExists ? 'destructive' : 'default'} className="mt-1 py-2">
+                        <AlertDescription className="text-xs">
+                          {!form.slug.trim()
+                            ? 'Enter a slug or type formula name to generate one.'
+                            : slugExists
+                              ? `Duplicate slug. Suggested: ${suggestedSlug}`
+                              : 'Slug is available.'}
+                          {slugExists ? (
+                            <button
+                              type="button"
+                              className="ml-2 font-semibold underline"
+                              onClick={() => {
+                                setSlugEdited(true);
+                                setFormState((current) => ({ ...current, slug: suggestedSlug }));
+                              }}
+                            >
+                              Use suggestion
+                            </button>
+                          ) : null}
+                        </AlertDescription>
+                      </Alert>
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Fabrication group
+                      <Input
+                        value={form.fabricationType}
+                        placeholder="GRP Lining"
+                        onChange={(event) => setFormState((current) => ({ ...current, fabricationType: event.target.value }))}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Internal note
+                      <Input
+                        value={form.description}
+                        placeholder="Explains where this formula should be used"
+                        onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))}
+                      />
+                    </label>
+                  </CardContent>
+                </>
               ) : null}
-            </div>
+            </Card>
 
             <div className="rounded-[1.75rem] border border-cyan-200 bg-white/95 p-5 shadow-sm dark:border-cyan-500/20 dark:bg-slate-950/80">
               <div className="flex flex-col gap-2 border-b border-cyan-100 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
@@ -2086,6 +2269,29 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
                                     onChange={(event) => updateArea(area.id, { key: normalizeFormulaKey(event.target.value) })}
                                     className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 font-mono text-sm font-normal text-slate-900 outline-none transition focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
                                   />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900">
+                                  <span>
+                                    Repeatable area
+                                    <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-slate-500 dark:text-slate-400">
+                                      Budget users can add multiple rows with the same fields.
+                                    </span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={area.dynamic}
+                                    onClick={() => updateArea(area.id, { dynamic: !area.dynamic })}
+                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
+                                      area.dynamic ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${
+                                        area.dynamic ? 'translate-x-6' : 'translate-x-1'
+                                      }`}
+                                    />
+                                  </button>
                                 </label>
                               </div>
                             </div>
@@ -3088,9 +3294,9 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
                       size="sm"
                       variant="secondary"
                       onClick={() => void handleRestoreVersion(version)}
-                      loading={restoringVersion}
+                      disabled={restoringVersion}
                     >
-                      Restore
+                      {restoringVersion ? 'Restoring…' : 'Restore'}
                     </Button>
                   </div>
                 </div>

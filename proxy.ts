@@ -1,14 +1,17 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import type { Permission } from '@/lib/permissions';
+import { P, type Permission } from '@/lib/permissions';
 import { isEmployeeSelfServiceUser } from '@/lib/auth/selfService';
 
 // Routes that require a specific permission
 const ROUTE_PERMISSIONS: Array<{ prefix: string; perm: Permission }> = [
   { prefix: '/admin', perm: 'user.view' },
   { prefix: '/reports', perm: 'report.view' },
-  { prefix: '/stock/job-budget', perm: 'job.view' },
+  { prefix: '/stock/job-budget', perm: P.STOCK_JOB_BUDGET_VIEW },
+  { prefix: '/stock/daily-quantity-log', perm: P.STOCK_PRODUCTION_LOG_VIEW },
+  { prefix: '/stock/warehouse-transfers', perm: P.STOCK_WAREHOUSE_TRANSFER_VIEW },
+  { prefix: '/stock/count-session', perm: P.STOCK_COUNT_SESSION_VIEW },
   { prefix: '/stock/issue-reconcile', perm: 'transaction.reconcile' },
   { prefix: '/stock/non-stock-reconcile', perm: 'transaction.reconcile' },
   { prefix: '/customers/jobs', perm: 'job.view' },

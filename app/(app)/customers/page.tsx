@@ -10,16 +10,22 @@ import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
+import CustomerImportModal from '@/components/customers/CustomerImportModal';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
+import { exportCustomersToXlsx } from '@/lib/import-export/exportCustomers';
 import { cn } from '@/lib/utils';
 import {
-  useGetCustomersQuery,
+  useGetCustomersPageQuery,
   useGetJobsQuery,
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useDeleteCustomerMutation,
   useDeleteJobMutation,
+  useLazyGetCustomersForExportQuery,
+  CUSTOMER_PAGE_SIZE_OPTIONS,
   type Customer,
+  type CustomerFilter,
 } from '@/store/hooks';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { Job } from '@/store/api/endpoints/jobs';
@@ -31,7 +37,6 @@ import {
   type PartyContactRow,
 } from '@/lib/partyFormUi';
 
-type CustomerFilter = 'all' | 'active' | 'inactive';
 type CustomerFormMode = 'create' | 'edit';
 
 const FILTER_OPTIONS: Array<{ value: CustomerFilter; label: string }> = [
@@ -100,10 +105,24 @@ function FormField({
   );
 }
 
+function customerContactsForDisplay(customer: Customer): Array<Record<string, unknown>> {
+  if (Array.isArray(customer.contactsJson) && customer.contactsJson.length > 0) {
+    return customer.contactsJson as Array<Record<string, unknown>>;
+  }
+  if (customer.contactPerson?.trim() || customer.phone?.trim() || customer.email?.trim()) {
+    return [
+      {
+        contact_name: customer.contactPerson?.trim() ?? '',
+        email: customer.email?.trim() ?? '',
+        phone: customer.phone?.trim() ?? '',
+      },
+    ];
+  }
+  return [];
+}
+
 function CustomerReadOnlyDetails({ customer }: { customer: Customer }) {
-  const contacts = Array.isArray(customer.contactsJson)
-    ? (customer.contactsJson as Array<Record<string, unknown>>)
-    : [];
+  const contacts = customerContactsForDisplay(customer);
 
   return (
     <div className="max-h-[70vh] space-y-6 overflow-y-auto pr-1">
@@ -193,13 +212,8 @@ function CustomerReadOnlyDetails({ customer }: { customer: Customer }) {
 export default function CustomersPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { data: customers = [], isFetching: isFetchingCustomers } = useGetCustomersQuery(undefined, {
-    refetchOnMountOrArgChange: 30,
-  });
-  const { data: jobs = [], isFetching: isFetchingJobs } = useGetJobsQuery(undefined, {
-    refetchOnMountOrArgChange: 30,
-  });
   const { openMenu: openContextMenu } = useGlobalContextMenu();
+  const [fetchCustomersForExport] = useLazyGetCustomersForExportQuery();
   const [createCustomer, { isLoading: isCreating }] = useCreateCustomerMutation();
   const [updateCustomer, { isLoading: isUpdating }] = useUpdateCustomerMutation();
   const [deleteCustomer, { isLoading: isDeleting }] = useDeleteCustomerMutation();
@@ -210,6 +224,8 @@ export default function CustomersPage() {
   const canCreate = isSA || perms.includes('customer.create');
   const canEdit = isSA || perms.includes('customer.edit');
   const canDelete = isSA || perms.includes('customer.delete');
+  const canView = isSA || perms.includes('customer.view');
+  const canImport = canCreate || canEdit;
 
   const [customerSourceMode, setCustomerSourceMode] = useState<'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY'>('HYBRID');
 
@@ -237,9 +253,34 @@ export default function CustomersPage() {
 
   const canCreateLocalCustomer = canCreate && customerSourceMode !== 'EXTERNAL_ONLY';
 
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(CUSTOMER_PAGE_SIZE_OPTIONS[0]);
+  const [page, setPage] = useState(1);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterActive, setFilterActive] = useState<CustomerFilter>('active');
+
+  const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
+  const listOffset = (page - 1) * pageSize;
+  const {
+    data: customersPage,
+    isFetching: isFetchingCustomers,
+    error: customersError,
+  } = useGetCustomersPageQuery(
+    {
+      limit: pageSize,
+      offset: listOffset,
+      search: deferredSearch || undefined,
+      status: filterActive,
+    },
+    { refetchOnMountOrArgChange: 30, skip: !canView },
+  );
+  const customers = customersPage?.items ?? [];
+  const totalCustomers = customersPage?.total ?? 0;
+
+  const { data: jobs = [], isFetching: isFetchingJobs } = useGetJobsQuery(undefined, {
+    refetchOnMountOrArgChange: 30,
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<CustomerFormMode>('create');
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -260,9 +301,16 @@ export default function CustomersPage() {
     canDelete: boolean;
   }>({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true });
 
-  const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
+  const totalPages = Math.max(1, Math.ceil(totalCustomers / pageSize));
+  const safePage = Math.min(page, totalPages);
 
-  const rootJobs = useMemo(() => jobs.filter((job) => !job.parentJobId), [jobs]);
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, filterActive, pageSize]);
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
 
   const jobsByCustomer = useMemo(() => {
     const map = new Map<string, Job[]>();
@@ -293,74 +341,35 @@ export default function CustomersPage() {
 
     for (const customer of customers) {
       const related = jobsByCustomer.get(customer.id) ?? [];
+      const matchedJobs = deferredSearch
+        ? related.filter((job) => {
+            return (
+              matchesText(job.jobNumber, deferredSearch) ||
+              matchesText(job.description, deferredSearch) ||
+              matchesText(job.site, deferredSearch) ||
+              matchesText(job.projectName, deferredSearch)
+            );
+          }).length
+        : 0;
+
       stats.set(customer.id, {
         totalJobs: related.filter((job) => !job.parentJobId).length,
         activeJobs: related.filter((job) => !job.parentJobId && job.status === 'ACTIVE').length,
         variations: related.filter((job) => Boolean(job.parentJobId)).length,
-        matchedJobs: 0,
+        matchedJobs,
       });
-    }
-
-    if (!deferredSearch) return stats;
-
-    for (const customer of customers) {
-      const related = jobsByCustomer.get(customer.id) ?? [];
-      const matchedJobs = related.filter((job) => {
-        return (
-          matchesText(job.jobNumber, deferredSearch) ||
-          matchesText(job.description, deferredSearch) ||
-          matchesText(job.site, deferredSearch) ||
-          matchesText(job.projectName, deferredSearch)
-        );
-      }).length;
-
-      const entry = stats.get(customer.id);
-      if (entry) entry.matchedJobs = matchedJobs;
     }
 
     return stats;
   }, [customers, deferredSearch, jobsByCustomer]);
 
-  const filteredCustomers = useMemo(() => {
-    return customers
-      .filter((customer) => {
-        if (filterActive === 'active' && !customer.isActive) return false;
-        if (filterActive === 'inactive' && customer.isActive) return false;
-
-        if (!deferredSearch) return true;
-
-        const relatedJobs = jobsByCustomer.get(customer.id) ?? [];
-        const matchesCustomer =
-          matchesText(customer.name, deferredSearch) ||
-          matchesText(customer.contactPerson, deferredSearch) ||
-          matchesText(customer.phone, deferredSearch) ||
-          matchesText(customer.email, deferredSearch) ||
-          matchesText(customer.address, deferredSearch);
-
-        const matchesJob = relatedJobs.some((job) => {
-          return (
-            matchesText(job.jobNumber, deferredSearch) ||
-            matchesText(job.description, deferredSearch) ||
-            matchesText(job.site, deferredSearch) ||
-            matchesText(job.projectName, deferredSearch)
-          );
-        });
-
-        return matchesCustomer || matchesJob;
-      })
-      .sort((a, b) => {
-        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-  }, [customers, deferredSearch, filterActive, jobsByCustomer]);
-
   const effectiveSelectedCustomerId = useMemo(() => {
-    if (filteredCustomers.length === 0) return null;
-    if (selectedCustomerId && filteredCustomers.some((customer) => customer.id === selectedCustomerId)) {
+    if (customers.length === 0) return null;
+    if (selectedCustomerId && customers.some((customer) => customer.id === selectedCustomerId)) {
       return selectedCustomerId;
     }
-    return filteredCustomers[0]?.id ?? null;
-  }, [filteredCustomers, selectedCustomerId]);
+    return customers[0]?.id ?? null;
+  }, [customers, selectedCustomerId]);
 
   const selectedCustomer = useMemo(
     () =>
@@ -388,19 +397,6 @@ export default function CustomersPage() {
     if (!selectedCustomer) return 0;
     return (jobsByCustomer.get(selectedCustomer.id) ?? []).length;
   }, [jobsByCustomer, selectedCustomer]);
-
-  const totals = useMemo(() => {
-    const activeCustomers = customers.filter((customer) => customer.isActive).length;
-    const inactiveCustomers = customers.length - activeCustomers;
-    const activeJobs = rootJobs.filter((job) => job.status === 'ACTIVE').length;
-
-    return {
-      totalCustomers: customers.length,
-      activeCustomers,
-      inactiveCustomers,
-      activeJobs,
-    };
-  }, [customers, rootJobs]);
 
   const directoryLoading = isFetchingCustomers || isFetchingJobs;
   const saveLoading = isCreating || isUpdating;
@@ -626,7 +622,7 @@ export default function CustomersPage() {
         </div>
         <div className="shrink-0 text-xs text-muted-foreground">
           <span className="tabular-nums">
-            {compactNumber(totals.totalCustomers)} customer{totals.totalCustomers === 1 ? '' : 's'}
+            {compactNumber(totalCustomers)} customer{totalCustomers === 1 ? '' : 's'}
           </span>
         </div>
       </header>
@@ -655,13 +651,44 @@ export default function CustomersPage() {
             </FormField>
           </div>
 
-          {canCreateLocalCustomer ? (
-            <Button type="button" onClick={openCreate} size="sm" className="shrink-0">
-              Add customer
-            </Button>
-          ) : null}
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {canView ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const all = await fetchCustomersForExport().unwrap();
+                    if (all.length === 0) {
+                      toast.error('No customers to export');
+                      return;
+                    }
+                    exportCustomersToXlsx(all);
+                    toast.success(`Exported ${all.length} customer(s)`);
+                  } catch {
+                    toast.error('Failed to export customers');
+                  }
+                }}
+              >
+                Export
+              </Button>
+            ) : null}
+            {canImport ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => setImportModalOpen(true)}>
+                Import
+              </Button>
+            ) : null}
+            {canCreateLocalCustomer ? (
+              <Button type="button" onClick={openCreate} size="sm">
+                Add customer
+              </Button>
+            ) : null}
+          </div>
         </div>
       </section>
+
+      <CustomerImportModal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} />
 
       {customerSourceMode === 'EXTERNAL_ONLY' ? (
         <Alert>
@@ -688,7 +715,11 @@ export default function CustomersPage() {
                 <div key={index} className="h-20 animate-pulse rounded-2xl bg-white/5" />
               ))}
             </div>
-          ) : filteredCustomers.length === 0 ? (
+          ) : customersError ? (
+            <div className="px-5 py-10 text-center text-sm text-destructive">
+              Failed to load customers. Please try again.
+            </div>
+          ) : totalCustomers === 0 ? (
             <div className="px-5 py-10 text-center">
               <h3 className="text-base font-semibold" style={{ color: 'var(--foreground)' }}>
                 No customers found
@@ -700,7 +731,7 @@ export default function CustomersPage() {
           ) : (
             <div className="max-h-[70vh] overflow-y-auto p-3">
               <div className="space-y-2">
-                {filteredCustomers.map((customer) => {
+                {customers.map((customer) => {
                   const stats = customerStatsById.get(customer.id) ?? {
                     totalJobs: 0,
                     activeJobs: 0,
@@ -758,6 +789,17 @@ export default function CustomersPage() {
               </div>
             </div>
           )}
+          <DirectoryListPagination
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            total={totalCustomers}
+            pageStart={listOffset}
+            pageEnd={listOffset + customers.length}
+            pageSizeOptions={CUSTOMER_PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </section>
 
         <section className="space-y-6">

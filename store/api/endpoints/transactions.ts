@@ -1,4 +1,8 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
+
+export const TRANSFER_LEDGER_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
+export const WAREHOUSE_TRANSFER_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
 
 interface BatchConsumption {
   batchId: string;
@@ -98,6 +102,31 @@ type DispatchEntryResponse = {
   notes: string;
 };
 
+export type DispatchRevisionLineDto = {
+  transactionId: string;
+  materialId: string;
+  materialName: string;
+  materialUnit: string;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  quantityBase: number;
+  returnQtyBase: number;
+};
+
+export type DispatchEntryRevisionRow = {
+  id: string;
+  postingDateKey: string;
+  source: string;
+  action: string;
+  actorUserId: string | null;
+  actorName: string;
+  linesBefore: unknown;
+  linesAfter: unknown;
+  changeSummary: unknown;
+  notesSnippet: string | null;
+  createdAt: string;
+};
+
 export interface TransferLedgerItem {
   id: string;
   type: 'TRANSFER_IN' | 'TRANSFER_OUT';
@@ -115,6 +144,62 @@ export interface TransferLedgerItem {
   createdAt?: string | Date;
   performedBy: string;
 }
+
+export interface WarehouseTransferLedgerItem {
+  id: string;
+  materialId: string;
+  materialName: string;
+  unit: string;
+  quantity: number;
+  sourceWarehouseId: string | null;
+  sourceWarehouseName: string | null;
+  destinationWarehouseId: string | null;
+  destinationWarehouseName: string | null;
+  notes?: string | null;
+  date: string | Date;
+  createdAt?: string | Date;
+  performedBy: string;
+}
+
+export interface WarehouseTransferLinePayload {
+  materialId: string;
+  quantity: number;
+  quantityUomId?: string;
+}
+
+export interface WarehouseTransferBatchPayload {
+  sourceWarehouseId: string;
+  destinationWarehouseId: string;
+  lines: WarehouseTransferLinePayload[];
+  notes?: string;
+  date?: string;
+}
+
+interface WarehouseTransferSingleResult {
+  transferredQty: number;
+  materialName: string;
+  sourceWarehouse: string;
+  destinationWarehouse: string;
+  transferOutId: string;
+  transferInId: string;
+  transferGroupId: string;
+}
+
+export interface WarehouseTransferBatchResult {
+  transferGroupId: string;
+  sourceWarehouse: string;
+  destinationWarehouse: string;
+  lineCount: number;
+  lines: Array<{
+    materialId: string;
+    materialName: string;
+    transferredQty: number;
+    transferOutId: string;
+    transferInId: string;
+  }>;
+}
+
+export type WarehouseTransferResult = WarehouseTransferSingleResult | WarehouseTransferBatchResult;
 
 export interface NonStockReconcileMaterial {
   id: string;
@@ -271,6 +356,7 @@ export const transactionsApi = appApi.injectEndpoints({
           { type: 'StockBatch', id: 'LIST' },
           { type: 'StockValuation' },
           { type: 'DispatchEntry' },
+          { type: 'DispatchEntryRevision' },
           { type: 'JobMaterials' },
           { type: 'Consumption' },
           { type: 'StockExceptionApproval' },
@@ -321,6 +407,62 @@ export const transactionsApi = appApi.injectEndpoints({
       providesTags: [{ type: 'Transaction', id: 'TRANSFER_LEDGER' }],
     }),
 
+    getTransferLedgerPage: builder.query<
+      { items: TransferLedgerItem[]; total: number },
+      { limit: number; offset: number; search?: string }
+    >({
+      query: ({ limit, offset, search }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        return `/transactions/transfers?${params.toString()}`;
+      },
+      transformResponse: (r: { data: { items: TransferLedgerItem[]; total: number } }) => r.data,
+      providesTags: [{ type: 'Transaction', id: 'TRANSFER_LEDGER' }],
+    }),
+
+    warehouseTransferStock: builder.mutation<
+      WarehouseTransferResult,
+      WarehouseTransferBatchPayload
+    >({
+      query: (body) => ({
+        url: '/transactions/warehouse-transfer',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (r: { data: WarehouseTransferResult }) => r.data,
+      invalidatesTags: [
+        { type: 'Material', id: 'LIST' },
+        { type: 'StockBatch', id: 'LIST' },
+        { type: 'Transaction', id: 'LIST' },
+        { type: 'Transaction', id: 'TRANSFER_LEDGER' },
+        { type: 'Transaction', id: 'WAREHOUSE_TRANSFER_LEDGER' },
+        { type: 'StockValuation' },
+      ],
+    }),
+
+    getWarehouseTransferLedger: builder.query<WarehouseTransferLedgerItem[], void>({
+      query: () => '/transactions/warehouse-transfers',
+      transformResponse: (r: { data: WarehouseTransferLedgerItem[] }) => r.data,
+      providesTags: [{ type: 'Transaction', id: 'WAREHOUSE_TRANSFER_LEDGER' }],
+    }),
+
+    getWarehouseTransferLedgerPage: builder.query<
+      { items: WarehouseTransferLedgerItem[]; total: number },
+      { limit: number; offset: number; search?: string }
+    >({
+      query: ({ limit, offset, search }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        return `/transactions/warehouse-transfers?${params.toString()}`;
+      },
+      transformResponse: (r: { data: { items: WarehouseTransferLedgerItem[]; total: number } }) => r.data,
+      providesTags: [{ type: 'Transaction', id: 'WAREHOUSE_TRANSFER_LEDGER' }],
+    }),
+
     getDispatchEntry: builder.query<DispatchEntryResponse, { jobId: string; date: string }>({
       query: ({ jobId, date }) =>
         `/transactions/dispatch-entry?jobId=${jobId}&date=${date}`,
@@ -328,13 +470,50 @@ export const transactionsApi = appApi.injectEndpoints({
       providesTags: [{ type: 'DispatchEntry' }],
     }),
 
-    getNonStockReconcileData: builder.query<NonStockReconcileData, { date?: string } | void>({
+    getDispatchEntryRevisions: builder.query<
+      { revisions: DispatchEntryRevisionRow[] },
+      { jobId: string; date: string }
+    >({
+      query: ({ jobId, date }) =>
+        `/transactions/dispatch-entry/revisions?jobId=${encodeURIComponent(jobId)}&date=${encodeURIComponent(date)}`,
+      transformResponse: (r: { data: { revisions: DispatchEntryRevisionRow[] } }) => r.data,
+      providesTags: (result, error, arg) => [
+        { type: 'DispatchEntryRevision', id: `${arg.jobId}:${arg.date}` },
+      ],
+    }),
+
+    getNonStockReconcileData: builder.query<NonStockReconcileData, { date?: string; omitHistory?: boolean } | void>({
       query: (arg) => {
+        const params = new URLSearchParams();
         const date = arg && 'date' in arg ? arg.date : undefined;
-        return date ? `/transactions/non-stock-reconcile?date=${encodeURIComponent(date)}` : '/transactions/non-stock-reconcile';
+        if (date) params.set('date', date);
+        if (arg && 'omitHistory' in arg && arg.omitHistory) params.set('omitHistory', '1');
+        const q = params.toString();
+        return q ? `/transactions/non-stock-reconcile?${q}` : '/transactions/non-stock-reconcile';
       },
       transformResponse: (r: { data: NonStockReconcileData }) => r.data,
       providesTags: [{ type: 'Transaction', id: 'NON_STOCK_RECONCILE' }],
+    }),
+
+    getNonStockReconcileHistoryPage: builder.query<
+      { history: NonStockReconcileHistoryItem[]; historyTotal: number },
+      { limit: number; offset: number; search?: string; date?: string }
+    >({
+      query: ({ limit, offset, search, date }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (date) params.set('date', date);
+        return `/transactions/non-stock-reconcile?${params.toString()}`;
+      },
+      transformResponse: (r: {
+        data: { history: NonStockReconcileHistoryItem[]; historyTotal?: number };
+      }) => ({
+        history: r.data.history ?? [],
+        historyTotal: r.data.historyTotal ?? r.data.history?.length ?? 0,
+      }),
+      providesTags: [{ type: 'Transaction', id: 'NON_STOCK_RECONCILE_HISTORY' }],
     }),
 
     reconcileNonStock: builder.mutation<{ created: number; ids: string[] }, NonStockReconcilePayload>({
@@ -349,6 +528,7 @@ export const transactionsApi = appApi.injectEndpoints({
         { type: 'StockBatch', id: 'LIST' },
         { type: 'Transaction', id: 'LIST' },
         { type: 'Transaction', id: 'NON_STOCK_RECONCILE' },
+        { type: 'Transaction', id: 'NON_STOCK_RECONCILE_HISTORY' },
         { type: 'JobMaterials' },
         { type: 'StockValuation' },
         { type: 'DispatchEntry' },
@@ -408,8 +588,14 @@ export const {
   useDeleteTransactionMutation,
   useTransferStockMutation,
   useGetTransferLedgerQuery,
+  useGetTransferLedgerPageQuery,
+  useWarehouseTransferStockMutation,
+  useGetWarehouseTransferLedgerQuery,
+  useGetWarehouseTransferLedgerPageQuery,
   useGetDispatchEntryQuery,
+  useGetDispatchEntryRevisionsQuery,
   useGetNonStockReconcileDataQuery,
+  useGetNonStockReconcileHistoryPageQuery,
   useReconcileNonStockMutation,
   useRequestManualStockAdjustmentMutation,
 } = transactionsApi;

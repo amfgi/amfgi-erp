@@ -2,7 +2,11 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
 import { syncTrackedJobItemProgress } from '@/lib/job-costing/jobItemProgressTracking';
-import { P } from '@/lib/permissions';
+import {
+  reverseProductionStockPostingForProgressEntry,
+  syncProductionStockPostingForProgressEntry,
+} from '@/lib/stock/productionStockPosting';
+import { canEditJobBudgetJobsApi } from '@/lib/permissions/stockModuleAccess';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 import { z } from 'zod';
@@ -35,7 +39,7 @@ export async function PUT(
 ) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_EDIT)) {
+  if (!canEditJobBudgetJobsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -49,24 +53,56 @@ export async function PUT(
   const parsed = ProgressEntryUpdateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const row = await tx.jobItemProgressEntry.update({
-      where: { id: entryId },
-      data: {
-        trackerId: parsed.data.trackerId,
-        entryDate: parsed.data.entryDate ? new Date(parsed.data.entryDate) : undefined,
-        quantity: parsed.data.quantity,
-        note: parsed.data.note === undefined ? undefined : (parsed.data.note?.trim() || null),
-      },
-    });
-    await syncTrackedJobItemProgress(tx, companyId, itemId);
-    return row;
-  });
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const trackerChanged = parsed.data.trackerId !== undefined && parsed.data.trackerId !== existing.trackerId;
+      if (trackerChanged) {
+        const existingPosting = await tx.productionStockPosting.findUnique({
+          where: {
+            companyId_progressEntryId: {
+              companyId,
+              progressEntryId: entryId,
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+          },
+        });
+        if (existingPosting?.status === 'POSTED') {
+          throw new Error('Cannot change the tracker on an entry after production stock has been posted.');
+        }
+      }
 
-  return successResponse({
-    ...updated,
-    quantity: decimalToNumberOrZero(updated.quantity),
-  });
+      const row = await tx.jobItemProgressEntry.update({
+        where: { id: entryId },
+        data: {
+          trackerId: parsed.data.trackerId,
+          entryDate: parsed.data.entryDate ? new Date(parsed.data.entryDate) : undefined,
+          quantity: parsed.data.quantity,
+          note: parsed.data.note === undefined ? undefined : (parsed.data.note?.trim() || null),
+        },
+      });
+      await syncTrackedJobItemProgress(tx, companyId, itemId);
+      await syncProductionStockPostingForProgressEntry(tx, {
+        companyId,
+        progressEntryId: row.id,
+        jobItemId: itemId,
+        trackerId: row.trackerId,
+        quantity: decimalToNumberOrZero(row.quantity),
+        entryDate: row.entryDate,
+        user: session.user,
+      });
+      return row;
+    });
+
+    return successResponse({
+      ...updated,
+      quantity: decimalToNumberOrZero(updated.quantity),
+    });
+  } catch (err: unknown) {
+    return errorResponse(err instanceof Error ? err.message : 'Failed to update progress entry', 400);
+  }
 }
 
 export async function DELETE(
@@ -75,7 +111,7 @@ export async function DELETE(
 ) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_EDIT)) {
+  if (!canEditJobBudgetJobsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -85,12 +121,17 @@ export async function DELETE(
   const existing = await loadProgressEntry(companyId, id, itemId, entryId);
   if (!existing) return errorResponse('Progress entry not found', 404);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.jobItemProgressEntry.delete({
-      where: { id: entryId },
+  try {
+    await prisma.$transaction(async (tx) => {
+      await reverseProductionStockPostingForProgressEntry(tx, companyId, entryId, session.user);
+      await tx.jobItemProgressEntry.delete({
+        where: { id: entryId },
+      });
+      await syncTrackedJobItemProgress(tx, companyId, itemId);
     });
-    await syncTrackedJobItemProgress(tx, companyId, itemId);
-  });
 
-  return successResponse({ deleted: true });
+    return successResponse({ deleted: true });
+  } catch (err: unknown) {
+    return errorResponse(err instanceof Error ? err.message : 'Failed to delete progress entry', 400);
+  }
 }

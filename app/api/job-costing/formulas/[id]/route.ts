@@ -1,7 +1,7 @@
 import { auth } from '@/auth';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
-import { P } from '@/lib/permissions';
+import { canEditFormulaLibrary, canViewFormulaLibrary } from '@/lib/permissions/stockModuleAccess';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { FormulaLibraryUpdateSchema, formulaChanged, formulaSnapshotData } from '../_lib';
 
@@ -14,10 +14,7 @@ async function loadFormula(id: string, companyId: string) {
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (
-    !session.user.isSuperAdmin &&
-    (!session.user.permissions.includes(P.JOB_VIEW) || !session.user.permissions.includes(P.MATERIAL_VIEW))
-  ) {
+  if (!canViewFormulaLibrary(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -30,7 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.SETTINGS_MANAGE)) {
+  if (!canEditFormulaLibrary(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -91,7 +88,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.SETTINGS_MANAGE)) {
+  if (!canEditFormulaLibrary(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);

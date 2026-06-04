@@ -9,7 +9,7 @@
  *   • Per-company: Materials with stock batches, logs, transactions (STOCK_IN)
  *   • Per-company: Customers, Suppliers, Jobs (parent contracts + variations; budget JobItems on parent only; contactsJson + contactPerson, LPO/quotation demo)
  *   • Companies: externalCompanyId (SEED-AMFGI / SEED-KM) for integration playground smoke tests
- *   • Per-company: Sample dispatch entries and 3+ delivery notes (STOCK_OUT)
+ *   • Per-company: Sample dispatch entries and 3+ delivery notes (`DeliveryNote` + linked STOCK_OUT)
  *   • Delivery Notes: Structured with dynamic fields for template rendering
  *   • HR Workforce: typed employee profiles (driver, office staff, hybrid, worker)
  *   • Employee self-service demo logins linked to seeded employees
@@ -29,35 +29,23 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { createPostgresAdapter } from '../lib/db/postgresAdapter';
+import { resolveDatabaseUrlForScripts } from '../lib/db/resolveDatabaseUrl';
 import { ensureDefaultEmployeeDocumentTypes } from '../lib/hr/defaultDocumentTypes';
+import { ensureAllSystemRoles } from '../lib/auth/systemRoles';
 import { DEFAULT_EMPLOYEE_TYPE_SETTINGS } from '../lib/hr/employeeTypeSettings';
 import { buildWorkforceProfileExtension, type WorkforceEmployeeType } from '../lib/hr/workforceProfile';
-import { ALL_PERMISSIONS, ROLE_PRESETS } from '../lib/permissions';
 import { parsePartyListDateInput } from '../lib/partyListsApi';
 import { mergeStockControlSettingsIntoCompanySettings } from '../lib/stock-control/settings';
 import { buildTransactionActorFields } from '../lib/utils/auditActor';
 import { decimalToNumberOrZero } from '../lib/utils/decimal';
 import { companySeedPrintTemplates } from './seed-print-templates';
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error('DATABASE_URL is not set for the seed script.');
-}
+const databaseUrl = resolveDatabaseUrlForScripts('seed');
 
 const prisma = new PrismaClient({
   adapter: createPostgresAdapter(databaseUrl),
   log: ['error', 'warn'],
 });
-
-const MANAGER_PERMISSIONS = ROLE_PRESETS.manager;
-
-const STORE_KEEPER_PERMISSIONS = [
-  'material.view',
-  'job.view',
-  'transaction.stock_out',
-  'transaction.return',
-];
 
 const systemActorFields = buildTransactionActorFields(null, 'System Seed');
 const DEFAULT_OPERATIONAL_SETTINGS: Prisma.InputJsonValue = {
@@ -165,6 +153,7 @@ async function createSeedStockOut(args: {
   notes: string;
   jobId?: string | null;
   isDeliveryNote?: boolean;
+  deliveryNoteId?: string | null;
 }) {
   const batches = await prisma.stockBatch.findMany({
     where: {
@@ -223,6 +212,7 @@ async function createSeedStockOut(args: {
       date: args.date,
       notes: args.notes,
       isDeliveryNote: args.isDeliveryNote ?? false,
+      ...(args.deliveryNoteId ? { deliveryNoteId: args.deliveryNoteId } : {}),
     },
   });
 
@@ -907,13 +897,36 @@ async function seedCompanyData(
       }
       dnNotes += `\n--- DELIVERY NOTE ITEMS (For Printing) ---\n`;
 
+      let customItemsJson: Prisma.InputJsonValue;
       if (companyName === 'AMFGI') {
+        const line2Qty = Math.floor(dnQuantity / 2);
         dnNotes += `• ${materials[0].name} | ${dnQuantity}kg\n`;
-        dnNotes += `• ${materials[1]?.name || 'Polyester Resin'} | ${Math.floor(dnQuantity / 2)} kg`;
+        dnNotes += `• ${materials[1]?.name || 'Polyester Resin'} | ${line2Qty} kg`;
+        customItemsJson = [
+          { name: materials[0].name, unit: 'kg', qty: String(dnQuantity) },
+          { name: materials[1]?.name || 'Polyester Resin', unit: 'kg', qty: String(line2Qty) },
+        ];
       } else {
+        const line2Qty = Math.floor(dnQuantity / 3);
         dnNotes += `• ${materials[0].name} | ${dnQuantity}m\n`;
-        dnNotes += `• ${materials[1]?.name || 'Steel Plate'} | ${Math.floor(dnQuantity / 3)} sheets`;
+        dnNotes += `• ${materials[1]?.name || 'Steel Plate'} | ${line2Qty} sheets`;
+        customItemsJson = [
+          { name: materials[0].name, unit: 'm', qty: String(dnQuantity) },
+          { name: materials[1]?.name || 'Steel Plate', unit: 'sheets', qty: String(line2Qty) },
+        ];
       }
+
+      const deliveryNoteRow = await prisma.deliveryNote.create({
+        data: {
+          companyId,
+          number: dnNum,
+          jobId: firstJobId,
+          date: dnDate,
+          materialDispatchSkipped: false,
+          documentNotes: `Sample seeded document notes for delivery note #${dnNum}.`,
+          customItemsJson,
+        },
+      });
 
       await createSeedStockOut({
         companyId,
@@ -925,6 +938,7 @@ async function seedCompanyData(
         date: dnDate,
         notes: dnNotes,
         isDeliveryNote: true,
+        deliveryNoteId: deliveryNoteRow.id,
       });
     }
   }
@@ -1383,14 +1397,12 @@ function isMissingWorkScheduleNotesColumn(error: unknown): boolean {
 async function upsertWorkScheduleCompat(args: {
   companyId: string;
   workDate: Date;
-  title: string;
   notes: string | null;
   createdById: string;
 }) {
   const withNotes = {
     where: { companyId_workDate: { companyId: args.companyId, workDate: args.workDate } },
     update: {
-      title: args.title,
       notes: args.notes,
       status: 'PUBLISHED' as const,
       publishedAt: new Date(),
@@ -1399,7 +1411,6 @@ async function upsertWorkScheduleCompat(args: {
     create: {
       companyId: args.companyId,
       workDate: args.workDate,
-      title: args.title,
       notes: args.notes,
       status: 'PUBLISHED' as const,
       publishedAt: new Date(),
@@ -1423,7 +1434,6 @@ async function upsertWorkScheduleCompat(args: {
       await prisma.$executeRaw`
         UPDATE WorkSchedule
         SET
-          title = ${args.title},
           status = ${'PUBLISHED'},
           publishedAt = ${publishedAt},
           createdById = ${args.createdById},
@@ -1439,7 +1449,6 @@ async function upsertWorkScheduleCompat(args: {
         id,
         companyId,
         workDate,
-        title,
         status,
         publishedAt,
         createdById,
@@ -1450,7 +1459,6 @@ async function upsertWorkScheduleCompat(args: {
         ${scheduleId},
         ${args.companyId},
         ${args.workDate},
-        ${args.title},
         ${'PUBLISHED'},
         ${publishedAt},
         ${args.createdById},
@@ -1636,7 +1644,6 @@ async function seedHrWorkforceDemo(
     const schedule = await upsertWorkScheduleCompat({
       companyId,
       workDate,
-      title: `Daily Workforce Plan D-${day}`,
       notes:
         day % 2 === 0
           ? 'General notes: prioritize site safety briefing before deployment.'
@@ -1797,6 +1804,7 @@ async function seed() {
   await prisma.stockExceptionApproval.deleteMany({});
   await prisma.transactionBatch.deleteMany({});
   await prisma.transaction.deleteMany({});
+  await prisma.deliveryNote.deleteMany({});
   await prisma.jobLpoValueHistory.deleteMany({});
   await prisma.integrationSyncLog.deleteMany({});
   await prisma.apiCredential.deleteMany({});
@@ -1896,52 +1904,16 @@ async function seed() {
   console.log('  ✓ Default HR document types (both companies)');
 
   // ── Roles ───────────────────────────────────────────────────────────────────
-  console.log('\nCreating roles…');
-  const adminRole = await prisma.role.create({
-    data: {
-      name: 'Admin',
-      slug: 'admin',
-      permissions: ALL_PERMISSIONS,
-      isSystem: true,
-    },
-  });
+  console.log('\nCreating system roles…');
+  const systemRoles = await ensureAllSystemRoles(prisma);
+  const adminRole = systemRoles.admin;
+  const managerRole = systemRoles.manager;
+  const skRole = systemRoles['store-keeper'];
+  const employeeSelfRole = systemRoles['employee-self'];
 
-  const managerRole = await prisma.role.create({
-    data: {
-      name: 'Manager',
-      slug: 'manager',
-      permissions: MANAGER_PERMISSIONS,
-      isSystem: true,
-    },
-  });
-
-  const skRole = await prisma.role.create({
-    data: {
-      name: 'Store Keeper',
-      slug: 'store-keeper',
-      permissions: STORE_KEEPER_PERMISSIONS,
-      isSystem: true,
-    },
-  });
-
-  const employeeSelfRole = await prisma.role.create({
-    data: {
-      name: 'Employee (self-service)',
-      slug: 'employee-self',
-      permissions: [
-        'self.employee.view',
-        'self.employee.documents',
-        'self.employee.schedule',
-        'self.employee.attendance',
-      ],
-      isSystem: true,
-    },
-  });
-
-  console.log(`  ✓ ${adminRole.name}`);
-  console.log(`  ✓ ${managerRole.name}`);
-  console.log(`  ✓ ${skRole.name}`);
-  console.log(`  ✓ ${employeeSelfRole.name}`);
+  for (const role of Object.values(systemRoles)) {
+    console.log(`  ✓ ${role.name}`);
+  }
 
   // ── Users ───────────────────────────────────────────────────────────────────
   console.log('\nCreating users…');

@@ -1,21 +1,26 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/shadcn/button';
-import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
 import DataTable from '@/components/ui/DataTable';
 import BulkImportModal from '@/components/materials/BulkImportModal';
 import toast from 'react-hot-toast';
 import type { Column } from '@/components/ui/DataTable';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
+import { DEFAULT_MATERIAL_LIST_SORT } from '@/lib/pagination/materialListSort';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
 import {
   useDeleteMaterialMutation,
-  useGetMaterialsQuery,
+  useGetMaterialsPageQuery,
+  useLazyGetMaterialsForExportQuery,
+  useGetMaterialsForExportQuery,
   useGetStockValuationQuery,
+  MATERIAL_PAGE_SIZE_OPTIONS,
 } from '@/store/hooks';
 
 interface Material {
@@ -82,20 +87,49 @@ function formatBoolean(value: boolean) {
 export default function MaterialsPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { data: materials = [], isFetching } = useGetMaterialsQuery(undefined, {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortKey, setSortKey] = useState<string>(DEFAULT_MATERIAL_LIST_SORT);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const deferredSearch = useDeferredValue(searchQuery);
+
+  const listQueryArgs = useMemo(
+    () => ({
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+      sortBy: sortKey,
+      sortDir,
+    }),
+    [deferredSearch, page, pageSize, sortDir, sortKey],
+  );
+
+  const { data: pageData, isFetching } = useGetMaterialsPageQuery(listQueryArgs, {
     refetchOnMountOrArgChange: 30,
   });
+  const materials = pageData?.items ?? [];
+  const totalMaterials = pageData?.total ?? 0;
+
+  const [fetchMaterialsForExport] = useLazyGetMaterialsForExportQuery();
   const { data: stockValuation } = useGetStockValuationQuery(undefined, {
     refetchOnMountOrArgChange: 30,
   });
   const [deleteMaterial, { isLoading: isDeleting }] = useDeleteMaterialMutation();
   const { openMenu: openContextMenu } = useGlobalContextMenu();
 
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, pageSize, sortKey, sortDir]);
+
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
   const canDelete = isSA || perms.includes('material.delete');
 
   const [importModal, setImportModal] = useState(false);
+  const { data: importMaterials = [] } = useGetMaterialsForExportQuery(undefined, {
+    skip: !importModal,
+  });
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
     material: Material | null;
@@ -114,37 +148,11 @@ export default function MaterialsPage() {
     canDelete: true,
   });
 
-  const activeMaterials = useMemo(() => materials.filter((material) => material.isActive), [materials]);
-
-  const lowStockCount = useMemo(
-    () =>
-      activeMaterials.filter(
-        (material) =>
-          typeof material.reorderLevel === 'number' && material.currentStock <= material.reorderLevel
-      ).length,
-    [activeMaterials]
-  );
-
-  const inventoryValue = useMemo(
-    () =>
-      activeMaterials.reduce(
-        (sum, material) => sum + material.currentStock * (material.unitCost ?? 0),
-        0
-      ),
-    [activeMaterials]
-  );
-
-  const preferredInventoryValue = stockValuation?.summary.totalStockValue ?? inventoryValue;
   const valuationCurrencyCode = stockValuation?.summary.currencyCode ?? 'AED';
-  const preferredMethod = stockValuation?.summary.preferredMethod ?? 'FIFO';
 
-  const distinctWarehouses = useMemo(
-    () => new Set(activeMaterials.map((material) => material.warehouse).filter(Boolean)).size,
-    [activeMaterials]
-  );
-
-  const handleExport = () => {
-    const exportData = activeMaterials.map((material) => ({
+  const handleExport = async () => {
+    const exportMaterials = await fetchMaterialsForExport().unwrap();
+    const exportData = exportMaterials.map((material) => ({
       'Material ID': material.id,
       'Item Name': material.name,
       Description: material.description || '',
@@ -274,7 +282,7 @@ export default function MaterialsPage() {
         sortable: true,
         hiddenByDefault: true,
         render: (material) => (
-          <span className="font-mono text-xs text-slate-600 dark:text-slate-300">{material.id}</span>
+          <span className="font-mono text-xs text-muted-foreground">{material.id}</span>
         ),
       },
       {
@@ -283,15 +291,15 @@ export default function MaterialsPage() {
         sortable: true,
         render: (material) => (
           <div className="min-w-[220px]">
-            <div className="font-medium text-slate-900 dark:text-white">{material.name}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <div className="font-medium text-foreground">{material.name}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{material.unit}</span>
-              <span className="text-slate-300 dark:text-slate-600">/</span>
+              <span className="text-muted-foreground/50">/</span>
               <span>{material.stockType}</span>
               {material.externalItemName ? (
                 <>
-                  <span className="text-slate-300 dark:text-slate-600">/</span>
-                  <span className="text-slate-400 dark:text-slate-500">{material.externalItemName}</span>
+                  <span className="text-muted-foreground/50">/</span>
+                  <span className="text-muted-foreground">{material.externalItemName}</span>
                 </>
               ) : null}
             </div>
@@ -303,13 +311,13 @@ export default function MaterialsPage() {
         header: 'Category',
         sortable: true,
         hiddenByDefault: true,
-        render: (material) => material.category || <span className="text-slate-400 dark:text-slate-500">Unassigned</span>,
+        render: (material) => material.category || <span className="text-muted-foreground">Unassigned</span>,
       },
       {
         key: 'description',
         header: 'Description',
         hiddenByDefault: true,
-        render: (material) => material.description || <span className="text-slate-400 dark:text-slate-500">-</span>,
+        render: (material) => material.description || <span className="text-muted-foreground">-</span>,
       },
       {
         key: 'unit',
@@ -329,16 +337,16 @@ export default function MaterialsPage() {
         hiddenByDefault: true,
         render: (material) =>
           material.categoryId ? (
-            <span className="font-mono text-xs text-slate-600 dark:text-slate-300">{material.categoryId}</span>
+            <span className="font-mono text-xs text-muted-foreground">{material.categoryId}</span>
           ) : (
-            <span className="text-slate-400 dark:text-slate-500">-</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
         key: 'warehouse',
         header: 'Default Warehouse',
         hiddenByDefault: true,
-        render: (material) => material.warehouse || <span className="text-slate-400 dark:text-slate-500">Not set</span>,
+        render: (material) => material.warehouse || <span className="text-muted-foreground">Not set</span>,
       },
       {
         key: 'warehouseId',
@@ -346,9 +354,9 @@ export default function MaterialsPage() {
         hiddenByDefault: true,
         render: (material) =>
           material.warehouseId ? (
-            <span className="font-mono text-xs text-slate-600 dark:text-slate-300">{material.warehouseId}</span>
+            <span className="font-mono text-xs text-muted-foreground">{material.warehouseId}</span>
           ) : (
-            <span className="text-slate-400 dark:text-slate-500">-</span>
+            <span className="text-muted-foreground">-</span>
           ),
       },
       {
@@ -363,7 +371,7 @@ export default function MaterialsPage() {
               <div className={isLow ? 'font-semibold text-amber-700 dark:text-amber-300' : 'font-semibold text-emerald-700 dark:text-emerald-300'}>
                 {formatCount(material.currentStock)}
               </div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+              <div className="mt-1 text-xs text-muted-foreground">
                 Reorder {material.reorderLevel !== undefined ? formatCount(material.reorderLevel) : '-'}
               </div>
             </div>
@@ -376,7 +384,7 @@ export default function MaterialsPage() {
         sortable: true,
         hiddenByDefault: true,
         render: (material) => (
-          <div className="min-w-[120px] text-sm text-slate-700 dark:text-slate-200">
+          <div className="min-w-[120px] text-sm text-foreground">
             {formatMoney(material.unitCost, valuationCurrencyCode)}
           </div>
         ),
@@ -387,7 +395,7 @@ export default function MaterialsPage() {
         sortable: true,
         hiddenByDefault: true,
         render: (material) =>
-          material.reorderLevel !== undefined ? formatCount(material.reorderLevel) : <span className="text-slate-400 dark:text-slate-500">-</span>,
+          material.reorderLevel !== undefined ? formatCount(material.reorderLevel) : <span className="text-muted-foreground">-</span>,
       },
       {
         key: 'allowNegativeConsumption',
@@ -400,7 +408,7 @@ export default function MaterialsPage() {
         key: 'externalItemName',
         header: 'External Item Name',
         hiddenByDefault: true,
-        render: (material) => material.externalItemName || <span className="text-slate-400 dark:text-slate-500">-</span>,
+        render: (material) => material.externalItemName || <span className="text-muted-foreground">-</span>,
       },
       {
         key: 'isActive',
@@ -452,10 +460,7 @@ export default function MaterialsPage() {
         </div>
         <div className="flex shrink-0 flex-col gap-3 sm:items-end">
           <p className="text-xs tabular-nums text-muted-foreground sm:text-right">
-            {formatCount(activeMaterials.length)} active
-            {materials.length !== activeMaterials.length ? (
-              <span> · {materials.length - activeMaterials.length} archived</span>
-            ) : null}
+            {formatCount(totalMaterials)} active material{totalMaterials === 1 ? '' : 's'}
           </p>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button type="button" variant="secondary" size="sm" onClick={() => setImportModal(true)}>
@@ -471,89 +476,72 @@ export default function MaterialsPage() {
         </div>
       </header>
 
-      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            label: 'Active materials',
-            value: String(activeMaterials.length),
-            note: `${materials.length - activeMaterials.length} archived`,
-          },
-          {
-            label: 'Low stock watch',
-            value: String(lowStockCount),
-            note: 'At or below reorder point',
-          },
-          {
-            label: `${preferredMethod} value`,
-            value: `${valuationCurrencyCode} ${preferredInventoryValue.toFixed(2)}`,
-            note: 'Company preferred inventory valuation method',
-          },
-          {
-            label: 'Warehouse coverage',
-            value: String(distinctWarehouses),
-            note: 'Distinct warehouse assignments',
-          },
-        ].map((item) => (
-          <Card key={item.label}>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </section>
-
       <section className="rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4">
-        <div className="mb-3 flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Live inventory</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Right-click a row for quick actions, or open a material to edit pricing, UOM, and history.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Double-click to open</span>
-            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Search all fields or one field</span>
-            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Fuzzy, contains, or exact match</span>
-            <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1">Columns save to your profile</span>
-          </div>
+        <div className="mb-3 max-w-md">
+          <label htmlFor="material-search" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Search
+          </label>
+          <Input
+            id="material-search"
+            className="mt-1.5"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Name, description, category, external item…"
+          />
         </div>
 
         <DataTable
           columns={columns}
-          data={activeMaterials}
+          data={materials}
           loading={isFetching && materials.length === 0}
           emptyText="No materials found. Add your first material."
-          searchKeys={['name', 'description', 'category', 'externalItemName']}
-          fuzzySearch
-          enableSearchOptions
           enableColumnDisplayOptions
           preferenceKey="stock-materials-table"
-          initialPageSize={50}
-          pageSizeOptions={[50, 100, 200]}
+          serverPagination={{
+            page,
+            pageSize,
+            total: totalMaterials,
+            pageSizeOptions: MATERIAL_PAGE_SIZE_OPTIONS,
+            onPageChange: setPage,
+            onPageSizeChange: (size) => {
+              setPageSize(size);
+              setPage(1);
+            },
+          }}
+          serverSort={{
+            sortKey,
+            sortDir,
+            onSortChange: (key, dir) => {
+              setSortKey(key);
+              setSortDir(dir);
+            },
+          }}
           onRowContextMenu={handleMaterialContextMenu}
           onRowDoubleClick={(material) => router.push(`/stock/materials/${material.id}`)}
           onRowClick={(material) => router.push(`/stock/materials/${material.id}`)}
         />
       </section>
 
-      <BulkImportModal isOpen={importModal} onClose={() => setImportModal(false)} existingMaterials={materials} />
+      <BulkImportModal
+        isOpen={importModal}
+        onClose={() => setImportModal(false)}
+        existingMaterials={importMaterials}
+      />
 
       {deleteModal.open && deleteModal.material ? (
         <>
           <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={closeDeleteModal} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+          <div className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,32rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-6 shadow-2xl">
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-red-600 dark:text-red-300/75">
               Remove material
             </p>
-            <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{deleteModal.material.name}</h2>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            <h2 className="mt-2 text-lg font-semibold text-foreground">{deleteModal.material.name}</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
               Deletion is blocked when linked dispatch or inventory transactions still exist.
             </p>
 
             {deleteModal.checking ? (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">
+              <div className="mt-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
                 Checking linked data...
               </div>
             ) : null}
@@ -567,19 +555,19 @@ export default function MaterialsPage() {
                   {deleteModal.linkedTransactions.map((tx, idx) => (
                     <div
                       key={idx}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300"
+                      className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-foreground"
                     >
                       <p>
-                        <span className="text-slate-400 dark:text-slate-500">Job</span> {tx.jobNumber}
+                        <span className="text-muted-foreground">Job</span> {tx.jobNumber}
                       </p>
                       <p>
-                        <span className="text-slate-400 dark:text-slate-500">Type</span> {tx.type}
+                        <span className="text-muted-foreground">Type</span> {tx.type}
                       </p>
                       <p>
-                        <span className="text-slate-400 dark:text-slate-500">Qty</span> {tx.quantity}
+                        <span className="text-muted-foreground">Qty</span> {tx.quantity}
                       </p>
                       <p>
-                        <span className="text-slate-400 dark:text-slate-500">Date</span>{' '}
+                        <span className="text-muted-foreground">Date</span>{' '}
                         {new Date(tx.date).toLocaleDateString()}
                       </p>
                     </div>

@@ -26,7 +26,7 @@ export default function StockJobBudgetByIdPage() {
   }, [jobId, job, isLoading, router]);
 
   if (!jobId) {
-    return <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Missing job id.</div>;
+    return <div className="py-12 text-center text-sm text-muted-foreground">Missing job id.</div>;
   }
 
   if (isLoading || isFetching || redirecting || (job && job.parentJobId)) {
@@ -38,7 +38,7 @@ export default function StockJobBudgetByIdPage() {
   }
 
   if (isError || !job) {
-    return <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Job not found.</div>;
+    return <div className="py-12 text-center text-sm text-muted-foreground">Job not found.</div>;
   }
 
   return <JobCostEnginePage hiddenTabs={['progress', 'entries']} />;

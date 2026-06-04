@@ -1,8 +1,13 @@
 import { auth } from '@/auth';
+import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/db/prisma';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
 import { syncTrackedJobItemProgress } from '@/lib/job-costing/jobItemProgressTracking';
-import { P } from '@/lib/permissions';
+import { postProductionStockForProgressEntry } from '@/lib/stock/productionStockPosting';
+import {
+  canEditJobBudgetJobsApi,
+  canViewJobBudgetJobsApi,
+} from '@/lib/permissions/stockModuleAccess';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 import { z } from 'zod';
@@ -32,7 +37,7 @@ export async function GET(
 ) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_VIEW)) {
+  if (!canViewJobBudgetJobsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -64,7 +69,7 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_EDIT)) {
+  if (!canEditJobBudgetJobsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -104,27 +109,43 @@ export async function POST(
     }
   }
 
-  const entry = await prisma.$transaction(async (tx) => {
-    const created = await tx.jobItemProgressEntry.create({
-      data: {
+  try {
+    const entryDate = new Date(parsed.data.entryDate);
+    const entry = await prisma.$transaction(async (tx) => {
+      const created = await tx.jobItemProgressEntry.create({
+        data: {
+          id: randomUUID(),
+          companyId,
+          jobItemId: itemId,
+          trackerId: parsed.data.trackerId,
+          entryDate,
+          quantity: parsed.data.quantity,
+          note: parsed.data.note?.trim() || null,
+          createdBy: session.user.id,
+          updatedAt: new Date(),
+        },
+      });
+      await syncTrackedJobItemProgress(tx, companyId, itemId);
+      await postProductionStockForProgressEntry(tx, {
         companyId,
+        progressEntryId: created.id,
         jobItemId: itemId,
         trackerId: parsed.data.trackerId,
-        entryDate: new Date(parsed.data.entryDate),
         quantity: parsed.data.quantity,
-        note: parsed.data.note?.trim() || null,
-        createdBy: session.user.id,
-      },
+        entryDate,
+        user: session.user,
+      });
+      return created;
     });
-    await syncTrackedJobItemProgress(tx, companyId, itemId);
-    return created;
-  });
 
-  return successResponse(
-    {
-      ...entry,
-      quantity: decimalToNumberOrZero(entry.quantity),
-    },
-    201
-  );
+    return successResponse(
+      {
+        ...entry,
+        quantity: decimalToNumberOrZero(entry.quantity),
+      },
+      201
+    );
+  } catch (err: unknown) {
+    return errorResponse(err instanceof Error ? err.message : 'Failed to save progress entry', 400);
+  }
 }

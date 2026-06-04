@@ -81,6 +81,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
           },
         },
         batchesUsed: true,
+        deliveryNote: {
+          select: { id: true, number: true },
+        },
         performedByUser: {
           select: {
             id: true,

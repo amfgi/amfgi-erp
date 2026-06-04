@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useGetInventoryByWarehouseQuery } from '@/store/hooks';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
+import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
+import { useGetInventoryByWarehousePageQuery } from '@/store/hooks';
 
 function formatQty(value: number) {
   return new Intl.NumberFormat('en-US', {
@@ -26,32 +28,37 @@ export default function InventoryByWarehousePage() {
     perms.includes('transaction.stock_in') ||
     perms.includes('transaction.stock_out');
 
-  const { data, isFetching, isError, refetch } = useGetInventoryByWarehouseQuery(undefined, {
-    skip: !canView,
-  });
-
   const [search, setSearch] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const deferredSearch = useDeferredValue(search);
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, warehouseFilter, pageSize]);
+
+  const { data, isFetching, isError, refetch } = useGetInventoryByWarehousePageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+      warehouseId: warehouseFilter,
+    },
+    { skip: !canView },
+  );
 
   const warehouseColumns = data?.warehouseColumns ?? [];
   const rows = data?.rows ?? [];
+  const totalRows = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const pageStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, totalRows);
 
   const visibleWarehouses = useMemo(() => {
     if (warehouseFilter === 'all') return warehouseColumns;
     return warehouseColumns.filter((w) => w.id === warehouseFilter);
   }, [warehouseColumns, warehouseFilter]);
-
-  const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let list = rows;
-    if (q) {
-      list = list.filter((r) => r.materialName.toLowerCase().includes(q));
-    }
-    if (warehouseFilter !== 'all') {
-      list = list.filter((r) => (r.qtyByWarehouseId[warehouseFilter] ?? 0) > 0);
-    }
-    return list;
-  }, [rows, search, warehouseFilter]);
 
   if (!canView) {
     return (
@@ -140,7 +147,7 @@ export default function InventoryByWarehousePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {isFetching && filteredRows.length === 0 ? (
+                  {isFetching && rows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={4 + visibleWarehouses.length}
@@ -149,7 +156,7 @@ export default function InventoryByWarehousePage() {
                         Loading…
                       </td>
                     </tr>
-                  ) : filteredRows.length === 0 ? (
+                  ) : rows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={4 + visibleWarehouses.length}
@@ -159,7 +166,7 @@ export default function InventoryByWarehousePage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredRows.map((row) => (
+                    rows.map((row) => (
                       <tr
                         key={row.materialId}
                         className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
@@ -205,6 +212,20 @@ export default function InventoryByWarehousePage() {
             </div>
           )}
         </div>
+        {totalRows > 0 ? (
+          <DirectoryListPagination
+            className="border-t border-slate-200 px-4 py-3 dark:border-slate-800"
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            total={totalRows}
+            pageStart={pageStart}
+            pageEnd={pageEnd}
+            pageSizeOptions={LIST_PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </section>
 
       <p className="text-xs text-slate-500 dark:text-slate-500">
@@ -212,7 +233,7 @@ export default function InventoryByWarehousePage() {
         <Link href="/stock/stock-batches" className="text-emerald-700 underline dark:text-emerald-300">
           Stock batches
         </Link>
-        .
+        . Showing {totalRows} material{totalRows === 1 ? '' : 's'} matching filters.
       </p>
     </div>
   );

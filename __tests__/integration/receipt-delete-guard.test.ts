@@ -208,4 +208,95 @@ describe('Receipt delete guard', () => {
     });
     expect(deletedTransaction).toBeNull();
   });
+
+  it('deletes receipt price logs and reverts unit cost when deleting an untouched receipt', async () => {
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        companyId: ctx.amfgiCompany.id,
+        name: `REC-PRICE-WH-${Date.now().toString(36).toUpperCase()}`,
+        isActive: true,
+      },
+    });
+
+    const material = await prisma.material.create({
+      data: {
+        companyId: ctx.amfgiCompany.id,
+        name: `Receipt Price Material ${Date.now().toString(36)}`,
+        unit: 'pcs',
+        category: 'Test',
+        warehouse: warehouse.name,
+        warehouseId: warehouse.id,
+        stockType: 'Raw Material',
+        externalItemName: `REC-PRICE-${Date.now().toString(36)}`,
+        currentStock: 4,
+        unitCost: 20,
+      },
+    });
+
+    await prisma.materialWarehouseStock.create({
+      data: {
+        companyId: ctx.amfgiCompany.id,
+        materialId: material.id,
+        warehouseId: warehouse.id,
+        currentStock: 4,
+      },
+    });
+
+    await prisma.stockBatch.create({
+      data: {
+        companyId: ctx.amfgiCompany.id,
+        materialId: material.id,
+        warehouseId: warehouse.id,
+        batchNumber: `REC-PRICE-BATCH-${Date.now().toString(36).toUpperCase()}`,
+        receiptNumber: 'RCPT-PRICE-REVERT',
+        quantityReceived: 4,
+        quantityAvailable: 4,
+        unitCost: 25,
+        totalCost: 100,
+        supplier: 'Receipt Price Supplier',
+        receivedDate: new Date('2026-04-12T00:00:00.000Z'),
+      },
+    });
+
+    await prisma.priceLog.create({
+      data: {
+        companyId: ctx.amfgiCompany.id,
+        materialId: material.id,
+        previousPrice: 20,
+        currentPrice: 25,
+        source: 'bill',
+        changedBy: ctx.admin.email,
+        notes: 'Updated via goods receipt: RCPT-PRICE-REVERT',
+      },
+    });
+
+    await prisma.material.update({
+      where: { id: material.id },
+      data: { unitCost: 25 },
+    });
+
+    const response = await deleteReceiptEntry(
+      new Request('http://localhost/api/materials/receipt-history-entries/RCPT-PRICE-REVERT', {
+        method: 'DELETE',
+      }),
+      { params: Promise.resolve({ receiptNumber: 'RCPT-PRICE-REVERT' }) }
+    );
+
+    expect(response.status).toBe(200);
+
+    const remainingLog = await prisma.priceLog.findFirst({
+      where: {
+        companyId: ctx.amfgiCompany.id,
+        materialId: material.id,
+        notes: 'Updated via goods receipt: RCPT-PRICE-REVERT',
+      },
+    });
+    expect(remainingLog).toBeNull();
+
+    const updatedMaterial = await prisma.material.findUniqueOrThrow({
+      where: { id: material.id },
+      select: { unitCost: true },
+    });
+    expect(Number(updatedMaterial.unitCost)).toBe(20);
+  });
 });

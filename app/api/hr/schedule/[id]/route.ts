@@ -11,7 +11,6 @@ const scheduleInclude = {
   companyId: true,
   workDate: true,
   clientDisplayName: true,
-  title: true,
   notes: true,
   status: true,
   publishedAt: true,
@@ -43,7 +42,6 @@ const scheduleInclude = {
 } as const;
 
 const PatchSchema = z.object({
-  title: z.string().max(200).optional().nullable(),
   clientDisplayName: z.string().max(200).optional().nullable(),
 });
 
@@ -81,7 +79,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
   const data: Prisma.WorkScheduleUpdateInput = {};
-  if (parsed.data.title !== undefined) data.title = parsed.data.title?.trim() || null;
   if (parsed.data.clientDisplayName !== undefined) {
     data.clientDisplayName = parsed.data.clientDisplayName?.trim() || null;
   }

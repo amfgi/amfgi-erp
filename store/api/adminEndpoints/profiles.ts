@@ -30,7 +30,7 @@ export const profilesApi = adminApi.injectEndpoints({
         try {
           const { data: created } = await queryFulfilled;
           dispatch(
-            adminApi.util.updateQueryData('getCompanyProfiles', undefined, (draft) => {
+            profilesApi.util.updateQueryData('getCompanyProfiles', undefined, (draft) => {
               if (!draft.some((p) => p.id === created.id)) draft.unshift(created);
             }),
           );

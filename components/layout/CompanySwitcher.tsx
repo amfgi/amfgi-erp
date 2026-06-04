@@ -216,7 +216,7 @@ export default function CompanySwitcher() {
           <SidebarMenuButton size="lg" asChild tooltip={activeCompanyName ?? 'Workspace'}>
             <Link href="/dashboard" onClick={closeMobileIfNeeded}>
               <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground shadow-sm ring-1 ring-sidebar-border/40">
-                <span aria-hidden>{initial}</span>
+                <span aria-hidden>{initial}</span>  
               </div>
               <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                 <span className="truncate font-semibold tracking-tight">{title}</span>

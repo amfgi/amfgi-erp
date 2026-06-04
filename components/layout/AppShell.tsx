@@ -14,10 +14,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
-  const isScheduleEditorRoute = pathname?.startsWith('/hr/schedule/') ?? false;
-  const isAttendanceCreateRoute = pathname?.startsWith('/hr/attendance/create') ?? false;
   const isEmployeePortalRoute = pathname?.startsWith('/me') ?? false;
-  const isChromelessRoute = isScheduleEditorRoute || isAttendanceCreateRoute || isEmployeePortalRoute;
+  const isChromelessRoute = isEmployeePortalRoute;
   const routeScrollKey = useMemo(() => {
     const query = searchParams?.toString();
     return `${SCROLL_STATE_KEY_PREFIX}${pathname || '/'}${query ? `?${query}` : ''}`;
@@ -105,7 +103,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isChromelessRoute) {
     return (
-      <div className="flex min-h-dvh h-dvh max-h-dvh overflow-hidden bg-slate-950 lg:h-screen lg:max-h-none">
+      <div className="flex min-h-dvh h-dvh max-h-dvh overflow-hidden bg-background lg:h-screen lg:max-h-none">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <main ref={mainRef} className="relative z-0 flex-1 overflow-x-hidden overflow-y-auto">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(16,185,129,0.08),transparent)]" aria-hidden />
@@ -118,7 +116,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider
-      className="flex min-h-dvh h-dvh max-h-dvh overflow-hidden bg-slate-950 lg:h-screen lg:max-h-none"
+      className="flex min-h-dvh h-dvh max-h-dvh overflow-hidden bg-background lg:h-screen lg:max-h-none"
       open={!desktopCollapsed}
       onOpenChange={handleSidebarOpenChange}
     >

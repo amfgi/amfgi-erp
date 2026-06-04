@@ -55,6 +55,23 @@ interface JobConsumptionRow {
   netConsumed: number;
 }
 
+export interface ProductionByJobRow {
+  jobId: string;
+  jobNumber: string;
+  customerName: string;
+  site: string | null;
+  jobItemId: string;
+  jobItemName: string;
+  trackerId: string | null;
+  trackerLabel: string;
+  unit: string | null;
+  targetValue: number | null;
+  totalProduced: number;
+  entryCount: number;
+  firstEntryDate: string | null;
+  lastEntryDate: string | null;
+}
+
 export interface InventoryByWarehouseWarehouseCol {
   id: string;
   name: string;
@@ -430,6 +447,21 @@ export const reportsApi = appApi.injectEndpoints({
       providesTags: ['JobConsumption'],
     }),
 
+    getProductionByJob: builder.query<
+      ProductionByJobRow[],
+      { from?: string; to?: string; jobIds: string[] }
+    >({
+      query: (params) => {
+        const searchParams = new URLSearchParams();
+        if (params.from) searchParams.append('from', params.from);
+        if (params.to) searchParams.append('to', params.to);
+        params.jobIds.forEach((id) => searchParams.append('jobId[]', id));
+        return `/reports/production-by-job?${searchParams.toString()}`;
+      },
+      transformResponse: (r: { data: ProductionByJobRow[] }) => r.data,
+      providesTags: ['ProductionByJob'],
+    }),
+
     getJobProfitability: builder.query<JobProfitabilityResponse, void>({
       query: () => '/reports/job-profitability',
       transformResponse: (r: { data: JobProfitabilityResponse }) => r.data,
@@ -448,9 +480,57 @@ export const reportsApi = appApi.injectEndpoints({
       providesTags: ['Material', 'Warehouse'],
     }),
 
+    getInventoryByWarehousePage: builder.query<
+      InventoryByWarehouseResponse & { total: number },
+      { limit: number; offset: number; search?: string; warehouseId?: string }
+    >({
+      query: ({ limit, offset, search, warehouseId }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (warehouseId && warehouseId !== 'all') params.set('warehouseId', warehouseId);
+        return `/reports/inventory-by-warehouse?${params.toString()}`;
+      },
+      transformResponse: (r: {
+        data: InventoryByWarehouseResponse & { items?: InventoryByWarehouseRow[]; total?: number };
+      }) => {
+        const data = r.data;
+        if (data.items) {
+          return { warehouseColumns: data.warehouseColumns, rows: data.items, total: data.total ?? data.items.length };
+        }
+        return { ...data, total: data.rows.length };
+      },
+      providesTags: ['Material', 'Warehouse'],
+    }),
+
     getStockIntegrity: builder.query<StockIntegrityResponse, void>({
       query: () => '/reports/stock-integrity',
       transformResponse: (r: { data: StockIntegrityResponse }) => r.data,
+      providesTags: ['StockIntegrity', 'Material', 'StockBatch', 'Warehouse'],
+    }),
+
+    getStockIntegrityPage: builder.query<
+      StockIntegrityResponse & { total: number },
+      { limit: number; offset: number; search?: string; filter?: string }
+    >({
+      query: ({ limit, offset, search, filter }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (filter && filter !== 'all') params.set('filter', filter);
+        return `/reports/stock-integrity?${params.toString()}`;
+      },
+      transformResponse: (r: {
+        data: StockIntegrityResponse & { items?: StockIntegrityRow[]; total?: number };
+      }) => {
+        const data = r.data;
+        if (data.items) {
+          return { summary: data.summary, rows: data.items, total: data.total ?? data.items.length };
+        }
+        return { ...data, total: data.rows.length };
+      },
       providesTags: ['StockIntegrity', 'Material', 'StockBatch', 'Warehouse'],
     }),
 
@@ -523,10 +603,13 @@ export const {
   useGetStockValuationQuery,
   useGetConsumptionQuery,
   useLazyGetJobConsumptionQuery,
+  useLazyGetProductionByJobQuery,
   useGetJobProfitabilityQuery,
   useGetSupplierTraceabilityQuery,
   useGetInventoryByWarehouseQuery,
+  useGetInventoryByWarehousePageQuery,
   useGetStockIntegrityQuery,
+  useGetStockIntegrityPageQuery,
   useGetStockExceptionsQuery,
   useGetStockExceptionApprovalsQuery,
   useGetStockAdjustmentsQuery,

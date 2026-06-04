@@ -21,8 +21,13 @@ interface SearchSelectProps<T extends { id: string; label: string; searchText?: 
   clearInputOnFocus?: boolean;
   inputProps?: InputHTMLAttributes<HTMLInputElement>;
   dropdownInPortal?: boolean;
+  /** Extra classes on the results list (e.g. z-[200] inside overflow/stacking contexts). */
+  dropdownClassName?: string;
   allowClearButton?: boolean;
   clearOnEmptyInput?: boolean;
+  /** When true, `items` are already filtered (e.g. server search); skip client fuzzy match. */
+  serverFiltered?: boolean;
+  loading?: boolean;
 }
 
 export default function SearchSelect<T extends { id: string; label: string; searchText?: string }>(
@@ -45,8 +50,11 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     clearInputOnFocus = false,
     inputProps,
     dropdownInPortal = false,
+    dropdownClassName,
     allowClearButton = true,
     clearOnEmptyInput = false,
+    serverFiltered = false,
+    loading = false,
   } = props;
 
   const [input, setInput] = useState('');
@@ -66,7 +74,11 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     .join(' ');
 
   const hasEnoughInput = input.trim().length >= minCharactersToSearch;
-  const filteredItems = hasEnoughInput ? searchItems(items, input, 0.2) : [];
+  const filteredItems = hasEnoughInput
+    ? serverFiltered
+      ? items
+      : searchItems(items, input, 0.2)
+    : [];
   const selectedItem = items.find((item) => item.id === value);
 
   // Reset input when opening
@@ -180,7 +192,13 @@ export default function SearchSelect<T extends { id: string; label: string; sear
       ref={dropdownRef}
       id={listboxId}
       role="listbox"
-      className="z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"
+      className={[
+        'z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900',
+        dropdownInPortal ? 'z-[200]' : '',
+        dropdownClassName,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={
         dropdownInPortal && dropdownStyle
           ? {
@@ -192,6 +210,11 @@ export default function SearchSelect<T extends { id: string; label: string; sear
           : undefined
       }
     >
+      {loading ? (
+        <div className="border-b border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          Searching…
+        </div>
+      ) : null}
       {filteredItems.map((item, idx) => (
         <button
           key={item.id}
@@ -295,7 +318,13 @@ export default function SearchSelect<T extends { id: string; label: string; sear
         </div>
       )}
 
-      {isOpen && hasEnoughInput && input && filteredItems.length === 0 && (
+      {isOpen && loading && filteredItems.length === 0 && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Searching…</p>
+        </div>
+      )}
+
+      {isOpen && hasEnoughInput && !loading && input && filteredItems.length === 0 && (
         <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
           <p className="text-xs text-slate-500 dark:text-slate-400">No matches found for &quot;{input}&quot;</p>
         </div>

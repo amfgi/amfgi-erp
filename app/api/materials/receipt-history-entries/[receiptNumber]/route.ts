@@ -7,6 +7,8 @@ import {
   parseReceiptCancellationMetadata,
   stripReceiptCancellationMarkers,
 } from '@/lib/utils/receiptCancellation';
+import { parseReceiptLineMetadata } from '@/lib/utils/receiptLineMetadata';
+import { reverseReceiptPriceLogUpdates } from '@/lib/utils/receiptPriceLogs';
 import { applyMaterialWarehouseDelta } from '@/lib/warehouses/stockWarehouses';
 
 const RECEIPT_DELETE_TOLERANCE = 0.0005;
@@ -62,11 +64,15 @@ export async function GET(
       unitCost: number;
       totalCost: number;
       batchNumber: string;
+      quantityUomId?: string;
+      displayQuantity?: number;
+      displayUnitCost?: number;
     }>();
     for (const batch of batches) {
       const materialId = batch.materialId;
       const warehouseId = batch.warehouse?.id ?? null;
       const unitCost = decimalToNumberOrZero(batch.unitCost);
+      const lineMeta = parseReceiptLineMetadata(batch.meta);
       const key = `${materialId}::${warehouseId ?? 'none'}::${unitCost}`;
       const existing = grouped.get(key);
       if (existing) {
@@ -85,6 +91,9 @@ export async function GET(
           unitCost,
           totalCost: decimalToNumberOrZero(batch.totalCost),
           batchNumber: batch.batchNumber,
+          ...(lineMeta.quantityUomId ? { quantityUomId: lineMeta.quantityUomId } : {}),
+          ...(lineMeta.displayQuantity != null ? { displayQuantity: lineMeta.displayQuantity } : {}),
+          ...(lineMeta.displayUnitCost != null ? { displayUnitCost: lineMeta.displayUnitCost } : {}),
         });
       }
     }
@@ -227,6 +236,12 @@ export async function DELETE(
           },
         });
       }
+
+      await reverseReceiptPriceLogUpdates(tx, {
+        companyId,
+        receiptNumber: receiptNumber!,
+        changedBy: session.user.name || session.user.email || session.user.id,
+      });
     });
 
     return successResponse({ deleted: true });

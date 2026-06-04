@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/shadcn/button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { cn } from '@/lib/utils';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import toast from 'react-hot-toast';
@@ -246,7 +248,6 @@ function MaterialEditor({
 
   useEffect(() => {
     if (!material) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(material.name ?? '');
     setDescription(material.description ?? '');
     setUnit(material.unit ?? '');
@@ -286,7 +287,6 @@ function MaterialEditor({
 
   useEffect(() => {
     if (!materialAssembly || isCreateMode || !isStockAssembly) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAssemblyOutputQuantity(materialAssembly.outputQuantity?.toString() ?? '1');
     setAssemblyOverheadPercent(materialAssembly.overheadPercent?.toString() ?? '0');
     setAssemblyComponents(
@@ -403,7 +403,7 @@ function MaterialEditor({
 
   const stockStatus = useMemo(() => {
     if (isCreateMode) {
-      return { label: 'Draft', tone: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300' };
+      return { label: 'Draft', tone: 'border-border bg-muted/40 text-foreground' };
     }
 
     const low =
@@ -446,8 +446,8 @@ function MaterialEditor({
     try {
       setIsUploadingAssets(true);
       let imageUrl = existingImageUrl || undefined;
-      let galleryFiles = [...existingGalleryFiles];
-      let documentFiles = [...existingDocumentFiles];
+      const galleryFiles = [...existingGalleryFiles];
+      const documentFiles = [...existingDocumentFiles];
 
       if (pendingFeatureImageFile) {
         const uploaded = await uploadMaterialAsset(pendingFeatureImageFile, 'feature-image');
@@ -694,78 +694,80 @@ function MaterialEditor({
   };
 
   return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-        <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.08),_transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] px-5 py-5 dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_28%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700 dark:text-emerald-300/80">
-                Materials Setup
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-[2rem]">{pageTitle}</h1>
-                <span className={['inline-flex rounded-full border px-2.5 py-1 text-xs font-medium', stockStatus.tone].join(' ')}>
-                  {stockStatus.label}
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">{pageSubtitle}</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {!isCreateMode ? (
-                <Button variant="ghost" onClick={() => router.push('/stock/materials')}>
-                  Back to materials
-                </Button>
-              ) : null}
-              <Button variant="secondary" onClick={() => router.back()}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={isLoading || isUploadingAssets}>
-                {isLoading || isUploadingAssets ? 'Saving…' : submitButtonText}
-              </Button>
-            </div>
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 max-w-3xl space-y-1">
+          <Link
+            href="/stock/materials"
+            className={cn(
+              buttonVariants({ variant: 'link', size: 'sm' }),
+              'h-auto p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+            )}
+          >
+            Stock / Materials
+          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
+            <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-medium', stockStatus.tone)}>
+              {stockStatus.label}
+            </span>
           </div>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{pageSubtitle}</p>
         </div>
 
-        <div className="grid gap-px bg-slate-200 dark:bg-slate-800 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: 'Base unit',
-              value: unit || material?.unit || '-',
-              note: isCreateMode ? 'Used for stock and transaction storage' : 'Current stock base',
-            },
-            {
-              label: 'Current stock',
-              value: isCreateMode ? currentStock || '0' : formatNumber(material?.currentStock),
-              note:
-                !isCreateMode && material?.reorderLevel !== undefined
-                  ? `Reorder at ${formatNumber(material.reorderLevel)}`
-                  : 'Opening stock while creating',
-            },
-            {
-              label: 'Unit cost',
-              value:
-                unitCost || material?.unitCost !== undefined
-                  ? `${currencyCode} ${Number(unitCost || material?.unitCost || 0).toFixed(2)}`
-                  : '-',
-              note: latestPriceLog ? `Latest change ${new Date(latestPriceLog.timestamp).toLocaleDateString()}` : 'Manual cost baseline',
-            },
-            {
-              label: 'UOM chain',
-              value: String(materialUoms.length),
-              note: materialUoms.some((entry) => entry.isBase) ? 'Base and derived units configured' : 'Create base UOM after save',
-            },
-          ].map((item) => (
-            <div key={item.label} className="bg-white px-5 py-4 dark:bg-slate-950/80">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-500">{item.label}</p>
-              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">{item.note}</p>
-            </div>
-          ))}
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {!isCreateMode ? (
+            <Button variant="outline" size="sm" onClick={() => router.push('/stock/materials')}>
+              Back to materials
+            </Button>
+          ) : null}
+          <Button variant="secondary" size="sm" onClick={() => router.back()}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={isLoading || isUploadingAssets}>
+            {isLoading || isUploadingAssets ? 'Saving…' : submitButtonText}
+          </Button>
         </div>
-      </section>
+      </header>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Base unit',
+            value: unit || material?.unit || '-',
+            note: isCreateMode ? 'Used for stock and transaction storage' : 'Current stock base',
+          },
+          {
+            label: 'Current stock',
+            value: isCreateMode ? currentStock || '0' : formatNumber(material?.currentStock),
+            note:
+              !isCreateMode && material?.reorderLevel !== undefined
+                ? `Reorder at ${formatNumber(material.reorderLevel)}`
+                : 'Opening stock while creating',
+          },
+          {
+            label: 'Unit cost',
+            value:
+              unitCost || material?.unitCost !== undefined
+                ? `${currencyCode} ${Number(unitCost || material?.unitCost || 0).toFixed(2)}`
+                : '-',
+            note: latestPriceLog ? `Latest change ${new Date(latestPriceLog.timestamp).toLocaleDateString()}` : 'Manual cost baseline',
+          },
+          {
+            label: 'UOM chain',
+            value: String(materialUoms.length),
+            note: materialUoms.some((entry) => entry.isBase) ? 'Base and derived units configured' : 'Create base UOM after save',
+          },
+        ].map((item) => (
+          <div key={item.label} className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+            <p className="mt-2 text-xl font-semibold text-foreground">{item.value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
+          </div>
+        ))}
+      </div>
+
+      <section className="rounded-lg border border-border bg-card p-2 shadow-sm sm:p-3">
         <div className="flex flex-wrap gap-2">
           {tabOptions
             .filter((tab) => !tab.hidden)
@@ -774,12 +776,12 @@ function MaterialEditor({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={[
-                  'rounded-xl border px-3 py-2 text-sm font-medium transition',
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
                   activeTab === tab.id
-                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400/70 dark:bg-emerald-500/10 dark:text-emerald-200'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white',
-                ].join(' ')}
+                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                )}
               >
                 {tab.label}
               </button>
@@ -852,13 +854,13 @@ function MaterialEditor({
                 label="Negative consumption"
                 hint="Allow dispatching below zero stock. Useful for reconciled or later-costed items."
               >
-                <label className="flex min-h-[46px] items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300">
+                <label className="flex min-h-[46px] items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground dark:border-border dark:bg-muted/30">
                   <span>{allowNegativeConsumption ? 'Allowed' : 'Blocked at zero stock'}</span>
                   <input
                     type="checkbox"
                     checked={allowNegativeConsumption}
                     onChange={(e) => setAllowNegativeConsumption(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring"
                   />
                 </label>
               </FieldShell>
@@ -927,7 +929,7 @@ function MaterialEditor({
                 </FieldShell>
               ) : (
                 <FieldShell label="Current stock" hint="Read-only current quantity in the base unit.">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:border-slate-800 dark:bg-slate-900/70 dark:text-emerald-300">
+                  <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:border-border dark:bg-muted/30 dark:text-emerald-300">
                     {formatNumber(material.currentStock)}
                   </div>
                 </FieldShell>
@@ -989,7 +991,7 @@ function MaterialEditor({
               </FieldShell>
             </div>
 
-            <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-border pt-4 dark:border-border">
               <Button type="button" variant="ghost" onClick={() => router.back()}>
                 Cancel
               </Button>
@@ -999,9 +1001,9 @@ function MaterialEditor({
             </div>
 
             {isStockAssembly ? (
-              <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-800">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Assembly components</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+              <div className="mt-5 border-t border-border pt-4 dark:border-border">
+                <h3 className="text-sm font-semibold text-foreground">Assembly components</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Build this stock item from existing materials. Cost updates automatically from component costs.
                 </p>
                 <div className="mt-4 space-y-3">
@@ -1011,7 +1013,7 @@ function MaterialEditor({
                     return (
                       <div
                         key={`${row.componentMaterialId}-${index}`}
-                        className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70 lg:grid-cols-[1.2fr_0.7fr_0.8fr_auto]"
+                        className="grid gap-3 rounded-xl border border-border bg-muted/40 p-3 dark:border-border dark:bg-muted/30 lg:grid-cols-[1.2fr_0.7fr_0.8fr_auto]"
                       >
                         <SearchSelect
                           items={assemblyMaterialOptions.map((entry) => ({
@@ -1046,7 +1048,7 @@ function MaterialEditor({
                           className={inputClassName()}
                           placeholder="Qty"
                         />
-                        <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                        <div className="flex items-center rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground dark:border-border">
                           {currencyCode} {lineCost.toFixed(4)}
                         </div>
                         <Button
@@ -1071,7 +1073,7 @@ function MaterialEditor({
                   >
                     Add component
                   </Button>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <p className="text-sm font-medium text-foreground">
                     Input: {currencyCode} {assemblyTotalCost.toFixed(4)} | Overhead: {assemblyOverheadPercentValue.toFixed(2)}% | Total: {currencyCode} {assemblyTotalCostWithOverhead.toFixed(4)} | Output: {assemblyOutputQuantityValue.toFixed(3)} {unit || material?.unit || ''}
                   </p>
                 </div>
@@ -1085,7 +1087,7 @@ function MaterialEditor({
               title="Material files"
               description="Upload feature image, gallery photos, and documents with one dropdown uploader."
             >
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70 lg:grid-cols-[12rem_minmax(0,1fr)_auto]">
+              <div className="grid gap-3 rounded-xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30 lg:grid-cols-[12rem_minmax(0,1fr)_auto]">
                 <select
                   value={uploadType}
                   onChange={(e) => setUploadType(e.target.value as MaterialUploadType)}
@@ -1107,9 +1109,9 @@ function MaterialEditor({
               </div>
 
               <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Feature image preview</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Feature image preview</h3>
                     {existingImageUrl ? (
                       <Button
                         type="button"
@@ -1138,27 +1140,27 @@ function MaterialEditor({
                   ) : null}
                   {existingImageUrl ? (
                     <a href={existingImageUrl} target="_blank" rel="noreferrer" className="mt-3 block">
-                      <img src={existingImageUrl} alt={`${name || 'Material'} image`} className="max-h-64 w-full rounded-lg border border-slate-200 object-contain dark:border-slate-700" />
+                      <img src={existingImageUrl} alt={`${name || 'Material'} image`} className="max-h-64 w-full rounded-lg border border-border object-contain dark:border-border" />
                     </a>
                   ) : (
-                    <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No uploaded image yet.</p>
+                    <p className="mt-3 text-sm text-muted-foreground">No uploaded image yet.</p>
                   )}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Pending uploads</h3>
+                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                  <h3 className="text-sm font-semibold text-foreground">Pending uploads</h3>
                   <div className="mt-3 space-y-2">
                     {!pendingFeatureImageFile && pendingGalleryFiles.length === 0 && pendingDocumentFiles.length === 0 ? (
-                      <p className="text-sm text-slate-500 dark:text-slate-400">No pending uploads.</p>
+                      <p className="text-sm text-muted-foreground">No pending uploads.</p>
                     ) : (
                       <>
                         {pendingFeatureImageFile ? (
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                          <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm dark:border-border dark:bg-card">
                             Feature Image: {pendingFeatureImageFile.name}
                           </div>
                         ) : null}
                         {pendingGalleryFiles.map((entry, idx) => (
-                          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm dark:border-border dark:bg-card">
                             <span>Gallery: {entry.name}</span>
                             <Button
                               type="button"
@@ -1171,7 +1173,7 @@ function MaterialEditor({
                           </div>
                         ))}
                         {pendingDocumentFiles.map((entry, idx) => (
-                          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm dark:border-border dark:bg-card">
                             <span>Document: {entry.name}</span>
                             <Button
                               type="button"
@@ -1190,14 +1192,14 @@ function MaterialEditor({
               </div>
 
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Photo gallery</h3>
+                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                  <h3 className="text-sm font-semibold text-foreground">Photo gallery</h3>
                   <div className="mt-3 space-y-2">
                     {existingGalleryFiles.length === 0 ? (
-                      <p className="text-sm text-slate-500 dark:text-slate-400">No gallery photos uploaded.</p>
+                      <p className="text-sm text-muted-foreground">No gallery photos uploaded.</p>
                     ) : (
                       existingGalleryFiles.map((entry, idx) => (
-                        <div key={entry.url} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div key={entry.url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm dark:border-border dark:bg-card">
                           <a href={entry.url} target="_blank" rel="noreferrer" className="truncate underline">
                             {entry.fileName}
                           </a>
@@ -1214,14 +1216,14 @@ function MaterialEditor({
                     )}
                   </div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Documents</h3>
+                <div className="rounded-xl border border-border bg-muted/40 p-4 dark:border-border dark:bg-muted/30">
+                  <h3 className="text-sm font-semibold text-foreground">Documents</h3>
                   <div className="mt-3 space-y-2">
                     {existingDocumentFiles.length === 0 ? (
-                      <p className="text-sm text-slate-500 dark:text-slate-400">No documents uploaded.</p>
+                      <p className="text-sm text-muted-foreground">No documents uploaded.</p>
                     ) : (
                       existingDocumentFiles.map((entry, idx) => (
-                        <div key={entry.url} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div key={entry.url} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm dark:border-border dark:bg-card">
                           <a href={entry.url} target="_blank" rel="noreferrer" className="truncate underline">
                             {entry.fileName}
                           </a>
@@ -1283,9 +1285,9 @@ function MaterialEditor({
                   </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                  <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-500">
+                <div className="overflow-x-auto rounded-xl border border-border dark:border-border">
+                  <table className="w-full text-left text-sm text-foreground">
+                    <thead className="bg-muted/40 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                       <tr>
                         <th className="px-4 py-3">Unit</th>
                         <th className="px-4 py-3">Role</th>
@@ -1299,21 +1301,21 @@ function MaterialEditor({
                       {materialUoms.map((row) => {
                         const parent = materialUoms.find((entry) => entry.id === row.parentUomId);
                         return (
-                          <tr key={row.id} className="border-t border-slate-200 dark:border-slate-800">
-                            <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{row.unitName}</td>
+                          <tr key={row.id} className="border-t border-border dark:border-border">
+                            <td className="px-4 py-3 font-medium text-foreground">{row.unitName}</td>
                             <td className="px-4 py-3">
                               <span
                                 className={[
                                   'inline-flex rounded-full border px-2.5 py-1 text-xs font-medium',
                                   row.isBase
                                     ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
-                                    : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
+                                    : 'border-border bg-muted/40 text-foreground dark:border-border dark:bg-card',
                                 ].join(' ')}
                               >
                                 {row.isBase ? 'Base' : 'Derived'}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{parent?.unitName ?? '-'}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{parent?.unitName ?? '-'}</td>
                             <td className="px-4 py-3 font-mono">{row.factorToParent}</td>
                             <td className="px-4 py-3 font-mono text-emerald-700 dark:text-emerald-300">{row.factorToBase}</td>
                             <td className="px-4 py-3 text-right">
@@ -1345,7 +1347,7 @@ function MaterialEditor({
               )}
 
               {materialUoms.some((entry) => entry.isBase) ? (
-                <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-800 lg:grid-cols-[1.1fr_1fr_0.8fr_auto]">
+                <div className="mt-4 grid gap-4 border-t border-border pt-4 dark:border-border lg:grid-cols-[1.1fr_1fr_0.8fr_auto]">
                   <FieldShell label="Packaging unit">
                     <SearchSelect
                       items={availableDerivedUnits.map((entry) => ({ id: entry.id, label: entry.name }))}
@@ -1428,28 +1430,28 @@ function MaterialEditor({
             >
               <div className="grid gap-4 xl:grid-cols-2">
                 <div>
-                  <h3 className="mb-3 text-sm font-medium text-slate-900 dark:text-white">Material edits</h3>
+                  <h3 className="mb-3 text-sm font-medium text-foreground">Material edits</h3>
                   <div className="space-y-3">
                     {materialLogs.length === 0 ? (
-                      <p className="text-sm text-slate-500 dark:text-slate-500">No edits yet.</p>
+                      <p className="text-sm text-muted-foreground">No edits yet.</p>
                     ) : (
                       materialLogs.map((log) => (
-                        <div key={log.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
+                        <div key={log.id} className="rounded-xl border border-border bg-muted/40 p-3 dark:border-border dark:bg-muted/30">
                           <div className="flex items-center justify-between gap-3">
                             <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                               {log.action === 'created' ? 'Created' : 'Updated'}
                             </span>
-                            <span className="text-xs text-slate-500 dark:text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
+                            <span className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</span>
                           </div>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            Changed by <span className="text-slate-700 dark:text-slate-300">{log.changedBy || 'System'}</span>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Changed by <span className="text-foreground">{log.changedBy || 'System'}</span>
                           </p>
                           <div className="mt-3 space-y-2">
                             {Object.entries(log.changes).map(([key, value]) => (
-                              <div key={key} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-300">
-                                <span className="font-medium text-slate-900 dark:text-slate-200">{key}</span>{' '}
+                              <div key={key} className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground dark:border-border">
+                                <span className="font-medium text-foreground">{key}</span>{' '}
                                 <span className="text-red-600 dark:text-red-300">{String(value.from)}</span>{' '}
-                                <span className="text-slate-400 dark:text-slate-600">→</span>{' '}
+                                <span className="text-muted-foreground">→</span>{' '}
                                 <span className="text-emerald-700 dark:text-emerald-300">{String(value.to)}</span>
                               </div>
                             ))}
@@ -1461,26 +1463,26 @@ function MaterialEditor({
                 </div>
 
                 <div>
-                  <h3 className="mb-3 text-sm font-medium text-slate-900 dark:text-white">Price history</h3>
+                  <h3 className="mb-3 text-sm font-medium text-foreground">Price history</h3>
                   <div className="space-y-3">
                     {priceLogs.length === 0 ? (
-                      <p className="text-sm text-slate-500 dark:text-slate-500">No price changes.</p>
+                      <p className="text-sm text-muted-foreground">No price changes.</p>
                     ) : (
                       priceLogs.map((log) => (
-                        <div key={log.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-900/70">
+                        <div key={log.id} className="rounded-xl border border-border bg-muted/40 p-3 text-sm dark:border-border dark:bg-muted/30">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="font-medium text-slate-900 dark:text-slate-200">
+                            <span className="font-medium text-foreground">
                               {log.source === 'manual' ? 'Manual update' : 'Bill-linked'}
                             </span>
                             <span className={log.currentPrice > log.previousPrice ? 'text-red-600 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}>
                               {currencyCode} {log.previousPrice} → {currencyCode} {log.currentPrice}
                             </span>
                           </div>
-                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">{new Date(log.timestamp).toLocaleString()}</p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            Changed by <span className="text-slate-700 dark:text-slate-300">{log.changedBy || 'System'}</span>
+                          <p className="mt-2 text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Changed by <span className="text-foreground">{log.changedBy || 'System'}</span>
                           </p>
-                          {log.notes ? <p className="mt-2 text-xs italic text-slate-500 dark:text-slate-400">{log.notes}</p> : null}
+                          {log.notes ? <p className="mt-2 text-xs italic text-muted-foreground">{log.notes}</p> : null}
                         </div>
                       ))
                     )}
@@ -1507,16 +1509,16 @@ function MaterialEditor({
                 },
                 { label: 'Warehouse', value: warehouse || material?.warehouse || '-' },
               ].map((item) => (
-                <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/70">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-500">{item.label}</p>
-                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">{item.value}</p>
+                <div key={item.label} className="rounded-xl border border-border bg-muted/40 px-3 py-3 dark:border-border dark:bg-muted/30">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{item.value}</p>
                 </div>
               ))}
             </div>
           </SectionShell>
 
           <SectionShell title="Setup notes" description="Operational reminders for stock and conversion setup.">
-            <div className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
+            <div className="space-y-3 text-sm text-muted-foreground">
               <p>Stock is always stored in the base unit, even when dispatch uses packaging units.</p>
               <p>Create the material first, then add drum, pallet, or bundle conversions in the UOM section.</p>
               <p>Price changes are logged automatically whenever unit cost is updated.</p>
@@ -1650,11 +1652,15 @@ export default function MaterialDetailPage() {
   });
 
   if (!isCreateMode && isLoadingMaterial) {
-    return <div className="text-sm text-muted-foreground">Loading material…</div>;
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center py-12 text-sm text-muted-foreground">Loading material…</div>
+    );
   }
 
   if (!isCreateMode && !material) {
-    return <div className="text-sm text-muted-foreground">Material not found.</div>;
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center py-12 text-sm text-muted-foreground">Material not found.</div>
+    );
   }
 
   return (

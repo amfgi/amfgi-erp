@@ -4,7 +4,10 @@ import Credentials from 'next-auth/providers/credentials';
 import bcrypt      from 'bcryptjs';
 import type { Permission } from '@/lib/permissions';
 import { ALL_PERMISSIONS } from '@/lib/permissions';
+import { buildAuthCookieOptions, resolveAuthSecret, warnIfAuthMisconfigured } from '@/lib/auth/authEnv';
 import { convertGoogleDriveUrl } from '@/lib/utils/googleDriveUrl';
+
+warnIfAuthMisconfigured();
 
 async function getPrisma() {
   const mod = await import('@/lib/db/prisma');
@@ -70,8 +73,10 @@ async function resolvePermissions(
 }
 
 const config: NextAuthConfig = {
+  secret: resolveAuthSecret(),
   session: { strategy: 'jwt' },
   trustHost: true,
+  cookies: buildAuthCookieOptions(),
   pages: { signIn: '/login', error: '/login' },
   providers: [
     Google({
@@ -164,7 +169,8 @@ const config: NextAuthConfig = {
           // linkedEmployeeId is on User root
         });
 
-        if (!dbUser || !dbUser.isActive) return '/login?error=NotRegistered';
+        if (!dbUser) return '/login?error=GoogleNotRegistered';
+        if (!dbUser.isActive) return '/login?error=AccountDisabled';
 
         const userId    = dbUser.id;
         const companyId = dbUser.activeCompanyId;

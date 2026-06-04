@@ -1,5 +1,6 @@
 import { auth }              from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 import {
@@ -20,6 +21,9 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const filterType = searchParams.get('filterType') ?? 'all';
   const dateStr = searchParams.get('date');
+  const limitParam = searchParams.get('limit');
+  const offset = parseListOffset(searchParams.get('offset'));
+  const search = searchParams.get('search')?.trim().toLowerCase() ?? '';
 
   let startDate = new Date(0);
   let endDate = new Date();
@@ -128,13 +132,34 @@ export async function GET(req: Request) {
       };
     });
 
+    const filteredEntries = search
+      ? enrichedEntries.filter((entry) => {
+          const haystack = [entry.receiptNumber, entry.supplier, entry.notes]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(search);
+        })
+      : enrichedEntries;
+
+    const dateRange = {
+      startDate,
+      endDate,
+      filterType,
+    };
+
+    if (limitParam !== null) {
+      const limit = parseListLimit(limitParam);
+      return successResponse({
+        entries: filteredEntries.slice(offset, offset + limit),
+        total: filteredEntries.length,
+        dateRange,
+      });
+    }
+
     return successResponse({
-      entries: enrichedEntries,
-      dateRange: {
-        startDate,
-        endDate,
-        filterType,
-      },
+      entries: filteredEntries,
+      dateRange,
     });
   } catch (err: unknown) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to fetch receipt entries', 500);

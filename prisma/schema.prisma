@@ -59,6 +59,8 @@ model Company {
   jobCostingSnapshots      JobCostingSnapshot[]
   jobItemAssignments       JobItemAssignment[]
   jobItemProgressEntries   JobItemProgressEntry[]
+  jobItemTrackableMaterialLinks JobItemTrackableMaterialLink[]
+  productionStockPostings  ProductionStockPosting[]
   jobRequiredExpertises    JobRequiredExpertise[]
   employees                Employee[]
   employeeDocumentTypes    EmployeeDocumentType[]
@@ -83,6 +85,8 @@ model Company {
   workflowApprovals        WorkflowApproval[]
   quantityLogDaySubmissions QuantityLogDaySubmission[]
   quantityLogAdhocJobs      QuantityLogAdhocJob[]
+  dispatchEntryRevisions    DispatchEntryRevision[]
+  deliveryNotes             DeliveryNote[]
 }
 
 model User {
@@ -113,8 +117,32 @@ model User {
   decidedWorkflowApprovals   WorkflowApproval[]     @relation("WorkflowApprovalDecidedBy")
   quantityLogDaySubmissions  QuantityLogDaySubmission[]
   quantityLogAdhocJobsCreated QuantityLogAdhocJob[]
+  dispatchEntryRevisionsWritten DispatchEntryRevision[] @relation("DispatchEntryRevisionActor")
+  passwordResetTokens         PasswordResetToken[]
 
   @@index([activeCompanyId])
+}
+
+/// Global outbound email configuration (password reset, notifications).
+model SystemEmailSettings {
+  id          String   @id @default("global")
+  provider    String   @default("env")
+  config      Json     @default("{}")
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+}
+
+/// One-time token for self-service password reset (hashed at rest).
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 /// Uploaded file stored in Google Drive; usage tracked via MediaAssetLink (orphans = safe to delete).
@@ -429,6 +457,8 @@ model Material {
   warehouseRef             Warehouse?               @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
   assemblyComponents       MaterialAssemblyComponent[] @relation("AssemblyMaterial")
   usedInAssemblies         MaterialAssemblyComponent[] @relation("ComponentMaterial")
+  finishedGoodTrackableLinks JobItemTrackableMaterialLink[] @relation("TrackableFinishedGoodMaterial")
+  productionStockPostings  ProductionStockPosting[] @relation("ProductionPostingMaterial")
 
   @@unique([companyId, id])
   @@unique([companyId, name])
@@ -493,6 +523,7 @@ model StockBatch {
   receivedDate      DateTime
   expiryDate        DateTime?
   notes             String?            @db.Text
+  meta              Json?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -501,6 +532,7 @@ model StockBatch {
   supplierRef       Supplier?          @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
   businessDocument  BusinessDocument?  @relation(fields: [companyId, businessDocumentId], references: [companyId, id], onDelete: SetNull)
   transactionLinks  TransactionBatch[]
+  productionStockPostings ProductionStockPosting[]
 
   @@unique([companyId, batchNumber])
   @@index([companyId, materialId, receivedDate])
@@ -537,9 +569,9 @@ model Transaction {
   referenceType       String?
   referenceId         String?
   idempotencyKey      String?
-  postingGroupId      String?
   meta                Json?
   businessDocumentId  String?
+  deliveryNoteId      String?
   company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   job                 Job?               @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: Restrict)
   material            Material           @relation(fields: [companyId, materialId], references: [companyId, id])
@@ -548,7 +580,10 @@ model Transaction {
   parent              Transaction?       @relation("TxParent", fields: [companyId, parentTransactionId], references: [companyId, id], onDelete: Restrict)
   children            Transaction[]      @relation("TxParent")
   batchesUsed         TransactionBatch[]
+  productionStockPostings ProductionStockPosting[] @relation("ProductionPostingTransaction")
+  productionStockReversals ProductionStockPosting[] @relation("ProductionPostingReversalTransaction")
   businessDocument    BusinessDocument?  @relation(fields: [companyId, businessDocumentId], references: [companyId, id], onDelete: SetNull)
+  deliveryNote        DeliveryNote?      @relation(fields: [deliveryNoteId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, id])
   @@index([companyId, date])
@@ -559,8 +594,8 @@ model Transaction {
   @@index([performedByUserId])
   @@index([companyId, sourceModule, date])
   @@index([companyId, referenceType, referenceId])
-  @@index([companyId, postingGroupId])
   @@index([companyId, businessDocumentId])
+  @@index([deliveryNoteId])
   @@index([jobId], map: "Transaction_jobId_fkey")
   @@index([materialId], map: "Transaction_materialId_fkey")
 }
@@ -578,6 +613,55 @@ model TransactionBatch {
 
   @@index([transactionId])
   @@index([batchId])
+}
+
+/// One printed delivery note; all STOCK_OUT lines for that note share `deliveryNoteId`.
+model DeliveryNote {
+  id           String        @id @default(cuid())
+  companyId    String
+  number       Int
+  jobId        String?
+  date         DateTime
+  /// True when this delivery note was saved with no material STOCK_OUT lines (custom items / document only).
+  materialDispatchSkipped Boolean @default(false)
+  /// Structured custom line items for printing (name, description, unit, qty).
+  customItemsJson Json?
+  /// User-authored notes for the document, without composed transaction headers.
+  documentNotes   String?      @db.Text
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  job          Job?          @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: SetNull)
+  transactions Transaction[]
+
+  @@unique([companyId, number])
+  @@index([companyId, jobId])
+  @@index([companyId, date])
+}
+
+/// Append-only audit of job dispatch worksheet / delivery-note material lines saved via batch STOCK_OUT (per job + calendar day).
+model DispatchEntryRevision {
+  id              String   @id @default(cuid())
+  companyId       String
+  jobId           String
+  /// Calendar day key `YYYY-MM-DD` (same as dispatch-entry query), not timezone-shifted storage.
+  postingDateKey  String
+  source          String   @default("WORKSHEET")
+  action          String
+  actorUserId     String?
+  actorName       String
+  linesBefore     Json?
+  linesAfter      Json
+  changeSummary   Json?
+  notesSnippet    String?  @db.VarChar(500)
+  createdAt       DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: Cascade)
+  actor   User?   @relation("DispatchEntryRevisionActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, jobId, postingDateKey])
+  @@index([companyId, createdAt])
 }
 
 model Job {
@@ -635,6 +719,8 @@ model Job {
   requiredExpertiseLinks JobRequiredExpertise[]
   workAssignments        WorkAssignment[]
   quantityLogAdhocJobs     QuantityLogAdhocJob[]
+  dispatchEntryRevisions   DispatchEntryRevision[]
+  deliveryNotes            DeliveryNote[]
 
   @@unique([companyId, id])
   @@unique([companyId, jobNumber])
@@ -940,6 +1026,8 @@ model Warehouse {
   transactions            Transaction[]
   materialWarehouseStocks MaterialWarehouseStock[]
   stockCountSessions      StockCountSession[]
+  finishedGoodTrackableLinks JobItemTrackableMaterialLink[] @relation("TrackableFinishedGoodWarehouse")
+  productionStockPostings ProductionStockPosting[] @relation("ProductionPostingWarehouse")
 
   @@unique([companyId, id])
   @@unique([companyId, name])
@@ -1039,7 +1127,7 @@ model JobItem {
   id               String   @id @default(cuid())
   companyId        String
   jobId            String
-  formulaLibraryId String
+  formulaLibraryId String?
   name             String
   description      String?  @db.Text
   specifications   Json
@@ -1065,9 +1153,11 @@ model JobItem {
 
   company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   job               Job                 @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: Cascade)
-  formulaLibrary    FormulaLibrary      @relation(fields: [companyId, formulaLibraryId], references: [companyId, id], onDelete: Restrict)
+  formulaLibrary    FormulaLibrary?     @relation(fields: [companyId, formulaLibraryId], references: [companyId, id], onDelete: Restrict)
   assignedEmployees JobItemAssignment[]
   progressEntries   JobItemProgressEntry[]
+  trackableMaterialLinks JobItemTrackableMaterialLink[]
+  productionStockPostings ProductionStockPosting[]
 
   @@unique([companyId, id])
   @@index([companyId, jobId, isActive])
@@ -1091,6 +1181,62 @@ model JobItemProgressEntry {
 
   @@unique([companyId, id])
   @@index([companyId, jobItemId, trackerId, entryDate])
+}
+
+model JobItemTrackableMaterialLink {
+  id          String   @id @default(cuid())
+  companyId   String
+  jobItemId   String
+  trackerId   String
+  materialId  String
+  warehouseId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobItem       JobItem   @relation(fields: [companyId, jobItemId], references: [companyId, id], onDelete: Cascade)
+  material      Material  @relation("TrackableFinishedGoodMaterial", fields: [companyId, materialId], references: [companyId, id], onDelete: Restrict)
+  warehouse     Warehouse @relation("TrackableFinishedGoodWarehouse", fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  stockPostings ProductionStockPosting[]
+
+  @@unique([companyId, jobItemId, trackerId])
+  @@index([companyId, materialId])
+  @@index([companyId, warehouseId])
+}
+
+model ProductionStockPosting {
+  id          String   @id @default(cuid())
+  companyId   String
+  progressEntryId String
+  jobItemId   String
+  trackerId   String
+  trackableMaterialLinkId String
+  materialId  String
+  warehouseId String
+  transactionId String
+  reversalTransactionId String?
+  stockBatchId String
+  quantity    Decimal  @db.Decimal(18, 3)
+  status      ProductionStockPostingStatus @default(POSTED)
+  postedAt    DateTime @default(now())
+  reversedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobItem       JobItem   @relation(fields: [companyId, jobItemId], references: [companyId, id], onDelete: Restrict)
+  trackableMaterialLink JobItemTrackableMaterialLink @relation(fields: [trackableMaterialLinkId], references: [id], onDelete: Restrict)
+  material      Material  @relation("ProductionPostingMaterial", fields: [companyId, materialId], references: [companyId, id], onDelete: Restrict)
+  warehouse     Warehouse @relation("ProductionPostingWarehouse", fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  transaction   Transaction @relation("ProductionPostingTransaction", fields: [companyId, transactionId], references: [companyId, id], onDelete: Restrict)
+  reversalTransaction Transaction? @relation("ProductionPostingReversalTransaction", fields: [companyId, reversalTransactionId], references: [companyId, id], onDelete: Restrict)
+  stockBatch    StockBatch @relation(fields: [stockBatchId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, progressEntryId])
+  @@index([companyId, jobItemId, trackerId])
+  @@index([companyId, materialId, warehouseId])
+  @@index([companyId, transactionId])
+  @@index([companyId, stockBatchId])
 }
 
 model JobCostingSnapshot {
@@ -1127,6 +1273,11 @@ enum JobItemProgressStatus {
   IN_PROGRESS
   COMPLETED
   ON_HOLD
+}
+
+enum ProductionStockPostingStatus {
+  POSTED
+  REVERSED
 }
 
 enum JobCostingSnapshotStatus {
@@ -1334,7 +1485,6 @@ model WorkSchedule {
   companyId         String
   workDate          DateTime           @db.Date
   clientDisplayName String?
-  title             String?
   notes             String?            @db.Text
   status            WorkScheduleStatus @default(DRAFT)
   publishedAt       DateTime?
@@ -1438,14 +1588,15 @@ model DriverRunLog {
   id               String   @id @default(cuid())
   companyId        String
   workScheduleId   String
-  driverEmployeeId String
+  driverEmployeeId String?
+  guestDriverName  String?
   routeText        String   @db.Text
   sequence         Int      @default(0)
   createdAt        DateTime @default(now())
 
   company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   workSchedule WorkSchedule @relation(fields: [companyId, workScheduleId], references: [companyId, id], onDelete: Cascade)
-  driver       Employee     @relation(fields: [companyId, driverEmployeeId], references: [companyId, id], onDelete: Cascade)
+  driver       Employee?    @relation(fields: [companyId, driverEmployeeId], references: [companyId, id], onDelete: Cascade)
 
   @@index([companyId, workScheduleId])
   @@index([companyId, driverEmployeeId])

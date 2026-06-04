@@ -37,6 +37,11 @@ export default function ProfilePage() {
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const [hasPassword, setHasPassword] = useState(true);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingSig, setUploadingSig] = useState(false);
   const [avatarMenu, setAvatarMenu] = useState<{ x: number; y: number } | null>(null);
@@ -55,10 +60,12 @@ export default function ProfilePage() {
         email: string;
         image: string | null;
         signatureUrl: string | null;
+        hasPassword?: boolean;
       };
       setName(user.name);
       setImageUrl(user.image);
       setSignatureUrl(user.signatureUrl);
+      setHasPassword(user.hasPassword !== false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load profile');
     } finally {
@@ -69,6 +76,39 @@ export default function ProfilePage() {
   useEffect(() => {
     if (status === 'authenticated') void loadProfile();
   }, [status, loadProfile]);
+
+  const savePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch('/api/user/profile/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: hasPassword ? currentPassword : undefined,
+          newPassword,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Failed to update password');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setHasPassword(true);
+      toast.success('Password updated');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update password');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   const saveName = async () => {
     const trimmed = name.trim();
@@ -384,6 +424,63 @@ export default function ProfilePage() {
           </div>
         </section>
       </div>
+
+      <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+          <h2 className="text-sm font-semibold text-foreground">Password</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            {hasPassword
+              ? 'Change the password you use to sign in with email.'
+              : 'Set a password so you can sign in with email as well as Google.'}
+          </p>
+        </div>
+        <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+          {hasPassword ? (
+            <div className="space-y-2 sm:col-span-2 sm:max-w-md">
+              <label htmlFor="profile-current-password" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Current password
+              </label>
+              <Input
+                id="profile-current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <label htmlFor="profile-new-password" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              New password
+            </label>
+            <Input
+              id="profile-new-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="At least 8 characters"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="profile-confirm-password" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Confirm new password
+            </label>
+            <Input
+              id="profile-confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <Button type="button" onClick={() => void savePassword()} disabled={savingPassword}>
+              {savingPassword ? 'Updating…' : hasPassword ? 'Update password' : 'Set password'}
+            </Button>
+          </div>
+        </div>
+      </section>
 
       {avatarMenu && (
         <ContextMenu

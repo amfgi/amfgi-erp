@@ -17,7 +17,7 @@ export interface LiveUpdateEvent {
   companyId: string;
   channel: LiveUpdateChannel;
   entity: string;
-  action: 'created' | 'updated' | 'deleted' | 'changed';
+  action: 'created' | 'updated' | 'deleted' | 'changed' | 'bulk_import';
   at: string;
 }
 

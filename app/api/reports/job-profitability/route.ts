@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
-import { buildJobItemEstimate } from '@/lib/job-costing/formulaEngine';
+import { buildStoredJobItemEstimate } from '@/lib/job-costing/buildStoredJobItemEstimate';
+import { getBudgetMaterialIdsFromJobItem } from '@/lib/job-costing/jobItemBudgetMaterialIds';
 import { getFactorToBase, resolvePricingSnapshot } from '@/lib/job-costing/pricing';
 import { normalizeJobCostingSettings } from '@/lib/job-costing/settings';
 import type { FormulaConfig, JobItemSpecifications, MaterialPricingSnapshot } from '@/lib/job-costing/types';
@@ -9,10 +10,27 @@ import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
 const EPSILON = 0.0005;
 
-function getSelectedMaterialIdsFromSpecifications(specifications: JobItemSpecifications) {
-  return Object.values(specifications.global ?? {}).filter(
-    (value): value is string => typeof value === 'string' && value.trim().length > 0
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function mergeDefaultMaterialSelections(specificationSchema: unknown, formulaConfig: FormulaConfig) {
+  const schema = isRecord(specificationSchema) ? specificationSchema : {};
+  const schemaFields = Array.isArray(schema.globalFields) ? schema.globalFields : [];
+  const schemaDefaults = Object.fromEntries(
+    schemaFields.flatMap((field) => {
+      if (!isRecord(field) || typeof field.key !== 'string') return [];
+      const materialId =
+        typeof field.defaultMaterialId === 'string' && field.defaultMaterialId.trim()
+          ? field.defaultMaterialId.trim()
+          : '';
+      return materialId ? [[field.key, materialId]] : [];
+    })
   );
+  return {
+    ...(formulaConfig.defaultMaterialSelections ?? {}),
+    ...schemaDefaults,
+  };
 }
 
 function getTransactionCost(txn: {
@@ -152,20 +170,7 @@ export async function GET() {
     }
 
     const budgetMaterialIds = Array.from(
-      new Set(
-        jobItems.flatMap((item) => {
-          const config = item.formulaLibrary.formulaConfig as FormulaConfig;
-          const staticMaterialIds = Array.isArray(config?.areas)
-            ? config.areas.flatMap((area) =>
-                area.materials.flatMap((material) => (material.materialId ? [material.materialId] : []))
-              )
-            : [];
-          const selectedMaterialIds = getSelectedMaterialIdsFromSpecifications(
-            item.specifications as JobItemSpecifications
-          );
-          return [...staticMaterialIds, ...selectedMaterialIds];
-        })
-      )
+      new Set(jobItems.flatMap((item) => getBudgetMaterialIdsFromJobItem(item)))
     );
 
     const [budgetMaterials, jobTransactions] = await Promise.all([
@@ -301,18 +306,26 @@ export async function GET() {
       };
 
       const estimates = items.map((item) =>
-        buildJobItemEstimate({
+        buildStoredJobItemEstimate({
           jobId: job.id,
           jobNumber: job.jobNumber,
           postingDate: new Date(),
           nonWorkingWeekdays: settings.nonWorkingWeekdays,
           pricingMode: 'FIFO',
-          formulaLibrary: {
-            id: item.formulaLibrary.id,
-            name: item.formulaLibrary.name,
-            fabricationType: item.formulaLibrary.fabricationType,
-            formulaConfig: item.formulaLibrary.formulaConfig as FormulaConfig,
-          },
+          formulaLibrary: item.formulaLibrary
+            ? {
+                id: item.formulaLibrary.id,
+                name: item.formulaLibrary.name,
+                fabricationType: item.formulaLibrary.fabricationType,
+                formulaConfig: {
+                  ...(item.formulaLibrary.formulaConfig as FormulaConfig),
+                  defaultMaterialSelections: mergeDefaultMaterialSelections(
+                    item.formulaLibrary.specificationSchema,
+                    item.formulaLibrary.formulaConfig as FormulaConfig
+                  ),
+                },
+              }
+            : null,
           jobItem: {
             id: item.id,
             name: item.name,

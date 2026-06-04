@@ -131,7 +131,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           ? { currencyCode: parsed.data.operationalSettings.currencyCode.toUpperCase() }
           : {}),
       };
-      update.operationalSettings = nextOperationalSettings;
+      update.operationalSettings = nextOperationalSettings as Prisma.InputJsonValue;
     }
 
     if (isSA) {

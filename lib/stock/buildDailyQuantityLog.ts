@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { dateFromYmd } from '@/lib/hr/workDate';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
+import { attachTrackableMaterialLinks } from '@/lib/job-costing/trackableMaterialLinks';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
 export async function isQuantityLogDayFinalized(
@@ -103,7 +104,6 @@ export async function buildDailyQuantityLogPayload(
     id: string;
     workDate: Date;
     status: 'DRAFT' | 'PUBLISHED' | 'LOCKED';
-    title: string | null;
     clientDisplayName: string | null;
     publishedAt: Date | null;
     lockedAt: Date | null;
@@ -124,7 +124,6 @@ export async function buildDailyQuantityLogPayload(
         id: true,
         workDate: true,
         status: true,
-        title: true,
         clientDisplayName: true,
         publishedAt: true,
         lockedAt: true,
@@ -280,7 +279,7 @@ export async function buildDailyQuantityLogPayload(
   );
   const budgetJobIds = Array.from(new Set(Array.from(budgetContextByJobId.values()).map((e) => e.budgetJobId)));
 
-  const jobItems = budgetJobIds.length
+  const jobItemsRaw = budgetJobIds.length
     ? await db.jobItem.findMany({
         where: {
           companyId,
@@ -299,6 +298,7 @@ export async function buildDailyQuantityLogPayload(
         },
       })
     : [];
+  const jobItems = await attachTrackableMaterialLinks(db, companyId, jobItemsRaw);
 
   const trackingItemsByBudgetJob = new Map<string, typeof jobItems>();
   for (const item of jobItems) {

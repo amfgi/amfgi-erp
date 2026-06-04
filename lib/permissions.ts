@@ -40,6 +40,18 @@ export const P = {
   TXN_RECONCILE: 'transaction.reconcile',
   TXN_ADJUST:    'transaction.adjust',
 
+  // Stock modules (assign per role in Admin → Roles; not separate system roles)
+  STOCK_JOB_BUDGET_VIEW: 'stock.job_budget.view',
+  STOCK_JOB_BUDGET_EDIT: 'stock.job_budget.edit',
+  STOCK_FORMULA_VIEW: 'stock.formula.view',
+  STOCK_FORMULA_EDIT: 'stock.formula.edit',
+  STOCK_PRODUCTION_LOG_VIEW: 'stock.production_log.view',
+  STOCK_PRODUCTION_LOG_EDIT: 'stock.production_log.edit',
+  STOCK_WAREHOUSE_TRANSFER_VIEW: 'stock.warehouse_transfer.view',
+  STOCK_WAREHOUSE_TRANSFER_TRANSFER: 'stock.warehouse_transfer.transfer',
+  STOCK_COUNT_SESSION_VIEW: 'stock.count_session.view',
+  STOCK_COUNT_SESSION_EDIT: 'stock.count_session.edit',
+
   // Reports
   REPORT_VIEW: 'report.view',
 
@@ -69,6 +81,12 @@ export const P = {
 export type Permission = (typeof P)[keyof typeof P];
 export const ALL_PERMISSIONS = Object.values(P) as Permission[];
 
+/** System role slug for HR employee portal logins (`User.linkedEmployeeId`). */
+export const EMPLOYEE_SELF_ROLE_SLUG = 'employee-self';
+
+/** System role slug for full HR workforce access. */
+export const HR_SYSTEM_ROLE_SLUG = 'hr';
+
 // ── Predefined role permission sets ───────────────────────────────────────────
 export const ROLE_PRESETS: Record<string, Permission[]> = {
   super_admin: ALL_PERMISSIONS,
@@ -86,6 +104,16 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.HR_SCHEDULE_VIEW, P.HR_SCHEDULE_EDIT, P.HR_SCHEDULE_PUBLISH,
     P.HR_ATTENDANCE_VIEW, P.HR_ATTENDANCE_EDIT, P.HR_ATTENDANCE_APPROVE,
     P.HR_SETTINGS_DOC_TYPES,
+    P.STOCK_JOB_BUDGET_VIEW,
+    P.STOCK_JOB_BUDGET_EDIT,
+    P.STOCK_FORMULA_VIEW,
+    P.STOCK_FORMULA_EDIT,
+    P.STOCK_PRODUCTION_LOG_VIEW,
+    P.STOCK_PRODUCTION_LOG_EDIT,
+    P.STOCK_WAREHOUSE_TRANSFER_VIEW,
+    P.STOCK_WAREHOUSE_TRANSFER_TRANSFER,
+    P.STOCK_COUNT_SESSION_VIEW,
+    P.STOCK_COUNT_SESSION_EDIT,
   ],
 
   store_keeper: [
@@ -94,6 +122,36 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.TXN_STOCK_OUT,
     P.TXN_RETURN,
   ],
+
+  employee_self: [
+    P.SELF_EMPLOYEE_VIEW,
+    P.SELF_EMPLOYEE_DOCUMENTS,
+    P.SELF_EMPLOYEE_SCHEDULE,
+    P.SELF_EMPLOYEE_ATTENDANCE,
+  ],
+
+  /** System HR role preset (also created as role slug `hr` on bootstrap). */
+  hr: [
+    P.HR_EMPLOYEE_VIEW,
+    P.HR_EMPLOYEE_EDIT,
+    P.HR_DOCUMENT_VIEW,
+    P.HR_DOCUMENT_EDIT,
+    P.HR_SCHEDULE_VIEW,
+    P.HR_SCHEDULE_EDIT,
+    P.HR_SCHEDULE_PUBLISH,
+    P.HR_ATTENDANCE_VIEW,
+    P.HR_ATTENDANCE_EDIT,
+    P.HR_ATTENDANCE_APPROVE,
+    P.HR_SETTINGS_DOC_TYPES,
+  ],
+};
+
+export const ROLE_PRESET_LABELS: Record<keyof typeof ROLE_PRESETS, string> = {
+  super_admin: 'Admin (full access)',
+  manager: 'Manager',
+  store_keeper: 'Store keeper',
+  employee_self: 'Employee self-service',
+  hr: 'HR (system)',
 };
 
 // ── Permission group labels (for UI checkboxes) ───────────────────────────────
@@ -137,6 +195,41 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.TXN_TRANSFER,  label: 'Inter-Company Transfer' },
       { key: P.TXN_RECONCILE, label: 'Issue Reconcile'  },
       { key: P.TXN_ADJUST,    label: 'Manual Adjustment' },
+    ],
+  },
+  {
+    group: 'Stock — Job budget',
+    perms: [
+      { key: P.STOCK_JOB_BUDGET_VIEW, label: 'View' },
+      { key: P.STOCK_JOB_BUDGET_EDIT, label: 'Edit' },
+    ],
+  },
+  {
+    group: 'Stock — Formula',
+    perms: [
+      { key: P.STOCK_FORMULA_VIEW, label: 'View' },
+      { key: P.STOCK_FORMULA_EDIT, label: 'Edit' },
+    ],
+  },
+  {
+    group: 'Stock — Production log',
+    perms: [
+      { key: P.STOCK_PRODUCTION_LOG_VIEW, label: 'View' },
+      { key: P.STOCK_PRODUCTION_LOG_EDIT, label: 'Edit / finalize' },
+    ],
+  },
+  {
+    group: 'Stock — Warehouse transfer',
+    perms: [
+      { key: P.STOCK_WAREHOUSE_TRANSFER_VIEW, label: 'View' },
+      { key: P.STOCK_WAREHOUSE_TRANSFER_TRANSFER, label: 'Transfer' },
+    ],
+  },
+  {
+    group: 'Stock — Count session',
+    perms: [
+      { key: P.STOCK_COUNT_SESSION_VIEW, label: 'View' },
+      { key: P.STOCK_COUNT_SESSION_EDIT, label: 'Edit / submit' },
     ],
   },
   {

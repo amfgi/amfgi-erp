@@ -8,6 +8,7 @@ import {
   primaryFromPartyContacts,
   prismaPartyFieldsFromBody,
 } from '@/lib/partyListRecordPayload';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { z } from 'zod';
 
 const CreateSupplierSchema = z
@@ -23,6 +24,44 @@ const CreateSupplierSchema = z
   })
   .merge(partyListPartyFieldsSchema);
 
+function buildSupplierListWhere(
+  companyId: string,
+  opts: {
+    includeInactive: boolean;
+    search: string;
+    source: string | null;
+  },
+) {
+  const where: {
+    companyId: string;
+    isActive?: boolean;
+    source?: { not: 'PARTY_API_SYNC' } | 'PARTY_API_SYNC';
+    OR?: Array<Record<string, unknown>>;
+  } = {
+    companyId,
+    ...(opts.includeInactive ? {} : { isActive: true }),
+  };
+
+  if (opts.source === 'local') where.source = { not: 'PARTY_API_SYNC' };
+  if (opts.source === 'synced') where.source = 'PARTY_API_SYNC';
+
+  if (opts.search) {
+    const searchOr: Array<Record<string, unknown>> = [
+      { name: { contains: opts.search, mode: 'insensitive' } },
+      { email: { contains: opts.search, mode: 'insensitive' } },
+      { contactPerson: { contains: opts.search, mode: 'insensitive' } },
+      { phone: { contains: opts.search, mode: 'insensitive' } },
+    ];
+    const externalId = Number.parseInt(opts.search, 10);
+    if (Number.isFinite(externalId)) {
+      searchOr.push({ externalPartyId: externalId });
+    }
+    where.OR = searchOr;
+  }
+
+  return where;
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
@@ -33,11 +72,48 @@ export async function GET(req: Request) {
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
   const companyId = session.user.activeCompanyId;
 
+  const { searchParams } = new URL(req.url);
+  const includeInactive = searchParams.get('includeInactive') === 'true';
+  const limitParam = searchParams.get('limit');
+
   try {
+    if (limitParam !== null) {
+      const limit = parseListLimit(limitParam);
+      const offset = parseListOffset(searchParams.get('offset'));
+      const search = searchParams.get('search')?.trim() ?? '';
+      const source = searchParams.get('source');
+
+      const where = buildSupplierListWhere(companyId, {
+        includeInactive,
+        search,
+        source,
+      });
+
+      const [total, suppliers] = await Promise.all([
+        prisma.supplier.count({ where }),
+        prisma.supplier.findMany({
+          where,
+          orderBy: { name: 'asc' },
+          skip: offset,
+          take: limit,
+          include: {
+            contacts: {
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
+        }),
+      ]);
+
+      return successResponse({
+        items: suppliers.map(serializeSupplierWithContacts),
+        total,
+      });
+    }
+
     const suppliers = await prisma.supplier.findMany({
       where: {
         companyId,
-        isActive: true,
+        ...(includeInactive ? {} : { isActive: true }),
       },
       orderBy: { name: 'asc' },
       include: {

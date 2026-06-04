@@ -109,16 +109,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const shouldTryProvision =
       d.provisionLogin !== false && (d.provisionNow === true || (d.email !== undefined && Boolean(d.email)));
 
-    if (shouldTryProvision) {
-      const role = await prisma.role.findFirst({ where: { slug: 'employee-self' } });
-      if (!role) {
-        return errorResponse(
-          'Login provisioning requires the "employee-self" role. Run seed or create that role.',
-          503,
-        );
-      }
-    }
-
     try {
       const emp = await prisma.$transaction(async (tx) => {
         if (Object.keys(data).length > 0) {

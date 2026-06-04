@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
@@ -17,7 +18,7 @@ type InventoryByWarehouseWarehouseCol = {
   name: string;
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
 
@@ -31,6 +32,11 @@ export async function GET() {
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
 
   const companyId = session.user.activeCompanyId;
+  const { searchParams } = new URL(req.url);
+  const limitParam = searchParams.get('limit');
+  const offset = parseListOffset(searchParams.get('offset'));
+  const search = searchParams.get('search')?.trim().toLowerCase() ?? '';
+  const warehouseFilter = searchParams.get('warehouseId');
 
   try {
     const [activeWarehouses, snapshotRows, materials] = await Promise.all([
@@ -104,7 +110,24 @@ export async function GET() {
       })
       .filter((r) => r.companyTotal > 0 || r.splitTotal > 0);
 
-    return successResponse({ warehouseColumns, rows });
+    let filteredRows = rows;
+    if (search) {
+      filteredRows = filteredRows.filter((r) => r.materialName.toLowerCase().includes(search));
+    }
+    if (warehouseFilter && warehouseFilter !== 'all') {
+      filteredRows = filteredRows.filter((r) => (r.qtyByWarehouseId[warehouseFilter] ?? 0) > 0);
+    }
+
+    if (limitParam !== null) {
+      const limit = parseListLimit(limitParam);
+      return successResponse({
+        warehouseColumns,
+        items: filteredRows.slice(offset, offset + limit),
+        total: filteredRows.length,
+      });
+    }
+
+    return successResponse({ warehouseColumns, rows: filteredRows });
   } catch (e) {
     console.error('[inventory-by-warehouse]', e);
     return errorResponse('Failed to load inventory by warehouse', 500);

@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { decimalToNumberOrZero } from './decimal';
 
 type Tx = PrismaClient | Prisma.TransactionClient;
@@ -60,6 +61,7 @@ export async function createTransactionBatchRecords(
   for (const link of links) {
     await tx.transactionBatch.create({
       data: {
+        id: randomUUID(),
         transactionId,
         batchId: link.batchId,
         batchNumber: link.batchNumber,

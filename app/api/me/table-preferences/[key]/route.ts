@@ -6,6 +6,8 @@ import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 const TablePreferenceSchema = z.object({
   order: z.array(z.string().min(1)).default([]),
   visible: z.record(z.string(), z.boolean()).default({}),
+  /** Per-column pixel widths (e.g. dispatch line grid); optional for legacy rows and DataTable-only payloads. */
+  widths: z.record(z.string(), z.number().finite().min(32).max(1200)).optional(),
 });
 
 function normalizePreferenceKey(value: string) {

@@ -4,17 +4,26 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import toast from 'react-hot-toast';
 
+import EmployeeImportModal from '@/components/hr/EmployeeImportModal';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
-import { buttonVariants } from '@/components/ui/shadcn/button';
+import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { Card, CardContent } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
+import { exportEmployeesToXlsx } from '@/lib/import-export/exportEmployees';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
 import { cn } from '@/lib/utils';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
-import { useGetHrEmployeesQuery } from '@/store/api/endpoints/hr';
+import {
+  useGetHrEmployeesPageQuery,
+  useLazyGetHrEmployeesForExportQuery,
+  HR_EMPLOYEE_PAGE_SIZE_OPTIONS,
+} from '@/store/api/endpoints/hr';
 
 type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
 
@@ -75,6 +84,8 @@ export default function HrEmployeesPage() {
   const [status, setStatus] = useState<'ALL' | EmployeeStatus>('ALL');
   const [employeeType, setEmployeeType] = useState<'ALL' | '__none__' | string>('ALL');
   const [portal, setPortal] = useState<'ALL' | 'enabled' | 'disabled'>('ALL');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
 
   const deferredQuery = useDeferredValue(q);
 
@@ -82,57 +93,52 @@ export default function HrEmployeesPage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.employee.view');
   const canEdit = isSA || perms.includes('hr.employee.edit');
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [fetchEmployeesForExport] = useLazyGetHrEmployeesForExportQuery();
 
   const {
-    data: list = [],
+    data: employeesPage,
     isLoading: loading,
     isFetching: refreshing,
-  } = useGetHrEmployeesQuery(
+  } = useGetHrEmployeesPageQuery(
     {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
       q: deferredQuery,
       status,
+      employeeType,
+      portal,
     },
     { skip: !canView },
   );
 
-  const employeeTypeChoices = useMemo(() => {
-    const seen = new Set<string>();
-    for (const employee of list) {
-      const t = employee.employeeType?.trim();
-      if (t) seen.add(t);
-    }
-    return Array.from(seen).sort((a, b) => a.localeCompare(b));
-  }, [list]);
+  const list = employeesPage?.items ?? [];
+  const totalEmployees = employeesPage?.total ?? 0;
+  const employeeTypeChoices = employeesPage?.employeeTypes ?? [];
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredQuery, status, employeeType, portal, pageSize]);
 
   useEffect(() => {
     if (employeeType === 'ALL' || employeeType === '__none__') return;
     if (!employeeTypeChoices.includes(employeeType)) setEmployeeType('ALL');
   }, [employeeType, employeeTypeChoices]);
 
-  const filteredList = useMemo(() => {
-    return list.filter((employee) => {
-      if (employeeType === '__none__') {
-        if (employee.employeeType?.trim()) return false;
-      } else if (employeeType !== 'ALL') {
-        if ((employee.employeeType ?? '').trim() !== employeeType) return false;
-      }
-      if (portal === 'enabled' && !employee.portalEnabled) return false;
-      if (portal === 'disabled' && employee.portalEnabled) return false;
-      return true;
-    });
-  }, [list, employeeType, portal]);
-
   const totals = useMemo(() => {
-    const active = filteredList.filter((employee) => employee.status === 'ACTIVE').length;
-    const onLeave = filteredList.filter((employee) => employee.status === 'ON_LEAVE').length;
-    const portalEnabled = filteredList.filter((employee) => employee.portalEnabled).length;
+    const active = list.filter((employee) => employee.status === 'ACTIVE').length;
+    const onLeave = list.filter((employee) => employee.status === 'ON_LEAVE').length;
+    const portalEnabled = list.filter((employee) => employee.portalEnabled).length;
     return {
-      total: filteredList.length,
+      total: totalEmployees,
       active,
       onLeave,
       portalEnabled,
     };
-  }, [filteredList]);
+  }, [list, totalEmployees]);
+
+  const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
+  const pageStart = totalEmployees === 0 ? 0 : (page - 1) * pageSize;
 
   const openEmployeeProfile = (employeeId: string) => {
     router.push(`/hr/employees/${employeeId}`);
@@ -159,10 +165,10 @@ export default function HrEmployeesPage() {
           </p>
         </div>
         <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Employees" value={totals.total} hint="Current filtered view" />
-          <StatCard label="Active" value={totals.active} hint="Available for operations" />
-          <StatCard label="On leave" value={totals.onLeave} hint="Currently away" />
-          <StatCard label="Portal enabled" value={totals.portalEnabled} hint="Self-service access" />
+          <StatCard label="Employees" value={totals.total} hint="Matching current filters" />
+          <StatCard label="Active on page" value={totals.active} hint="Current page only" />
+          <StatCard label="On leave on page" value={totals.onLeave} hint="Current page only" />
+          <StatCard label="Portal on page" value={totals.portalEnabled} hint="Current page only" />
         </div>
       </header>
 
@@ -218,9 +224,36 @@ export default function HrEmployeesPage() {
                 {refreshing ? 'Refreshing records' : 'Directory status'}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {filteredList.length} of {list.length} employee{list.length === 1 ? '' : 's'} shown
+                {list.length} of {totalEmployees} employee{totalEmployees === 1 ? '' : 's'} on this page
               </p>
             </div>
+            {canView ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const all = await fetchEmployeesForExport().unwrap();
+                    if (all.length === 0) {
+                      toast.error('No employees to export');
+                      return;
+                    }
+                    exportEmployeesToXlsx(all);
+                    toast.success(`Exported ${all.length} employee(s)`);
+                  } catch {
+                    toast.error('Failed to export employees');
+                  }
+                }}
+              >
+                Export
+              </Button>
+            ) : null}
+            {canEdit ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => setImportModalOpen(true)}>
+                Import
+              </Button>
+            ) : null}
             {canEdit ? (
               <Link href="/hr/employees/new" className={buttonVariants({ size: 'sm' })}>
                 Add employee
@@ -229,6 +262,8 @@ export default function HrEmployeesPage() {
           </div>
         </div>
       </section>
+
+      <EmployeeImportModal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} />
 
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -262,7 +297,7 @@ export default function HrEmployeesPage() {
               </tbody>
             </table>
           </div>
-        ) : list.length === 0 ? (
+        ) : totalEmployees === 0 ? (
           <div className="px-6 py-12 text-center">
             <h3 className="text-lg font-semibold text-foreground">No employees found</h3>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -276,12 +311,10 @@ export default function HrEmployeesPage() {
               </div>
             ) : null}
           </div>
-        ) : filteredList.length === 0 ? (
+        ) : list.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <h3 className="text-lg font-semibold text-foreground">No employees match these filters</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Clear type or portal filters, or widen search and status, to see more rows.
-            </p>
+            <h3 className="text-lg font-semibold text-foreground">No employees on this page</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Try another page or adjust filters.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -310,7 +343,7 @@ export default function HrEmployeesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border text-muted-foreground">
-                {filteredList.map((employee) => (
+                {list.map((employee) => (
                   <tr
                     key={employee.id}
                     className="cursor-pointer align-top transition-colors hover:bg-muted/40"
@@ -364,6 +397,25 @@ export default function HrEmployeesPage() {
             </table>
           </div>
         )}
+
+        {totalEmployees > 0 ? (
+          <div className="border-t border-border px-5 py-4">
+            <DirectoryListPagination
+              page={page}
+              pageSize={pageSize}
+              totalPages={totalPages}
+              total={totalEmployees}
+              pageStart={pageStart}
+              pageEnd={pageStart + list.length}
+              pageSizeOptions={HR_EMPLOYEE_PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   );

@@ -1,27 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  BarChart3,
-  Building,
-  Building2,
-  Calendar,
-  ChevronsUpDown,
-  ClipboardList,
-  Image,
-  LayoutDashboard,
-  Package,
-  Settings,
-  ShieldCheck,
-  User,
-  UserCircle,
-  UserCog,
-  Users,
-} from 'lucide-react';
+import { ChevronsUpDown } from 'lucide-react';
+
 import CompanySwitcher from '@/components/layout/CompanySwitcher';
+import { SidebarNavMenu } from '@/components/layout/SidebarNavMenu';
 import { SidebarNavUser } from '@/components/layout/SidebarNavUser';
 import { isEmployeeSelfServiceUser } from '@/lib/auth/selfService';
 import { cn } from '@/lib/utils';
@@ -40,65 +24,13 @@ import {
   useSidebar,
 } from '@/components/ui/shadcn/sidebar';
 
-type NavDef = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  perm?: string;
-  anyPerms?: string[];
-  adminOnly?: boolean;
-  linkedEmployeeOnly?: boolean;
-};
-
-const NAV_ITEMS: NavDef[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  {
-    href: '/stock',
-    label: 'Stock',
-    icon: Package,
-    anyPerms: [
-      'material.view',
-      'job.view',
-      'transaction.stock_in',
-      'transaction.stock_out',
-      'transaction.reconcile',
-    ],
-  },
-  { href: '/suppliers', label: 'Suppliers', icon: Building2, perm: 'supplier.view' },
-  { href: '/customers', label: 'Customers', icon: Users, perm: 'customer.view' },
-  { href: '/customers/jobs', label: 'Jobs', icon: ClipboardList, perm: 'job.view' },
-  { href: '/hr', label: 'HR', icon: UserCircle, perm: 'hr.employee.view' },
-  { href: '/me', label: 'My HR', icon: User, linkedEmployeeOnly: true },
-  { href: '/reports/job-profitability', label: 'Reports', icon: BarChart3, perm: 'report.view' },
-  { href: '/settings/media', label: 'Media', icon: Image, perm: 'settings.manage' },
-  { href: '/admin/users', label: 'Users', icon: UserCog, perm: 'user.view' },
-  { href: '/admin/roles', label: 'Roles', icon: ShieldCheck, perm: 'role.manage' },
-  { href: '/admin/companies', label: 'Companies', icon: Building, adminOnly: true },
-  { href: '/settings', label: 'Settings', icon: Settings, perm: 'settings.manage' },
-];
-
-const SELF_SERVICE_ITEMS: NavDef[] = [
-  { href: '/me/profile', label: 'My Profile', icon: User, linkedEmployeeOnly: true },
-  { href: '/me/attendance', label: 'My Attendance', icon: Calendar, linkedEmployeeOnly: true },
-];
-
 export default function AppNavigationSidebar() {
-  const pathname = usePathname();
   const { data: session } = useSession();
   const { isMobile, setOpenMobile } = useSidebar();
   const permissions = (session?.user?.permissions ?? []) as string[];
   const isSuperAdmin = session?.user?.isSuperAdmin ?? false;
   const linkedEmployeeId = (session?.user as { linkedEmployeeId?: string | null } | undefined)?.linkedEmployeeId;
   const selfServiceOnly = isEmployeeSelfServiceUser(session?.user);
-
-  const source = selfServiceOnly ? SELF_SERVICE_ITEMS : NAV_ITEMS;
-  const visible = source.filter((item) => {
-    if (item.adminOnly) return isSuperAdmin;
-    if (item.linkedEmployeeOnly) return Boolean(linkedEmployeeId);
-    if (item.anyPerms?.length) return isSuperAdmin || item.anyPerms.some((p) => permissions.includes(p));
-    if (item.perm) return isSuperAdmin || permissions.includes(item.perm);
-    return true;
-  });
 
   const activeCompanyName = session?.user?.activeCompanyName;
   const initial = activeCompanyName?.[0]?.toUpperCase() ?? 'A';
@@ -109,7 +41,7 @@ export default function AppNavigationSidebar() {
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
-      <SidebarHeader className="border-b border-border dark:border-white/5">
+      <SidebarHeader className="border-b border-sidebar-border">
         <SidebarMenu>
           {selfServiceOnly ? (
             <SidebarMenuItem>
@@ -143,32 +75,19 @@ export default function AppNavigationSidebar() {
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {visible.map((item) => {
-                const active = pathname.startsWith(item.href);
-                const Icon = item.icon;
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
-                      <Link
-                        href={item.href}
-                        onClick={() => {
-                          if (isMobile) setOpenMobile(false);
-                        }}
-                      >
-                        <Icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+            <SidebarNavMenu
+              visibility={{
+                permissions,
+                isSuperAdmin,
+                linkedEmployeeId,
+                selfServiceOnly,
+              }}
+            />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-border dark:border-white/5">
+      <SidebarFooter className="border-t border-sidebar-border">
         <SidebarNavUser />
         <div
           className={cn(

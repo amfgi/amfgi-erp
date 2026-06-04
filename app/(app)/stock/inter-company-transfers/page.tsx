@@ -1,15 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { buttonVariants } from '@/components/ui/shadcn/button';
 import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
 import DataTable from '@/components/ui/DataTable';
 import type { Column } from '@/components/ui/DataTable';
 import { cn } from '@/lib/utils';
-import { useGetTransferLedgerQuery } from '@/store/hooks';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
+import {
+  useGetTransferLedgerPageQuery,
+  TRANSFER_LEDGER_PAGE_SIZE_OPTIONS,
+} from '@/store/hooks';
 import type { TransferLedgerItem } from '@/store/api/endpoints/transactions';
 
 function formatQty(value: number) {
@@ -29,26 +34,44 @@ export default function InterCompanyTransfersPage() {
   const isSA = session?.user?.isSuperAdmin ?? false;
   const canView = isSA || perms.includes('transaction.transfer');
 
-  const { data: transfers = [], isFetching } = useGetTransferLedgerQuery(undefined, {
-    skip: !canView,
-    refetchOnMountOrArgChange: 30,
-  });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const inboundCount = useMemo(
+  const { data: transfersPage, isFetching } = useGetTransferLedgerPageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+    },
+    {
+      skip: !canView,
+      refetchOnMountOrArgChange: 30,
+    },
+  );
+  const transfers = transfersPage?.items ?? [];
+  const totalTransfers = transfersPage?.total ?? 0;
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, pageSize]);
+
+  const inboundCountOnPage = useMemo(
     () => transfers.filter((transfer) => transfer.direction === 'IN').length,
-    [transfers]
+    [transfers],
   );
-  const outboundCount = useMemo(
+  const outboundCountOnPage = useMemo(
     () => transfers.filter((transfer) => transfer.direction === 'OUT').length,
-    [transfers]
+    [transfers],
   );
-  const movedQty = useMemo(
+  const movedQtyOnPage = useMemo(
     () => transfers.reduce((sum, transfer) => sum + transfer.quantity, 0),
-    [transfers]
+    [transfers],
   );
-  const counterpartCoverage = useMemo(
+  const counterpartCoverageOnPage = useMemo(
     () => new Set(transfers.map((transfer) => transfer.counterpartCompanyName).filter(Boolean)).size,
-    [transfers]
+    [transfers],
   );
 
   const columns: Column<TransferLedgerItem>[] = [
@@ -149,13 +172,13 @@ export default function InterCompanyTransfersPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: 'Transfers logged', value: String(transfers.length), note: 'Inbound and outbound rows' },
-          { label: 'Inbound rows', value: String(inboundCount), note: 'Received from other companies' },
-          { label: 'Outbound rows', value: String(outboundCount), note: 'Sent to other companies' },
+          { label: 'Transfers logged', value: String(totalTransfers), note: 'Matching current search' },
+          { label: 'Inbound on page', value: String(inboundCountOnPage), note: 'Received from other companies' },
+          { label: 'Outbound on page', value: String(outboundCountOnPage), note: 'Sent to other companies' },
           {
-            label: 'Counterpart companies',
-            value: String(counterpartCoverage),
-            note: `${formatQty(movedQty)} total units moved`,
+            label: 'Counterparts on page',
+            value: String(counterpartCoverageOnPage),
+            note: `${formatQty(movedQtyOnPage)} units on this page`,
           },
         ].map((item) => (
           <Card key={item.label}>
@@ -176,7 +199,25 @@ export default function InterCompanyTransfersPage() {
               Each row reflects one transfer transaction recorded for the active company.
             </p>
           </div>
-          <div className="text-xs text-muted-foreground">{isFetching ? 'Refreshing…' : `${transfers.length} rows`}</div>
+          <div className="text-xs text-muted-foreground">
+            {isFetching ? 'Refreshing…' : `${transfers.length} of ${totalTransfers} on this page`}
+          </div>
+        </div>
+
+        <div className="mb-3 max-w-md">
+          <label
+            htmlFor="ic-transfer-search"
+            className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Search
+          </label>
+          <Input
+            id="ic-transfer-search"
+            className="mt-1.5"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Material, counterpart, notes…"
+          />
         </div>
 
         <DataTable
@@ -184,7 +225,17 @@ export default function InterCompanyTransfersPage() {
           data={transfers}
           loading={isFetching && transfers.length === 0}
           emptyText="No inter-company transfers found."
-          searchKeys={['materialName', 'counterpartCompanyName', 'counterpartCompanySlug', 'notes']}
+          serverPagination={{
+            page,
+            pageSize,
+            total: totalTransfers,
+            pageSizeOptions: TRANSFER_LEDGER_PAGE_SIZE_OPTIONS,
+            onPageChange: setPage,
+            onPageSizeChange: (size) => {
+              setPageSize(size);
+              setPage(1);
+            },
+          }}
         />
       </section>
     </div>

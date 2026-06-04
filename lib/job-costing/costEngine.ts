@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db/prisma';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
-import { buildJobItemEstimate, summarizeJobItemEstimates } from '@/lib/job-costing/formulaEngine';
+import { buildStoredJobItemEstimate } from '@/lib/job-costing/buildStoredJobItemEstimate';
+import { summarizeJobItemEstimates } from '@/lib/job-costing/formulaEngine';
+import { getBudgetMaterialIdsFromJobItem } from '@/lib/job-costing/jobItemBudgetMaterialIds';
 import { getFactorToBase, resolvePricingSnapshot } from '@/lib/job-costing/pricing';
 import { calculateTrackedProgress, parseTrackableItems } from '@/lib/job-costing/progressTracking';
 import { normalizeJobCostingSettings } from '@/lib/job-costing/settings';
@@ -66,12 +68,6 @@ function attendanceWorkedMinutesFromPunches(row: {
   breakEndAt: Date | null;
 }) {
   return Math.max(0, diffMinutes(row.checkInAt, row.checkOutAt) - diffMinutes(row.breakStartAt, row.breakEndAt));
-}
-
-function getSelectedMaterialIdsFromSpecifications(specifications: JobItemSpecifications) {
-  return Object.values(specifications.global ?? {}).filter(
-    (value): value is string => typeof value === 'string' && value.trim().length > 0
-  );
 }
 
 function resolveCurrentUnitCostFromLogs(
@@ -159,20 +155,7 @@ export async function calculateJobCostEngine(params: {
 
   /** Materials referenced by formulas / job item specs (budgeted scope only). */
   const budgetMaterialIds = Array.from(
-    new Set(
-      jobItems.flatMap((item) => {
-        const config = item.formulaLibrary.formulaConfig as FormulaConfig;
-        const staticMaterialIds = Array.isArray(config?.areas)
-          ? config.areas.flatMap((area) =>
-              area.materials.flatMap((material) => (material.materialId ? [material.materialId] : []))
-            )
-          : [];
-        const selectedMaterialIds = getSelectedMaterialIdsFromSpecifications(
-          item.specifications as JobItemSpecifications
-        );
-        return [...staticMaterialIds, ...selectedMaterialIds];
-      })
-    )
+    new Set(jobItems.flatMap((item) => getBudgetMaterialIdsFromJobItem(item)))
   );
 
   const transactions = await prisma.transaction.findMany({
@@ -416,24 +399,26 @@ export async function calculateJobCostEngine(params: {
   const execNote = executionJob.executionProgressNote;
 
   const estimates = jobItems.map((item) =>
-    buildJobItemEstimate({
+    buildStoredJobItemEstimate({
       jobId: budgetJobMeta.id,
       jobNumber: budgetJobMeta.jobNumber,
       postingDate,
       nonWorkingWeekdays: settings.nonWorkingWeekdays,
       pricingMode,
-      formulaLibrary: {
-        id: item.formulaLibrary.id,
-        name: item.formulaLibrary.name,
-        fabricationType: item.formulaLibrary.fabricationType,
-        formulaConfig: {
-          ...(item.formulaLibrary.formulaConfig as FormulaConfig),
-          defaultMaterialSelections: mergeDefaultMaterialSelections(
-            item.formulaLibrary.specificationSchema,
-            item.formulaLibrary.formulaConfig as FormulaConfig
-          ),
-        },
-      },
+      formulaLibrary: item.formulaLibrary
+        ? {
+            id: item.formulaLibrary.id,
+            name: item.formulaLibrary.name,
+            fabricationType: item.formulaLibrary.fabricationType,
+            formulaConfig: {
+              ...(item.formulaLibrary.formulaConfig as FormulaConfig),
+              defaultMaterialSelections: mergeDefaultMaterialSelections(
+                item.formulaLibrary.specificationSchema,
+                item.formulaLibrary.formulaConfig as FormulaConfig
+              ),
+            },
+          }
+        : null,
       jobItem: {
         id: item.id,
         name: item.name,

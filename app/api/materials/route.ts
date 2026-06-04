@@ -6,8 +6,56 @@ import type { MaterialUomWithUnit } from '@/lib/utils/materialUom';
 import { decimalToNumber, decimalToNumberOrZero } from '@/lib/utils/decimal';
 import { resolveCategoryRef, resolveWarehouseRef } from '@/lib/materialMasterData';
 import { applyMaterialWarehouseDelta } from '@/lib/warehouses/stockWarehouses';
+import { canViewFormulaMaterialsApi } from '@/lib/permissions/stockModuleAccess';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
-import { z }                 from 'zod';
+import { buildMaterialListOrderBy } from '@/lib/pagination/materialListSort';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
+import type { Prisma } from '@prisma/client';
+import { z } from 'zod';
+
+const materialListInclude = {
+  materialUoms: {
+    include: { unit: { select: { id: true, name: true } } },
+    orderBy: [{ isBase: 'desc' as const }, { createdAt: 'asc' as const }],
+  },
+  materialWarehouseStocks: {
+    select: {
+      warehouseId: true,
+      currentStock: true,
+    },
+  },
+} satisfies Prisma.MaterialInclude;
+
+function serializeMaterialListRow({
+  materialUoms,
+  materialWarehouseStocks,
+  ...m
+}: Prisma.MaterialGetPayload<{ include: typeof materialListInclude }>) {
+  return {
+    ...m,
+    materialUoms: serializeMaterialUoms(materialUoms as MaterialUomWithUnit[]),
+    materialWarehouseStocks,
+  };
+}
+
+function buildMaterialListWhere(companyId: string, search: string): Prisma.MaterialWhereInput {
+  const where: Prisma.MaterialWhereInput = {
+    companyId,
+    isActive: true,
+  };
+
+  if (!search) return where;
+
+  return {
+    ...where,
+    OR: [
+      { name: { contains: search, mode: 'insensitive' } },
+      { description: { contains: search, mode: 'insensitive' } },
+      { category: { contains: search, mode: 'insensitive' } },
+      { externalItemName: { contains: search, mode: 'insensitive' } },
+    ],
+  };
+}
 
 const MaterialSchema = z.object({
   name:                z.string().min(1).max(100),
@@ -49,42 +97,56 @@ const MaterialSchema = z.object({
     .optional(),
 });
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes('material.view')) {
+  if (!canViewFormulaMaterialsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
 
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
+  const companyId = session.user.activeCompanyId;
 
-  const materials = await prisma.material.findMany({
-    where: {
-      companyId: session.user.activeCompanyId,
-      isActive: true,
-    },
-    orderBy: { name: 'asc' },
-    include: {
-      materialUoms: {
-        include: { unit: { select: { id: true, name: true } } },
-        orderBy: [{ isBase: 'desc' }, { createdAt: 'asc' }],
-      },
-      materialWarehouseStocks: {
-        select: {
-          warehouseId: true,
-          currentStock: true,
-        },
-      },
-    },
-  });
+  const { searchParams } = new URL(req.url);
+  const limitParam = searchParams.get('limit');
 
-  return successResponse(
-    materials.map(({ materialUoms, materialWarehouseStocks, ...m }) => ({
-      ...m,
-      materialUoms: serializeMaterialUoms(materialUoms as MaterialUomWithUnit[]),
-      materialWarehouseStocks,
-    }))
-  );
+  try {
+    if (limitParam !== null) {
+      const limit = parseListLimit(limitParam);
+      const offset = parseListOffset(searchParams.get('offset'));
+      const search = searchParams.get('search')?.trim() ?? '';
+      const sortBy = searchParams.get('sortBy');
+      const sortDir = searchParams.get('sortDir');
+      const where = buildMaterialListWhere(companyId, search);
+      const orderBy = buildMaterialListOrderBy(sortBy, sortDir);
+
+      const [total, materials] = await Promise.all([
+        prisma.material.count({ where }),
+        prisma.material.findMany({
+          where,
+          orderBy,
+          skip: offset,
+          take: limit,
+          include: materialListInclude,
+        }),
+      ]);
+
+      return successResponse({
+        items: materials.map(serializeMaterialListRow),
+        total,
+      });
+    }
+
+    const materials = await prisma.material.findMany({
+      where: { companyId, isActive: true },
+      orderBy: { name: 'asc' },
+      include: materialListInclude,
+    });
+
+    return successResponse(materials.map(serializeMaterialListRow));
+  } catch {
+    return errorResponse('Failed to fetch materials', 500);
+  }
 }
 
 export async function POST(req: Request) {

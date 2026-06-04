@@ -1,16 +1,23 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { redirect } from 'next/navigation';
 
 import { isEmployeeSelfServiceUser } from '@/lib/auth/selfService';
 import { APP_NAV_ITEMS, filterVisibleNavItems, type AppNavItem } from '@/lib/navigation/appNavigation';
+import {
+  WorkspaceHubHeader,
+  WorkspaceHubLoadingSkeleton,
+  WorkspaceHubSection,
+  WorkspaceHubSectionsGrid,
+  type WorkspaceHubSectionData,
+} from '@/components/workspace';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
 import { buttonVariants } from '@/components/ui/shadcn/button';
 import { Skeleton } from '@/components/ui/shadcn/skeleton';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 
 const CATEGORY_ORDER = [
   'Operations',
@@ -70,32 +77,7 @@ export default function DashboardPage() {
           <Skeleton className="h-7 w-64 max-w-full sm:w-96" />
           <Skeleton className="h-4 w-48" />
         </div>
-        <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="overflow-hidden rounded-lg border border-border bg-card">
-              <div className="bg-muted/30 px-4 py-2.5">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="mt-1 h-3 w-full" />
-              </div>
-              <div className="flex flex-col divide-y divide-border">
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <Skeleton className="size-9 shrink-0 rounded-md" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-4 w-40 max-w-[85%]" />
-                    <Skeleton className="h-3 w-full" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <Skeleton className="size-9 shrink-0 rounded-md" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-4 w-32 max-w-[75%]" />
-                    <Skeleton className="h-3 w-full" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <WorkspaceHubLoadingSkeleton sectionCount={6} columns={3} />
       </div>
     );
   }
@@ -136,73 +118,38 @@ export default function DashboardPage() {
     selfServiceOnly: false,
   }).filter((item) => item.href !== '/dashboard');
 
-  const groupedItems = CATEGORY_ORDER.map((category) => ({
-    category,
-    items: visibleItems.filter((item) => item.category === category),
-  })).filter((group) => group.items.length > 0);
+  const sections: WorkspaceHubSectionData[] = CATEGORY_ORDER.map((category) => ({
+    id: category.toLowerCase().replace(/\s+/g, '-'),
+    title: category,
+    description: SECTION_COPY[category].summary,
+    links: visibleItems
+      .filter((item) => item.category === category)
+      .map((item) => ({
+        href: item.href,
+        title: item.shortTitle,
+        subtitle: item.label,
+        description: item.description,
+        icon: item.icon,
+        onClick: rememberScrollPosition,
+      })),
+  })).filter((section) => section.links.length > 0);
 
   const companyName = session.user.activeCompanyName || 'Company workspace';
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
-      <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Home</p>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">{companyName}</h1>
-          <p className="text-sm text-muted-foreground">Select a module from the lists below.</p>
-        </div>
-        <p className="shrink-0 text-xs tabular-nums text-muted-foreground sm:pb-0.5">
-          {visibleItems.length} module{visibleItems.length === 1 ? '' : 's'}
-        </p>
-      </header>
+      <WorkspaceHubHeader
+        eyebrow="Home"
+        title={companyName}
+        description="Select a module from the lists below."
+        trailing={`${visibleItems.length} module${visibleItems.length === 1 ? '' : 's'}`}
+      />
 
-      <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {groupedItems.map((group) => (
-          <section
-            key={group.category}
-            className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-            aria-labelledby={`cat-${group.category}`}
-          >
-            <div className="flex flex-col gap-0.5 bg-muted/30 px-4 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <h2 id={`cat-${group.category}`} className="text-sm font-semibold text-foreground">
-                  {group.category}
-                </h2>
-                <span className="text-xs tabular-nums text-muted-foreground">{group.items.length}</span>
-              </div>
-              <p className="text-xs leading-snug text-muted-foreground">{SECTION_COPY[group.category].summary}</p>
-            </div>
-            <ul className="min-h-0 flex-1 divide-y divide-border" role="list">
-              {group.items.map((item) => (
-                <li key={item.href} role="listitem">
-                  <Link
-                    href={item.href}
-                    onClick={rememberScrollPosition}
-                    className={cn(
-                      'flex min-h-13 items-center gap-3 px-4 py-2.5 transition-colors',
-                      'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-                    )}
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground [&_svg]:size-5">
-                      {item.icon}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-                        <span className="text-sm font-medium text-foreground">{item.shortTitle}</span>
-                        <span className="text-xs text-muted-foreground">{item.label}</span>
-                      </div>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.description}</p>
-                    </div>
-                    <span className="shrink-0 text-xs font-medium text-muted-foreground" aria-hidden>
-                      →
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
+      <WorkspaceHubSectionsGrid columns={3}>
+        {sections.map((section) => (
+          <WorkspaceHubSection key={section.id} section={section} />
         ))}
-      </div>
+      </WorkspaceHubSectionsGrid>
     </div>
   );
 }

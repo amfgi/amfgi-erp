@@ -1,4 +1,7 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
+
+export const JOB_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
 
 export interface Job {
   id: string;
@@ -28,6 +31,7 @@ export interface Job {
   contactPerson?: string;
   contactsJson?: unknown[];
   salesPerson?: string;
+  jobWorkValue?: number;
   requiredExpertises?: string[];
   createdBy: string;
   createdAt?: string | Date;
@@ -41,7 +45,43 @@ export interface Job {
   executionActualEndDate?: string | Date | null;
   executionProgressNote?: string | null;
   executionProgressUpdatedAt?: string | Date | null;
+  budgetSummary?: {
+    budgetItemCount: number;
+    trackableItemCount: number;
+    stockLinkedTrackableCount: number;
+    averageBudgetLineProgressPercent: number | null;
+    currentSnapshot: {
+      id: string;
+      versionNumber: number;
+      status: 'SAVED' | 'APPROVED' | 'SUPERSEDED';
+      pricingMode: 'FIFO' | 'MOVING_AVERAGE' | 'CURRENT' | 'CUSTOM' | string;
+      postingDate: string;
+      totalQuotedMaterialCost: number;
+      totalActualMaterialCost: number;
+      totalEstimatedCompletionDays: number;
+      createdAt: string;
+    } | null;
+  };
 }
+
+export type JobStatusFilter = 'ALL' | Job['status'];
+
+export type JobScopeFilter = 'ALL' | 'PARENT_ONLY' | 'VARIATION_ONLY';
+
+export type JobsListParams = {
+  limit: number;
+  offset: number;
+  search?: string;
+  status?: JobStatusFilter;
+  scope?: JobScopeFilter;
+};
+
+export type JobsListResponse = {
+  items: Job[];
+  total: number;
+  /** Active jobs matching search & scope (ignores status filter). */
+  activeTotal: number;
+};
 
 export interface FormulaLibrary {
   id: string;
@@ -78,7 +118,7 @@ export interface JobItem {
   id: string;
   companyId: string;
   jobId: string;
-  formulaLibraryId: string;
+  formulaLibraryId: string | null;
   name: string;
   description?: string | null;
   specifications: unknown;
@@ -93,6 +133,12 @@ export interface JobItem {
     unit?: string | null;
     targetValue: number;
     sourceKey?: string | null;
+    finishedGoodMaterialId?: string | null;
+    finishedGoodMaterialName?: string | null;
+    finishedGoodMaterialUnit?: string | null;
+    finishedGoodMaterialStockType?: string | null;
+    finishedGoodWarehouseId?: string | null;
+    finishedGoodWarehouseName?: string | null;
   }>;
   trackingEnabled?: boolean;
   trackingLabel?: string | null;
@@ -131,6 +177,12 @@ export interface DailyQuantityLogTracker {
   unit?: string | null;
   targetValue: number;
   sourceKey?: string | null;
+  finishedGoodMaterialId?: string | null;
+  finishedGoodMaterialName?: string | null;
+  finishedGoodMaterialUnit?: string | null;
+  finishedGoodMaterialStockType?: string | null;
+  finishedGoodWarehouseId?: string | null;
+  finishedGoodWarehouseName?: string | null;
 }
 
 /** One existing entry already posted on the requested date for a job item. */
@@ -212,7 +264,6 @@ export interface DailyQuantityLogResponse {
     id: string;
     workDate: string | Date;
     status: 'DRAFT' | 'PUBLISHED' | 'LOCKED';
-    title: string | null;
     clientDisplayName: string | null;
     publishedAt: string | Date | null;
     lockedAt: string | Date | null;
@@ -230,7 +281,6 @@ export interface DailyQuantityLogResponse {
 export interface DailyQuantityLogPendingRow {
   scheduleId: string;
   workDate: string;
-  title: string | null;
   status: 'DRAFT' | 'PUBLISHED' | 'LOCKED';
   clientDisplayName: string | null;
   assignmentCount: number;
@@ -240,6 +290,32 @@ export interface DailyQuantityLogPendingResponse {
   pending: DailyQuantityLogPendingRow[];
   recentFinalized: Array<{ workDate: string; submittedAt: string | Date }>;
 }
+
+export type DailyQuantityLogListRow = {
+  workDate: string;
+  status: 'PENDING' | 'FINALIZED';
+  scheduleId: string | null;
+  clientDisplayName: string | null;
+  assignmentCount: number | null;
+  submittedAt: string | null;
+};
+
+export type DailyQuantityLogPendingListParams = {
+  limit: number;
+  offset: number;
+  status?: 'ALL' | 'PENDING' | 'FINALIZED';
+};
+
+export type DailyQuantityLogPendingListResponse = {
+  items: DailyQuantityLogListRow[];
+  total: number;
+  counts: {
+    pending: number;
+    finalized: number;
+    total: number;
+  };
+  finalizedDates: string[];
+};
 
 /** Flat list across all budget lines on a job (GET /jobs/:id/progress-entries). */
 export interface JobProgressEntryListRow {
@@ -461,6 +537,31 @@ export const jobsApi = appApi.injectEndpoints({
           : [{ type: 'Job', id: 'LIST' }],
     }),
 
+    getJobsPage: builder.query<JobsListResponse, JobsListParams>({
+      query: ({ limit, offset, search, status, scope }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (status && status !== 'ALL') params.set('status', status);
+        if (scope && scope !== 'ALL') params.set('scope', scope);
+        return `/jobs?${params.toString()}`;
+      },
+      transformResponse: (r: { data: JobsListResponse }) => r.data,
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'Job', id: 'LIST' },
+              ...result.items.map((j) => ({ type: 'Job' as const, id: j.id })),
+            ]
+          : [{ type: 'Job', id: 'LIST' }],
+    }),
+
+    getJobsForExport: builder.query<Job[], void>({
+      query: () => '/jobs',
+      transformResponse: (r: { data: Job[] }) => r.data,
+    }),
+
     getJobById: builder.query<JobWithMaterials, string>({
       query: (id) => `/jobs/${id}`,
       transformResponse: (r: { data: JobWithMaterials }) => r.data,
@@ -562,6 +663,9 @@ export const jobsApi = appApi.injectEndpoints({
         { type: 'Job', id: `JOB-ITEM-PROGRESS-${itemId}` },
         { type: 'Job', id: `${jobId}-PROGRESS-ENTRIES-ALL` },
         { type: 'JobDailyQuantityLog', id: 'LIST' },
+        { type: 'Material', id: 'LIST' },
+        { type: 'StockBatch', id: 'LIST' },
+        { type: 'Transaction', id: 'LIST' },
       ],
     }),
 
@@ -580,6 +684,9 @@ export const jobsApi = appApi.injectEndpoints({
         { type: 'Job', id: `JOB-ITEM-PROGRESS-${itemId}` },
         { type: 'Job', id: `${jobId}-PROGRESS-ENTRIES-ALL` },
         { type: 'JobDailyQuantityLog', id: 'LIST' },
+        { type: 'Material', id: 'LIST' },
+        { type: 'StockBatch', id: 'LIST' },
+        { type: 'Transaction', id: 'LIST' },
       ],
     }),
 
@@ -597,6 +704,9 @@ export const jobsApi = appApi.injectEndpoints({
         { type: 'Job', id: `JOB-ITEM-PROGRESS-${itemId}` },
         { type: 'Job', id: `${jobId}-PROGRESS-ENTRIES-ALL` },
         { type: 'JobDailyQuantityLog', id: 'LIST' },
+        { type: 'Material', id: 'LIST' },
+        { type: 'StockBatch', id: 'LIST' },
+        { type: 'Transaction', id: 'LIST' },
       ],
     }),
 
@@ -612,6 +722,21 @@ export const jobsApi = appApi.injectEndpoints({
     getDailyQuantityLogPending: builder.query<DailyQuantityLogPendingResponse, void>({
       query: () => '/stock/daily-quantity-log/pending',
       transformResponse: (r: { data: DailyQuantityLogPendingResponse }) => r.data,
+      providesTags: [{ type: 'JobDailyQuantityLog', id: 'PENDING' }],
+    }),
+
+    getDailyQuantityLogPendingPage: builder.query<
+      DailyQuantityLogPendingListResponse,
+      DailyQuantityLogPendingListParams
+    >({
+      query: ({ limit, offset, status }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (status && status !== 'ALL') params.set('status', status);
+        return `/stock/daily-quantity-log/pending?${params.toString()}`;
+      },
+      transformResponse: (r: { data: DailyQuantityLogPendingListResponse }) => r.data,
       providesTags: [{ type: 'JobDailyQuantityLog', id: 'PENDING' }],
     }),
 
@@ -809,8 +934,37 @@ export const jobsApi = appApi.injectEndpoints({
       query: ({ jobId, snapshotId }) => ({
         url: `/jobs/${jobId}/cost-engine/snapshots/${snapshotId}`,
         method: 'PATCH',
+        body: { action: 'approve' },
       }),
       transformResponse: (r: { data: { snapshot: JobCostingSnapshotMeta } }) => r.data,
+      invalidatesTags: (result, error, { jobId, snapshotId }) => [
+        { type: 'Job', id: `COST-SNAPSHOTS-${jobId}` },
+        { type: 'Job', id: `COST-SNAPSHOT-${snapshotId}` },
+      ],
+    }),
+
+    renameJobCostingSnapshot: builder.mutation<
+      { snapshot: JobCostingSnapshotMeta },
+      { jobId: string; snapshotId: string; note: string }
+    >({
+      query: ({ jobId, snapshotId, note }) => ({
+        url: `/jobs/${jobId}/cost-engine/snapshots/${snapshotId}`,
+        method: 'PATCH',
+        body: { action: 'rename', note },
+      }),
+      transformResponse: (r: { data: { snapshot: JobCostingSnapshotMeta } }) => r.data,
+      invalidatesTags: (result, error, { jobId, snapshotId }) => [
+        { type: 'Job', id: `COST-SNAPSHOTS-${jobId}` },
+        { type: 'Job', id: `COST-SNAPSHOT-${snapshotId}` },
+      ],
+    }),
+
+    deleteJobCostingSnapshot: builder.mutation<{ deleted: boolean }, { jobId: string; snapshotId: string }>({
+      query: ({ jobId, snapshotId }) => ({
+        url: `/jobs/${jobId}/cost-engine/snapshots/${snapshotId}`,
+        method: 'DELETE',
+      }),
+      transformResponse: (r: { data: { deleted: boolean } }) => r.data,
       invalidatesTags: (result, error, { jobId, snapshotId }) => [
         { type: 'Job', id: `COST-SNAPSHOTS-${jobId}` },
         { type: 'Job', id: `COST-SNAPSHOT-${snapshotId}` },
@@ -872,11 +1026,44 @@ export const jobsApi = appApi.injectEndpoints({
         { type: 'Job', id: 'LIST' },
       ],
     }),
+
+    bulkImportParentJobs: builder.mutation<
+      { created: number; updated: number; skipped: number; warnings: string[] },
+      { scope: 'parent'; newRows: unknown[]; updateRows: unknown[] }
+    >({
+      query: (body) => ({
+        url: '/jobs/import/bulk',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (r: {
+        data: { created: number; updated: number; skipped: number; warnings: string[] };
+      }) => r.data,
+      invalidatesTags: [{ type: 'Job', id: 'LIST' }],
+    }),
+
+    bulkImportJobVariations: builder.mutation<
+      { created: number; updated: number; skipped: number; warnings: string[] },
+      { scope: 'variation'; newRows: unknown[]; updateRows: unknown[] }
+    >({
+      query: (body) => ({
+        url: '/jobs/import/bulk',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (r: {
+        data: { created: number; updated: number; skipped: number; warnings: string[] };
+      }) => r.data,
+      invalidatesTags: [{ type: 'Job', id: 'LIST' }],
+    }),
   }),
 });
 
 export const {
   useGetJobsQuery,
+  useGetJobsPageQuery,
+  useLazyGetJobsForExportQuery,
+  useGetJobsForExportQuery,
   useGetJobByIdQuery,
   useGetJobMaterialsQuery,
   useGetJobItemsQuery,
@@ -890,6 +1077,7 @@ export const {
   useDeleteJobItemProgressEntryMutation,
   useGetDailyQuantityLogQuery,
   useGetDailyQuantityLogPendingQuery,
+  useGetDailyQuantityLogPendingPageQuery,
   useFinalizeQuantityLogDayMutation,
   useUnlockQuantityLogDayMutation,
   useAddQuantityLogAdhocJobMutation,
@@ -906,8 +1094,12 @@ export const {
   useGetJobCostingSnapshotByIdQuery,
   useCreateJobCostingSnapshotMutation,
   useApproveJobCostingSnapshotMutation,
+  useRenameJobCostingSnapshotMutation,
+  useDeleteJobCostingSnapshotMutation,
   useGetDispatchBudgetWarningMutation,
   useCreateJobMutation,
   useUpdateJobMutation,
   useDeleteJobMutation,
+  useBulkImportParentJobsMutation,
+  useBulkImportJobVariationsMutation,
 } = jobsApi;

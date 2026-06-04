@@ -19,21 +19,21 @@ export default function Header() {
         : 'Employee Portal';
 
   return (
-    <header className="relative z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/5 bg-slate-900/75 px-3 backdrop-blur-xl supports-backdrop-filter:bg-slate-900/60 sm:gap-4 sm:px-5 lg:px-6">
+    <header className="relative z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 px-3 backdrop-blur-xl supports-backdrop-filter:bg-background/70 sm:gap-4 sm:px-5 lg:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-        <SidebarTrigger className="touch-manipulation rounded-lg text-slate-400/90 hover:bg-white/[0.06] hover:text-slate-100 lg:hidden [&_svg]:size-5" />
+        <SidebarTrigger className="touch-manipulation rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground lg:hidden [&_svg]:size-5" />
         <div className="min-w-0 flex-1">
           {selfServiceOnly ? (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-white">{selfServiceTitle}</p>
-              <p className="text-xs text-slate-500">Employee self service</p>
+              <p className="truncate text-sm font-semibold text-foreground">{selfServiceTitle}</p>
+              <p className="text-xs text-muted-foreground">Employee self service</p>
             </div>
           ) : (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-white">
+              <p className="truncate text-sm font-semibold text-foreground">
                 {session?.user?.activeCompanyName ?? 'AMFGI ERP'}
               </p>
-              <p className="truncate text-xs text-slate-500">Signed in as {session?.user?.name ?? 'User'}</p>
+              <p className="truncate text-xs text-muted-foreground">Signed in as {session?.user?.name ?? 'User'}</p>
             </div>
           )}
         </div>
@@ -43,7 +43,7 @@ export default function Header() {
         <button
           type="button"
           onClick={toggle}
-          className="touch-manipulation rounded-xl p-2 text-slate-400 transition-colors hover:bg-white/6 hover:text-white"
+          className="touch-manipulation rounded-xl p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         >

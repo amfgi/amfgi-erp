@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
@@ -14,6 +15,8 @@ import {
   type TransactionBatchLinkInput,
 } from '@/lib/utils/transactionBatchLinks';
 import { resolveQuantityToBase, resolveFactorToBase } from '@/lib/utils/materialUomDb';
+import { buildReceiptPriceLogNote } from '@/lib/utils/receiptPriceLogs';
+import { buildStockBatchReceiptLineMeta } from '@/lib/utils/receiptLineMetadata';
 import { applyMaterialWarehouseDelta, resolveEffectiveWarehouse } from '@/lib/warehouses/stockWarehouses';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { recalculateAssemblyAncestorsTx } from '@/lib/utils/materialAssembly';
@@ -26,11 +29,49 @@ import {
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
 import { upsertStockExceptionApproval } from '@/lib/utils/stockExceptionApproval';
 import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
+import { formatDeliveryNoteDriveLabel, resolveDeliveryNoteNumber } from '@/lib/deliveryNoteNumber';
+import {
+  buildDispatchRevisionLinesFromStockOutIds,
+  postingDateKeyFromRequest,
+  recordDispatchEntryRevision,
+  type DispatchRevisionLine,
+} from '@/lib/dispatchEntryRevision';
 
-function parseDeliveryNoteLabel(notes?: string | null): string {
-  const match = notes?.match(/--- DELIVERY NOTE #(\d+)/);
-  const raw = match?.[1] ?? '';
-  return `DN${(raw || '0').padStart(3, '0')}`;
+type DeliveryNoteCustomItemPayload = {
+  name: string;
+  description?: string;
+  unit: string;
+  qty: string;
+};
+
+async function applyDeliveryNoteStructuredFields(
+  tx: Prisma.TransactionClient,
+  deliveryNoteId: string,
+  params: {
+    materialDispatchSkipped: boolean;
+    baseNotes?: string | null;
+    deliveryNoteCustomItems?: DeliveryNoteCustomItemPayload[] | null;
+  }
+) {
+  const data: Prisma.DeliveryNoteUpdateInput = {
+    materialDispatchSkipped: params.materialDispatchSkipped,
+  };
+  if (params.baseNotes !== undefined) {
+    data.documentNotes = params.baseNotes?.trim() ? params.baseNotes.trim() : null;
+  }
+  if (params.deliveryNoteCustomItems !== undefined && params.deliveryNoteCustomItems !== null) {
+    const rows = params.deliveryNoteCustomItems.map((c) => ({
+      name: c.name.trim(),
+      ...(c.description?.trim() ? { description: c.description.trim() } : {}),
+      unit: c.unit.trim(),
+      qty: c.qty.trim(),
+    }));
+    data.customItemsJson = rows.length > 0 ? rows : [];
+  }
+  await tx.deliveryNote.update({
+    where: { id: deliveryNoteId },
+    data,
+  });
 }
 
 function buildStockInReceiptNote(notes?: string, receiptNumber?: string) {
@@ -129,9 +170,23 @@ const BatchSchema = z.object({
   supplierId:    z.string().min(1).optional(),
   overrideReason: z.string().max(500).optional(),
   notes:         z.string().max(20000).optional(),
+  /// User notes for the delivery note document (not composed with headers). Optional for legacy clients.
+  baseNotes:     z.string().max(20000).optional(),
+  deliveryNoteCustomItems: z
+    .array(
+      z.object({
+        name: z.string().max(500),
+        description: z.string().max(2000).optional(),
+        unit: z.string().max(50),
+        qty: z.string().max(50),
+      })
+    )
+    .max(500)
+    .optional(),
   date:          z.string().optional(),
   isDeliveryNote: z.boolean().optional(),
   existingTransactionIds: z.array(z.string()).optional(),
+  existingDeliveryNoteId: z.string().min(1).optional(),
   billAmount:    z.number().finite().optional(),
   includeTax:    z.boolean().optional(),
   taxAmount:     z.number().finite().optional(),
@@ -176,9 +231,12 @@ export async function POST(req: Request) {
     supplierId,
     overrideReason,
     notes,
+    baseNotes,
+    deliveryNoteCustomItems,
     date,
     isDeliveryNote,
     existingTransactionIds,
+    existingDeliveryNoteId,
     billAmount,
     includeTax,
     taxAmount,
@@ -211,6 +269,19 @@ export async function POST(req: Request) {
 
   try {
     const actorFields = buildTransactionActorFields(session.user);
+    let dispatchLinesBeforeSnapshot: DispatchRevisionLine[] | null = null;
+    if (type === 'STOCK_OUT' && jobId?.trim() && existingTransactionIds && existingTransactionIds.length > 0) {
+      try {
+        dispatchLinesBeforeSnapshot = await buildDispatchRevisionLinesFromStockOutIds(
+          prisma,
+          companyId,
+          existingTransactionIds
+        );
+      } catch (snapErr) {
+        console.error('Dispatch revision: could not snapshot lines before update', snapErr);
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const created: string[] = [];
       const materialCostById = new Map<string, number>();
@@ -219,6 +290,47 @@ export async function POST(req: Request) {
             signedCopyUrl: string | null;
           }
         | null = null;
+
+      let activeDeliveryNoteId: string | null = null;
+      let reportedDeliveryNoteNumber: number | null = null;
+
+      if (type === 'STOCK_OUT' && isDeliveryNote && existingTransactionIds && existingTransactionIds.length > 0) {
+        const firstExisting = await tx.transaction.findFirst({
+          where: { id: { in: existingTransactionIds }, companyId },
+          select: {
+            deliveryNote: { select: { id: true, number: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (firstExisting?.deliveryNote) {
+          activeDeliveryNoteId = firstExisting.deliveryNote.id;
+          reportedDeliveryNoteNumber = firstExisting.deliveryNote.number;
+          await tx.deliveryNote.update({
+            where: { id: firstExisting.deliveryNote.id },
+            data: { jobId: jobId?.trim() || null, date: txDate },
+          });
+        }
+      }
+
+      if (
+        type === 'STOCK_OUT' &&
+        isDeliveryNote &&
+        existingDeliveryNoteId?.trim() &&
+        !activeDeliveryNoteId
+      ) {
+        const dnRow = await tx.deliveryNote.findFirst({
+          where: { id: existingDeliveryNoteId.trim(), companyId },
+          select: { id: true, number: true },
+        });
+        if (dnRow) {
+          activeDeliveryNoteId = dnRow.id;
+          reportedDeliveryNoteNumber = dnRow.number;
+          await tx.deliveryNote.update({
+            where: { id: dnRow.id },
+            data: { jobId: jobId?.trim() || null, date: txDate },
+          });
+        }
+      }
 
       // Delete existing transactions and reverse stock if updating
       if (existingTransactionIds && existingTransactionIds.length > 0) {
@@ -356,14 +468,42 @@ export async function POST(req: Request) {
         }
       }
 
+      if (type === 'STOCK_OUT' && isDeliveryNote && !activeDeliveryNoteId) {
+        const agg = await tx.deliveryNote.aggregate({
+          where: { companyId },
+          _max: { number: true },
+        });
+        const nextNum = (agg._max.number ?? 0) + 1;
+        const dnRow = await tx.deliveryNote.create({
+          data: {
+            companyId,
+            number: nextNum,
+            jobId: jobId?.trim() || null,
+            date: txDate,
+            materialDispatchSkipped: lines.length === 0,
+          },
+        });
+        activeDeliveryNoteId = dnRow.id;
+        reportedDeliveryNoteNumber = dnRow.number;
+      }
+
       // If no lines (custom items only delivery note), skip transaction creation and return early
       if (lines.length === 0) {
+        if (type === 'STOCK_OUT' && isDeliveryNote && activeDeliveryNoteId) {
+          await applyDeliveryNoteStructuredFields(tx, activeDeliveryNoteId, {
+            materialDispatchSkipped: true,
+            baseNotes,
+            deliveryNoteCustomItems,
+          });
+        }
         return {
           created: 0,
           ids: [],
           billAmount,
           includeTax,
           taxAmount,
+          deliveryNoteNumber: reportedDeliveryNoteNumber,
+          deliveryNoteId: activeDeliveryNoteId,
         };
       }
 
@@ -555,6 +695,9 @@ export async function POST(req: Request) {
               averageCost,
               notes: buildStockOutOverrideNote(notes, overrideReason),
               isDeliveryNote: isDeliveryNote || false,
+              ...(isDeliveryNote && activeDeliveryNoteId
+                ? { deliveryNoteId: activeDeliveryNoteId }
+                : {}),
               signedCopyUrl: preservedSignedCopy && created.length === 0 ? preservedSignedCopy.signedCopyUrl : null,
               date: txDate,
               ...actorFields,
@@ -614,6 +757,9 @@ export async function POST(req: Request) {
                 quantity: returnBase,
                 jobId: jobId || null,
                 parentTransactionId: stockOutTxn.id,
+                ...(isDeliveryNote && activeDeliveryNoteId
+                  ? { deliveryNoteId: activeDeliveryNoteId }
+                  : {}),
                 notes: notes ? `Return: ${notes}` : 'Return',
                 date: txDate,
                 ...actorFields,
@@ -672,7 +818,12 @@ export async function POST(req: Request) {
             supplierId,
             receiptNumber,
             receivedDate: txDate,
-            notes,
+            notes: notes?.trim() || undefined,
+            meta: buildStockBatchReceiptLineMeta({
+              quantityUomId: line.quantityUomId,
+              displayQuantity: line.quantity,
+              displayUnitCost: line.unitCost ?? null,
+            }),
           });
 
           // Create StockBatch record
@@ -762,7 +913,7 @@ export async function POST(req: Request) {
                   currentPrice: currentPrice,
                   source: 'bill',
                   changedBy: session.user.name || session.user.email || session.user.id,
-                  notes: `Updated via goods receipt: ${receiptNumber || 'N/A'}`,
+                  notes: buildReceiptPriceLogNote(receiptNumber || 'N/A'),
                   timestamp: new Date(),
                 },
               });
@@ -786,6 +937,14 @@ export async function POST(req: Request) {
         }
       }
 
+      if (type === 'STOCK_OUT' && isDeliveryNote && activeDeliveryNoteId) {
+        await applyDeliveryNoteStructuredFields(tx, activeDeliveryNoteId, {
+          materialDispatchSkipped: false,
+          baseNotes,
+          deliveryNoteCustomItems,
+        });
+      }
+
       return {
         created: created.length,
         ids: created,
@@ -793,8 +952,33 @@ export async function POST(req: Request) {
         includeTax,
         taxAmount,
         signedCopyUrl: preservedSignedCopy?.signedCopyUrl ?? null,
+        deliveryNoteNumber: reportedDeliveryNoteNumber,
+        deliveryNoteId: activeDeliveryNoteId,
       };
     });
+
+    if (type === 'STOCK_OUT' && jobId?.trim()) {
+      try {
+        const postingDateKey = postingDateKeyFromRequest(date, txDate);
+        const linesAfter = await buildDispatchRevisionLinesFromStockOutIds(prisma, companyId, result.ids);
+        const action =
+          existingTransactionIds && existingTransactionIds.length > 0 ? ('UPDATE' as const) : ('CREATE' as const);
+        await recordDispatchEntryRevision({
+          companyId,
+          jobId: jobId.trim(),
+          postingDateKey,
+          source: isDeliveryNote ? 'DELIVERY_NOTE' : 'WORKSHEET',
+          action,
+          actorUserId: session.user.id?.trim() || null,
+          actorName: actorFields.performedByName ?? session.user.email ?? 'Unknown',
+          linesBefore: action === 'UPDATE' ? dispatchLinesBeforeSnapshot : null,
+          linesAfter,
+          notesSnippet: notes?.trim().slice(0, 500) || null,
+        });
+      } catch (revErr) {
+        console.error('Dispatch entry revision log failed:', revErr);
+      }
+    }
 
     if (result.signedCopyUrl && result.ids.length > 0 && jobId) {
       const folderId = await getEffectiveGoogleDriveRootFolderId();
@@ -823,7 +1007,9 @@ export async function POST(req: Request) {
             const customerId = job.customer?.id || job.customerId || 'customer';
             const customerName = job.customer?.name || 'Customer';
             const fileName = buildSignedDeliveryNoteDriveFileName(
-              parseDeliveryNoteLabel(notes),
+              formatDeliveryNoteDriveLabel(
+                result.deliveryNoteNumber ?? resolveDeliveryNoteNumber(notes, null)
+              ),
               job.jobNumber || 'JOB',
               result.ids[0],
             );

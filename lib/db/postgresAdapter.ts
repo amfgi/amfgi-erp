@@ -1,5 +1,8 @@
 import { PrismaPg } from '@prisma/adapter-pg';
+import { resolvePostgresPoolConfig } from './postgresPoolConfig';
 
-export function createPostgresAdapter(connectionString: string) {
-  return new PrismaPg({ connectionString });
+export type PostgresPrismaAdapter = PrismaPg;
+
+export function createPostgresAdapter(connectionString: string): PostgresPrismaAdapter {
+  return new PrismaPg(resolvePostgresPoolConfig(connectionString));
 }

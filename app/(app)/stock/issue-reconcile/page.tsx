@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -9,9 +9,15 @@ import toast from 'react-hot-toast';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { Card, CardContent } from '@/components/ui/shadcn/card';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
+import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { cn } from '@/lib/utils';
-import { useDeleteTransactionMutation, useGetNonStockReconcileDataQuery } from '@/store/hooks';
+import {
+  useDeleteTransactionMutation,
+  useGetNonStockReconcileDataQuery,
+  useGetNonStockReconcileHistoryPageQuery,
+} from '@/store/hooks';
 import type { NonStockReconcileHistoryItem } from '@/store/api/endpoints/transactions';
 
 function formatNumber(value: number) {
@@ -28,7 +34,27 @@ function formatMoney(value: number) {
 export default function IssueReconcilePage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const { data, isLoading } = useGetNonStockReconcileDataQuery();
+  const [historySearch, setHistorySearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const deferredHistorySearch = useDeferredValue(historySearch);
+
+  const { data, isLoading } = useGetNonStockReconcileDataQuery({ omitHistory: true });
+  const { data: historyPage, isFetching: historyLoading } = useGetNonStockReconcileHistoryPageQuery({
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+    search: deferredHistorySearch,
+  });
+  const history = historyPage?.history ?? [];
+  const historyTotal = historyPage?.historyTotal ?? 0;
+  const totalPages = Math.max(1, Math.ceil(historyTotal / pageSize));
+  const pageStart = historyTotal === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, historyTotal);
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredHistorySearch, pageSize]);
+
   const [deleteTransaction, { isLoading: deleting }] = useDeleteTransactionMutation();
   const [warningEntryId, setWarningEntryId] = useState<string | null>(null);
   const [viewEntry, setViewEntry] = useState<NonStockReconcileHistoryItem | null>(null);
@@ -98,7 +124,7 @@ export default function IssueReconcilePage() {
         <Card>
           <CardContent className="p-4">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">History rows</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{data?.history.length ?? 0}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{historyTotal}</p>
           </CardContent>
         </Card>
         <Card>
@@ -117,10 +143,24 @@ export default function IssueReconcilePage() {
 
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Previous history</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Recent non-stock reconcile postings across job variations.
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Previous history</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Recent non-stock reconcile postings across job variations.
+              </p>
+            </div>
+            <label className="block w-full sm:max-w-xs">
+              <span className="sr-only">Search history</span>
+              <input
+                type="search"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Search material, job, customer…"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </label>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -137,7 +177,7 @@ export default function IssueReconcilePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-muted-foreground">
-              {(data?.history ?? []).map((entry) => (
+              {history.map((entry) => (
                 <tr key={entry.id} className="transition-colors hover:bg-muted/40">
                   <td className="px-4 py-3">{new Date(entry.date).toLocaleDateString()}</td>
                   <td className="px-4 py-3 font-medium text-foreground">{entry.materialName}</td>
@@ -168,7 +208,7 @@ export default function IssueReconcilePage() {
                   </td>
                 </tr>
               ))}
-              {!isLoading && (data?.history.length ?? 0) === 0 ? (
+              {!isLoading && !historyLoading && history.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-6 text-center text-sm text-muted-foreground">
                     No reconcile history yet.
@@ -178,6 +218,20 @@ export default function IssueReconcilePage() {
             </tbody>
           </table>
         </div>
+        {historyTotal > 0 ? (
+          <DirectoryListPagination
+            className="border-t border-border px-4 py-3"
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            total={historyTotal}
+            pageStart={pageStart}
+            pageEnd={pageEnd}
+            pageSizeOptions={LIST_PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </section>
 
       <Modal

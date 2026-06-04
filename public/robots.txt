@@ -1,0 +1,3 @@
+# AMFGI ERP — private internal application; do not index.
+User-agent: *
+Disallow: /

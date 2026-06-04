@@ -23,6 +23,8 @@ import {
   describeMaterialRule,
   formatPreviewMoney,
   formatPreviewQty,
+  getAreaFormulaOverrideKey,
+  getGlobalFormulaOverrideKey,
   getTokenChipClasses,
   newLaborRule,
   newMaterialRule,
@@ -320,6 +322,10 @@ export function FormulaPlayground({
   const setBooleanValue = (key: string, checked: boolean) => {
     onChange({ ...values, [key]: checked ? 'true' : 'false' });
   };
+  const [showOverrideInputs, setShowOverrideInputs] = useState(false);
+  const hasOverrideInputs =
+    form.formulaConstants.length > 0 ||
+    form.areas.some((area) => area.formulaValues.length > 0);
 
   return (
     <div className="max-h-[76vh] space-y-5 overflow-y-auto pr-1">
@@ -415,6 +421,22 @@ export function FormulaPlayground({
         </div>
       </section>
 
+      {hasOverrideInputs ? (
+        <section className="flex flex-col gap-3 rounded-2xl border border-cyan-200 bg-white p-4 dark:border-cyan-500/20 dark:bg-slate-950">
+          <div>
+            <h3 className="text-base font-semibold text-slate-950 dark:text-white">Override stored values</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Show override inputs only when this playground needs temporary values different from the formula defaults.
+            </p>
+          </div>
+          <div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setShowOverrideInputs((current) => !current)}>
+              {showOverrideInputs ? 'Hide override input boxes' : 'View override input boxes'}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       {form.formulaConstants.length > 0 ? (
         <section className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4 dark:border-cyan-500/20 dark:bg-cyan-500/10">
           <div className="flex items-start justify-between gap-3">
@@ -437,6 +459,18 @@ export function FormulaPlayground({
                     {field.value || '0'} {field.unit || ''}
                   </p>
                 </div>
+                {showOverrideInputs ? (
+                  <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Override for this playground
+                    <input
+                      type="text"
+                      value={values[getGlobalFormulaOverrideKey(field.key)] ?? ''}
+                      onChange={(event) => setValue(getGlobalFormulaOverrideKey(field.key), event.target.value)}
+                      placeholder="Leave blank for default"
+                      className="mt-1.5 w-full rounded-xl border border-cyan-100 bg-cyan-50/40 px-3 py-2 font-mono text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-cyan-300 dark:border-cyan-500/20 dark:bg-slate-900 dark:text-white"
+                    />
+                  </label>
+                ) : null}
               </div>
             ))}
           </div>
@@ -501,6 +535,38 @@ export function FormulaPlayground({
                 <p className="text-sm text-slate-500 dark:text-slate-400">No area inputs configured for this section.</p>
               ) : null}
             </div>
+            {showOverrideInputs && area.formulaValues.length > 0 ? (
+              <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3 dark:border-cyan-500/20 dark:bg-cyan-500/10">
+                <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
+                  Area stored value overrides
+                </h4>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  These test-only values replace <span className="font-mono">area.formula.key</span> for this area.
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {area.formulaValues.map((field) => (
+                    <label key={field.id} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      {field.label || field.key || 'Area value'}
+                      <div className="mt-1.5 overflow-hidden rounded-xl border border-cyan-100 bg-white dark:border-cyan-500/20 dark:bg-slate-950/70">
+                        <input
+                          type="text"
+                          value={values[getAreaFormulaOverrideKey(area.id, field.key)] ?? ''}
+                          onChange={(event) => setValue(getAreaFormulaOverrideKey(area.id, field.key), event.target.value)}
+                          placeholder={`Default: ${field.value || '0'}`}
+                          className="w-full bg-transparent px-3 py-2 font-mono text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:bg-cyan-50/40 dark:text-white dark:focus:bg-slate-900"
+                        />
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-cyan-100 bg-cyan-50/40 px-3 py-2 text-[11px] font-normal normal-case tracking-normal text-slate-500 dark:border-cyan-500/20 dark:bg-cyan-500/5 dark:text-slate-400">
+                          <span className="font-mono text-cyan-700 dark:text-cyan-300">{field.key ? `area.formula.${field.key}` : 'area.formula.key'}</span>
+                          <span>
+                            Default {field.value || '0'}{field.unit ? ` ${field.unit}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ))}
       </section>

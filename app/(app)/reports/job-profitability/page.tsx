@@ -358,7 +358,11 @@ export default function JobProfitabilityPage() {
         <Link href="/reports/job-consumption" className="font-medium text-primary underline-offset-4 hover:underline">
           Job consumption
         </Link>{' '}
-        for quantity-first usage,{' '}
+        for issued materials,{' '}
+        <Link href="/reports/production-by-job" className="font-medium text-primary underline-offset-4 hover:underline">
+          Production by job
+        </Link>{' '}
+        for production log totals by job,{' '}
         <Link href="/reports/supplier-traceability" className="font-medium text-primary underline-offset-4 hover:underline">
           supplier traceability
         </Link>{' '}

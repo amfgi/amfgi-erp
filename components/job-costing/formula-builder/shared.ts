@@ -50,6 +50,7 @@ export type AreaRule = {
   id: string;
   key: string;
   label: string;
+  dynamic: boolean;
   fields: DynamicField[];
   formulaValues: FormulaConstantField[];
   materials: MaterialRule[];
@@ -67,6 +68,8 @@ export type BuilderState = {
 };
 
 export type PlaygroundValues = Record<string, string>;
+
+export type FormulaOverrideMap = Record<string, string>;
 
 export type PlaygroundMaterialLine = {
   key: string;
@@ -341,6 +344,7 @@ export function newArea(): AreaRule {
     id: uid('area'),
     key: '',
     label: '',
+    dynamic: false,
     fields: [],
     formulaValues: [],
     materials: [],
@@ -363,6 +367,43 @@ export function parseFormulaConstantValue(value: string) {
   if (!trimmed) return 0;
   const numeric = Number(trimmed);
   return Number.isFinite(numeric) ? numeric : trimmed;
+}
+
+export function getGlobalFormulaOverrideKey(key: string) {
+  return `formulaOverride.global.${key}`;
+}
+
+export function getAreaFormulaOverrideKey(areaIdOrKey: string, key: string) {
+  return `formulaOverride.area.${areaIdOrKey}.${key}`;
+}
+
+export function buildGlobalFormulaOverrideMap(
+  fields: FormulaConstantField[],
+  values: PlaygroundValues
+): FormulaOverrideMap {
+  return Object.fromEntries(
+    fields.flatMap((field) => {
+      const key = field.key.trim();
+      if (!key) return [];
+      const value = values[getGlobalFormulaOverrideKey(key)]?.trim();
+      return value ? [[key, value]] : [];
+    })
+  );
+}
+
+export function buildAreaFormulaOverrideMap(
+  areaIdOrKey: string,
+  fields: FormulaConstantField[],
+  values: PlaygroundValues
+): FormulaOverrideMap {
+  return Object.fromEntries(
+    fields.flatMap((field) => {
+      const key = field.key.trim();
+      if (!key) return [];
+      const value = values[getAreaFormulaOverrideKey(areaIdOrKey, key)]?.trim();
+      return value ? [[key, value]] : [];
+    })
+  );
 }
 
 export function formatPreviewMoney(value: number) {
@@ -399,9 +440,21 @@ export function evaluatePlaygroundExpression(expression: string, values: Formula
 export function applyResolvedFormulaFields(
   values: FormulaVariableMap,
   fields: Array<{ key: string; value: string }>,
-  tokenPrefix: 'formula.' | 'area.formula.'
+  tokenPrefix: 'formula.' | 'area.formula.',
+  overrides: FormulaOverrideMap = {}
 ) {
-  const activeFields = fields.filter((field) => field.key.trim());
+  const fieldMap = new Map<string, string>();
+  for (const field of fields) {
+    const key = field.key.trim();
+    if (!key) continue;
+    fieldMap.set(key, field.value);
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    const normalizedKey = key.trim();
+    if (!normalizedKey || !value.trim()) continue;
+    fieldMap.set(normalizedKey, value);
+  }
+  const activeFields = Array.from(fieldMap.entries()).map(([key, value]) => ({ key, value }));
   const maxPasses = Math.max(activeFields.length, 1);
 
   for (let pass = 0; pass < maxPasses; pass += 1) {
@@ -456,7 +509,12 @@ export function addScopedAreaPlaygroundValues(
 export function buildPlaygroundNumericValues(form: BuilderState, values: PlaygroundValues) {
   const resolvedValues = buildPlaygroundBaseValues(form, values);
   addScopedAreaPlaygroundValues(resolvedValues, form.areas, values);
-  applyResolvedFormulaFields(resolvedValues, form.formulaConstants, 'formula.');
+  applyResolvedFormulaFields(
+    resolvedValues,
+    form.formulaConstants,
+    'formula.',
+    buildGlobalFormulaOverrideMap(form.formulaConstants, values)
+  );
   return resolvedValues;
 }
 
@@ -474,8 +532,18 @@ export function buildPlaygroundPreview(form: BuilderState, values: PlaygroundVal
       const target = `area.${fieldKey}`;
       resolvedValues[target] = parsePlaygroundValue(values[`area.${area.id}.${field.key}`] ?? '', field.inputType);
     }
-    applyResolvedFormulaFields(resolvedValues, form.formulaConstants, 'formula.');
-    applyResolvedFormulaFields(resolvedValues, area.formulaValues ?? [], 'area.formula.');
+    applyResolvedFormulaFields(
+      resolvedValues,
+      form.formulaConstants,
+      'formula.',
+      buildGlobalFormulaOverrideMap(form.formulaConstants, values)
+    );
+    applyResolvedFormulaFields(
+      resolvedValues,
+      area.formulaValues ?? [],
+      'area.formula.',
+      buildAreaFormulaOverrideMap(area.id, area.formulaValues ?? [], values)
+    );
 
     for (const rule of area.materials ?? []) {
       const materialId = rule.materialSource === 'global'

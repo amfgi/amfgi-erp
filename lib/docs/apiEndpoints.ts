@@ -127,7 +127,30 @@ export const API_DOC_SECTIONS: ApiDocSection[] = [
     endpoints: [
       { methods: 'GET', path: '/api/reports/consumption', auth: 'session_cookie', summary: 'Consumption report.' },
       { methods: 'GET', path: '/api/reports/job-consumption', auth: 'session_cookie', summary: 'Job-level consumption.' },
+      { methods: 'GET', path: '/api/reports/production-by-job', auth: 'session_cookie', summary: 'Production log totals by job and budget line.' },
       { methods: 'GET', path: '/api/reports/stock-valuation', auth: 'session_cookie', summary: 'Stock valuation.' },
+    ],
+  },
+  {
+    title: 'Auth (public)',
+    endpoints: [
+      { methods: 'GET', path: '/api/auth/setup-status', auth: 'public', summary: 'Whether first-time admin setup is required.' },
+      { methods: 'POST', path: '/api/auth/setup', auth: 'public', summary: 'Bootstrap company + super-admin when no users exist.' },
+      { methods: 'POST', path: '/api/auth/forgot-password', auth: 'public', summary: 'Request password reset email.' },
+      { methods: 'POST', path: '/api/auth/reset-password', auth: 'public', summary: 'Set new password with reset token.' },
+    ],
+  },
+  {
+    title: 'Settings (email)',
+    endpoints: [
+      { methods: 'GET, PATCH', path: '/api/settings/email', auth: 'session_cookie', summary: 'Global email provider configuration.' },
+      { methods: 'POST', path: '/api/settings/email/test', auth: 'session_cookie', summary: 'Send test email to current user.' },
+    ],
+  },
+  {
+    title: 'User profile',
+    endpoints: [
+      { methods: 'POST', path: '/api/user/profile/change-password', auth: 'session_cookie', summary: 'Change or set account password.' },
     ],
   },
   {
@@ -161,7 +184,7 @@ export const API_DOC_SECTIONS: ApiDocSection[] = [
   {
     title: 'Other',
     endpoints: [
-      { methods: 'GET', path: '/api/delivery-notes/next-number', auth: 'session_cookie', summary: 'Next delivery note number for sequencing.' },
+      { methods: 'GET', path: '/api/delivery-notes/next-number', auth: 'session_cookie', summary: 'Next delivery note number (max DeliveryNote.number + 1 per company).' },
     ],
   },
 ];

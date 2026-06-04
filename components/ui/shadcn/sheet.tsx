@@ -99,19 +99,57 @@ const sheetSideClass: Record<'top' | 'bottom' | 'left' | 'right', string> = {
   right: 'inset-y-0 right-0 h-full rounded-l-2xl border-l shadow-2xl shadow-black/25',
 };
 
+const SHEET_TRANSITION_MS = 300;
+
+function sheetExitTranslate(side: 'top' | 'bottom' | 'left' | 'right'): string {
+  switch (side) {
+    case 'left':
+      return '-translate-x-full';
+    case 'right':
+      return 'translate-x-full';
+    case 'top':
+      return '-translate-y-full';
+    default:
+      return 'translate-y-full';
+  }
+}
+
 const SheetContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<'div'> & { side?: 'top' | 'bottom' | 'left' | 'right' }
 >(function SheetContent({ side = 'right', className, style, children, ...props }, ref) {
   const { open, setOpen } = useSheetContext('SheetContent');
   const [mounted, setMounted] = React.useState(false);
+  const [present, setPresent] = React.useState(open);
+  const [entered, setEntered] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
 
+  React.useLayoutEffect(() => {
+    if (open) {
+      setPresent(true);
+    }
+  }, [open]);
+
   React.useEffect(() => {
-    if (!open || !mounted) return;
+    if (!mounted) return;
+
+    if (open) {
+      const id = window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setEntered(true));
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+
+    setEntered(false);
+    const timer = window.setTimeout(() => setPresent(false), SHEET_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [open, mounted]);
+
+  React.useEffect(() => {
+    if (!mounted || (!open && !present)) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
@@ -122,15 +160,20 @@ const SheetContent = React.forwardRef<
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, mounted, setOpen]);
+  }, [open, present, mounted, setOpen]);
 
-  if (!open || !mounted) return null;
+  if (!mounted || (!present && !open)) return null;
+
+  const exitT = sheetExitTranslate(side);
 
   return createPortal(
     <div className="fixed inset-0 z-50">
       <button
         type="button"
-        className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
+        className={cn(
+          'absolute inset-0 bg-slate-950/55 backdrop-blur-sm transition-opacity duration-300 ease-out motion-reduce:transition-none',
+          entered ? 'opacity-100' : 'opacity-0',
+        )}
         aria-label="Close sheet"
         onClick={() => setOpen(false)}
       />
@@ -138,14 +181,20 @@ const SheetContent = React.forwardRef<
         ref={ref}
         role="dialog"
         aria-modal="true"
-        style={style}
         className={cn(
-          'fixed z-51 flex max-h-dvh flex-col overflow-hidden bg-background p-6 shadow-xl',
+          'fixed z-51 flex max-h-dvh flex-col overflow-hidden bg-background p-6 shadow-xl transition-transform duration-300 ease-out motion-reduce:transition-none',
+          'motion-reduce:translate-x-0 motion-reduce:translate-y-0',
           sheetSideClass[side],
+          entered ? 'translate-x-0 translate-y-0' : exitT,
           className,
         )}
         onPointerDown={(e) => e.stopPropagation()}
         {...props}
+        style={{
+          ...((props as { style?: React.CSSProperties }).style as React.CSSProperties | undefined),
+          ...(typeof style === 'object' && style !== null ? style : {}),
+          transitionDuration: `${SHEET_TRANSITION_MS}ms`,
+        }}
       >
         {children}
       </div>

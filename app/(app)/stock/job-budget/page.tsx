@@ -1,81 +1,133 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useDeferredValue, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
-import { Button, buttonVariants } from '@/components/ui/shadcn/button';
-import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { Badge } from '@/components/ui/shadcn/badge';
+import { buttonVariants } from '@/components/ui/shadcn/button';
+import type { ContextMenuOption } from '@/components/ui/ContextMenu';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Spinner from '@/components/ui/Spinner';
+import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { cn } from '@/lib/utils';
-import { useGetFormulaLibrariesQuery, useGetJobsQuery } from '@/store/hooks';
+import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
+import { useGetJobsPageQuery } from '@/store/hooks';
+import type { Job } from '@/store/api/endpoints/jobs';
 
-const PAGE_SIZE = 10;
-
-function formatCount(value: number) {
+function formatNumber(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
 
+function formatMoney(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'AED',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return `${Math.round(value)}%`;
+}
+
+function formatDays(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value)} days`;
+}
+
+function pricingModeLabel(value: string | undefined) {
+  switch (value) {
+    case 'FIFO':
+      return 'FIFO';
+    case 'MOVING_AVERAGE':
+      return 'Moving avg';
+    case 'CURRENT':
+      return 'Current';
+    case 'CUSTOM':
+      return 'Custom';
+    default:
+      return value ?? '—';
+  }
+}
+
+function snapshotBadgeVariant(status: string | undefined) {
+  return status === 'APPROVED' ? 'default' : status === 'SUPERSEDED' ? 'secondary' : 'outline';
+}
+
 export default function StockJobBudgetPage() {
+  const router = useRouter();
+  const { openMenu: openContextMenu } = useGlobalContextMenu();
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
-  const canView = isSA || (perms.includes('job.view') && perms.includes('material.view'));
+  const canView = isSA || perms.includes('stock.job_budget.view');
   const canManage = isSA || perms.includes('settings.manage');
+
+  const openJobBudget = useCallback(
+    (jobId: string) => {
+      router.push(`/stock/job-budget/${jobId}`);
+    },
+    [router],
+  );
+
+  const handleJobContextMenu = useCallback(
+    (job: Job, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const options: ContextMenuOption[] = [
+        {
+          label: 'Open',
+          icon: (
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 12H9m12 0A9 9 0 113 12a9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+          action: () => openJobBudget(job.id),
+        },
+      ];
+
+      openContextMenu(e.clientX, e.clientY, options);
+    },
+    [openContextMenu, openJobBudget],
+  );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const { data: formulas = [], isLoading: formulasLoading } = useGetFormulaLibrariesQuery(undefined, { skip: !canView });
-  const { data: jobs = [], isLoading: jobsLoading } = useGetJobsQuery(undefined, { skip: !canView });
-
-  const parentContractJobs = useMemo(
-    () =>
-      jobs
-        .filter((job) => !job.parentJobId && job.status === 'ACTIVE')
-        .sort((a, b) => a.jobNumber.localeCompare(b.jobNumber)),
-    [jobs]
+  const { data: jobsPage, isFetching: jobsLoading } = useGetJobsPageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+      status: 'ACTIVE',
+      scope: 'PARENT_ONLY',
+    },
+    { skip: !canView, refetchOnMountOrArgChange: 30 },
   );
-
-  const filteredJobs = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return parentContractJobs;
-    return parentContractJobs.filter((job) => {
-      const hay = [job.jobNumber, job.customerName, job.projectName, job.description, job.site, job.address]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [parentContractJobs, searchQuery]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE));
-
-  useEffect(() => {
-    setPage((p) => Math.min(Math.max(1, p), totalPages));
-  }, [totalPages]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery]);
-
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const pageSlice = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE;
-    return filteredJobs.slice(start, start + PAGE_SIZE);
-  }, [filteredJobs, safePage]);
-
-  const fabricationTypes = useMemo(
-    () => new Set(formulas.map((formula) => formula.fabricationType)).size,
-    [formulas]
-  );
+  const pageSlice = jobsPage?.items ?? [];
+  const totalJobs = jobsPage?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
+  const pageStart = totalJobs === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, totalJobs);
 
   if (!canView) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <Alert>
           <AlertDescription>
-            You need job.view and material.view permission to open job budget and formulas.
+            You need the Stock — Job budget → View permission to open job budget.
           </AlertDescription>
         </Alert>
       </div>
@@ -108,41 +160,15 @@ export default function StockJobBudgetPage() {
         </div>
       </header>
 
-      <section className="grid min-w-0 gap-3 md:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Formula templates</p>
-            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
-              {formulasLoading ? '…' : formatCount(formulas.length)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Fabrication types</p>
-            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
-              {formulasLoading ? '…' : formatCount(fabricationTypes)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Active contract jobs</p>
-            <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
-              {jobsLoading ? '…' : formatCount(parentContractJobs.length)}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Parent jobs only; variations are not listed here.</p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.75fr)]">
-        <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <section className="rounded-lg border border-border bg-card shadow-sm">
+        <div className="border-b border-border p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Contract job numbers</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Contract job budgets</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Search by job number, customer, project, site, or address. Budget is always managed on these parent jobs.
+                {jobsLoading
+                  ? 'Loading parent contract jobs…'
+                  : `${formatNumber(totalJobs)} active parent job${totalJobs === 1 ? '' : 's'} · double-click or right-click a row to open`}
               </p>
             </div>
             <label className="block w-full min-w-0 sm:max-w-xs">
@@ -150,100 +176,143 @@ export default function StockJobBudgetPage() {
               <input
                 type="search"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search…"
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search job, customer, project…"
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </label>
           </div>
-
-          {jobsLoading ? (
-            <div className="flex h-40 items-center justify-center">
-              <Spinner size="lg" />
-            </div>
-          ) : parentContractJobs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No active parent contract jobs found.
-            </div>
-          ) : filteredJobs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No jobs match your search.
-            </div>
-          ) : (
-            <>
-              <div className="divide-y divide-border">
-                {pageSlice.map((job) => (
-                  <div key={job.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="font-mono text-base font-semibold tracking-tight text-foreground">{job.jobNumber}</p>
-                      <p className="mt-1 truncate text-sm text-muted-foreground">
-                        {job.customerName || job.projectName || job.description || 'Contract job'}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/stock/job-budget/${job.id}`}
-                      className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'shrink-0')}
-                    >
-                      Open budget
-                    </Link>
-                  </div>
-                ))}
-              </div>
-              {filteredJobs.length > PAGE_SIZE ? (
-                <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                  <p>
-                    Page {safePage} of {totalPages} · {formatCount(filteredJobs.length)} job
-                    {filteredJobs.length === 1 ? '' : 's'}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={safePage <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={safePage >= totalPages}
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          )}
         </div>
 
-        <div className="flex flex-col gap-4">
-          <Link
-            href="/stock/job-budget/formulas"
-            className="block rounded-lg border border-primary/25 bg-primary/5 p-4 transition hover:border-primary/40 hover:bg-primary/10"
-          >
-            <p className="text-sm font-semibold text-foreground">Formula library</p>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Create and maintain reusable formulas for GRP, MEP, steel, and other fabrication scopes.
-            </p>
-          </Link>
-
-          <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">Flow</h2>
-            <div className="mt-3 space-y-3 text-sm text-muted-foreground">
-              <p>Formula defines dynamic inputs and rules.</p>
-              <p>
-                Only the parent contract job stores budget lines (job items); variations cannot receive new budget lines
-                from the API.
-              </p>
-              <p>Opening a variation URL under stock job-budget redirects to the parent contract.</p>
-            </div>
+        {jobsLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <Spinner size="lg" />
           </div>
-        </div>
+        ) : totalJobs === 0 && !jobsLoading ? (
+          <div className="m-4 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+            No active parent contract jobs match your search.
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1080px] text-left text-sm">
+                <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Job</th>
+                    <th className="px-4 py-3 font-medium">Customer / Project</th>
+                    <th className="px-4 py-3 text-right font-medium">Budget Items</th>
+                    <th className="px-4 py-3 text-right font-medium">Trackable</th>
+                    <th className="px-4 py-3 text-right font-medium">Stock Linked</th>
+                    <th className="px-4 py-3 text-right font-medium">Progress</th>
+                    <th className="px-4 py-3 font-medium">Current Snapshot</th>
+                    <th className="px-4 py-3 text-right font-medium">Snapshot Value</th>
+                    <th className="px-4 py-3 text-right font-medium">Est. Days</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pageSlice.map((job) => {
+                    const summary = job.budgetSummary;
+                    const snapshot = summary?.currentSnapshot ?? null;
+                    return (
+                      <tr
+                        key={job.id}
+                        data-context-menu="true"
+                        className="cursor-pointer align-top transition-colors hover:bg-muted/30"
+                        onContextMenu={(event) => handleJobContextMenu(job, event)}
+                        onDoubleClick={() => openJobBudget(job.id)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="min-w-[100px]">
+                            <span className="font-mono text-sm font-semibold text-foreground">
+                              {job.jobNumber}
+                            </span>
+                            {/* <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {job.site || job.locationName || job.address || 'Parent contract'}
+                            </p> */}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">
+                              {job.customerName || 'No customer'}
+                            </p>
+                            {/* <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {job.projectName || job.description || 'No project details'}
+                            </p> */}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                          {formatNumber(summary?.budgetItemCount ?? 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                          {formatNumber(summary?.trackableItemCount ?? 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                          {formatNumber(summary?.stockLinkedTrackableCount ?? 0)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="tabular-nums font-medium text-foreground">
+                              {formatPercent(Number(job.executionProgressPercent ?? 0))}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Lines {formatPercent(summary?.averageBudgetLineProgressPercent)}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {snapshot ? (
+                            <div className="flex flex-col gap-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant={snapshotBadgeVariant(snapshot.status)}>
+                                  v{snapshot.versionNumber} {snapshot.status === 'APPROVED' ? 'baseline' : snapshot.status.toLowerCase()}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {pricingModeLabel(snapshot.pricingMode)}
+                                </span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(snapshot.postingDate).toLocaleDateString()}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No saved snapshot</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium text-foreground">
+                          {formatMoney(snapshot?.totalQuotedMaterialCost)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                          {formatDays(snapshot?.totalEstimatedCompletionDays)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {totalJobs > 0 ? (
+              <DirectoryListPagination
+                className="border-t border-border p-4"
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                total={totalJobs}
+                pageStart={pageStart}
+                pageEnd={pageEnd}
+                pageSizeOptions={LIST_PAGE_SIZE_OPTIONS}
+                onPageChange={setPage}
+                onPageSizeChange={(nextPageSize) => {
+                  setPageSize(nextPageSize);
+                  setPage(1);
+                }}
+              />
+            ) : null}
+          </>
+        )}
       </section>
     </div>
   );

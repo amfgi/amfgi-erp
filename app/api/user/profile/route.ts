@@ -27,6 +27,7 @@ export async function GET() {
       email: true,
       image: true,
       signatureUrl: true,
+      password: true,
     },
   });
 
@@ -37,6 +38,7 @@ export async function GET() {
     email: user.email,
     image: displayProfileImage(user),
     signatureUrl: displaySignature(user),
+    hasPassword: Boolean(user.password),
   });
 }
 

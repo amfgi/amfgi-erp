@@ -1,1 +1,0 @@
-ALTER TABLE `Job` ADD COLUMN `contactPerson` VARCHAR(191) NULL;

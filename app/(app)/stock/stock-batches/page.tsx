@@ -1,14 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { Input } from '@/components/ui/shadcn/input';
 import { buttonVariants } from '@/components/ui/shadcn/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import DataTable from '@/components/ui/DataTable';
 import type { Column } from '@/components/ui/DataTable';
 import { cn } from '@/lib/utils';
-import { useGetStockBatchesQuery } from '@/store/hooks';
+import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
+import { useGetStockBatchesPageQuery, STOCK_BATCH_PAGE_SIZE_OPTIONS } from '@/store/hooks';
 import type { StockBatch } from '@/store/api/endpoints/stockBatches';
 
 function formatMoney(value: number) {
@@ -66,10 +68,29 @@ export default function StockBatchesPage() {
     perms.includes('transaction.stock_in') ||
     perms.includes('transaction.stock_out');
 
-  const { data: batches = [], isFetching } = useGetStockBatchesQuery(undefined, {
-    skip: !canView,
-    refetchOnMountOrArgChange: 30,
-  });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearch = useDeferredValue(searchQuery);
+
+  const { data: batchesPage, isFetching } = useGetStockBatchesPageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+    },
+    {
+      skip: !canView,
+      refetchOnMountOrArgChange: 30,
+    },
+  );
+  const batches = batchesPage?.items ?? [];
+  const totalBatches = batchesPage?.total ?? 0;
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, pageSize]);
+
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
   const selectedBatch = useMemo(
@@ -77,26 +98,26 @@ export default function StockBatchesPage() {
     [batches, selectedBatchId]
   );
 
-  const openBatchCount = useMemo(
+  const openBatchCountOnPage = useMemo(
     () => batches.filter((batch) => batch.quantityAvailable > 0).length,
-    [batches]
+    [batches],
   );
-  const expiringSoonCount = useMemo(
+  const expiringSoonCountOnPage = useMemo(
     () =>
       batches.filter((batch) => {
         if (!batch.expiryDate || batch.quantityAvailable <= 0) return false;
         const days = (new Date(batch.expiryDate).getTime() - todayMs) / (1000 * 60 * 60 * 24);
         return days >= 0 && days <= 30;
       }).length,
-    [batches, todayMs]
+    [batches, todayMs],
   );
-  const availableValue = useMemo(
+  const availableValueOnPage = useMemo(
     () => batches.reduce((sum, batch) => sum + batch.quantityAvailable * batch.unitCost, 0),
-    [batches]
+    [batches],
   );
-  const materialCoverage = useMemo(
+  const materialCoverageOnPage = useMemo(
     () => new Set(batches.map((batch) => batch.materialId)).size,
-    [batches]
+    [batches],
   );
 
   const columns: Column<StockBatch>[] = [
@@ -238,24 +259,24 @@ export default function StockBatchesPage() {
       <div className="grid divide-y divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         {[
           {
-            label: 'Batches in view',
-            value: String(batches.length),
-            note: 'All received stock batches',
+            label: 'Matching batches',
+            value: String(totalBatches),
+            note: 'Server count for current search',
           },
           {
-            label: 'Open batches',
-            value: String(openBatchCount),
+            label: 'Open on page',
+            value: String(openBatchCountOnPage),
             note: 'Still carrying available stock',
           },
           {
-            label: 'Available value',
-            value: formatMoney(availableValue),
+            label: 'Available value (page)',
+            value: formatMoney(availableValueOnPage),
             note: 'Available qty x base unit cost',
           },
           {
-            label: 'Material coverage',
-            value: String(materialCoverage),
-            note: `${expiringSoonCount} expiring within 30 days`,
+            label: 'Materials on page',
+            value: String(materialCoverageOnPage),
+            note: `${expiringSoonCountOnPage} expiring within 30 days on this page`,
           },
         ].map((item) => (
           <div key={item.label} className="bg-card px-5 py-4">
@@ -283,15 +304,38 @@ export default function StockBatchesPage() {
             </span>
           </div>
 
+          <div className="mb-3 max-w-md">
+            <label htmlFor="batch-search" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Search
+            </label>
+            <Input
+              id="batch-search"
+              className="mt-1.5"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Batch, receipt, material, supplier…"
+            />
+          </div>
+
           <DataTable
             columns={columns}
             data={batches}
             loading={isFetching && batches.length === 0}
             emptyText="No stock batches found."
-            searchKeys={['batchNumber', 'receiptNumber', 'materialName', 'supplierName']}
             onRowClick={(batch) => setSelectedBatchId(batch.id)}
             onRowDoubleClick={(batch) => setSelectedBatchId(batch.id)}
             selectedRowId={selectedBatch?.id ?? null}
+            serverPagination={{
+              page,
+              pageSize,
+              total: totalBatches,
+              pageSizeOptions: STOCK_BATCH_PAGE_SIZE_OPTIONS,
+              onPageChange: setPage,
+              onPageSizeChange: (size) => {
+                setPageSize(size);
+                setPage(1);
+              },
+            }}
           />
         </SectionShell>
 

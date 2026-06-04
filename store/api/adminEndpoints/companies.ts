@@ -40,7 +40,7 @@ export const companiesApi = adminApi.injectEndpoints({
         try {
           const { data: created } = await queryFulfilled;
           dispatch(
-            adminApi.util.updateQueryData('getCompanies', undefined, (draft) => {
+            companiesApi.util.updateQueryData('getCompanies', undefined, (draft) => {
               if (!draft.some((c) => c.id === created.id)) draft.unshift(created);
             }),
           );
@@ -60,7 +60,7 @@ export const companiesApi = adminApi.injectEndpoints({
       invalidatesTags: [],
       async onQueryStarted({ id, data }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
-          adminApi.util.updateQueryData('getCompanies', undefined, (draft) => {
+          companiesApi.util.updateQueryData('getCompanies', undefined, (draft) => {
             const row = draft.find((c) => c.id === id);
             if (!row) return;
             if (data.name !== undefined) row.name = data.name;
@@ -77,7 +77,7 @@ export const companiesApi = adminApi.injectEndpoints({
         try {
           const { data: server } = await queryFulfilled;
           dispatch(
-            adminApi.util.updateQueryData('getCompanies', undefined, (draft) => {
+            companiesApi.util.updateQueryData('getCompanies', undefined, (draft) => {
               const idx = draft.findIndex((c) => c.id === id);
               if (idx !== -1) draft[idx] = server;
             }),

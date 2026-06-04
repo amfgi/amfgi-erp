@@ -28,7 +28,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       id: true,
       workDate: true,
       status: true,
-      title: true,
       clientDisplayName: true,
       publishedAt: true,
       lockedAt: true,

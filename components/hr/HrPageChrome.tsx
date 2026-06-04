@@ -23,7 +23,7 @@ function labelForSegment(segment: string, previous?: string) {
     new: 'New Employee',
     schedule: 'Schedule',
     attendance: 'Attendance',
-    create: 'Create Attendance',
+    create: 'Day sheet',
     boilerplate: 'Attendance Boilerplate',
     reports: 'Reports',
     builder: 'Builder',
@@ -45,10 +45,19 @@ function labelForSegment(segment: string, previous?: string) {
 
 function buildBreadcrumbs(pathname: string) {
   const segments = pathname.split('/').filter(Boolean);
-  return segments.map((segment, index) => ({
-    href: `/${segments.slice(0, index + 1).join('/')}`,
-    label: labelForSegment(segment, segments[index - 1]),
-  }));
+  return segments.map((segment, index) => {
+    const previous = segments[index - 1];
+    const isScheduleDay =
+      previous === 'schedule' && prettifyDateSegment(segment) !== null;
+    const href = isScheduleDay
+      ? `/hr/schedule?workDate=${encodeURIComponent(segment)}`
+      : `/${segments.slice(0, index + 1).join('/')}`;
+    return {
+      href,
+      label: labelForSegment(segment, previous),
+      isScheduleDay,
+    };
+  });
 }
 
 const CLICKABLE_HR_ROUTES = new Set([
@@ -64,18 +73,19 @@ export default function HrPageChrome({ children }: { children: React.ReactNode }
   const breadcrumbs = buildBreadcrumbs(pathname);
 
   return (
-    <div className="space-y-4">
-      {/* <nav className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+    <div className="flex w-full min-w-0 flex-col gap-4">
+      {/* <nav className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {breadcrumbs.map((crumb, index) => {
           const isLast = index === breadcrumbs.length - 1;
-          const isClickable = CLICKABLE_HR_ROUTES.has(crumb.href);
+          const isClickable =
+            CLICKABLE_HR_ROUTES.has(crumb.href) || (crumb.isScheduleDay && !isLast);
           return (
             <span key={crumb.href} className="flex items-center gap-2">
-              {index > 0 ? <span className="text-slate-600">/</span> : null}
+              {index > 0 ? <span className="text-border">/</span> : null}
               {isLast || !isClickable ? (
-                <span className="font-medium text-white">{crumb.label}</span>
+                <span className="font-medium text-foreground">{crumb.label}</span>
               ) : (
-                <Link href={crumb.href} className="hover:text-slate-200">
+                <Link href={crumb.href} className="hover:text-foreground">
                   {crumb.label}
                 </Link>
               )}

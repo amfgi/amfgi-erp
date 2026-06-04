@@ -5,9 +5,8 @@ import Link                               from 'next/link';
 import { useSearchParams }                from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
-import { Card, CardContent } from '@/components/ui/shadcn/card';
+import { Badge } from '@/components/ui/shadcn/badge';
 import SearchSelect from '@/components/ui/SearchSelect';
-import LineGridColumnSettings, { type LineGridColumnConfig } from '@/components/stock/LineGridColumnSettings';
 import DispatchLineGrid from '@/components/stock/DispatchLineGrid';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -15,6 +14,7 @@ import {
   useGetMaterialsQuery,
   useGetJobsQuery,
   useGetDispatchEntryQuery,
+  useGetDispatchEntryRevisionsQuery,
   useGetDispatchBudgetWarningMutation,
   useGetJobMaterialsQuery,
   useGetCustomersQuery,
@@ -23,6 +23,7 @@ import {
   type DispatchBudgetWarningResult,
   type MaterialUomDto,
   type Material,
+  type DispatchRevisionLineDto,
 } from '@/store/hooks';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -51,6 +52,11 @@ interface Line {
 interface PendingChange {
   type: 'job' | 'date';
   newValue: string;
+}
+
+interface OverrideExistingModalState {
+  open: boolean;
+  pendingLines: Line[] | null;
 }
 
 const MIN_VISIBLE_ROWS = 5;
@@ -151,28 +157,6 @@ function getMaterialUomOptions(material: Material | undefined) {
   ];
 }
 
-type DispatchGridColumnKey =
-  | 'line'
-  | 'material'
-  | 'uom'
-  | 'warehouseStock'
-  | 'globalStock'
-  | 'dispatchQty'
-  | 'returnQty'
-  | 'warehouse'
-  | 'action';
-
-const DEFAULT_GRID_COLUMNS: LineGridColumnConfig[] = [
-  { key: 'line', label: '#', visible: true, width: 48, minWidth: 40, maxWidth: 72 },
-  { key: 'material', label: 'Material', visible: true, width: 280, minWidth: 180, maxWidth: 420 },
-  { key: 'uom', label: 'UOM', visible: true, width: 140, minWidth: 110, maxWidth: 220 },
-  { key: 'warehouseStock', label: 'Warehouse Stock', visible: true, width: 150, minWidth: 120, maxWidth: 220 },
-  { key: 'globalStock', label: 'Global Stock', visible: true, width: 150, minWidth: 120, maxWidth: 220 },
-  { key: 'dispatchQty', label: 'Dispatch Qty', visible: true, width: 132, minWidth: 110, maxWidth: 220 },
-  { key: 'returnQty', label: 'Return Qty', visible: true, width: 132, minWidth: 110, maxWidth: 220 },
-  { key: 'warehouse', label: 'Warehouse', visible: true, width: 220, minWidth: 180, maxWidth: 320 }
-];
-
 function parseJobContacts(value: unknown): Array<{ name: string; number?: string; email?: string; designation?: string; label?: string }> {
   if (!Array.isArray(value)) return [];
   const contacts: Array<{ name: string; number?: string; email?: string; designation?: string; label?: string }> = [];
@@ -201,6 +185,26 @@ function stripOverrideReason(notesText: string) {
   return notesText.replace(/\[OVERRIDE_REASON:[^\]]+\]\n?/g, '').trim();
 }
 
+function formatDispatchRevisionTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
+
+function asDispatchRevisionLines(v: unknown): DispatchRevisionLineDto[] {
+  if (!Array.isArray(v)) return [];
+  return v as DispatchRevisionLineDto[];
+}
+
+function formatDispatchRevisionLine(row: DispatchRevisionLineDto) {
+  const wh = row.warehouseName || row.warehouseId || '—';
+  const ret =
+    row.returnQtyBase > 0.0005 ? ` · return ${row.returnQtyBase.toFixed(3)} ${row.materialUnit}` : '';
+  return `${row.materialName}: ${row.quantityBase.toFixed(3)} ${row.materialUnit} @ ${wh}${ret}`;
+}
+
 export default function DispatchMaterialsPage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
@@ -211,7 +215,6 @@ export default function DispatchMaterialsPage() {
   const [addBatchTransaction] = useAddBatchTransactionMutation();
   const [getDispatchBudgetWarning, { isLoading: budgetWarningLoading }] = useGetDispatchBudgetWarningMutation();
   const showWarehouseColumn = true;
-  const [gridColumns, setGridColumns] = useState<LineGridColumnConfig[]>(DEFAULT_GRID_COLUMNS);
 
   const [lines,        setLines]        = useState<Line[]>(() => normalizeLines([emptyLine()]));
   const [selectedJob,  setSelectedJob]  = useState('');
@@ -221,6 +224,7 @@ export default function DispatchMaterialsPage() {
   const [submitting,   setSubmitting]   = useState(false);
   const [existingEntry, setExistingEntry] = useState<{ exists: boolean; lines: any[]; transactionIds: string[]; notes: string } | null>(null);
   const [budgetWarning, setBudgetWarning] = useState<DispatchBudgetWarningResult | null>(null);
+  const [budgetWarningValidatedForKey, setBudgetWarningValidatedForKey] = useState<string | null>(null);
 
   // Get total dispatched/returned for each material on this job across all dates
   const { data: jobMaterials = [] } = useGetJobMaterialsQuery(selectedJob, { skip: !selectedJob });
@@ -228,14 +232,16 @@ export default function DispatchMaterialsPage() {
     open: false,
     pendingChange: null,
   });
-  const visibleGridColumns = useMemo(
-    () => gridColumns.filter((column) => column.visible && (showWarehouseColumn || column.key !== 'warehouse')),
-    [gridColumns, showWarehouseColumn]
-  );
-  const gridTemplateColumns = useMemo(
-    () => visibleGridColumns.map((column) => `${column.width}px`).join(' '),
-    [visibleGridColumns]
-  );
+  const [overrideExistingModal, setOverrideExistingModal] = useState<OverrideExistingModalState>({
+    open: false,
+    pendingLines: null,
+  });
+
+  useEffect(() => {
+    setOverrideExistingModal({ open: false, pendingLines: null });
+    setBudgetWarning(null);
+    setBudgetWarningValidatedForKey(null);
+  }, [selectedJob, date]);
 
   // Load from query params if editing
   useEffect(() => {
@@ -253,6 +259,11 @@ export default function DispatchMaterialsPage() {
     { jobId: selectedJob, date },
     { skip: !selectedJob || !date }
   );
+  const { data: revisionData, isFetching: revisionsFetching } = useGetDispatchEntryRevisionsQuery(
+    { jobId: selectedJob, date },
+    { skip: !selectedJob || !date }
+  );
+  const revisions = revisionData?.revisions ?? [];
 
   // Auto-populate form when entry data loads
   useEffect(() => {
@@ -342,10 +353,6 @@ export default function DispatchMaterialsPage() {
     [jobs]
   );
 
-  const populatedLines = useMemo(
-    () => lines.filter((line) => line.materialId || line.dispatchQty || line.returnQty),
-    [lines]
-  );
   const budgetWarningLines = useMemo(
     () =>
       lines
@@ -360,22 +367,23 @@ export default function DispatchMaterialsPage() {
     [lines]
   );
 
-  const totalDispatchQty = useMemo(
-    () =>
-      lines.reduce((sum, line) => {
-        const value = Number.parseFloat(line.dispatchQty);
-        return sum + (Number.isFinite(value) ? value : 0);
-      }, 0),
-    [lines]
+  const budgetWarningLinesKey = useMemo(() => JSON.stringify(budgetWarningLines), [budgetWarningLines]);
+
+  /** Lines + job + date so a stale in-flight response cannot match after job/date switch. */
+  const budgetWarningScopeKey = useMemo(
+    () => `${selectedJob}::${date}::${budgetWarningLinesKey}`,
+    [selectedJob, date, budgetWarningLinesKey]
   );
 
-  const totalReturnQty = useMemo(
+  const budgetWarningAppliesToCurrentLines = useMemo(
     () =>
-      lines.reduce((sum, line) => {
-        const value = Number.parseFloat(line.returnQty);
-        return sum + (Number.isFinite(value) ? value : 0);
-      }, 0),
-    [lines]
+      Boolean(
+        budgetWarning &&
+          budgetWarningValidatedForKey === budgetWarningScopeKey &&
+          budgetWarning.applicable === true &&
+          (budgetWarning.warningCount ?? 0) > 0
+      ),
+    [budgetWarning, budgetWarningScopeKey, budgetWarningValidatedForKey]
   );
 
   const overrideSignals = useMemo(() => {
@@ -394,13 +402,18 @@ export default function DispatchMaterialsPage() {
       }
     }
 
-    const budgetWarningCount = budgetWarning?.warningCount ?? 0;
+    const budgetWarningCount = budgetWarningAppliesToCurrentLines ? (budgetWarning?.warningCount ?? 0) : 0;
     return {
       negativeStockLineCount,
       budgetWarningCount,
       requiresReason: negativeStockLineCount > 0 || budgetWarningCount > 0,
     };
-  }, [budgetWarning, lines, materials]);
+  }, [budgetWarning, budgetWarningAppliesToCurrentLines, lines, materials]);
+
+  const budgetWarningMaterialIds = useMemo(
+    () => (budgetWarningAppliesToCurrentLines ? budgetWarning?.rows.map((row) => row.materialId) ?? [] : []),
+    [budgetWarning, budgetWarningAppliesToCurrentLines]
+  );
 
   // Check if any line has actual data (not empty)
   const hasData = () => lines.some((l) => l.materialId || l.dispatchQty || l.returnQty);
@@ -408,10 +421,14 @@ export default function DispatchMaterialsPage() {
   useEffect(() => {
     if (!selectedJob || budgetWarningLines.length === 0) {
       setBudgetWarning(null);
+      setBudgetWarningValidatedForKey(null);
       return;
     }
 
+    setBudgetWarningValidatedForKey(null);
+
     let cancelled = false;
+    const requestScopeKey = budgetWarningScopeKey;
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
@@ -421,11 +438,13 @@ export default function DispatchMaterialsPage() {
             lines: budgetWarningLines,
           }).unwrap();
           if (!cancelled) {
+            setBudgetWarningValidatedForKey(requestScopeKey);
             setBudgetWarning(result.warningCount > 0 ? result : null);
           }
         } catch {
           if (!cancelled) {
             setBudgetWarning(null);
+            setBudgetWarningValidatedForKey(null);
           }
         }
       })();
@@ -435,7 +454,7 @@ export default function DispatchMaterialsPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [budgetWarningLines, date, getDispatchBudgetWarning, selectedJob]);
+  }, [budgetWarningLines, budgetWarningScopeKey, date, getDispatchBudgetWarning, selectedJob]);
 
   const updateLine = (id: string, field: keyof Line, value: string) => {
     setLines((prev) =>
@@ -471,43 +490,6 @@ export default function DispatchMaterialsPage() {
     setLines((prev) => normalizeLines(prev.filter((line) => line.id !== id), selectedJob));
   };
 
-  const setGridColumnVisibility = (key: string) => {
-    setGridColumns((current) => {
-      const visibleCount = current.filter((column) => column.visible).length;
-      return current.map((column) => {
-        if (column.key !== key) return column;
-        if (column.visible && visibleCount === 1) return column;
-        return { ...column, visible: !column.visible };
-      });
-    });
-  };
-
-  const moveGridColumn = (key: string, direction: 'left' | 'right') => {
-    setGridColumns((current) => {
-      const index = current.findIndex((column) => column.key === key);
-      if (index < 0) return current;
-      const targetIndex = direction === 'left' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= current.length) return current;
-      const next = [...current];
-      const [column] = next.splice(index, 1);
-      next.splice(targetIndex, 0, column);
-      return next;
-    });
-  };
-
-  const resizeGridColumn = (key: string, width: number) => {
-    setGridColumns((current) =>
-      current.map((column) =>
-        column.key === key
-          ? {
-              ...column,
-              width: Math.max(column.minWidth ?? 64, Math.min(column.maxWidth ?? 420, width)),
-            }
-          : column
-      )
-    );
-  };
-
   // Execute the actual batch dispatch
   const executeSubmit = async (linesToSubmit: Line[]) => {
     try {
@@ -536,6 +518,21 @@ export default function DispatchMaterialsPage() {
     } catch (err: any) {
       toast.error(err?.data?.error ?? 'Dispatch failed');
       throw err;
+    }
+  };
+
+  const confirmOverrideExistingSubmit = async () => {
+    const pending = overrideExistingModal.pendingLines;
+    if (!pending?.length) {
+      setOverrideExistingModal({ open: false, pendingLines: null });
+      return;
+    }
+    setOverrideExistingModal({ open: false, pendingLines: null });
+    setSubmitting(true);
+    try {
+      await executeSubmit(pending);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -640,6 +637,11 @@ export default function DispatchMaterialsPage() {
       }
     }
 
+    if (existingEntry?.exists) {
+      setOverrideExistingModal({ open: true, pendingLines: validLines });
+      return;
+    }
+
     setSubmitting(true);
     try {
       await executeSubmit(validLines);
@@ -650,7 +652,7 @@ export default function DispatchMaterialsPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 overflow-x-hidden">
-      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 space-y-1">
           <Link
             href="/stock/dispatch"
@@ -663,7 +665,18 @@ export default function DispatchMaterialsPage() {
             Dispatch stock to a job, capture returns in the same sheet, and keep every line easier to scan.
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {budgetWarningLoading ? (
+            <span className="text-xs tabular-nums text-muted-foreground">Checking budget…</span>
+          ) : budgetWarningAppliesToCurrentLines && budgetWarning ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+              title="Variation job material budget — see breakdown below the line grid"
+            >
+              {budgetWarning.warningCount} budget warning{budgetWarning.warningCount === 1 ? '' : 's'}
+            </Badge>
+          ) : null}
           <Link href="/stock/dispatch" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
             Cancel
           </Link>
@@ -681,32 +694,6 @@ export default function DispatchMaterialsPage() {
         </div>
       )}
 
-      {budgetWarning && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium text-foreground">
-            Budget warning: this dispatch may exceed the variation job material budget.
-          </p>
-          <div className="mt-3 space-y-2">
-            {budgetWarning.rows.slice(0, 4).map((row) => (
-              <div key={row.materialId} className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground">
-                <span className="font-semibold">{row.materialName}</span>
-                {' · '}
-                projected {row.projectedIssuedBaseQuantity.toFixed(3)} {row.baseUnit}
-                {' vs budget '}
-                {row.estimatedBaseQuantity.toFixed(3)} {row.baseUnit}
-                {row.quantityOverrun > 0.0005 ? ` · over by ${row.quantityOverrun.toFixed(3)} ${row.baseUnit}` : ''}
-              </div>
-            ))}
-            {budgetWarning.warningCount > 4 && (
-              <p className="text-xs text-muted-foreground">+{budgetWarning.warningCount - 4} more material warning(s)</p>
-            )}
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Enter an override reason below if this extra issue is intentional.
-          </p>
-        </div>
-      )}
-
       {overrideSignals.negativeStockLineCount > 0 && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">
@@ -718,23 +705,6 @@ export default function DispatchMaterialsPage() {
         </div>
       )}
 
-      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: 'Rows in use', value: String(populatedLines.length), note: `${lines.length} open lines` },
-          { label: 'Dispatch qty', value: totalDispatchQty.toFixed(3), note: 'Entered total' },
-          { label: 'Return qty', value: totalReturnQty.toFixed(3), note: 'Entered total' },
-          { label: 'Budget warnings', value: budgetWarningLoading ? '...' : String(budgetWarning?.warningCount ?? 0), note: 'Variation budget check' },
-        ].map((item) => (
-          <Card key={item.label}>
-            <CardContent className="p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">{item.value}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </section>
-
       <form
         id="dispatch-entry-form"
         onSubmit={validateAndSubmit}
@@ -743,7 +713,7 @@ export default function DispatchMaterialsPage() {
             e.preventDefault();
           }
         }}
-        className="space-y-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+        className="flex flex-col gap-0 overflow-x-auto rounded-lg border border-border bg-card pb-8 shadow-sm sm:pb-10"
       >
         {/* Header */}
         <div className="border-b border-border p-4 sm:p-5">
@@ -819,8 +789,236 @@ export default function DispatchMaterialsPage() {
           showWarehouseColumn={showWarehouseColumn}
           emptyMessage="No materials added yet. Click + Add to start."
           onUpdateLine={updateLine}
+          persistScope="dispatch-entry"
+          budgetWarningMaterialIds={budgetWarningMaterialIds}
         />
+
+        {budgetWarningAppliesToCurrentLines && budgetWarning ? (
+          <div className="border-t border-border bg-amber-500/5 px-4 py-4 sm:px-5">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+              <p className="text-sm font-medium text-foreground">
+                Budget warning: this dispatch may exceed the variation job material budget.
+              </p>
+              <div className="mt-3 space-y-2">
+                {budgetWarning.rows.slice(0, 4).map((row) => (
+                  <div
+                    key={row.materialId}
+                    className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground"
+                  >
+                    <span className="font-semibold">{row.materialName}</span>
+                    {' · '}
+                    projected {row.projectedIssuedBaseQuantity.toFixed(3)} {row.baseUnit}
+                    {' vs budget '}
+                    {row.estimatedBaseQuantity.toFixed(3)} {row.baseUnit}
+                    {row.quantityOverrun > 0.0005 ? ` · over by ${row.quantityOverrun.toFixed(3)} ${row.baseUnit}` : ''}
+                  </div>
+                ))}
+                {budgetWarning.warningCount > 4 && (
+                  <p className="text-xs text-muted-foreground">
+                    +{budgetWarning.warningCount - 4} more material warning(s)
+                  </p>
+                )}
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Enter an override reason above if this extra issue is intentional.
+              </p>
+            </div>
+          </div>
+        ) : null}
       </form>
+
+      {selectedJob && date ? (
+        <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-foreground">Dispatch revision history</h2>
+            {revisionsFetching ? (
+              <span className="text-xs text-muted-foreground">Loading…</span>
+            ) : (
+              <span className="text-xs text-muted-foreground">{revisions.length} saved version(s)</span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Each save records who posted it, whether it was a new worksheet or a replacement, and line-level
+            quantities (base UOM) so changes stay auditable.
+          </p>
+          {!revisionsFetching && revisions.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              No revision events yet for this job and date. History appears after the first successful save.
+            </p>
+          ) : (
+            <ul className="mt-4 space-y-2">
+              {revisions.map((rev) => {
+                const linesAfter = asDispatchRevisionLines(rev.linesAfter);
+                const linesBefore = asDispatchRevisionLines(rev.linesBefore);
+                const cs = rev.changeSummary as Record<string, unknown> | null;
+                const diff =
+                  cs && typeof cs === 'object' && 'added' in cs && Array.isArray(cs.added)
+                    ? (cs as {
+                        added: DispatchRevisionLineDto[];
+                        removed: DispatchRevisionLineDto[];
+                        changed: Array<{
+                          materialName: string;
+                          changes: Array<{ field: string; before: number; after: number }>;
+                        }>;
+                      })
+                    : null;
+
+                return (
+                  <li key={rev.id} className="rounded-md border border-border bg-muted/25">
+                    <details className="group">
+                      <summary className="cursor-pointer list-none px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                            {rev.action}
+                          </Badge>
+                          <span className="font-medium text-foreground">{rev.actorName}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDispatchRevisionTime(rev.createdAt)}
+                          </span>
+                          {rev.source !== 'WORKSHEET' ? (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {rev.source}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </summary>
+                      <div className="space-y-3 border-t border-border px-3 pb-3 pt-2 text-xs text-foreground">
+                        {rev.notesSnippet ? (
+                          <p>
+                            <span className="font-medium text-muted-foreground">Notes (snippet): </span>
+                            {rev.notesSnippet}
+                          </p>
+                        ) : null}
+                        {rev.action === 'UPDATE' && linesBefore.length > 0 ? (
+                          <div>
+                            <p className="mb-1 font-medium text-muted-foreground">Before (replaced snapshot)</p>
+                            <ul className="list-inside list-disc space-y-0.5 text-muted-foreground">
+                              {linesBefore.map((row) => (
+                                <li key={`${rev.id}-b-${row.transactionId}`}>{formatDispatchRevisionLine(row)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <div>
+                          <p className="mb-1 font-medium text-muted-foreground">After this save</p>
+                          <ul className="list-inside list-disc space-y-0.5 text-muted-foreground">
+                            {linesAfter.length === 0 ? (
+                              <li className="list-none">No material lines (e.g. custom delivery note only).</li>
+                            ) : (
+                              linesAfter.map((row) => (
+                                <li key={`${rev.id}-a-${row.transactionId}`}>{formatDispatchRevisionLine(row)}</li>
+                              ))
+                            )}
+                          </ul>
+                        </div>
+                        {diff && (diff.added.length > 0 || diff.removed.length > 0 || diff.changed.length > 0) ? (
+                          <div className="rounded-md border border-border bg-background/80 p-2">
+                            <p className="mb-1 font-medium text-muted-foreground">What changed</p>
+                            {diff.added.length > 0 ? (
+                              <div className="mb-2">
+                                <p className="text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                  Added lines
+                                </p>
+                                <ul className="mt-0.5 list-inside list-disc space-y-0.5">
+                                  {diff.added.map((row, i) => (
+                                    <li key={`${rev.id}-add-${i}`}>{formatDispatchRevisionLine(row)}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            {diff.removed.length > 0 ? (
+                              <div className="mb-2">
+                                <p className="text-[10px] uppercase tracking-wide text-destructive">Removed lines</p>
+                                <ul className="mt-0.5 list-inside list-disc space-y-0.5">
+                                  {diff.removed.map((row, i) => (
+                                    <li key={`${rev.id}-rem-${i}`}>{formatDispatchRevisionLine(row)}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            {diff.changed.length > 0 ? (
+                              <div>
+                                <p className="text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                                  Quantity / return changes
+                                </p>
+                                <ul className="mt-0.5 space-y-1">
+                                  {diff.changed.map((c, i) => (
+                                    <li key={`${rev.id}-chg-${i}`}>
+                                      <span className="font-medium">{c.materialName}</span>
+                                      {c.changes.map((ch, j) => (
+                                        <span key={j} className="text-muted-foreground">
+                                          {' '}
+                                          · {ch.field}: {String(ch.before)} → {String(ch.after)}
+                                        </span>
+                                      ))}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </details>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : null}
+
+      {/* Replace existing dispatch — confirmation */}
+      {overrideExistingModal.open && overrideExistingModal.pendingLines && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/50"
+            aria-hidden
+            onClick={() => {
+              if (!submitting) setOverrideExistingModal({ open: false, pendingLines: null });
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="override-existing-dispatch-title"
+            className="fixed left-1/2 top-1/2 z-50 w-[min(100%-2rem,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-lg"
+          >
+            <h2 id="override-existing-dispatch-title" className="text-lg font-semibold text-foreground">
+              Replace existing dispatch?
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              There is already a saved dispatch for{' '}
+              <span className="font-medium text-foreground">
+                {selectedJobRecord?.jobNumber ?? 'this job'}
+              </span>{' '}
+              on <span className="font-medium text-foreground">{date}</span>. Saving will overwrite that entry with the
+              lines in this worksheet ({overrideExistingModal.pendingLines.length} material line
+              {overrideExistingModal.pendingLines.length === 1 ? '' : 's'}).
+            </p>
+            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="text-xs text-foreground">
+                This cannot be undone from this screen. If you are unsure, cancel and verify the existing entry first.
+              </p>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={submitting}
+                onClick={() => setOverrideExistingModal({ open: false, pendingLines: null })}
+              >
+                Cancel
+              </Button>
+              <Button type="button" size="sm" disabled={submitting} onClick={() => void confirmOverrideExistingSubmit()}>
+                {submitting ? 'Saving…' : 'Replace & save'}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Change Warning Modal */}
       {changeWarningModal.open && changeWarningModal.pendingChange && (

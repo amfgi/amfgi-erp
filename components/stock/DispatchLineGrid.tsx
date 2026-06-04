@@ -1,8 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import SearchSelect from '@/components/ui/SearchSelect';
 import LineGridColumnSettings, { type LineGridColumnConfig } from '@/components/stock/LineGridColumnSettings';
+import { cn } from '@/lib/utils';
 import type { Material } from '@/store/hooks';
 
 interface WarehouseOption {
@@ -19,6 +21,14 @@ interface DispatchLineGridRow {
   warehouseId: string;
 }
 
+export type DispatchLineGridPersistScope = 'dispatch-entry' | 'delivery-note' | 'warehouse-transfer';
+
+const PREFERENCE_KEY_BY_SCOPE: Record<DispatchLineGridPersistScope, string> = {
+  'dispatch-entry': 'stock-dispatch-entry-line-grid',
+  'delivery-note': 'stock-dispatch-delivery-note-line-grid',
+  'warehouse-transfer': 'stock-warehouse-transfer-line-grid',
+};
+
 interface DispatchLineGridProps {
   lines: DispatchLineGridRow[];
   materials: Material[];
@@ -27,6 +37,17 @@ interface DispatchLineGridProps {
   showWarehouseColumn?: boolean;
   emptyMessage: string;
   onUpdateLine: (id: string, field: keyof DispatchLineGridRow, value: string) => void;
+  /**
+   * Which screen this grid is on — each scope has its own column layout in `UserTablePreference`
+   * and in `localStorage` (per active company).
+   */
+  persistScope: DispatchLineGridPersistScope;
+  /** Material IDs from the budget warning API; matching rows use a warning-tinted background. */
+  budgetWarningMaterialIds?: readonly string[];
+  /** When set, row inputs use this instead of `Boolean(selectedJob)`. */
+  gridEnabled?: boolean;
+  /** Warehouse transfer worksheet: hide return/warehouse columns; relabel dispatch qty. */
+  variant?: 'dispatch' | 'warehouse-transfer';
 }
 
 type DispatchGridColumnKey =
@@ -121,6 +142,70 @@ function showBaseStockLine(quantityUomId: string) {
   return quantityUomId.trim().length > 0;
 }
 
+type LineGridPreferencePayload = {
+  order: string[];
+  visible: Record<string, boolean>;
+  widths?: Record<string, number>;
+};
+
+function mergeStoredGridColumns(
+  defaults: LineGridColumnConfig[],
+  stored: Partial<LineGridPreferencePayload> | null | undefined
+): LineGridColumnConfig[] {
+  const defaultByKey = new Map(defaults.map((c) => [c.key, c]));
+  const known = new Set(defaults.map((c) => c.key));
+  const rawOrder = stored?.order?.length ? stored.order : defaults.map((c) => c.key);
+  const order = rawOrder.filter((k) => known.has(k));
+  for (const k of defaults.map((c) => c.key)) {
+    if (!order.includes(k)) order.push(k);
+  }
+  return order.map((key) => {
+    const base = defaultByKey.get(key)!;
+    const v = stored?.visible?.[key];
+    const w = stored?.widths?.[key];
+    const width =
+      typeof w === 'number' && Number.isFinite(w)
+        ? Math.round(Math.max(base.minWidth ?? 64, Math.min(base.maxWidth ?? 420, w)))
+        : base.width;
+    const visible = typeof v === 'boolean' ? v : base.visible;
+    return { ...base, visible, width };
+  });
+}
+
+function gridColumnsToPreferencePayload(columns: LineGridColumnConfig[]): LineGridPreferencePayload {
+  return {
+    order: columns.map((c) => c.key),
+    visible: Object.fromEntries(columns.map((c) => [c.key, c.visible])),
+    widths: Object.fromEntries(columns.map((c) => [c.key, c.width])),
+  };
+}
+
+function getDispatchGridLocalStorageKey(preferenceKey: string, companyId: string) {
+  return `dispatch-line-grid:${preferenceKey.trim().toLowerCase()}:${companyId}`;
+}
+
+function readDispatchGridLocalPref(storageKey: string): Partial<LineGridPreferencePayload> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as Partial<LineGridPreferencePayload>;
+  } catch {
+    return null;
+  }
+}
+
+function writeDispatchGridLocalPref(storageKey: string, payload: LineGridPreferencePayload) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 export default function DispatchLineGrid({
   lines,
   materials,
@@ -129,16 +214,133 @@ export default function DispatchLineGrid({
   showWarehouseColumn = true,
   emptyMessage,
   onUpdateLine,
+  persistScope,
+  budgetWarningMaterialIds,
+  gridEnabled,
+  variant = 'dispatch',
 }: DispatchLineGridProps) {
-  const [gridColumns, setGridColumns] = useState<LineGridColumnConfig[]>(DEFAULT_GRID_COLUMNS);
-  const visibleGridColumns = useMemo(
-    () => gridColumns.filter((column) => column.visible && (showWarehouseColumn || column.key !== 'warehouse')),
-    [gridColumns, showWarehouseColumn]
+  const isWarehouseTransfer = variant === 'warehouse-transfer';
+  const inputsEnabled = gridEnabled ?? Boolean(selectedJob);
+  const effectiveShowWarehouseColumn = showWarehouseColumn && !isWarehouseTransfer;
+  const preferenceKey = PREFERENCE_KEY_BY_SCOPE[persistScope];
+  const budgetWarningMaterialIdSet = useMemo(() => {
+    if (!budgetWarningMaterialIds?.length) return null;
+    return new Set(budgetWarningMaterialIds);
+  }, [budgetWarningMaterialIds]);
+  const { data: session, status: sessionStatus } = useSession();
+  const companyId = session?.user?.activeCompanyId;
+  const storageKey = useMemo(
+    () => (companyId ? getDispatchGridLocalStorageKey(preferenceKey, companyId) : null),
+    [preferenceKey, companyId]
   );
+
+  const defaultColumnsForScope = useMemo(() => {
+    if (!isWarehouseTransfer) return DEFAULT_GRID_COLUMNS;
+    return DEFAULT_GRID_COLUMNS.map((column) =>
+      column.key === 'dispatchQty'
+        ? { ...column, label: 'Transfer Qty' }
+        : column.key === 'returnQty'
+          ? { ...column, visible: false }
+          : column.key === 'warehouse'
+            ? { ...column, visible: false }
+            : column,
+    );
+  }, [isWarehouseTransfer]);
+
+  const [gridColumns, setGridColumns] = useState<LineGridColumnConfig[]>(defaultColumnsForScope);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const loadedPreferenceKeyRef = useRef<string | null>(null);
+  const visibleGridColumns = useMemo(() => {
+    return gridColumns.filter((column) => {
+      if (!column.visible) return false;
+      if (!effectiveShowWarehouseColumn && column.key === 'warehouse') return false;
+      if (isWarehouseTransfer && column.key === 'returnQty') return false;
+      return true;
+    });
+  }, [gridColumns, effectiveShowWarehouseColumn, isWarehouseTransfer]);
   const gridTemplateColumns = useMemo(
     () => visibleGridColumns.map((column) => `${column.width}px`).join(' '),
     [visibleGridColumns]
   );
+
+  /** Apply last-known columns from localStorage before paint (avoids default-width flash while session/network load). */
+  useLayoutEffect(() => {
+    if (!storageKey) return;
+    const stashed = readDispatchGridLocalPref(storageKey);
+    if (!stashed) return;
+    setGridColumns(mergeStoredGridColumns(defaultColumnsForScope, stashed));
+  }, [storageKey, defaultColumnsForScope]);
+
+  useEffect(() => {
+    if (sessionStatus === 'loading') return;
+
+    if (!companyId) {
+      setPreferencesLoaded(true);
+      loadedPreferenceKeyRef.current = `${preferenceKey}:`;
+      return;
+    }
+
+    setPreferencesLoaded(false);
+    const controller = new AbortController();
+    const apiKey = preferenceKey;
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/me/table-preferences/${encodeURIComponent(apiKey)}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Failed to load table preferences');
+        const json = (await response.json()) as { data?: Partial<LineGridPreferencePayload> | null };
+        if (controller.signal.aborted) return;
+
+        const remote = json.data;
+        const mergedFromServer =
+          remote != null ? mergeStoredGridColumns(defaultColumnsForScope, remote) : null;
+
+        if (mergedFromServer) {
+          setGridColumns(mergedFromServer);
+          if (storageKey) {
+            writeDispatchGridLocalPref(storageKey, gridColumnsToPreferencePayload(mergedFromServer));
+          }
+        }
+
+        loadedPreferenceKeyRef.current = `${apiKey}:${companyId}`;
+        setPreferencesLoaded(true);
+      } catch {
+        if (controller.signal.aborted) return;
+        const fallback = storageKey ? readDispatchGridLocalPref(storageKey) : null;
+        setGridColumns(mergeStoredGridColumns(defaultColumnsForScope, fallback));
+        loadedPreferenceKeyRef.current = `${apiKey}:${companyId}`;
+        setPreferencesLoaded(true);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [preferenceKey, companyId, sessionStatus, storageKey, defaultColumnsForScope]);
+
+  useEffect(() => {
+    if (!preferencesLoaded || loadedPreferenceKeyRef.current !== `${preferenceKey}:${companyId ?? ''}`) return;
+    if (!storageKey) return;
+
+    const payload = gridColumnsToPreferencePayload(gridColumns);
+    writeDispatchGridLocalPref(storageKey, payload);
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void fetch(`/api/me/table-preferences/${encodeURIComponent(preferenceKey)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).catch(() => {});
+    }, 350);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [gridColumns, preferenceKey, preferencesLoaded, storageKey, companyId]);
 
   const setGridColumnVisibility = (key: string) => {
     setGridColumns((current) => {
@@ -164,49 +366,87 @@ export default function DispatchLineGrid({
     });
   };
 
-  const resizeGridColumn = (key: string, width: number) => {
-    setGridColumns((current) =>
-      current.map((column) =>
-        column.key === key
-          ? {
-              ...column,
-              width: Math.max(column.minWidth ?? 64, Math.min(column.maxWidth ?? 420, width)),
-            }
-          : column
-      )
-    );
+  const beginHeaderResize = (e: React.PointerEvent<HTMLButtonElement>, columnKey: string) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const col = gridColumns.find((c) => c.key === columnKey);
+    if (!col) return;
+
+    const pointerId = e.pointerId;
+    const startX = e.clientX;
+    const startWidth = col.width;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const next = startWidth + (moveEvent.clientX - startX);
+      setGridColumns((current) =>
+        current.map((column) =>
+          column.key === columnKey
+            ? {
+                ...column,
+                width: Math.max(column.minWidth ?? 64, Math.min(column.maxWidth ?? 420, next)),
+              }
+            : column
+        )
+      );
+    };
+
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   return (
-    <div className="border-b border-slate-200 dark:border-slate-800">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Excel View</div>
+    <div className="border-b border-border">
+      <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Excel View</div>
         <LineGridColumnSettings
-          columns={gridColumns.filter((column) => showWarehouseColumn || column.key !== 'warehouse')}
+          columns={gridColumns.filter((column) => {
+            if (!effectiveShowWarehouseColumn && column.key === 'warehouse') return false;
+            if (isWarehouseTransfer && column.key === 'returnQty') return false;
+            return true;
+          })}
           onToggle={setGridColumnVisibility}
           onMove={moveGridColumn}
-          onResize={resizeGridColumn}
         />
       </div>
 
       <div className="overflow-x-auto overscroll-x-contain">
-        <div className="min-w-max bg-white dark:bg-slate-950/70">
+        <div className="min-w-max bg-card">
           <div
-            className="grid border-b border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+            className="grid border-b border-border bg-muted/50"
             style={{ gridTemplateColumns }}
           >
             {visibleGridColumns.map((column) => (
               <div
                 key={column.key}
-                className="border-r border-slate-300 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 last:border-r-0 dark:border-slate-700 dark:text-slate-300"
+                className="relative flex min-w-0 items-center border-r border-border py-1 pl-2 pr-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground last:border-r-0"
               >
-                {column.label}
+                <span className="min-w-0 flex-1 truncate pr-1">{column.label}</span>
+                <button
+                  type="button"
+                  aria-label={`Resize ${column.label} column`}
+                  className="absolute right-0 top-0 z-1 h-full w-2 max-w-[10px] touch-none cursor-col-resize border-0 bg-transparent p-0 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onPointerDown={(ev) => beginHeaderResize(ev, column.key)}
+                />
               </div>
             ))}
           </div>
 
           {lines.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-slate-500">{emptyMessage}</div>
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">{emptyMessage}</div>
           ) : (
             lines.map((line, idx) => {
               const mat = materials.find((material) => material.id === line.materialId);
@@ -215,19 +455,26 @@ export default function DispatchLineGrid({
               const globalStockDisplay = formatGlobalStock(mat, line.quantityUomId);
               const selectedUom = getSelectedUom(mat, line.quantityUomId);
               const selectedWarehouseBaseStock = getWarehouseBaseStock(mat, line.warehouseId);
+              const isBudgetWarningRow =
+                Boolean(line.materialId) && budgetWarningMaterialIdSet?.has(line.materialId) === true;
 
               return (
                 <div
                   key={line.id}
-                  className="grid border-b border-slate-200 hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-900/40"
+                  className={cn(
+                    'grid border-b border-border',
+                    isBudgetWarningRow
+                      ? 'bg-amber-500/15 hover:bg-amber-500/20 dark:bg-amber-500/20 dark:hover:bg-amber-500/25'
+                      : 'hover:bg-muted/40'
+                  )}
                   style={{ gridTemplateColumns }}
                 >
                   {visibleGridColumns.map((column) => {
-                    const cellClassName = 'border-r border-slate-200 last:border-r-0 dark:border-slate-800';
+                    const cellClassName = 'border-r border-border last:border-r-0';
                     switch (column.key as DispatchGridColumnKey) {
                       case 'line':
                         return (
-                          <div key={column.key} className={`${cellClassName} px-2 py-1 font-mono text-xs text-slate-500 dark:text-slate-400`}>
+                          <div key={column.key} className={`${cellClassName} px-2 py-1 font-mono text-xs text-muted-foreground`}>
                             {idx + 1}
                           </div>
                         );
@@ -238,7 +485,7 @@ export default function DispatchLineGrid({
                               value={line.materialId}
                               onChange={(id) => onUpdateLine(line.id, 'materialId', id)}
                               placeholder="Material"
-                              disabled={!selectedJob}
+                              disabled={!inputsEnabled}
                               items={materials.filter((material) => material.isActive).map((material) => ({
                                 id: material.id,
                                 label: material.name,
@@ -253,8 +500,8 @@ export default function DispatchLineGrid({
                               }}
                               renderItem={(item) => (
                                 <div className="flex w-full min-w-0 items-center justify-between gap-3">
-                                  <div className="truncate font-medium text-slate-900 dark:text-white">{item.label}</div>
-                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">{item.searchText}</span>
+                                  <div className="truncate font-medium text-foreground">{item.label}</div>
+                                  <span className="text-[11px] text-muted-foreground">{item.searchText}</span>
                                 </div>
                               )}
                             />
@@ -268,7 +515,7 @@ export default function DispatchLineGrid({
                                 value={line.quantityUomId}
                                 onChange={(id) => onUpdateLine(line.id, 'quantityUomId', id)}
                                 placeholder="UOM"
-                                disabled={!selectedJob}
+                                disabled={!inputsEnabled}
                                 items={getMaterialUomOptions(mat).map((uom) => ({
                                   id: uom.value,
                                   label: uom.label,
@@ -283,7 +530,7 @@ export default function DispatchLineGrid({
                                 }}
                               />
                             ) : (
-                              <div className="px-2 py-1.5 text-xs text-slate-400 dark:text-slate-500">UOM</div>
+                              <div className="px-2 py-1.5 text-xs text-muted-foreground">UOM</div>
                             )}
                           </div>
                         );
@@ -296,7 +543,7 @@ export default function DispatchLineGrid({
                                   {stockDisplay.quantity.toFixed(3)} {stockDisplay.unitName}
                                 </div>
                                 {mat && showBaseStockLine(line.quantityUomId) ? (
-                                  <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">
                                     {selectedWarehouseBaseStock.toFixed(3)} {mat.unit}
                                   </div>
                                 ) : null}
@@ -315,7 +562,7 @@ export default function DispatchLineGrid({
                                   {globalStockDisplay.quantity.toFixed(3)} {globalStockDisplay.unitName}
                                 </div>
                                 {showBaseStockLine(line.quantityUomId) ? (
-                                  <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                  <div className="mt-0.5 text-[10px] text-muted-foreground">
                                     {mat.currentStock.toFixed(3)} {mat.unit}
                                   </div>
                                 ) : null}
@@ -332,18 +579,20 @@ export default function DispatchLineGrid({
                               type="number"
                               min="0.001"
                               step="any"
-                              disabled={!selectedJob || !mat || !line.warehouseId}
+                              disabled={
+                                !inputsEnabled || !mat || (!isWarehouseTransfer && !line.warehouseId)
+                              }
                               value={line.dispatchQty}
                               onChange={(event) => onUpdateLine(line.id, 'dispatchQty', event.target.value)}
                               title={
                                 !mat
                                   ? ''
-                                  : !line.warehouseId
+                                  : !isWarehouseTransfer && !line.warehouseId
                                     ? 'Select warehouse first'
                                     : ''
                               }
                               placeholder="0.00"
-                              className="h-full w-full [appearance:textfield] border-0 bg-transparent px-2 py-1.5 text-right text-sm text-slate-900 focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:text-white"
+                              className="h-full w-full [appearance:textfield] border-0 bg-transparent px-2 py-1.5 text-right text-sm text-foreground focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                           </div>
                         );
@@ -357,8 +606,8 @@ export default function DispatchLineGrid({
                               value={line.returnQty}
                               onChange={(event) => onUpdateLine(line.id, 'returnQty', event.target.value)}
                               placeholder="0.00"
-                              disabled={!selectedJob}
-                              className="h-full w-full [appearance:textfield] border-0 bg-transparent px-2 py-1.5 text-right text-sm text-slate-900 focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none dark:text-white"
+                              disabled={!inputsEnabled}
+                              className="h-full w-full [appearance:textfield] border-0 bg-transparent px-2 py-1.5 text-right text-sm text-foreground focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                           </div>
                         );
@@ -369,7 +618,7 @@ export default function DispatchLineGrid({
                               value={line.warehouseId}
                               onChange={(id) => onUpdateLine(line.id, 'warehouseId', id)}
                               placeholder="Warehouse"
-                              disabled={!selectedJob || !mat}
+                              disabled={!inputsEnabled || !mat}
                               dropdownInPortal
                               items={warehouses.map((warehouse) => {
                                 const warehouseStock = formatWarehouseStock(mat, warehouse.id, line.quantityUomId);
@@ -388,16 +637,16 @@ export default function DispatchLineGrid({
                               renderItem={(item) => (
                                 <div className="flex w-full min-w-0 items-center justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="truncate font-medium text-slate-900 dark:text-white">{item.label}</div>
+                                    <div className="truncate font-medium text-foreground">{item.label}</div>
                                     {mat?.warehouseId === item.id ? (
                                       <div className="text-[10px] uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-300">Default</div>
                                     ) : null}
                                   </div>
-                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">{item.searchText}</span>
+                                  <span className="text-[11px] text-muted-foreground">{item.searchText}</span>
                                 </div>
                               )}
                             />
-                            <div className="border-t border-slate-100 px-2 py-1 text-[10px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground">
                               {selectedWarehouse && selectedUom
                                 ? `${selectedWarehouse.name}: ${stockDisplay.quantity.toFixed(3)} ${selectedUom.unitName}`
                                 : 'Warehouse stock'}

@@ -1,12 +1,55 @@
 'use client';
 
-import { type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
+import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
+import { Input } from '@/components/ui/shadcn/input';
+import { Separator } from '@/components/ui/shadcn/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/shadcn/table';
+import ScheduleSearchSelect from '@/components/hr/ScheduleSearchSelect';
+import {
+  parseScheduleTeamDropId,
+  parseScheduleWorkerDragId,
+  ScheduleFlatTeamDropSurface,
+  ScheduleTeamDropZone,
+  ScheduleWorkerDraggableCard,
+  scheduleTeamDropId,
+} from '@/components/hr/ScheduleWorkerDnD';
 import SearchSelect from '@/components/ui/SearchSelect';
+import { cn } from '@/lib/utils';
+import type { EmployeeTypeTimingSetting } from '@/lib/hr/employeeTypeSettings';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
-import { useTheme } from '@/providers/ThemeProvider';
+import {
+  fetchActiveEmployeesForSchedule,
+  fetchEmployeesByIds,
+  fetchJobById,
+  fetchJobsByIds,
+  jobToSearchItem,
+  searchJobsApi,
+  type ScheduleEmployeeRow,
+  type ScheduleJobRow,
+} from '@/lib/hr/scheduleSearchApi';
 import type { WorkScheduleContext } from '@/lib/utils/templateData';
 import {
   WORK_SCHEDULE_PRINT_CHANNEL,
@@ -14,6 +57,30 @@ import {
   type WorkSchedulePrintPayload,
 } from '@/lib/utils/printTemplateSession';
 import toast from 'react-hot-toast';
+import { Copy, Redo2, Trash2, Undo2 } from 'lucide-react';
+
+const GUEST_DRIVER_ROW_PREFIX = 'guest:';
+
+function isGuestDriverRowKey(key: string) {
+  return key.startsWith(GUEST_DRIVER_ROW_PREFIX);
+}
+
+function guestDriverRowKeyFromLogId(logId: string) {
+  return `${GUEST_DRIVER_ROW_PREFIX}${logId}`;
+}
+
+function createPendingGuestDriverRowKey() {
+  return `${GUEST_DRIVER_ROW_PREFIX}pending-${crypto.randomUUID()}`;
+}
+
+type ScheduleDriverLogRecord = {
+  id?: string;
+  driverEmployeeId?: string | null;
+  guestDriverName?: string | null;
+  routeText?: string;
+  sequence?: number;
+  driver?: { id?: string; fullName?: string };
+};
 
 interface EmpOpt {
   id: string;
@@ -42,6 +109,8 @@ interface JobOpt {
   finishedGoods?: unknown;
   requiredExpertises?: unknown;
 }
+
+type EmployeeProfile = EmpOpt & { workforce: ReturnType<typeof parseWorkforceProfile> };
 
 interface MemberRow {
   employeeId: string;
@@ -80,6 +149,22 @@ interface ScheduleTemplateOption {
   id: string;
   workDate: string;
   status: string;
+}
+
+const TEAM_COLUMN_CLASS = 'min-w-[13rem] w-[13rem] align-top';
+const STICKY_ROW_LABEL_CLASS =
+  'sticky left-0 z-20 min-w-[8rem] w-[8rem] border-r border-border bg-muted px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)]';
+
+/** In-grid controls — matches shadcn Input sizing. */
+const SCHEDULE_GRID_FLAT_INPUT =
+  'flex h-9 w-full min-w-0 rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+
+const SCHEDULE_GRID_SEARCH_INPUT =
+  '!h-9 !rounded-md !border !border-border !bg-background !px-2 !text-sm focus-visible:!ring-2 focus-visible:!ring-ring min-w-0';
+
+function scheduleSearchInputProps(navProps?: Record<string, unknown>) {
+  const nav = (navProps ?? {}) as { className?: string };
+  return { ...navProps, className: cn(SCHEDULE_GRID_SEARCH_INPUT, nav.className) };
 }
 
 function getNextTeamNumber(rows: AsgDraft[]): number {
@@ -208,6 +293,15 @@ function extractSubTeamsFromMembers(members: MemberRow[]): { splitMode: boolean;
       members: normalizeMemberList(subTeam.members),
     })),
   };
+}
+
+/** Deep snapshot so undo/redo stacks are not mutated by later edits. */
+function cloneDrafts(drafts: AsgDraft[]): AsgDraft[] {
+  return JSON.parse(JSON.stringify(drafts)) as AsgDraft[];
+}
+
+function draftsEqual(a: AsgDraft[], b: AsgDraft[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function normalizeDraft(raw: Partial<AsgDraft>, fallbackIndex = 0): AsgDraft {
@@ -385,13 +479,12 @@ export default function HrScheduleDayPage() {
   const params = useParams();
   const workDate = String(params.workDate ?? '');
   const { data: session } = useSession();
-  const { theme, toggle } = useTheme();
-
   const [schedule, setSchedule] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [employees, setEmployees] = useState<EmpOpt[]>([]);
-  const [jobs, setJobs] = useState<JobOpt[]>([]);
+  const [employeeById, setEmployeeById] = useState<Map<string, EmployeeProfile>>(() => new Map());
+  const [jobById, setJobById] = useState<Map<string, JobOpt>>(() => new Map());
+  const [labourTypeTiming, setLabourTypeTiming] = useState<EmployeeTypeTimingSetting | null>(null);
   const [previousSchedules, setPreviousSchedules] = useState<ScheduleTemplateOption[]>([]);
   const [selectedTemplateDate, setSelectedTemplateDate] = useState('');
   const [drafts, setDrafts] = useState<AsgDraft[]>([]);
@@ -400,22 +493,34 @@ export default function HrScheduleDayPage() {
     version: string;
     values: Record<string, string>;
     selectedIds: string[];
+    guestNames: Record<string, string>;
   }>({
     version: '',
     values: {},
     selectedIds: [],
+    guestNames: {},
   });
   const [selectedDriverToAdd, setSelectedDriverToAdd] = useState('');
+  const [guestDriverNameInput, setGuestDriverNameInput] = useState('');
   const [showWorkerRail, setShowWorkerRail] = useState(() => readStoredScheduleViewPrefs().showWorkerRail);
   const [showRowLabels, setShowRowLabels] = useState(() => readStoredScheduleViewPrefs().showRowLabels);
   const [viewScale, setViewScale] = useState(() => readStoredScheduleViewPrefs().viewScale);
   const [useLightGridTheme, setUseLightGridTheme] = useState(() => readStoredScheduleViewPrefs().useLightGridTheme);
   const [draggingWorkerId, setDraggingWorkerId] = useState('');
+  const [workerDragSessionActive, setWorkerDragSessionActive] = useState(false);
   const [activeDropColumn, setActiveDropColumn] = useState<number | null>(null);
+  const [activeDropSubTeam, setActiveDropSubTeam] = useState<number | null>(null);
+  const isWorkerDragActive = workerDragSessionActive;
+  const workerDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
   const [undoStack, setUndoStack] = useState<AsgDraft[][]>([]);
   const [redoStack, setRedoStack] = useState<AsgDraft[][]>([]);
   const suspendHistoryRef = useRef(false);
   const restoredDraftRef = useRef(false);
+  const draftsRef = useRef<AsgDraft[]>([]);
+  const teamBoardBodyRef = useRef<HTMLDivElement>(null);
+  const [workerRailMaxHeight, setWorkerRailMaxHeight] = useState<number | null>(null);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -425,36 +530,37 @@ export default function HrScheduleDayPage() {
   const status = schedule && typeof schedule === 'object' ? String((schedule as { status?: string }).status ?? '') : '';
   const locked = status === 'LOCKED';
   const dis = !canEdit || locked;
-  const isLight = theme === 'light';
   const draftStorageKey = useMemo(() => `${DRAFT_STORAGE_PREFIX}${workDate}`, [workDate]);
   const canZoomOut = viewScale > 0.8;
   const canZoomIn = viewScale < 1.35;
-  const pageShellCls = isLight
-    ? 'bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.08),transparent_26%),radial-gradient(circle_at_top_right,rgba(14,165,233,0.08),transparent_24%)]'
-    : 'bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.08),transparent_24%),radial-gradient(circle_at_top_right,rgba(14,165,233,0.08),transparent_22%)]';
-  const heroCls = isLight
-    ? 'border border-slate-200 bg-white/90 shadow-[0_24px_80px_-36px_rgba(148,163,184,0.35)] backdrop-blur-xl'
-    : 'border border-white/10 bg-slate-950/75 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.85)] backdrop-blur-xl';
-  const sectionCls = isLight
-    ? 'border border-slate-200 bg-white/90 shadow-[0_20px_70px_-40px_rgba(148,163,184,0.35)]'
-    : 'border border-white/10 bg-slate-950/70 shadow-[0_20px_70px_-40px_rgba(15,23,42,0.9)]';
-  const dividerCls = isLight ? 'border-slate-200' : 'border-white/10';
-  const headingCls = isLight ? 'text-slate-900' : 'text-white';
-  const bodyTextCls = isLight ? 'text-slate-600' : 'text-slate-400';
-  const subtleTextCls = isLight ? 'text-slate-500' : 'text-slate-500';
-  const thCls = isLight
-    ? 'sticky left-0 z-10 whitespace-nowrap border-r border-slate-200 bg-white/95 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 backdrop-blur-sm'
-    : 'sticky left-0 z-10 whitespace-nowrap border-r border-white/10 bg-slate-950/95 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 backdrop-blur-sm';
-  const tdCls = 'min-w-[235px] px-2 py-1.5 align-top';
-  const inputCls = isLight
-    ? 'w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-900 shadow-sm transition-colors focus:border-emerald-400/60 focus:outline-none'
-    : 'w-full rounded border border-white/10 bg-slate-950 px-1.5 py-1 text-xs text-white shadow-sm transition-colors focus:border-emerald-400/40 focus:outline-none';
-  const metricCardCls = isLight
-    ? 'rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2'
-    : 'rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2';
-  const metricAccentCls = isLight
-    ? 'rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2'
-    : 'rounded-lg border border-emerald-500/15 bg-emerald-500/[0.06] px-2.5 py-2';
+  const scheduleRowLabelCls = STICKY_ROW_LABEL_CLASS;
+  const scheduleRowCls = 'border-b border-border transition-colors hover:bg-muted/40';
+  const gridFlatInputCls = SCHEDULE_GRID_FLAT_INPUT;
+  const gridTextareaCls = cn(SCHEDULE_GRID_FLAT_INPUT, 'min-h-20 resize-y py-2');
+  const scheduleStatusTag = (() => {
+    if (!status) {
+      return { label: 'No schedule', className: 'border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100' };
+    }
+    if (status === 'PUBLISHED') {
+      return { label: 'Published', className: 'border-emerald-600/40 bg-emerald-500/15 text-emerald-950 dark:text-emerald-100' };
+    }
+    if (status === 'LOCKED') {
+      return { label: 'Locked', className: 'border-border bg-muted text-foreground' };
+    }
+    return { label: 'Draft', className: 'border-sky-600/40 bg-sky-500/15 text-sky-950 dark:text-sky-100' };
+  })();
+  const workDateLabel = useMemo(() => {
+    try {
+      return new Date(`${workDate}T00:00:00`).toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return workDate;
+    }
+  }, [workDate]);
 
   useEffect(() => {
     try {
@@ -472,67 +578,132 @@ export default function HrScheduleDayPage() {
     }
   }, [showWorkerRail, showRowLabels, viewScale, useLightGridTheme]);
 
-  const getRowThemeClasses = useCallback(
-    (rowKey: string) => {
-      if (!isLight || !useLightGridTheme) {
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+
+  useEffect(() => {
+    if (!showWorkerRail) return;
+    const node = teamBoardBodyRef.current;
+    if (!node) return;
+
+    const syncHeight = () => {
+      const height = Math.round(node.getBoundingClientRect().height);
+      setWorkerRailMaxHeight(height > 120 ? height : null);
+    };
+
+    const observer = new ResizeObserver(() => {
+      syncHeight();
+    });
+    observer.observe(node);
+    window.addEventListener('resize', syncHeight);
+    requestAnimationFrame(syncHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncHeight);
+    };
+  }, [showWorkerRail, drafts.length, showRowLabels, viewScale, loading, schedule]);
+
+  const getRowThemeClasses = useCallback((rowKey: string): { row: string; label: string; cell: string } => {
+      if (!useLightGridTheme) {
         return {
-          row: 'border-t border-white/5',
-          label: thCls,
-          cell: `${tdCls} border-l border-white/5`,
+          row: scheduleRowCls,
+          label: scheduleRowLabelCls,
+          cell: 'p-2',
         };
       }
 
-      const shared = { row: 'border-t border-slate-200' };
-      if (rowKey === 'locationType' || rowKey === 'job' || rowKey === 'jobCompany' || rowKey === 'workProcessDetails' || rowKey === 'targetQty') {
+      const shared = { row: scheduleRowCls };
+      const themedLabel = (tone: string) => cn(STICKY_ROW_LABEL_CLASS, tone);
+      if (
+        rowKey === 'locationType' ||
+        rowKey === 'job' ||
+        rowKey === 'jobCompany' ||
+        rowKey === 'workProcessDetails' ||
+        rowKey === 'targetQty'
+      ) {
         return {
           row: shared.row,
-          label: 'sticky left-0 z-10 whitespace-nowrap border-r border-sky-200 bg-sky-100 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700 backdrop-blur-sm',
-          cell: `${tdCls} border-l border-sky-100 bg-sky-50/80`,
+          label: themedLabel('!bg-sky-100 text-sky-900 dark:!bg-sky-950 dark:text-sky-100'),
+          cell: 'bg-sky-500/5 p-2',
         };
       }
       if (rowKey === 'dutyRange' || rowKey === 'breakRange') {
         return {
           row: shared.row,
-          label: 'sticky left-0 z-10 whitespace-nowrap border-r border-emerald-200 bg-emerald-100 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700 backdrop-blur-sm',
-          cell: `${tdCls} border-l border-emerald-100 bg-emerald-50/80`,
+          label: themedLabel('!bg-emerald-100 text-emerald-900 dark:!bg-emerald-950 dark:text-emerald-100'),
+          cell: 'bg-emerald-500/5 p-2',
         };
       }
       if (rowKey === 'workers' || rowKey === 'suggestedWorkers') {
         return {
           row: shared.row,
-          label: 'sticky left-0 z-10 whitespace-nowrap border-r border-amber-200 bg-amber-100 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-800 backdrop-blur-sm',
-          cell: `${tdCls} border-l border-amber-100 bg-amber-50/80`,
+          label: themedLabel('!bg-amber-100 text-amber-950 dark:!bg-amber-950 dark:text-amber-100'),
+          cell: 'bg-amber-500/5 p-2',
         };
       }
       if (rowKey === 'workerCount') {
         return {
           row: shared.row,
-          label: 'sticky left-0 z-10 whitespace-nowrap border-r border-orange-200 bg-orange-100 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-orange-800 backdrop-blur-sm',
-          cell: `${tdCls} border-l border-orange-100 bg-orange-50/80`,
+          label: themedLabel('!bg-orange-100 text-orange-950 dark:!bg-orange-950 dark:text-orange-100'),
+          cell: 'bg-orange-500/5 p-2',
         };
       }
       if (rowKey === 'driver1EmployeeId' || rowKey === 'driver2EmployeeId') {
         return {
           row: shared.row,
-          label: 'sticky left-0 z-10 whitespace-nowrap border-r border-rose-200 bg-rose-100 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-700 backdrop-blur-sm',
-          cell: `${tdCls} border-l border-rose-100 bg-rose-50/80`,
+          label: themedLabel('!bg-rose-100 text-rose-900 dark:!bg-rose-950 dark:text-rose-100'),
+          cell: 'bg-rose-500/5 p-2',
         };
       }
       if (rowKey === 'remarks') {
-        return {
-          row: shared.row,
-          label: 'sticky left-0 z-10 whitespace-nowrap border-r border-slate-200 bg-slate-100 px-2 py-1.5 text-left align-top text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700 backdrop-blur-sm',
-          cell: `${tdCls} border-l border-slate-100 bg-slate-50/80`,
-        };
+        return { row: shared.row, label: scheduleRowLabelCls, cell: 'bg-muted/30 p-2' };
       }
-      return {
-        row: shared.row,
-        label: thCls,
-        cell: `${tdCls} border-l border-slate-200`,
-      };
+      return { row: shared.row, label: scheduleRowLabelCls, cell: 'p-2' };
     },
-    [isLight, useLightGridTheme, thCls, tdCls]
+    [useLightGridTheme, scheduleRowLabelCls, scheduleRowCls],
   );
+
+  const plannerCellCls = useCallback(
+    (rowKey: string, _colIdx: number) => {
+      const { cell } = getRowThemeClasses(rowKey);
+      return cn(TEAM_COLUMN_CLASS, 'border-l border-border', cell);
+    },
+    [getRowThemeClasses],
+  );
+
+  const teamHeaderCls = (colIdx: number, splitMode: boolean) =>
+    cn(
+      TEAM_COLUMN_CLASS,
+      'sticky top-0 z-20 border-b border-border bg-muted px-3 py-3 text-left align-top',
+      getColumnDragDimmedCls(colIdx, splitMode),
+    );
+
+  const mergeEmployees = useCallback((rows: ScheduleEmployeeRow[] | EmployeeProfile[]) => {
+    setEmployeeById((prev) => {
+      const next = new Map(prev);
+      for (const row of rows) {
+        const profile: EmployeeProfile =
+          'workforce' in row && row.workforce
+            ? (row as EmployeeProfile)
+            : { ...(row as ScheduleEmployeeRow), workforce: parseWorkforceProfile(row.profileExtension) };
+        next.set(profile.id, profile);
+      }
+      return next;
+    });
+  }, []);
+
+  const mergeJobs = useCallback((rows: ScheduleJobRow[] | JobOpt[]) => {
+    setJobById((prev) => {
+      const next = new Map(prev);
+      for (const row of rows) next.set(row.id, row as JobOpt);
+      return next;
+    });
+  }, []);
+
+  const getEmployee = useCallback((id: string) => (id ? employeeById.get(id) : undefined), [employeeById]);
+  const getJob = useCallback((id: string) => (id ? jobById.get(id) : undefined), [jobById]);
 
   const loadSchedule = useCallback(async () => {
     const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' });
@@ -547,15 +718,17 @@ export default function HrScheduleDayPage() {
       if (!canView) return;
       if (!cancelled) setLoading(true);
       await loadSchedule();
-      const [er, jr, sr] = await Promise.all([
-        fetch('/api/hr/employees', { cache: 'no-store' }),
-        fetch('/api/jobs?status=ACTIVE', { cache: 'no-store' }),
+      const [timingRes, sr, activeEmployees] = await Promise.all([
+        fetch('/api/hr/employee-type-settings', { cache: 'no-store' }),
         fetch('/api/hr/schedule', { cache: 'no-store' }),
+        fetchActiveEmployeesForSchedule(),
       ]);
-      const [ej, jj, sj] = await Promise.all([er.json(), jr.json(), sr.json()]);
+      const [timingJson, sj] = await Promise.all([timingRes.json(), sr.json()]);
       if (cancelled) return;
-      if (er.ok && ej?.success) setEmployees(ej.data);
-      if (jr.ok && jj?.success) setJobs(jj.data);
+      if (activeEmployees.length > 0) mergeEmployees(activeEmployees);
+      if (timingRes.ok && timingJson?.success && timingJson.data?.LABOUR_WORKER) {
+        setLabourTypeTiming(timingJson.data.LABOUR_WORKER as EmployeeTypeTimingSetting);
+      }
       if (sr.ok && sj?.success) {
         const options = (sj.data as Array<Record<string, unknown>>)
           .map((row) => ({
@@ -570,7 +743,7 @@ export default function HrScheduleDayPage() {
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [canView, loadSchedule, workDate]);
+  }, [canView, loadSchedule, mergeEmployees, workDate]);
 
   const mapFromApi = useCallback((sch: Record<string, unknown>) => {
     const asg = (sch.assignments as Array<Record<string, unknown>>) ?? [];
@@ -675,31 +848,73 @@ export default function HrScheduleDayPage() {
     }
   }, [drafts, schedule, dis, draftStorageKey]);
 
-  const employeeProfiles = useMemo(
-    () =>
-      employees.map((e) => ({
-        ...e,
-        workforce: parseWorkforceProfile(e.profileExtension),
-      })),
-    [employees]
-  );
+  const driverLogVersion =
+    schedule && typeof schedule === 'object' && 'id' in schedule
+      ? String((schedule as { id: string }).id)
+      : workDate;
 
-  const activeProfiles = useMemo(
-    () => employeeProfiles.filter((e) => !e.status || e.status === 'ACTIVE'),
-    [employeeProfiles]
-  );
+  useEffect(() => {
+    const employeeIds = new Set<string>();
+    const jobIds = new Set<string>();
+    for (const draft of drafts) {
+      if (draft.jobId) jobIds.add(draft.jobId);
+      if (draft.driver1EmployeeId) employeeIds.add(draft.driver1EmployeeId);
+      if (draft.driver2EmployeeId) employeeIds.add(draft.driver2EmployeeId);
+      if (draft.splitMode) {
+        for (const subTeam of draft.subTeams) {
+          for (const member of subTeam.members) {
+            if (member.employeeId) employeeIds.add(member.employeeId);
+          }
+        }
+      } else {
+        for (const member of draft.members) {
+          if (member.employeeId) employeeIds.add(member.employeeId);
+        }
+      }
+    }
+    const scheduleLogs = ((schedule as { driverLogs?: Array<Record<string, unknown>> } | null)?.driverLogs ??
+      []) as Array<Record<string, unknown>>;
+    for (const log of scheduleLogs) {
+      if (String(log.guestDriverName ?? '').trim()) continue;
+      const id = String(log.driverEmployeeId ?? (log.driver as { id?: string } | undefined)?.id ?? '');
+      if (id) employeeIds.add(id);
+    }
+    for (const id of driverTripState.version === driverLogVersion ? driverTripState.selectedIds : []) {
+      if (id && !isGuestDriverRowKey(id)) employeeIds.add(id);
+    }
+
+    const missingEmployeeIds = [...employeeIds].filter((id) => id && !employeeById.has(id));
+    const missingJobIds = [...jobIds].filter((id) => id && !jobById.has(id));
+    if (missingEmployeeIds.length === 0 && missingJobIds.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      const [employees, jobs] = await Promise.all([
+        fetchEmployeesByIds(missingEmployeeIds),
+        fetchJobsByIds(missingJobIds),
+      ]);
+      if (cancelled) return;
+      if (employees.length > 0) mergeEmployees(employees);
+      if (jobs.length > 0) mergeJobs(jobs);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [drafts, schedule, driverTripState, driverLogVersion, employeeById, jobById, mergeEmployees, mergeJobs]);
+
+  const employeeProfiles = useMemo(() => Array.from(employeeById.values()), [employeeById]);
 
   const workerPool = useMemo(
     () =>
-      activeProfiles.filter(
+      employeeProfiles.filter(
         (e) => e.workforce.employeeType === 'LABOUR_WORKER' || e.workforce.employeeType === 'HYBRID_STAFF'
       ),
-    [activeProfiles]
+    [employeeProfiles]
   );
 
   const driverPool = useMemo(
-    () => activeProfiles.filter((e) => e.workforce.employeeType === 'DRIVER'),
-    [activeProfiles]
+    () => employeeProfiles.filter((e) => e.workforce.employeeType === 'DRIVER'),
+    [employeeProfiles]
   );
 
   const workerItems = useMemo(
@@ -718,70 +933,113 @@ export default function HrScheduleDayPage() {
         id: e.id,
         label: e.preferredName || e.fullName,
         searchText: `${e.fullName} ${e.preferredName ?? ''} ${e.employeeCode}`,
-    })),
+      })),
     [driverPool]
   );
 
-  const jobItems = useMemo(
-    () =>
-      jobs.map((job) => {
-        const quotationNumber = String(job.quotationNumber ?? '').trim();
-        const lpoNumber = String(job.lpoNumber ?? '').trim();
-        const companyName = String(job.customerName ?? '').trim();
-        const siteName = String(job.site ?? '').trim();
-        return {
-          id: job.id,
-          label: job.jobNumber,
-          searchText: [quotationNumber, lpoNumber, companyName, siteName, job.projectDetails ?? '', job.description ?? '']
-            .map((value) => String(value).trim())
-            .filter(Boolean)
-            .join(' '),
-          quotationNumber,
-          lpoNumber,
-          companyName,
-          siteName,
-        };
-      }),
-    [jobs]
+  const syncDriverTripStateFromLogs = useCallback(
+    (logs: ScheduleDriverLogRecord[], version: string, seedAllDriversIfEmpty: boolean) => {
+      if (logs.length > 0) {
+        const selectedIds: string[] = [];
+        const values: Record<string, string> = {};
+        const guestNames: Record<string, string> = {};
+        for (const log of logs) {
+          const guestName = String(log.guestDriverName ?? '').trim();
+          if (guestName) {
+            const key = log.id ? guestDriverRowKeyFromLogId(String(log.id)) : createPendingGuestDriverRowKey();
+            selectedIds.push(key);
+            guestNames[key] = guestName;
+            values[key] = String(log.routeText ?? '');
+            continue;
+          }
+          const employeeId = String(log.driverEmployeeId ?? log.driver?.id ?? '').trim();
+          if (!employeeId) continue;
+          selectedIds.push(employeeId);
+          values[employeeId] = String(log.routeText ?? '');
+        }
+        setDriverTripState({ version, values, selectedIds, guestNames });
+        return;
+      }
+      if (!seedAllDriversIfEmpty) {
+        setDriverTripState({ version, values: {}, selectedIds: [], guestNames: {} });
+        return;
+      }
+      const sortedDrivers = [...driverPool].sort((a, b) =>
+        (a.preferredName || a.fullName).localeCompare(b.preferredName || b.fullName)
+      );
+      setDriverTripState({
+        version,
+        values: {},
+        selectedIds: sortedDrivers.map((driver) => driver.id),
+        guestNames: {},
+      });
+    },
+    [driverPool]
   );
 
-  const driverLogVersion = schedule && typeof schedule === 'object' && 'id' in schedule
-    ? String((schedule as { id: string }).id)
-    : workDate;
+  useEffect(() => {
+    if (!schedule) return;
+    const logs =
+      ((schedule as { driverLogs?: ScheduleDriverLogRecord[] }).driverLogs ?? []) as ScheduleDriverLogRecord[];
+    if (driverTripState.version === driverLogVersion) return;
+    queueMicrotask(() => syncDriverTripStateFromLogs(logs, driverLogVersion, true));
+  }, [schedule, driverLogVersion, driverTripState.version, syncDriverTripStateFromLogs]);
+
+  useEffect(() => {
+    if (!schedule || driverPool.length === 0) return;
+    const logs =
+      ((schedule as { driverLogs?: ScheduleDriverLogRecord[] }).driverLogs ?? []) as ScheduleDriverLogRecord[];
+    if (logs.length > 0) return;
+    if (driverTripState.version !== driverLogVersion) return;
+    if (driverTripState.selectedIds.length > 0) return;
+    queueMicrotask(() => syncDriverTripStateFromLogs([], driverLogVersion, true));
+  }, [
+    schedule,
+    driverPool,
+    driverLogVersion,
+    driverTripState.version,
+    driverTripState.selectedIds.length,
+    syncDriverTripStateFromLogs,
+  ]);
 
   const driverTripRows = useMemo(() => {
-    const scheduleLogs = ((schedule as { driverLogs?: Array<Record<string, unknown>> } | null)?.driverLogs ?? []) as Array<Record<string, unknown>>;
-    const logMap = new Map(
-      scheduleLogs.map((log, index) => [
-        String(log.driverEmployeeId ?? (log.driver as { id?: string } | undefined)?.id ?? ''),
-        {
+    if (driverTripState.version === driverLogVersion) {
+      return driverTripState.selectedIds.map((rowKey, index) => {
+        const guest = isGuestDriverRowKey(rowKey);
+        return {
+          rowKey,
+          driverEmployeeId: guest ? null : rowKey,
+          guestDriverName: guest ? (driverTripState.guestNames[rowKey] ?? '').trim() : null,
+          routeText: driverTripState.values[rowKey] ?? '',
+          sequence: index,
+        };
+      });
+    }
+
+    const scheduleLogs =
+      ((schedule as { driverLogs?: ScheduleDriverLogRecord[] } | null)?.driverLogs ?? []) as ScheduleDriverLogRecord[];
+    return scheduleLogs.map((log, index) => {
+      const guestName = String(log.guestDriverName ?? '').trim();
+      if (guestName) {
+        const rowKey = log.id ? guestDriverRowKeyFromLogId(String(log.id)) : createPendingGuestDriverRowKey();
+        return {
+          rowKey,
+          driverEmployeeId: null,
+          guestDriverName: guestName,
           routeText: String(log.routeText ?? ''),
           sequence: typeof log.sequence === 'number' ? log.sequence : index,
-        },
-      ])
-    );
-
-    const savedDriverIds = scheduleLogs
-      .map((log) => String(log.driverEmployeeId ?? (log.driver as { id?: string } | undefined)?.id ?? ''))
-      .filter(Boolean);
-    const selectedIds = Array.from(
-      new Set(driverTripState.version === driverLogVersion ? driverTripState.selectedIds : savedDriverIds)
-    );
-
-    return selectedIds.map((driverEmployeeId, index) => ({
-      driverEmployeeId,
-      routeText:
-        driverTripState.version === driverLogVersion && driverTripState.values[driverEmployeeId] !== undefined
-          ? driverTripState.values[driverEmployeeId]
-          : logMap.get(driverEmployeeId)?.routeText ?? '',
-      sequence: logMap.get(driverEmployeeId)?.sequence ?? index,
-    }));
+        };
+      }
+      const employeeId = String(log.driverEmployeeId ?? log.driver?.id ?? '').trim();
+      return {
+        rowKey: employeeId,
+        driverEmployeeId: employeeId,
+        guestDriverName: null,
+        routeText: String(log.routeText ?? ''),
+        sequence: typeof log.sequence === 'number' ? log.sequence : index,
+      };
+    });
   }, [schedule, driverTripState, driverLogVersion]);
-
-  const availableDriverItems = useMemo(
-    () => driverItems.filter((item) => !driverTripRows.some((row) => row.driverEmployeeId === item.id)),
-    [driverItems, driverTripRows]
-  );
 
   // Count how many groups each employee appears in
   const empAssignCount = useMemo(() => {
@@ -815,6 +1073,11 @@ export default function HrScheduleDayPage() {
     [workerPool, assignedEmployeeIds]
   );
 
+  const availableDriverItems = useMemo(
+    () => driverItems.filter((item) => !driverTripRows.some((row) => row.driverEmployeeId === item.id)),
+    [driverItems, driverTripRows]
+  );
+
   const createSchedule = async () => {
     const res = await fetch('/api/hr/schedule', {
       method: 'POST',
@@ -840,7 +1103,7 @@ export default function HrScheduleDayPage() {
     const uniqueJobUpdates = new Map<string, string>();
     for (const draft of drafts) {
       if (!draft.jobId || draft.locationType !== 'SITE_JOB') continue;
-      const job = jobs.find((row) => row.id === draft.jobId);
+      const job = getJob(draft.jobId);
       const resolvedWorkProcess = resolveWorkProcessDetails(draft.workProcessDetails, job);
       const currentSaved = String(job?.description ?? '').trim();
       if (resolvedWorkProcess !== currentSaved) {
@@ -872,7 +1135,7 @@ export default function HrScheduleDayPage() {
     const body = {
       notes: scheduleInfo || null,
       assignments: drafts.map((d) => {
-        const job = jobs.find((row) => row.id === d.jobId);
+        const job = getJob(d.jobId);
         const resolvedWorkProcess = resolveWorkProcessDetails(d.workProcessDetails, job);
         const parsedTargetQty = Number.parseFloat(String(d.targetQty ?? '').trim());
         const nonSplitMembers = normalizeMemberList(d.members.filter((member) => member.employeeId));
@@ -930,11 +1193,17 @@ export default function HrScheduleDayPage() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        logs: driverTripRows.map((log, index) => ({
-          driverEmployeeId: log.driverEmployeeId,
-          routeText: log.routeText.trim(),
-          sequence: index,
-        })),
+        logs: driverTripRows
+          .map((log, index) => {
+            const routeText = log.routeText.trim();
+            const guestName = log.guestDriverName?.trim();
+            if (guestName) {
+              return { guestDriverName: guestName, routeText, sequence: index };
+            }
+            if (!log.driverEmployeeId) return null;
+            return { driverEmployeeId: log.driverEmployeeId, routeText, sequence: index };
+          })
+          .filter((row): row is NonNullable<typeof row> => row !== null),
       }),
     });
     const driverJson = await readApiEnvelope<{ success?: boolean; error?: string; data?: unknown }>(driverRes);
@@ -947,10 +1216,12 @@ export default function HrScheduleDayPage() {
     toast.success('Saved');
     localStorage.removeItem(draftStorageKey);
     restoredDraftRef.current = false;
+    const savedLogs = (driverJson.data ?? []) as ScheduleDriverLogRecord[];
     setSchedule({
       ...(json.data as Record<string, unknown>),
-      driverLogs: driverJson.data,
+      driverLogs: savedLogs,
     });
+    syncDriverTripStateFromLogs(savedLogs, driverLogVersion, false);
   };
 
   const publish = async () => {
@@ -1010,72 +1281,111 @@ export default function HrScheduleDayPage() {
   const removeColumn = (idx: number) => applyDrafts((d) => d.filter((_, i) => i !== idx));
 
   const addDriverTripRow = (driverEmployeeId: string) => {
-    if (!driverEmployeeId) return;
+    if (!driverEmployeeId || isGuestDriverRowKey(driverEmployeeId)) return;
     setDriverTripState((current) => {
       const currentIds =
         current.version === driverLogVersion
           ? current.selectedIds
-          : driverTripRows.map((row) => row.driverEmployeeId);
+          : driverTripRows.map((row) => row.rowKey);
       if (currentIds.includes(driverEmployeeId)) return current;
       return {
         version: driverLogVersion,
         values: current.version === driverLogVersion ? current.values : {},
+        guestNames: current.version === driverLogVersion ? current.guestNames : {},
         selectedIds: [...currentIds, driverEmployeeId],
       };
     });
     setSelectedDriverToAdd('');
   };
 
-  const removeDriverTripRow = (driverEmployeeId: string) => {
+  const addGuestDriverTripRow = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const rowKey = createPendingGuestDriverRowKey();
     setDriverTripState((current) => {
       const currentIds =
         current.version === driverLogVersion
           ? current.selectedIds
-          : driverTripRows.map((row) => row.driverEmployeeId);
+          : driverTripRows.map((row) => row.rowKey);
+      return {
+        version: driverLogVersion,
+        values: current.version === driverLogVersion ? current.values : {},
+        guestNames: {
+          ...(current.version === driverLogVersion ? current.guestNames : {}),
+          [rowKey]: trimmed,
+        },
+        selectedIds: [...currentIds, rowKey],
+      };
+    });
+    setGuestDriverNameInput('');
+  };
+
+  const updateGuestDriverName = (rowKey: string, name: string) => {
+    setDriverTripState((current) => ({
+      version: driverLogVersion,
+      values: current.version === driverLogVersion ? current.values : {},
+      guestNames: {
+        ...(current.version === driverLogVersion ? current.guestNames : {}),
+        [rowKey]: name,
+      },
+      selectedIds:
+        current.version === driverLogVersion
+          ? current.selectedIds
+          : driverTripRows.map((row) => row.rowKey),
+    }));
+  };
+
+  const removeDriverTripRow = (rowKey: string) => {
+    setDriverTripState((current) => {
+      const currentIds =
+        current.version === driverLogVersion
+          ? current.selectedIds
+          : driverTripRows.map((row) => row.rowKey);
+      const guestNames = { ...(current.version === driverLogVersion ? current.guestNames : {}) };
+      delete guestNames[rowKey];
       return {
         version: driverLogVersion,
         values: Object.fromEntries(
-          Object.entries(current.version === driverLogVersion ? current.values : {}).filter(([id]) => id !== driverEmployeeId)
+          Object.entries(current.version === driverLogVersion ? current.values : {}).filter(([id]) => id !== rowKey)
         ),
-        selectedIds: currentIds.filter((id) => id !== driverEmployeeId),
+        guestNames,
+        selectedIds: currentIds.filter((id) => id !== rowKey),
       };
     });
   };
 
-  const applyDrafts = (updater: (current: AsgDraft[]) => AsgDraft[]) => {
+  const applyDrafts = useCallback((updater: (current: AsgDraft[]) => AsgDraft[]) => {
     setDrafts((current) => {
       const next = updater(current);
       if (suspendHistoryRef.current) return next;
-      if (JSON.stringify(next) === JSON.stringify(current)) return current;
-      setUndoStack((prev) => [...prev.slice(-39), current]);
+      if (draftsEqual(next, current)) return current;
+      setUndoStack((prev) => [...prev.slice(-39), cloneDrafts(current)]);
       setRedoStack([]);
       return next;
     });
-  };
+  }, []);
 
-  const undo = () => {
-    setUndoStack((prev) => {
-      if (prev.length === 0) return prev;
-      const previous = prev[prev.length - 1];
-      setDrafts((current) => {
-        setRedoStack((rs) => [...rs, current]);
-        return previous;
-      });
-      return prev.slice(0, -1);
+  const undo = useCallback(() => {
+    setUndoStack((prevUndo) => {
+      if (prevUndo.length === 0) return prevUndo;
+      const previous = prevUndo[prevUndo.length - 1];
+      const currentSnapshot = cloneDrafts(draftsRef.current);
+      setRedoStack((prevRedo) => [...prevRedo, currentSnapshot]);
+      setDrafts(cloneDrafts(previous));
+      return prevUndo.slice(0, -1);
     });
-  };
+  }, []);
 
-  const redo = () => {
-    setRedoStack((prev) => {
-      if (prev.length === 0) return prev;
-      const next = prev[prev.length - 1];
-      setDrafts((current) => {
-        setUndoStack((us) => [...us.slice(-39), current]);
-        return next;
-      });
-      return prev.slice(0, -1);
+  const redo = useCallback(() => {
+    setRedoStack((prevRedo) => {
+      if (prevRedo.length === 0) return prevRedo;
+      const next = prevRedo[prevRedo.length - 1];
+      const currentSnapshot = cloneDrafts(draftsRef.current);
+      setUndoStack((prevUndo) => [...prevUndo.slice(-39), currentSnapshot]);
+      setDrafts(cloneDrafts(next));
+      return prevRedo.slice(0, -1);
     });
-  };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1086,24 +1396,26 @@ export default function HrScheduleDayPage() {
       if (isTypingContext) return;
 
       const key = e.key.toLowerCase();
-      if (e.ctrlKey && !e.shiftKey && key === 'z') {
-        if (undoStack.length > 0) {
-          e.preventDefault();
-          undo();
-        }
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.shiftKey && key === 'z') {
+        e.preventDefault();
+        redo();
         return;
       }
-      if (e.ctrlKey && !e.shiftKey && key === 'y') {
-        if (redoStack.length > 0) {
-          e.preventDefault();
-          redo();
-        }
+      if (mod && !e.shiftKey && key === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (mod && !e.shiftKey && key === 'y') {
+        e.preventDefault();
+        redo();
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [undoStack.length, redoStack.length]);
+  }, [undo, redo]);
 
   const upd = (idx: number, patch: Partial<AsgDraft>) =>
     applyDrafts((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -1418,53 +1730,161 @@ export default function HrScheduleDayPage() {
       })
     );
 
-  const addWorkerToSubTeamByDrop = (colIdx: number, subTeamIndex: number, employeeId: string) => {
-    if (!employeeId) return;
-    addSubTeamMember(colIdx, subTeamIndex, employeeId);
-  };
-
-  const onWorkerDragStart = (e: DragEvent<HTMLElement>, employeeId: string) => {
-    if (dis) return;
-    setDraggingWorkerId(employeeId);
-    e.dataTransfer.setData('text/plain', employeeId);
-    e.dataTransfer.effectAllowed = 'copy';
-  };
-
-  const onWorkerDrop = (e: DragEvent<HTMLElement>, colIdx: number) => {
-    if (dis) return;
-    e.preventDefault();
-    setActiveDropColumn(null);
+  const endWorkerDragSession = useCallback(() => {
     setDraggingWorkerId('');
-    const employeeId = e.dataTransfer.getData('text/plain');
-    if (!employeeId) return;
-    addWorkerToTeam(colIdx, employeeId);
-  };
-
-  const onWorkerDropToSubTeam = (e: DragEvent<HTMLElement>, colIdx: number, subTeamIndex: number) => {
-    if (dis) return;
-    e.preventDefault();
-    e.stopPropagation();
+    setWorkerDragSessionActive(false);
     setActiveDropColumn(null);
-    setDraggingWorkerId('');
-    const employeeId = e.dataTransfer.getData('text/plain');
-    addWorkerToSubTeamByDrop(colIdx, subTeamIndex, employeeId);
-  };
+    setActiveDropSubTeam(null);
+  }, []);
 
-  const getColumnDropHighlightCls = useCallback(
-    (colIdx: number) => {
-      if (!draggingWorkerId || activeDropColumn !== colIdx) return '';
-      return isLight
-        ? 'ring-2 ring-emerald-300/80 ring-inset bg-emerald-50/80'
-        : 'ring-2 ring-emerald-400/60 ring-inset bg-emerald-500/10';
+  const assignWorkerToSubTeam = useCallback(
+    (colIdx: number, subTeamIndex: number, employeeId: string) => {
+      applyDrafts((rows) =>
+        rows.map((row, idx) => {
+          if (idx !== colIdx) return row;
+          if (!row.splitMode) {
+            if (getDraftAssignedIds(row).has(employeeId)) return row;
+            const emptyIndex = row.members.findIndex((member) => !member.employeeId);
+            if (emptyIndex >= 0) {
+              return {
+                ...row,
+                members: row.members.map((member, index) =>
+                  index === emptyIndex ? { ...member, employeeId, slot: index + 1 } : member
+                ),
+              };
+            }
+            return {
+              ...row,
+              members: [...row.members, { employeeId, role: 'WORKER' as const, slot: row.members.length + 1 }],
+            };
+          }
+          if (getDraftAssignedIds(row).has(employeeId)) return row;
+          const nextSubTeams = [...row.subTeams];
+          while (nextSubTeams.length <= subTeamIndex) {
+            nextSubTeams.push(createEmptySubTeam(nextSubTeams.length));
+          }
+          return {
+            ...row,
+            members: [],
+            subTeams: nextSubTeams.map((subTeam, index) => {
+              if (index !== subTeamIndex) return subTeam;
+              const emptyIndex = subTeam.members.findIndex((member) => !member.employeeId);
+              if (emptyIndex >= 0) {
+                return {
+                  ...subTeam,
+                  members: subTeam.members.map((member, innerIndex) =>
+                    innerIndex === emptyIndex
+                      ? { ...member, employeeId, slot: innerIndex + 1 }
+                      : member
+                  ),
+                };
+              }
+              return {
+                ...subTeam,
+                members: [
+                  ...subTeam.members,
+                  { employeeId, role: 'WORKER' as const, slot: subTeam.members.length + 1 },
+                ],
+              };
+            }),
+          };
+        })
+      );
     },
-    [activeDropColumn, draggingWorkerId, isLight]
+    [applyDrafts, getDraftAssignedIds],
+  );
+
+  const handleScheduleWorkerDragStart = useCallback(
+    (event: DragStartEvent) => {
+      if (dis) return;
+      const employeeId = parseScheduleWorkerDragId(event.active.id);
+      if (!employeeId) return;
+      setDraggingWorkerId(employeeId);
+      setWorkerDragSessionActive(true);
+      setActiveDropColumn(null);
+      setActiveDropSubTeam(null);
+    },
+    [dis],
+  );
+
+  const handleScheduleWorkerDragOver = useCallback((event: DragOverEvent) => {
+    const target = event.over ? parseScheduleTeamDropId(event.over.id) : null;
+    if (!target) {
+      setActiveDropColumn(null);
+      setActiveDropSubTeam(null);
+      return;
+    }
+    setActiveDropColumn(target.colIdx);
+    setActiveDropSubTeam(target.subTeamIndex);
+  }, []);
+
+  const handleScheduleWorkerDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const employeeId = parseScheduleWorkerDragId(event.active.id);
+      const target = event.over ? parseScheduleTeamDropId(event.over.id) : null;
+      endWorkerDragSession();
+      if (dis || !employeeId || !target) return;
+
+      const draft = draftsRef.current[target.colIdx];
+      if (!draft) return;
+
+      if (draft.splitMode || target.subTeamIndex !== null) {
+        assignWorkerToSubTeam(target.colIdx, target.subTeamIndex ?? 0, employeeId);
+        return;
+      }
+      addWorkerToTeam(target.colIdx, employeeId);
+    },
+    [addWorkerToTeam, assignWorkerToSubTeam, dis, endWorkerDragSession],
+  );
+
+  const handleScheduleWorkerDragCancel = useCallback(() => {
+    endWorkerDragSession();
+  }, [endWorkerDragSession]);
+
+  const draggingWorkerOverlay = useMemo(() => {
+    if (!draggingWorkerId) return null;
+    const employee = employeeById.get(draggingWorkerId);
+    if (!employee) return null;
+    return employee;
+  }, [draggingWorkerId, employeeById]);
+
+  const getColumnDragDimmedCls = useCallback(
+    (colIdx: number, _splitMode: boolean) => {
+      if (!isWorkerDragActive) return '';
+      const isTargetColumn = activeDropColumn === colIdx;
+      return cn(
+        'select-none transition-all duration-150',
+        isTargetColumn ? 'opacity-30 blur-[3px] saturate-50' : 'opacity-50 blur-[1.5px]',
+      );
+    },
+    [activeDropColumn, isWorkerDragActive],
+  );
+
+  const getWorkersColumnDragCls = useCallback(
+    (colIdx: number) => {
+      if (!isWorkerDragActive) return '';
+      const isTargetColumn = activeDropColumn === colIdx;
+      return cn(
+        'relative z-10',
+        isTargetColumn ? 'bg-primary/5' : 'opacity-80',
+      );
+    },
+    [activeDropColumn, isWorkerDragActive],
+  );
+
+  const isColumnFieldLocked = useCallback(
+    (colIdx: number) => isWorkerDragActive && activeDropColumn === colIdx,
+    [activeDropColumn, isWorkerDragActive],
   );
 
 
-  const empName = (id: string) => {
-    const e = employees.find((x) => x.id === id);
-    return e ? (e.preferredName || e.fullName) : '';
-  };
+  const empName = useCallback(
+    (id: string) => {
+      const e = getEmployee(id);
+      return e ? e.preferredName || e.fullName : '';
+    },
+    [getEmployee]
+  );
 
   const focusScheduleCell = useCallback((row: number, col: number, sub = 0) => {
     const exact = document.querySelector<HTMLElement>(
@@ -1514,18 +1934,15 @@ export default function HrScheduleDayPage() {
 
   const labourDefaultTiming = useMemo(
     () =>
-      employeeProfiles.find(
-        (employee) =>
-          employee.workforce.employeeType === 'LABOUR_WORKER' &&
-          employee.defaultTiming &&
-          (
-            employee.defaultTiming.dutyStart ||
-            employee.defaultTiming.dutyEnd ||
-            employee.defaultTiming.breakStart ||
-            employee.defaultTiming.breakEnd
-          )
-      )?.defaultTiming ?? null,
-    [employeeProfiles]
+      labourTypeTiming
+        ? {
+            dutyStart: labourTypeTiming.dutyStart,
+            dutyEnd: labourTypeTiming.dutyEnd,
+            breakStart: labourTypeTiming.breakStart,
+            breakEnd: labourTypeTiming.breakEnd,
+          }
+        : null,
+    [labourTypeTiming]
   );
 
   function applyTimingFromTemplate(
@@ -1569,19 +1986,19 @@ export default function HrScheduleDayPage() {
   }
 
   const suggestedWorkersByColumn = useMemo(() => {
-    const byColumn = new Map<number, typeof workerPool>();
+    const byColumn = new Map<number, EmployeeProfile[]>();
     for (let ci = 0; ci < drafts.length; ci++) {
       const d = drafts[ci];
-      const job = jobs.find((j) => j.id === d.jobId);
+      const job = getJob(d.jobId);
       const required = parseJobExpertise(job);
       if (required.length === 0) {
         byColumn.set(ci, []);
         continue;
       }
       const requiredNorm = new Set(required.map(normalizeSkill));
-        const usedInColumn = getDraftAssignedIds(d);
-        const suggestions = workerPool.filter((w) => {
-          if (usedInColumn.has(w.id)) return false;
+      const usedInColumn = getDraftAssignedIds(d);
+      const suggestions = workerPool.filter((w) => {
+        if (usedInColumn.has(w.id)) return false;
         const expertiseNorm = new Set(w.workforce.expertises.map(normalizeSkill));
         for (const r of requiredNorm) {
           if (expertiseNorm.has(r)) return true;
@@ -1591,7 +2008,7 @@ export default function HrScheduleDayPage() {
       byColumn.set(ci, suggestions);
     }
     return byColumn;
-  }, [drafts, jobs, workerPool, getDraftAssignedIds]);
+  }, [drafts, getJob, getDraftAssignedIds, workerPool]);
 
   const scheduleSummary = useMemo(() => {
     const workerCount = drafts.reduce(
@@ -1609,7 +2026,7 @@ export default function HrScheduleDayPage() {
   const buildSchedulePreviewData = (): WorkScheduleContext => {
     const primaryJob =
       drafts
-        .map((draft) => jobs.find((row) => row.id === draft.jobId))
+        .map((draft) => getJob(draft.jobId))
         .find((job): job is JobOpt => Boolean(job)) ?? null;
 
     return {
@@ -1645,7 +2062,7 @@ export default function HrScheduleDayPage() {
         remarksSummary: [scheduleInfo.trim(), ...drafts.map((draft) => draft.remarks.trim()).filter(Boolean)].filter(Boolean).join(' | '),
       },
       scheduleGroups: drafts.map((draft) => {
-        const job = jobs.find((row) => row.id === draft.jobId);
+        const job = getJob(draft.jobId);
         const resolvedWorkProcess = resolveWorkProcessDetails(draft.workProcessDetails, job);
         const flatWorkerNames = draft.splitMode
           ? draft.subTeams.flatMap((subTeam) => subTeam.members.map((member) => empName(member.employeeId))).filter(Boolean)
@@ -1727,7 +2144,7 @@ export default function HrScheduleDayPage() {
         };
       }),
       driverTrips: driverTripRows.map((row) => ({
-        driverName: empName(row.driverEmployeeId),
+        driverName: row.guestDriverName || (row.driverEmployeeId ? empName(row.driverEmployeeId) : ''),
         tripOrder: row.routeText,
       })),
       today: new Date().toLocaleDateString('en-GB', {
@@ -1791,47 +2208,101 @@ export default function HrScheduleDayPage() {
   };
 
   
-  if (!canView) return <div className="text-slate-400">Forbidden</div>;
-  if (loading) return <div className="text-slate-400">Loading...</div>;
+  if (!canView) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <p className="text-sm text-muted-foreground">You do not have permission to view HR schedules.</p>
+      </div>
+    );
+  }
+  if (loading) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-5">
+        <div className="h-20 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div className="h-[28rem] animate-pulse rounded-lg border border-border bg-muted/30" />
+      </div>
+    );
+  }
+
+  const renderWorkerDropAreas = (draft: AsgDraft, colIdx: number) => (
+    <div className="flex min-h-32 flex-col gap-2">
+      {[0, 1].map((subTeamIndex) => (
+        <ScheduleTeamDropZone
+          key={`sub-drop-${subTeamIndex}`}
+          dropId={scheduleTeamDropId(colIdx, subTeamIndex)}
+          label={draft.subTeams[subTeamIndex]?.label?.trim() || `Sub-team ${subTeamIndex + 1}`}
+          isHighlighted={
+            isWorkerDragActive &&
+            activeDropColumn === colIdx &&
+            activeDropSubTeam === subTeamIndex
+          }
+        />
+      ))}
+    </div>
+  );
 
   const renderCell = (d: AsgDraft, colIdx: number, fieldKey: string) => {
+    const fieldDisabled = dis || isColumnFieldLocked(colIdx);
+
     switch (fieldKey) {
-      case 'locationType':
+      case 'locationType': {
+        const isFactory = d.locationType === 'FACTORY';
+        const nextType = isFactory ? 'SITE_JOB' : 'FACTORY';
+        const label = isFactory ? 'Factory' : 'Site';
         return (
-          <select
-            value={d.locationType}
-            onChange={(e) => upd(colIdx, { locationType: e.target.value as AsgDraft['locationType'] })}
-            disabled={dis}
-            className={inputCls}
+          <button
+            type="button"
+            disabled={fieldDisabled}
+            aria-label={`Location: ${label}. Click to switch to ${isFactory ? 'Site' : 'Factory'}.`}
+            title={dis ? undefined : `Switch to ${isFactory ? 'Site' : 'Factory'}`}
+            onClick={() => upd(colIdx, { locationType: nextType })}
+            className={cn(
+              'h-full w-full rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors',
+              isFactory
+                ? 'border-amber-500/40 bg-amber-500/20 text-amber-950 hover:bg-amber-500/30 dark:text-amber-50'
+                : 'border-sky-600/40 bg-sky-500/15 text-sky-950 hover:bg-sky-500/25 dark:text-sky-100',
+              fieldDisabled && 'cursor-not-allowed opacity-50',
+            )}
             {...getGridNavProps(NAV_ROW.locationType, colIdx + 1)}
           >
-            <option value="SITE_JOB">Site</option>
-            <option value="FACTORY">Factory</option>
-            <option value="OTHER">Other</option>
-          </select>
+            {label}
+          </button>
         );
+      }
       case 'job':
         return (
-          <SearchSelect
-            items={jobItems}
+          <ScheduleSearchSelect
             value={d.jobId}
-              onChange={(jid) => {
-                const job = jobs.find((row) => row.id === jid);
-                const nextWorkProcess = getInitialWorkProcessDetails(job);
-                upd(colIdx, {
-                  jobId: jid,
-                  jobNumberSnapshot: jid ? job?.jobNumber ?? d.jobNumberSnapshot : '',
-                  workProcessDetails: nextWorkProcess,
-                });
-              }}
-            placeholder="Type to search job..."
-            disabled={dis}
+            onChange={(jid) => {
+              const job = getJob(jid);
+              const nextWorkProcess = getInitialWorkProcessDetails(job);
+              upd(colIdx, {
+                jobId: jid,
+                jobNumberSnapshot: jid ? job?.jobNumber ?? d.jobNumberSnapshot : '',
+                workProcessDetails: nextWorkProcess,
+              });
+            }}
+            search={async (query) => {
+              const rows = await searchJobsApi({ search: query, status: 'ACTIVE' });
+              mergeJobs(rows);
+              return rows.map(jobToSearchItem);
+            }}
+            resolveById={async (id) => {
+              const cached = getJob(id);
+              if (cached) return jobToSearchItem(cached);
+              const row = await fetchJobById(id);
+              if (!row) return null;
+              mergeJobs([row]);
+              return jobToSearchItem(row);
+            }}
+            placeholder="Type to search variation…"
+            disabled={fieldDisabled}
             minCharactersToSearch={1}
-            inputProps={getGridNavProps(NAV_ROW.job, colIdx + 1)}
+            inputProps={scheduleSearchInputProps(getGridNavProps(NAV_ROW.job, colIdx + 1))}
             renderItem={(item, isHighlighted) => (
               <div className="space-y-0.5">
-                <div className={`font-medium ${isHighlighted ? 'text-emerald-300' : 'text-white'}`}>{item.label}</div>
-                <div className="text-[11px] text-slate-400">
+                <div className={cn('font-medium', isHighlighted ? 'text-primary' : 'text-foreground')}>{item.label}</div>
+                <div className="text-[11px] text-muted-foreground">
                   {[item.companyName, item.siteName, item.quotationNumber && `QO ${item.quotationNumber}`, item.lpoNumber && `LPO ${item.lpoNumber}`]
                     .filter(Boolean)
                     .join(' | ') || 'No extra job details'}
@@ -1841,29 +2312,31 @@ export default function HrScheduleDayPage() {
           />
         );
       case 'jobCompany': {
-        const job = jobs.find((x) => x.id === d.jobId);
+        const job = getJob(d.jobId);
         return (
-          <div className="rounded border border-white/10 bg-slate-950 px-1.5 py-1 text-xs text-slate-300">
-            {job?.customerName || '-'}
+          <div className="flex min-h-[2.25rem] items-center px-2 py-1.5">
+            <span className="truncate text-xs text-foreground/90" title={job?.customerName || undefined}>
+              {job?.customerName?.trim() || '—'}
+            </span>
           </div>
         );
       }
       case 'workProcessDetails': {
-        const job = jobs.find((x) => x.id === d.jobId);
+        const job = getJob(d.jobId);
         const resolvedWorkProcess = resolveWorkProcessDetails(d.workProcessDetails, job);
         return (
-          <div className="space-y-1 rounded border border-white/10 bg-slate-950 px-1.5 py-1 text-xs text-slate-300">
+          <div className="space-y-1 px-2 py-1.5">
             <textarea
               value={d.workProcessDetails}
               onChange={(e) => upd(colIdx, { workProcessDetails: e.target.value })}
-              disabled={dis}
+              disabled={fieldDisabled}
               rows={2}
               placeholder="Enter work process details..."
-              className={`${inputCls} resize-y`}
+              className={gridTextareaCls}
               {...getGridNavProps(NAV_ROW.workProcess, colIdx + 1)}
             />
             {resolvedWorkProcess ? (
-              <p className="text-[10px] text-slate-500">
+              <p className="text-[10px] text-muted-foreground">
                 This value is loaded from the job and will update the job when you save.
               </p>
             ) : null}
@@ -1875,10 +2348,10 @@ export default function HrScheduleDayPage() {
           <textarea
             value={d.targetQty}
             onChange={(e) => upd(colIdx, { targetQty: e.target.value })}
-            disabled={dis}
+            disabled={fieldDisabled}
             rows={2}
             placeholder="Enter target qty..."
-            className={`${inputCls} resize-y`}
+            className={gridTextareaCls}
             {...getGridNavProps(NAV_ROW.targetQty, colIdx + 1)}
           />
         );
@@ -1892,32 +2365,34 @@ export default function HrScheduleDayPage() {
               value={d[fieldKey]}
               onChange={(v) => upd(colIdx, { [fieldKey]: v } as Partial<AsgDraft>)}
               placeholder="Search driver..."
-              disabled={dis}
+              disabled={fieldDisabled}
               minCharactersToSearch={1}
-              inputProps={getGridNavProps(fieldKey === 'driver1EmployeeId' ? NAV_ROW.driver1 : NAV_ROW.driver2, colIdx + 1)}
+              inputProps={scheduleSearchInputProps(
+                getGridNavProps(fieldKey === 'driver1EmployeeId' ? NAV_ROW.driver1 : NAV_ROW.driver2, colIdx + 1),
+              )}
             />
           </div>
         );
       }
       case 'dutyRange':
         return (
-          <div className="space-y-1">
+          <div className="space-y-1 px-2 py-1.5">
             <div className="grid grid-cols-2 gap-1">
               <div>
-                <p className="mb-0.5 text-[10px] uppercase tracking-wide text-slate-500">Duty in</p>
-                <input type="time" value={d.dutyStart} onChange={(e) => upd(colIdx, { dutyStart: e.target.value })} disabled={dis} className={inputCls} {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 0)} />
+                <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Duty in</p>
+                <input type="time" value={d.dutyStart} onChange={(e) => upd(colIdx, { dutyStart: e.target.value })} disabled={fieldDisabled} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 0)} />
               </div>
               <div>
-                <p className="mb-0.5 text-[10px] uppercase tracking-wide text-slate-500">Duty out</p>
-                <input type="time" value={d.dutyEnd} onChange={(e) => upd(colIdx, { dutyEnd: e.target.value })} disabled={dis} className={inputCls} {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 1)} />
+                <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Duty out</p>
+                <input type="time" value={d.dutyEnd} onChange={(e) => upd(colIdx, { dutyEnd: e.target.value })} disabled={fieldDisabled} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 1)} />
               </div>
             </div>
             {!dis && (
               <div className="flex flex-wrap gap-1">
-                <button type="button" onClick={() => fillTimingTemplate(colIdx, 'worker')} className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-300 hover:border-emerald-400/40 hover:text-emerald-300">
+                <button type="button" onClick={() => fillTimingTemplate(colIdx, 'worker')} className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted">
                   Use worker default
                 </button>
-                <button type="button" onClick={() => fillTimingTemplate(colIdx, 'clear')} className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-400 hover:border-red-400/40 hover:text-red-300">
+                <button type="button" onClick={() => fillTimingTemplate(colIdx, 'clear')} className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted">
                   Clear timing
                 </button>
               </div>
@@ -1926,47 +2401,49 @@ export default function HrScheduleDayPage() {
         );
       case 'breakRange':
         return (
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-2 gap-1 px-2 py-1.5">
             <div>
-              <p className="mb-0.5 text-[10px] uppercase tracking-wide text-slate-500">Break out</p>
-              <input type="time" value={d.breakStart} onChange={(e) => upd(colIdx, { breakStart: e.target.value })} disabled={dis} className={inputCls} {...getGridNavProps(NAV_ROW.break, colIdx + 1, 0)} />
+              <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Break out</p>
+              <input type="time" value={d.breakStart} onChange={(e) => upd(colIdx, { breakStart: e.target.value })} disabled={dis} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.break, colIdx + 1, 0)} />
             </div>
             <div>
-              <p className="mb-0.5 text-[10px] uppercase tracking-wide text-slate-500">Break in</p>
-              <input type="time" value={d.breakEnd} onChange={(e) => upd(colIdx, { breakEnd: e.target.value })} disabled={dis} className={inputCls} {...getGridNavProps(NAV_ROW.break, colIdx + 1, 1)} />
+              <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Break in</p>
+              <input type="time" value={d.breakEnd} onChange={(e) => upd(colIdx, { breakEnd: e.target.value })} disabled={dis} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.break, colIdx + 1, 1)} />
             </div>
           </div>
         );
       case 'remarks':
-        return <textarea value={d.remarks} onChange={(e) => upd(colIdx, { remarks: e.target.value })} disabled={dis} rows={2} className={inputCls} {...getGridNavProps(NAV_ROW.remarks, colIdx + 1)} />;
+        return (
+          <textarea
+            value={d.remarks}
+            onChange={(e) => upd(colIdx, { remarks: e.target.value })}
+            disabled={fieldDisabled}
+            rows={2}
+            className={gridTextareaCls}
+            {...getGridNavProps(NAV_ROW.remarks, colIdx + 1)}
+          />
+        );
       default:
         return null;
     }
   };
 
   const renderWorkersCell = (draft: AsgDraft, colIdx: number) => {
-    const controlButtonCls = isLight
-      ? 'rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
-      : 'rounded-full border border-white/10 bg-slate-950 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:border-emerald-400/40 hover:text-emerald-300';
-    const dangerButtonCls = isLight
-      ? 'rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-medium text-rose-600 hover:border-rose-300 hover:text-rose-700'
-      : 'rounded-full border border-rose-500/20 bg-slate-950 px-2 py-0.5 text-[11px] font-medium text-rose-300 hover:border-rose-400/40 hover:text-rose-200';
-    const blockCls = isLight
-      ? 'rounded-lg border border-amber-200 bg-white p-1.5 shadow-sm'
-      : 'rounded-lg border border-white/10 bg-slate-950/70 p-1.5';
+    const blockCls = 'rounded-lg border border-border bg-muted/30 p-2';
+    const fieldDisabled = dis || isColumnFieldLocked(colIdx);
 
     return (
-      <div className="space-y-1.5">
-        {!dis && (
+      <div className="min-w-0 space-y-2">
+        {!dis && !isWorkerDragActive && (
           <div className="flex flex-wrap items-center gap-1">
-            <button type="button" onClick={() => toggleSplitMode(colIdx)} className={controlButtonCls}>
+            <Button type="button" variant="outline" size="sm" onClick={() => toggleSplitMode(colIdx)}>
               {draft.splitMode ? 'Use single team' : 'Split team'}
-            </button>
-            {draft.splitMode && (
-              <button type="button" onClick={() => addSubTeam(colIdx)} className={controlButtonCls}>
+            </Button>
+            {draft.splitMode ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => addSubTeam(colIdx)}>
                 + Add sub-team
-              </button>
-            )}
+              </Button>
+            ) : null}
           </div>
         )}
 
@@ -1982,69 +2459,57 @@ export default function HrScheduleDayPage() {
                       value={member.employeeId}
                       onChange={(value) => updateFlatMember(colIdx, memberIndex, value)}
                       placeholder={memberIndex === 0 ? 'Team Leader' : `Worker ${memberIndex}`}
-                      disabled={dis}
+                      disabled={fieldDisabled}
                       minCharactersToSearch={1}
+                      inputProps={{ className: SCHEDULE_GRID_SEARCH_INPUT }}
                     />
                   </div>
-                  {!dis && (
-                    <button
+                  {!dis && !isWorkerDragActive && (
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
                       onClick={() => removeFlatMember(colIdx, memberIndex)}
-                      className="px-1 text-red-400/70 transition-colors hover:text-red-300"
                       title="Remove worker"
                       aria-label="Remove worker"
                     >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 7h12" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7l1 12h6l1-12" />
-                      </svg>
-                    </button>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </div>
               );
             })}
-            {!dis && (
+            {!dis && !isWorkerDragActive && (
               <button
                 type="button"
                 onClick={() => addFlatMember(colIdx)}
-                className="text-xs text-emerald-400 hover:text-emerald-300"
+                className="text-xs font-semibold text-primary hover:underline"
                 {...getGridNavProps(NAV_ROW.workers, colIdx + 1)}
               >
-                + Add / drop worker
+                + Add worker
               </button>
             )}
           </div>
         ) : (
           <div className="space-y-1.5">
             {draft.subTeams.length === 0 && (
-              <p className="text-[11px] text-slate-500">Add a sub-team to start splitting this team.</p>
+              <p className="text-[11px] text-muted-foreground">Add a sub-team to start splitting this team.</p>
             )}
             {draft.subTeams.map((subTeam, subTeamIndex) => (
-              <div
-                key={subTeam.id}
-                className={`${blockCls} ${draggingWorkerId ? 'transition-colors' : ''}`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setActiveDropColumn(colIdx);
-                }}
-                onDragLeave={() => {
-                  if (activeDropColumn === colIdx) setActiveDropColumn(null);
-                }}
-                onDrop={(e) => onWorkerDropToSubTeam(e, colIdx, subTeamIndex)}
-              >
+              <div key={subTeam.id} className={blockCls}>
                 <div className="flex flex-wrap items-center justify-between gap-1.5">
                   <input
                     value={subTeam.label}
                     onChange={(e) => updateSubTeamMeta(colIdx, subTeamIndex, { label: e.target.value })}
-                    disabled={dis}
-                    className={`${inputCls} w-auto! min-w-36 flex-1`}
+                    disabled={fieldDisabled}
+                    className={cn(gridFlatInputCls, 'min-w-36 flex-1')}
                     placeholder={nextSubTeamLabel(subTeamIndex)}
                   />
-                  {!dis && (
-                    <button type="button" onClick={() => removeSubTeam(colIdx, subTeamIndex)} className={dangerButtonCls}>
+                  {!dis && !isWorkerDragActive && (
+                    <Button type="button" variant="destructive" size="sm" onClick={() => removeSubTeam(colIdx, subTeamIndex)}>
                       Remove
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <div className="mt-1.5 space-y-1">
@@ -2061,31 +2526,30 @@ export default function HrScheduleDayPage() {
                             value={member.employeeId}
                             onChange={(value) => updateSubTeamMember(colIdx, subTeamIndex, memberIndex, value)}
                             placeholder={memberIndex === 0 ? 'Team Leader' : `Worker ${memberIndex}`}
-                            disabled={dis}
+                            disabled={fieldDisabled}
                             minCharactersToSearch={1}
+                            inputProps={{ className: SCHEDULE_GRID_SEARCH_INPUT }}
                           />
                         </div>
-                        {!dis && (
-                          <button
+                        {!dis && !isWorkerDragActive && (
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
                             onClick={() => removeSubTeamMember(colIdx, subTeamIndex, memberIndex)}
-                            className="px-1 text-red-400/70 transition-colors hover:text-red-300"
                             title="Remove worker"
                             aria-label="Remove worker"
                           >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 7h12" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7l1 12h6l1-12" />
-                            </svg>
-                          </button>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                       </div>
                     );
                   })}
-                  {!dis && (
+                  {!dis && !isWorkerDragActive && (
                     <button type="button" onClick={() => addSubTeamMember(colIdx, subTeamIndex)} className="text-xs text-emerald-400 hover:text-emerald-300">
-                      + Add / drop worker
+                      + Add worker
                     </button>
                   )}
                 </div>
@@ -2098,224 +2562,259 @@ export default function HrScheduleDayPage() {
   };
 
   return (
-    <div className={`relative left-1/2 right-1/2 w-screen max-w-none -translate-x-1/2 px-3 pb-4 pt-3 sm:px-4 sm:pt-4 xl:px-5 ${pageShellCls}`}>
-      <div className="space-y-2" style={{ zoom: viewScale } as CSSProperties}>
-        <section className={`overflow-hidden rounded-xl ${heroCls}`}>
-          <div className={`border-b px-3 py-3 sm:px-4 ${dividerCls}`}>
-            <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
-              <div className="max-w-3xl">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className={`text-2xl font-semibold tracking-tight sm:text-[30px] ${headingCls}`}>Daily team planner</h1>
-                  {status && (
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                        status === 'PUBLISHED'
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : status === 'LOCKED'
-                            ? 'bg-amber-500/15 text-amber-300'
-                            : 'bg-slate-500/20 text-slate-300'
-                      }`}
-                    >
-                      {status}
-                    </span>
-                  )}
-                </div>
-                <p className={`mt-1.5 text-sm ${bodyTextCls}`}>
-                  Build the day’s team plan, assign transport and timing, then hand it off cleanly to attendance.
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">HR planning</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Day schedule · {workDateLabel}</h1>
+          {schedule ? (
+            <p className="text-sm text-muted-foreground">
+              {scheduleSummary.groups} teams · {scheduleSummary.workers} workers ·{' '}
+              {scheduleSummary.groupsWithTiming} with timing
+            </p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {schedule ? (
+            <span
+              className={cn(
+                'inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+                scheduleStatusTag.className,
+              )}
+            >
+              {scheduleStatusTag.label}
+            </span>
+          ) : null}
+          {schedule ? (
+            <Badge variant="outline" className="tabular-nums">
+              {drafts.length} teams
+            </Badge>
+          ) : null}
+          {schedule && canEdit && !locked ? (
+            <>
+              <select
+                value={selectedTemplateDate}
+                onChange={(e) => setSelectedTemplateDate(e.target.value)}
+                className={cn(SCHEDULE_GRID_FLAT_INPUT, 'h-9 w-auto min-w-40')}
+                aria-label="Copy schedule from date"
+              >
+                <option value="">Copy from date…</option>
+                {previousSchedules.map((item) => (
+                  <option key={item.id} value={item.workDate}>
+                    {item.workDate} ({item.status})
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={applyPreviousScheduleTemplate}
+                disabled={!selectedTemplateDate}
+              >
+                Apply template
+              </Button>
+              <Separator orientation="vertical" className="hidden h-6 sm:block" />
+            </>
+          ) : null}
+          {schedule && canEdit && !locked ? (
+            <Button type="button" size="sm" variant="secondary" onClick={saveAssignments} disabled={saving}>
+              {saving ? 'Saving…' : 'Save schedule'}
+            </Button>
+          ) : null}
+          {schedule && canPub && status === 'DRAFT' ? (
+            <Button type="button" size="sm" onClick={publish}>
+              Publish
+            </Button>
+          ) : null}
+        </div>
+      </header>
+
+      {!schedule && canEdit ? (
+        <Alert>
+          <AlertDescription>
+            No schedule for this date. Create a draft to start planning teams and assignments.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {!schedule && canEdit ? (
+        <Button type="button" size="sm" onClick={createSchedule}>
+          Create schedule draft
+        </Button>
+      ) : null}
+
+      {schedule ? (
+        <DndContext
+          sensors={workerDragSensors}
+          onDragStart={handleScheduleWorkerDragStart}
+          onDragOver={handleScheduleWorkerDragOver}
+          onDragEnd={handleScheduleWorkerDragEnd}
+          onDragCancel={handleScheduleWorkerDragCancel}
+        >
+        <div
+          className={cn(
+            'grid gap-5',
+            showWorkerRail
+              ? 'xl:grid-cols-[1fr_17rem] xl:items-stretch'
+              : 'grid-cols-1',
+          )}
+        >
+          <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 space-y-1">
+                <h2 className="text-lg font-semibold text-foreground">Team board</h2>
+                <p className="text-sm text-muted-foreground">
+                  {drafts.length} team{drafts.length === 1 ? '' : 's'} — scroll horizontally to view all columns
                 </p>
-                <div className={`mt-2 flex flex-wrap items-center gap-1.5 text-xs ${subtleTextCls}`}>
-                  <span className={`rounded-full px-2 py-0.5 ${isLight ? 'border border-slate-200 bg-slate-50' : 'border border-white/10 bg-white/3'}`}>{workDate}</span>
-                  {schedule && (
-                    <>
-                      <span className="text-slate-600">•</span>
-                      <span>{scheduleSummary.groups} teams</span>
-                      <span className="text-slate-600">•</span>
-                      <span>{scheduleSummary.workers} assigned workers</span>
-                    </>
-                  )}
-                </div>
               </div>
-
-              <div className="grid w-full gap-1.5 sm:grid-cols-3 xl:w-auto xl:min-w-116">
-                {schedule ? (
-                  <>
-                    <div className={metricCardCls}>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Teams</p>
-                      <p className={`mt-0.5 text-lg font-semibold ${headingCls}`}>{scheduleSummary.groups}</p>
-                    </div>
-                    <div className={metricCardCls}>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Workers</p>
-                      <p className={`mt-0.5 text-lg font-semibold ${headingCls}`}>{scheduleSummary.workers}</p>
-                    </div>
-                    <div className={metricAccentCls}>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/70">Timing ready</p>
-                      <p className="mt-0.5 text-lg font-semibold text-emerald-300">{scheduleSummary.groupsWithTiming}</p>
-                    </div>
-                  </>
-                ) : canEdit ? (
-                  <div className="sm:col-span-3 xl:min-w-[18rem]">
-                    <Button onClick={createSchedule} className="w-full">
-                      Create draft
-                    </Button>
-                  </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {canEdit && !locked ? (
+                  <Button type="button" size="sm" onClick={addColumn}>
+                    Add team
+                  </Button>
                 ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5 px-3 py-2.5 sm:px-4">
-            {schedule && canEdit && !locked && (
-              <>
-                <Button variant="outline" onClick={() => void openSchedulePrintOutput('print')}>
+                <Button type="button" variant="outline" size="sm" onClick={() => void openSchedulePrintOutput('print')}>
                   Print
                 </Button>
-                <Button variant="outline" onClick={() => void openSchedulePrintOutput('download')}>
-                  Download
+                <Separator orientation="vertical" className="hidden h-6 sm:block" />
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowWorkerRail((c) => !c)}>
+                  {showWorkerRail ? 'Hide workers' : 'Workers'}
                 </Button>
-                <select
-                  value={selectedTemplateDate}
-                  onChange={(e) => setSelectedTemplateDate(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowRowLabels((c) => !c)}>
+                  {showRowLabels ? 'Hide labels' : 'Labels'}
+                </Button>
+                <Button
+                  type="button"
+                  variant={useLightGridTheme ? 'secondary' : 'outline'}
+                  size="sm"
+                  onClick={() => setUseLightGridTheme((c) => !c)}
                 >
-                  <option value="">Use previous schedule</option>
-                  {previousSchedules.map((item) => (
-                    <option key={item.id} value={item.workDate}>
-                      {item.workDate} ({item.status})
-                    </option>
-                  ))}
-                </select>
-                <Button variant="outline" onClick={applyPreviousScheduleTemplate} disabled={!selectedTemplateDate}>
-                  Apply template
+                  {useLightGridTheme ? 'Plain rows' : 'Color rows'}
                 </Button>
-                <Button variant="secondary" onClick={addColumn}>
-                  + Add team
+                {canEdit && !locked ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={undo}
+                      disabled={undoStack.length === 0}
+                      title="Undo"
+                      aria-label="Undo"
+                    >
+                      <Undo2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={redo}
+                      disabled={redoStack.length === 0}
+                      title="Redo"
+                      aria-label="Redo"
+                    >
+                      <Redo2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : null}
+                <Button type="button" variant="ghost" size="sm" disabled={!canZoomOut} onClick={() => setViewScale((s) => Math.max(0.8, Math.round((s - 0.05) * 100) / 100))}>
+                  −
                 </Button>
-                <Button variant="outline" onClick={toggle} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-                </Button>
-                {isLight && (
-                  <Button variant="outline" onClick={() => setUseLightGridTheme((current) => !current)}>
-                    {useLightGridTheme ? 'Undo theme' : 'Apply theme'}
-                  </Button>
-                )}
-                <Button variant="outline" onClick={() => setShowWorkerRail((current) => !current)}>
-                  {showWorkerRail ? 'Hide worker rail' : 'Show worker rail'}
-                </Button>
-                <Button variant="outline" onClick={() => setShowRowLabels((current) => !current)}>
-                  {showRowLabels ? 'Hide row labels' : 'Show row labels'}
-                </Button>
-                <Button variant="outline" onClick={() => setViewScale((current) => Math.max(0.8, Number((current - 0.1).toFixed(2))))} disabled={!canZoomOut}>
-                  -
-                </Button>
-                <span className={`inline-flex items-center rounded-lg px-2 py-1 text-xs font-medium ${isLight ? 'border border-slate-200 bg-white text-slate-700' : 'border border-white/10 bg-slate-950 text-slate-300'}`}>
-                  {Math.round(viewScale * 100)}%
-                </span>
-                <Button variant="outline" onClick={() => setViewScale((current) => Math.min(1.35, Number((current + 0.1).toFixed(2))))} disabled={!canZoomIn}>
+                <span className="text-xs tabular-nums text-muted-foreground">{Math.round(viewScale * 100)}%</span>
+                <Button type="button" variant="ghost" size="sm" disabled={!canZoomIn} onClick={() => setViewScale((s) => Math.min(1.35, Math.round((s + 0.05) * 100) / 100))}>
                   +
                 </Button>
-                <Button variant="outline" onClick={undo} disabled={undoStack.length === 0}>
-                  Undo
-                </Button>
-                <Button variant="outline" onClick={redo} disabled={redoStack.length === 0}>
-                  Redo
-                </Button>
-                <Button variant="secondary" onClick={saveAssignments} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-              </>
-            )}
-            {schedule && canPub && status === 'DRAFT' && <Button onClick={publish}>Publish</Button>}
-          </div>
-        </section>
-
-        {schedule && (
-          <div className={`grid gap-2 ${showWorkerRail ? 'xl:grid-cols-[minmax(0,1fr)_20rem]' : 'grid-cols-1'}`}>
-            <section className={`overflow-visible rounded-xl ${sectionCls}`}>
-              <div className={`flex items-center justify-between border-b px-3 py-2 ${dividerCls}`}>
-                <div>
-                  <h2 className={`text-sm font-semibold uppercase tracking-[0.18em] ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Planning grid</h2>
-                  <p className={`mt-1 text-xs ${subtleTextCls}`}>Teams run left to right. Use arrow keys to move cell-by-cell.</p>
-                </div>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] ${isLight ? 'border border-slate-200 bg-slate-50 text-slate-500' : 'border border-white/10 bg-white/3 text-slate-400'}`}>
-                  {drafts.length} active team{drafts.length === 1 ? '' : 's'}
-                </span>
               </div>
+            </div>
 
-              <div className={`overflow-x-auto shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isLight ? 'bg-slate-50/70' : 'bg-slate-900/25'}`}>
-            <table className="min-w-full border-collapse text-sm">
-              <thead>
-                <tr className={`border-b ${dividerCls} ${isLight ? 'bg-white/80' : 'bg-slate-950/40'}`}>
-                  {showRowLabels && <th className={thCls}>Teams</th>}
-                  {drafts.map((d, ci) => (
-                    <th
-                      key={ci}
-                      className={`min-w-[200px] border-l px-2 py-1.5 text-center text-[11px] font-semibold ${isLight ? 'border-slate-200 text-slate-800' : 'border-white/10 text-white'} ${getColumnDropHighlightCls(ci)}`}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setActiveDropColumn(ci);
-                      }}
-                      onDragLeave={() => {
-                        if (activeDropColumn === ci) setActiveDropColumn(null);
-                      }}
-                      onDrop={(e) => onWorkerDrop(e, ci)}
+            <div
+              ref={teamBoardBodyRef}
+              className="isolate overflow-x-auto"
+              style={{ zoom: viewScale } as CSSProperties}
+            >
+              <table className="w-max min-w-full border-collapse text-sm">
+                <thead className="border-b border-border bg-muted">
+                  <tr>
+                    {showRowLabels ? (
+                      <th
+                        scope="col"
+                        className={cn(STICKY_ROW_LABEL_CLASS, 'sticky top-0 z-30 align-middle !bg-muted')}
+                      >
+                        Field
+                      </th>
+                    ) : null}
+                    {drafts.map((d, ci) => (
+                      <th
+                        key={ci}
+                        scope="col"
+                        className={teamHeaderCls(ci, d.splitMode)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="secondary" className="shrink-0">
+                            Team {d.columnIndex}
+                          </Badge>
+                          {canEdit && !locked ? (
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => duplicateColumn(ci)}
+                                title="Copy team"
+                                aria-label="Copy team"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={() => removeColumn(ci)}
+                                title="Remove team"
+                                aria-label="Remove team"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                {drafts.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={showRowLabels ? 1 : 1}
+                      className="px-6 py-12 text-center text-sm text-muted-foreground"
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        <span>#{d.columnIndex}</span>
-                        {canEdit && !locked && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => duplicateColumn(ci)}
-                              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-medium text-slate-300 transition-colors hover:border-emerald-400/40 hover:text-emerald-300"
-                              title="Duplicate"
-                              aria-label="Duplicate team"
-                            >
-                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 8h11v11H8z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 16H4a1 1 0 01-1-1V4a1 1 0 011-1h11a1 1 0 011 1v1" />
-                              </svg>
-                              <span>Copy</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeColumn(ci)}
-                              className="inline-flex items-center gap-1 rounded-full border border-red-500/20 px-2 py-0.5 text-[10px] font-medium text-red-300 transition-colors hover:border-red-400/40 hover:text-red-200"
-                              title="Remove"
-                              aria-label="Delete team"
-                            >
-                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 7h12" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7l1 12h6l1-12" />
-                              </svg>
-                              <span>Delete</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </th>
-                  ))}
-                  {drafts.length === 0 && <th className="px-3 py-1.5 text-slate-500 text-xs">No teams yet</th>}
-                </tr>
-              </thead>
-              <tbody>
+                      <p className="text-sm font-semibold text-foreground">No teams on the board yet</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Add a team column to start planning jobs, workers, and timings.
+                      </p>
+                      {canEdit && !locked ? (
+                        <Button type="button" size="sm" className="mt-4" onClick={addColumn}>
+                          + Add first team
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ) : (
+                  <>
                 {FIELD_ROWS.map((f) => (
                   <tr key={f.key} className={getRowThemeClasses(f.key).row}>
                     {showRowLabels && <th className={getRowThemeClasses(f.key).label}>{f.label}</th>}
                     {drafts.map((d, ci) => (
                       <td
                         key={ci}
-                        className={`${getRowThemeClasses(f.key).cell} ${getColumnDropHighlightCls(ci)}`}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          setActiveDropColumn(ci);
-                        }}
-                        onDragLeave={() => {
-                          if (activeDropColumn === ci) setActiveDropColumn(null);
-                        }}
-                        onDrop={(e) => onWorkerDrop(e, ci)}
+                        className={cn(plannerCellCls(f.key, ci), getColumnDragDimmedCls(ci, d.splitMode))}
                       >
-                        {renderCell(d, ci, f.key)}
+                        <div className="min-w-0">{renderCell(d, ci, f.key)}</div>
                       </td>
                     ))}
                   </tr>
@@ -2326,17 +2825,40 @@ export default function HrScheduleDayPage() {
                   {drafts.map((d, ci) => (
                     <td
                       key={ci}
-                      className={`${getRowThemeClasses('workers').cell} ${getColumnDropHighlightCls(ci)}`}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setActiveDropColumn(ci);
-                      }}
-                      onDragLeave={() => {
-                        if (activeDropColumn === ci) setActiveDropColumn(null);
-                      }}
-                      onDrop={(e) => onWorkerDrop(e, ci)}
+                      className={cn(
+                        plannerCellCls('workers', ci),
+                        getWorkersColumnDragCls(ci),
+                      )}
                     >
-                      {renderWorkersCell(d, ci)}
+                      <div className="relative min-h-[5rem] min-w-0">
+                        {isWorkerDragActive ? (
+                          <>
+                            <div
+                              className={cn(
+                                'pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-md transition-all duration-150',
+                                activeDropColumn === ci ? 'opacity-25 blur-[4px]' : 'opacity-40 blur-[2px]',
+                              )}
+                              aria-hidden
+                            >
+                              {renderWorkersCell(d, ci)}
+                            </div>
+                            {d.splitMode ? (
+                              <div className="relative z-10 p-2">{renderWorkerDropAreas(d, ci)}</div>
+                            ) : (
+                              <ScheduleFlatTeamDropSurface
+                                colIdx={ci}
+                                isHighlighted={
+                                  isWorkerDragActive &&
+                                  activeDropColumn === ci &&
+                                  activeDropSubTeam === null
+                                }
+                              />
+                            )}
+                          </>
+                        ) : (
+                          renderWorkersCell(d, ci)
+                        )}
+                      </div>
                     </td>
                   ))}
                 </tr>
@@ -2344,8 +2866,11 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('workerCount').row}>
                   {showRowLabels && <th className={getRowThemeClasses('workerCount').label}>Assigned workers</th>}
                   {drafts.map((d, ci) => (
-                    <td key={ci} className={getRowThemeClasses('workerCount').cell}>
-                        <div className={`inline-flex min-w-12 items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${isLight ? 'border border-orange-200 bg-white text-orange-700' : 'border border-orange-500/30 bg-orange-500/10 text-orange-300'}`}>
+                    <td
+                      key={ci}
+                      className={cn(plannerCellCls('workerCount', ci), getColumnDragDimmedCls(ci, d.splitMode))}
+                    >
+                        <div className="inline-flex min-w-12 items-center justify-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground">
                         {getDraftWorkerCount(d)}
                         </div>
                       </td>
@@ -2355,24 +2880,27 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('suggestedWorkers').row}>
                   {showRowLabels && <th className={getRowThemeClasses('suggestedWorkers').label}>Suggested workers</th>}
                   {drafts.map((d, ci) => {
-                    const job = jobs.find((j) => j.id === d.jobId);
+                    const job = getJob(d.jobId);
                     const required = parseJobExpertise(job);
                     const suggestions = suggestedWorkersByColumn.get(ci) ?? [];
                     return (
-                      <td key={ci} className={getRowThemeClasses('suggestedWorkers').cell}>
+                      <td
+                        key={ci}
+                        className={cn(plannerCellCls('suggestedWorkers', ci), getColumnDragDimmedCls(ci, d.splitMode))}
+                      >
                         {required.length === 0 ? (
-                          <p className="text-[11px] text-slate-500">No job expertise configured yet.</p>
+                          <p className="text-[11px] text-muted-foreground">No job expertise configured yet.</p>
                         ) : suggestions.length === 0 ? (
-                          <p className="text-[11px] text-slate-500">No matching workers available.</p>
+                          <p className="text-[11px] text-muted-foreground">No matching workers available.</p>
                         ) : (
                           <div className="flex flex-wrap gap-1">
                             {suggestions.slice(0, 8).map((w) => (
                               <button
                                 key={w.id}
                                 type="button"
-                                disabled={dis}
+                                disabled={dis || isColumnFieldLocked(ci)}
                                 onClick={() => addWorkerToTeam(ci, w.id)}
-                                className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-60"
+                                className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-800 hover:bg-emerald-500/20 disabled:opacity-60 dark:text-emerald-300"
                                 title={w.workforce.expertises.join(', ')}
                               >
                                 {w.preferredName || w.fullName}
@@ -2388,8 +2916,11 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('targetQty').row}>
                   {showRowLabels && <th className={getRowThemeClasses('targetQty').label}>Target Qty</th>}
                   {drafts.map((d, ci) => (
-                    <td key={ci} className={getRowThemeClasses('targetQty').cell}>
-                      {renderCell(d, ci, 'targetQty')}
+                    <td
+                      key={ci}
+                      className={cn(plannerCellCls('targetQty', ci), getColumnDragDimmedCls(ci, d.splitMode))}
+                    >
+                      <div className="min-w-0">{renderCell(d, ci, 'targetQty')}</div>
                     </td>
                   ))}
                 </tr>
@@ -2397,8 +2928,11 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('driver1EmployeeId').row}>
                   {showRowLabels && <th className={getRowThemeClasses('driver1EmployeeId').label}>Driver 1</th>}
                   {drafts.map((d, ci) => (
-                    <td key={ci} className={getRowThemeClasses('driver1EmployeeId').cell}>
-                      {renderCell(d, ci, 'driver1EmployeeId')}
+                    <td
+                      key={ci}
+                      className={cn(plannerCellCls('driver1EmployeeId', ci), getColumnDragDimmedCls(ci, d.splitMode))}
+                    >
+                      <div className="min-w-0">{renderCell(d, ci, 'driver1EmployeeId')}</div>
                     </td>
                   ))}
                 </tr>
@@ -2406,8 +2940,11 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('driver2EmployeeId').row}>
                   {showRowLabels && <th className={getRowThemeClasses('driver2EmployeeId').label}>Driver 2</th>}
                   {drafts.map((d, ci) => (
-                    <td key={ci} className={getRowThemeClasses('driver2EmployeeId').cell}>
-                      {renderCell(d, ci, 'driver2EmployeeId')}
+                    <td
+                      key={ci}
+                      className={cn(plannerCellCls('driver2EmployeeId', ci), getColumnDragDimmedCls(ci, d.splitMode))}
+                    >
+                      <div className="min-w-0">{renderCell(d, ci, 'driver2EmployeeId')}</div>
                     </td>
                   ))}
                 </tr>
@@ -2416,214 +2953,240 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('remarks').row}>
                   {showRowLabels && <th className={getRowThemeClasses('remarks').label}>Remarks</th>}
                   {drafts.map((d, ci) => (
-                    <td key={ci} className={getRowThemeClasses('remarks').cell}>
-                      {renderCell(d, ci, 'remarks')}
+                    <td
+                      key={ci}
+                      className={cn(plannerCellCls('remarks', ci), getColumnDragDimmedCls(ci, d.splitMode))}
+                    >
+                      <div className="min-w-0">{renderCell(d, ci, 'remarks')}</div>
                     </td>
                   ))}
                 </tr>
+                  </>
+                )}
 
-              </tbody>
-            </table>
+                  </tbody>
+                </table>
               </div>
-            </section>
+          </section>
 
-            {showWorkerRail && (
-            <aside className={`sticky top-3 self-start overflow-hidden rounded-xl ${sectionCls}`}>
-              <div className={`border-b px-3 py-2 ${dividerCls}`}>
-                <h2 className={`text-sm font-semibold uppercase tracking-[0.18em] ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Worker rail</h2>
-                <p className={`mt-1 text-xs ${subtleTextCls}`}>
-                  {unassignedWorkers.length} unassigned of {workerPool.length} worker/hybrid staff.
-                </p>
-              </div>
-              <div className="max-h-136 space-y-1 overflow-auto px-3 py-2.5">
-              {unassignedWorkers.length === 0 ? (
-                <p className="text-xs text-emerald-400">All workers assigned.</p>
-              ) : (
-                unassignedWorkers.map((e) => (
-                  <div
-                    key={e.id}
-                    draggable={!dis}
-                    onDragStart={(evt) => onWorkerDragStart(evt, e.id)}
-                    onDragEnd={() => {
-                      setDraggingWorkerId('');
-                      setActiveDropColumn(null);
-                    }}
-                    className={`cursor-grab rounded-lg px-2 py-1.5 active:cursor-grabbing ${isLight ? 'border border-slate-200 bg-white' : 'border border-white/10 bg-white/3'}`}
-                    title={dis ? '' : 'Drag to any worker slot'}
-                  >
-                    <p className={`text-xs font-medium ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{e.preferredName || e.fullName}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">
-                      {e.workforce.expertises.length > 0 ? e.workforce.expertises.join(', ') : 'No expertise set'}
-                    </p>
+          {showWorkerRail ? (
+            <Card
+              className="flex min-h-0 flex-col overflow-hidden xl:sticky xl:top-4"
+              style={workerRailMaxHeight != null ? { maxHeight: workerRailMaxHeight } : undefined}
+            >
+              <CardHeader className="shrink-0 space-y-1 pb-2">
+                <CardTitle className="text-base">Worker pool</CardTitle>
+                <CardDescription>
+                  {dis
+                    ? 'Drag-and-drop is disabled while the schedule is locked or read-only.'
+                    : `Drag onto a team column · ${unassignedWorkers.length} available${workerPool.length > 0 ? ` of ${workerPool.length} workers` : ''}`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0 pt-0">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
+                  <div className="flex flex-col gap-2">
+                    {workerPool.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No active workers loaded.</p>
+                    ) : unassignedWorkers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">All workers are assigned to teams.</p>
+                    ) : (
+                      unassignedWorkers.map((e) => (
+                        <ScheduleWorkerDraggableCard key={e.id} employee={e} disabled={dis} />
+                      ))
+                    )}
                   </div>
-                ))
-              )}
-              </div>
-
-            {multiAssigned.size > 0 && (
-              <div className={`border-t px-3 py-2.5 ${dividerCls}`}>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-300">Multi-assigned</p>
-                <div className="mt-1.5 flex flex-wrap gap-0.5">
-                  {[...multiAssigned].map((id) => (
-                    <span key={id} className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] text-amber-300">
-                      {empName(id)} x{empAssignCount.get(id)}
-                    </span>
-                  ))}
                 </div>
-              </div>
-            )}
-            </aside>
-            )}
+
+                {multiAssigned.size > 0 ? (
+                  <div className="shrink-0 border-t border-border bg-muted/30 px-6 py-3">
+                    <p className="text-xs font-medium text-amber-800 dark:text-amber-200">Multi-assigned</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {[...multiAssigned].map((id) => (
+                        <Badge key={id} variant="outline" className="border-amber-500/40 text-amber-900 dark:text-amber-100">
+                          {empName(id)} ×{empAssignCount.get(id)}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+
+        <section className="w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h2 className="text-lg font-semibold text-foreground">Schedule notes</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Shared note for the whole day (separate from team remarks).
+            </p>
           </div>
-        )}
+          <div className="px-5 py-4">
+            <textarea
+              value={scheduleInfo}
+              onChange={(e) => setScheduleInfo(e.target.value)}
+              disabled={dis}
+              rows={3}
+              placeholder="General notes for this schedule…"
+              className={cn(SCHEDULE_GRID_FLAT_INPUT, 'min-h-24 w-full resize-y py-2')}
+            />
+          </div>
+        </section>
 
-        {schedule && (
-          <section className={`rounded-xl px-3 py-2.5 ${sectionCls}`}>
-            <div className="mb-2">
-              <h2 className={`text-sm font-semibold uppercase tracking-[0.18em] ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Schedule notes</h2>
-              <p className={`mt-1 text-xs ${subtleTextCls}`}>One shared note for the whole schedule, separate from team remarks.</p>
+        <section className="relative z-0 w-full overflow-visible rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">Driver trips</h2>
+              <p className="text-sm text-muted-foreground">
+                All active drivers are listed below. Add route notes, extra drivers, or guest drivers (rental / hire).
+              </p>
             </div>
-          <textarea
-            value={scheduleInfo}
-            onChange={(e) => setScheduleInfo(e.target.value)}
-            disabled={dis}
-            rows={2}
-            placeholder="General notes for this schedule..."
-            className={`${inputCls} min-h-[56px] resize-y`}
-          />
-          </section>
-        )}
-
-        {schedule && (
-          <section className={`rounded-xl p-3 ${sectionCls}`}>
-            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h2 className={`text-sm font-semibold uppercase tracking-[0.18em] ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Driver trip planner</h2>
-                <p className={`mt-1 text-xs ${subtleTextCls}`}>
-                  Keep only the drivers needed for this day and define their trip order or route.
-                </p>
+            <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[22rem]">
+              <div className="relative z-20 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <SearchSelect
+                  items={availableDriverItems}
+                  value={selectedDriverToAdd}
+                  onChange={(value) => {
+                    setSelectedDriverToAdd(value);
+                    addDriverTripRow(value);
+                  }}
+                  placeholder={
+                    availableDriverItems.length > 0 ? 'Add another driver…' : 'All active drivers are on the list'
+                  }
+                  disabled={dis || availableDriverItems.length === 0}
+                  minCharactersToSearch={0}
+                  openOnFocus
+                  dropdownInPortal
+                  inputProps={{ className: SCHEDULE_GRID_FLAT_INPUT }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => addDriverTripRow(selectedDriverToAdd)}
+                  disabled={dis || !selectedDriverToAdd}
+                >
+                  Add driver
+                </Button>
               </div>
-              <div className="min-w-[18rem] max-w-md flex-1">
-                <p className={`mb-1.5 text-xs ${subtleTextCls}`}>
-                Add only the drivers needed for this schedule. Older schedules keep their saved driver list.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <div className="min-w-56 flex-1">
-                    <SearchSelect
-                      items={availableDriverItems}
-                      value={selectedDriverToAdd}
-                      onChange={(value) => {
-                        setSelectedDriverToAdd(value);
-                        addDriverTripRow(value);
-                      }}
-                      placeholder={availableDriverItems.length > 0 ? 'Add driver...' : 'No more active drivers'}
-                      disabled={dis || availableDriverItems.length === 0}
-                      minCharactersToSearch={1}
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={() => addDriverTripRow(selectedDriverToAdd)}
-                    disabled={dis || !selectedDriverToAdd}
-                  >
-                    Add driver
-                  </Button>
-                </div>
+              <div className="relative z-20 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  value={guestDriverNameInput}
+                  onChange={(e) => setGuestDriverNameInput(e.target.value)}
+                  disabled={dis}
+                  placeholder="Guest driver name (rental / hire)"
+                  className={SCHEDULE_GRID_FLAT_INPUT}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addGuestDriverTripRow(guestDriverNameInput);
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => addGuestDriverTripRow(guestDriverNameInput)}
+                  disabled={dis || !guestDriverNameInput.trim()}
+                >
+                  Add guest driver
+                </Button>
               </div>
             </div>
-            <div className={`grid gap-2 ${showWorkerRail ? 'xl:grid-cols-[minmax(0,1fr)_18rem]' : 'grid-cols-1'}`}>
-              <div className={`overflow-hidden rounded-lg ${isLight ? 'border border-slate-200' : 'border border-white/10'}`}>
-                <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className={isLight ? 'bg-slate-50' : 'bg-slate-950/70'}>
-                    <th className="px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-slate-400">Driver</th>
-                    <th className="px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-slate-400">Trip order / route</th>
-                    <th className="px-2 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-slate-400">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {driverTripRows.length === 0 ? (
-                    <tr className={isLight ? 'border-t border-slate-200' : 'border-t border-white/5'}>
-                      <td colSpan={3} className="px-2 py-2.5 text-sm text-slate-500">
-                        No drivers selected for this schedule yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    driverTripRows.map((log, index) => (
-                      <tr key={`${log.driverEmployeeId}-${log.sequence}-${index}`} className={isLight ? 'border-t border-slate-200' : 'border-t border-white/5'}>
-                        <td className="px-2 py-1.5">
-                          <div className={`rounded px-1.5 py-1 text-xs ${isLight ? 'border border-slate-200 bg-white text-slate-700' : 'border border-white/10 bg-slate-950 text-slate-300'}`}>
-                            {empName(log.driverEmployeeId) || 'Driver'}
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Driver</TableHead>
+                  <TableHead>Route / order</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {driverTripRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                      {driverPool.length === 0
+                        ? 'No active drivers loaded.'
+                        : 'Loading driver list…'}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  driverTripRows.map((log, index) => {
+                    const isGuest = Boolean(log.guestDriverName);
+                    return (
+                    <TableRow key={`${log.rowKey}-${index}`}>
+                      <TableCell className="font-medium">
+                        {isGuest ? (
+                          <div className="space-y-1">
+                            <Badge variant="outline" className="text-[10px]">
+                              Guest
+                            </Badge>
+                            <Input
+                              value={log.guestDriverName ?? ''}
+                              onChange={(e) => updateGuestDriverName(log.rowKey, e.target.value)}
+                              disabled={dis}
+                              placeholder="Guest driver name"
+                              className={SCHEDULE_GRID_FLAT_INPUT}
+                            />
                           </div>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input
-                            value={log.routeText}
-                            onChange={(e) =>
-                              setDriverTripState((current) => ({
-                                version: driverLogVersion,
-                                values: {
-                                  ...(current.version === driverLogVersion ? current.values : {}),
-                                  [log.driverEmployeeId]: e.target.value,
-                                },
-                                selectedIds:
-                                  current.version === driverLogVersion
-                                    ? current.selectedIds
-                                    : driverTripRows.map((row) => row.driverEmployeeId),
-                              }))
-                            }
-                            disabled={dis}
-                            placeholder="Trip order / route"
-                            className={inputCls}
-                          />
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => removeDriverTripRow(log.driverEmployeeId)}
-                            disabled={dis}
-                            className="inline-flex items-center gap-0.5 rounded-full border border-red-500/20 px-1.5 py-0.5 text-[11px] font-medium text-red-300 transition-colors hover:border-red-400/40 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              </div>
+                        ) : (
+                          empName(log.driverEmployeeId ?? '') || 'Driver'
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={log.routeText}
+                          onChange={(e) =>
+                            setDriverTripState((current) => ({
+                              version: driverLogVersion,
+                              values: {
+                                ...(current.version === driverLogVersion ? current.values : {}),
+                                [log.rowKey]: e.target.value,
+                              },
+                              guestNames: current.version === driverLogVersion ? current.guestNames : {},
+                              selectedIds:
+                                current.version === driverLogVersion
+                                  ? current.selectedIds
+                                  : driverTripRows.map((row) => row.rowKey),
+                            }))
+                          }
+                          disabled={dis}
+                          placeholder="Trip order / route"
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeDriverTripRow(log.rowKey)}
+                          disabled={dis}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
 
-              <aside className={`sticky top-3 self-start overflow-hidden rounded-lg ${sectionCls}`}>
-                <div className={`border-b px-3 py-2 ${dividerCls}`}>
-                  <h3 className={`text-sm font-semibold uppercase tracking-[0.18em] ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Unassigned drivers</h3>
-                  <p className={`mt-1 text-xs ${subtleTextCls}`}>
-                    {availableDriverItems.length} active driver{availableDriverItems.length === 1 ? '' : 's'} not yet added.
-                  </p>
-                </div>
-                <div className="max-h-112 space-y-1 overflow-auto px-3 py-2.5">
-                  {availableDriverItems.length === 0 ? (
-                    <p className="text-xs text-emerald-400">All active drivers are already listed.</p>
-                  ) : (
-                    availableDriverItems.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        disabled={dis}
-                        onClick={() => addDriverTripRow(item.id)}
-                        className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${isLight ? 'border border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/60' : 'border border-white/10 bg-white/3 hover:border-emerald-400/30 hover:bg-emerald-500/10'}`}
-                      >
-                        <p className={`text-xs font-medium ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{item.label}</p>
-                        <p className="mt-0.5 text-[10px] text-slate-500">{item.searchText || 'Active driver'}</p>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </aside>
-            </div>
-          </section>
-        )}
-      </div>
+        <DragOverlay dropAnimation={null}>
+          {draggingWorkerOverlay ? (
+            <ScheduleWorkerDraggableCard employee={draggingWorkerOverlay} isOverlay disabled />
+          ) : null}
+        </DragOverlay>
+        </DndContext>
+      ) : null}
     </div>
   );
 }

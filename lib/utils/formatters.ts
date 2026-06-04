@@ -23,3 +23,4 @@ export function formatNumber(n: number, decimals = 2): string {
 export function formatCurrency(amount: number, currency = 'AED'): string {
   return new Intl.NumberFormat('en-AE', { style: 'currency', currency }).format(amount);
 }
+

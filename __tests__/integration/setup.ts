@@ -6,6 +6,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { createPostgresAdapter } from '../../lib/db/postgresAdapter';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -70,21 +71,26 @@ export async function setupTestContext(): Promise<TestContext> {
   await teardownTestContext().catch(() => undefined);
 
   const token = createTestToken();
+  const now = new Date();
 
   // Create companies
   const amfgiCompany = await prisma.company.create({
     data: {
       name: `Test AMFGI ${token}`,
+      id: randomUUID(),
       slug: `test-amfgi-${token}`,
       isActive: true,
+      updatedAt: now,
     },
   });
 
   const kmCompany = await prisma.company.create({
     data: {
       name: `Test K&M ${token}`,
+      id: randomUUID(),
       slug: `test-km-${token}`,
       isActive: true,
+      updatedAt: now,
     },
   });
 
@@ -92,6 +98,7 @@ export async function setupTestContext(): Promise<TestContext> {
   const adminRole = await prisma.role.create({
     data: {
       name: `Test Admin ${token}`,
+      id: randomUUID(),
       slug: `test-admin-${token}`,
       permissions: [
         'material.view',
@@ -105,12 +112,14 @@ export async function setupTestContext(): Promise<TestContext> {
         'report.view',
       ],
       isSystem: false,
+      updatedAt: now,
     },
   });
 
   const storeKeeperRole = await prisma.role.create({
     data: {
       name: `Test Store Keeper ${token}`,
+      id: randomUUID(),
       slug: `test-store-keeper-${token}`,
       permissions: [
         'material.view',
@@ -118,6 +127,7 @@ export async function setupTestContext(): Promise<TestContext> {
         'transaction.return',
       ],
       isSystem: false,
+      updatedAt: now,
     },
   });
 
@@ -126,11 +136,13 @@ export async function setupTestContext(): Promise<TestContext> {
   const admin = await prisma.user.create({
     data: {
       name: 'Test Admin',
+      id: randomUUID(),
       email: `test-admin-${token}@example.com`,
       password: adminHash,
       isSuperAdmin: true,
       isActive: true,
       activeCompanyId: amfgiCompany.id,
+      updatedAt: now,
     },
   });
 
@@ -138,13 +150,16 @@ export async function setupTestContext(): Promise<TestContext> {
   const manager = await prisma.user.create({
     data: {
       name: 'Test Manager',
+      id: randomUUID(),
       email: `test-manager-${token}@example.com`,
       password: managerHash,
       isSuperAdmin: false,
       isActive: true,
       activeCompanyId: amfgiCompany.id,
+      updatedAt: now,
       companyAccess: {
         create: {
+          id: randomUUID(),
           companyId: amfgiCompany.id,
           roleId: adminRole.id,
         },
@@ -156,13 +171,16 @@ export async function setupTestContext(): Promise<TestContext> {
   const storeKeeper = await prisma.user.create({
     data: {
       name: 'Test Store Keeper',
+      id: randomUUID(),
       email: `test-sk-${token}@example.com`,
       password: skHash,
       isSuperAdmin: false,
       isActive: true,
       activeCompanyId: amfgiCompany.id,
+      updatedAt: now,
       companyAccess: {
         create: {
+          id: randomUUID(),
           companyId: amfgiCompany.id,
           roleId: storeKeeperRole.id,
         },
@@ -253,12 +271,14 @@ export async function teardownTestContext() {
         },
       },
     });
+    await prisma.productionStockPosting.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.stockExceptionApproval.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.transaction.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.priceLog.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.materialLog.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.stockBatch.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.jobItemAssignment.deleteMany({ where: { companyId: { in: companyIds } } });
+    await prisma.jobItemTrackableMaterialLink.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.jobItem.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.jobRequiredExpertise.deleteMany({ where: { companyId: { in: companyIds } } });
     await prisma.jobContact.deleteMany({ where: { companyId: { in: companyIds } } });

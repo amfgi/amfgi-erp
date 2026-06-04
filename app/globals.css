@@ -29,8 +29,9 @@
   --card-foreground: var(--foreground);
   --popover: var(--surface-panel);
   --popover-foreground: var(--foreground);
-  --primary: #10b981;
-  --primary-foreground: #020617;
+  /* Dark UI: light primary buttons for contrast on dark surfaces */
+  --primary: #f8fafc;
+  --primary-foreground: #0f172a;
   --secondary: var(--surface-subtle);
   --secondary-foreground: var(--foreground);
   --muted: var(--surface-subtle);
@@ -41,7 +42,7 @@
   --destructive-foreground: #fafafa;
   --border: var(--border-strong);
   --input: var(--input-border);
-  --ring: rgba(16, 185, 129, 0.45);
+  --ring: rgba(255, 255, 255, 0.28);
   /* App shell sidebar (shadcn sidebar-07 token bridge) */
   --sidebar: #0c1222;
   --sidebar-foreground: var(--foreground);
@@ -75,7 +76,10 @@ html.light {
   --input-background: #ffffff;
   --input-foreground: #0f172a;
   --input-border: #cbd5e1;
-  --ring: rgba(16, 185, 129, 0.35);
+  /* Light UI: black primary buttons */
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  --ring: rgba(0, 0, 0, 0.22);
   --sidebar: #ffffff;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);

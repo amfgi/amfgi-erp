@@ -1,4 +1,4 @@
-type AuditActorUser = {
+export type AuditActorUser = {
   id?: string | null;
   name?: string | null;
   email?: string | null;

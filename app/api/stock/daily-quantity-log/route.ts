@@ -1,14 +1,14 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { buildDailyQuantityLogPayload } from '@/lib/stock/buildDailyQuantityLog';
-import { P } from '@/lib/permissions';
+import { canViewProductionLogApi } from '@/lib/permissions/stockModuleAccess';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { ymdFromInput } from '@/lib/hr/workDate';
 
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_VIEW)) {
+  if (!canViewProductionLogApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);

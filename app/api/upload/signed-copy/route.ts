@@ -10,13 +10,7 @@ import {
 } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
 import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
-
-function parseDeliveryNoteLabel(notes?: string | null): string {
-  const match = notes?.match(/--- DELIVERY NOTE #(\d+)/);
-  const raw = match?.[1] ?? '';
-  const normalized = raw ? raw.padStart(3, '0') : '000';
-  return `DN${normalized}`;
-}
+import { formatDeliveryNoteDriveLabel, resolveDeliveryNoteNumber } from '@/lib/deliveryNoteNumber';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -58,6 +52,9 @@ export async function POST(req: Request) {
         notes: true,
         signedCopyUrl: true,
         jobId: true,
+        deliveryNote: {
+          select: { number: true },
+        },
         job: {
           select: {
             id: true,
@@ -104,7 +101,9 @@ export async function POST(req: Request) {
     const customerName = transaction.job?.customer?.name || 'Customer';
     const jobId = transaction.job?.id || transaction.jobId || 'job';
     const jobNumber = transaction.job?.jobNumber || 'JOB';
-    const deliveryNoteLabel = parseDeliveryNoteLabel(transaction.notes);
+    const deliveryNoteLabel = formatDeliveryNoteDriveLabel(
+      resolveDeliveryNoteNumber(transaction.notes, transaction.deliveryNote)
+    );
     const fileName = buildSignedDeliveryNoteDriveFileName(deliveryNoteLabel, jobNumber, transaction.id, ext);
 
     // Upload new file to Drive

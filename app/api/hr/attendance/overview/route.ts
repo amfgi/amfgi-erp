@@ -1,14 +1,110 @@
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
-function monthBoundsFromYmd(workDateYmd: string) {
-  const [y, m] = workDateYmd.split('-').map((x) => Number(x));
+function monthBounds(monthYmd: string) {
+  const [y, m] = monthYmd.split('-').map((x) => Number(x));
   const start = new Date(Date.UTC(y, m - 1, 1));
   const end = new Date(Date.UTC(y, m, 1));
   return { start, end };
+}
+
+function parseMonthParam(raw: string | null): string {
+  if (!raw?.trim()) throw new Error('empty');
+  const normalized = raw.trim().slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(normalized)) throw new Error('format');
+  const [, m] = normalized.split('-').map(Number);
+  if (m < 1 || m > 12) throw new Error('range');
+  return normalized;
+}
+
+function currentMonthYmd() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+const pendingScheduleInMonthSql = (companyId: string, start: Date, end: Date) => Prisma.sql`
+  FROM "WorkSchedule" ws
+  WHERE ws."companyId" = ${companyId}
+    AND ws.status = 'PUBLISHED'::"WorkScheduleStatus"
+    AND ws."workDate" >= ${start}
+    AND ws."workDate" < ${end}
+    AND NOT EXISTS (
+      SELECT 1 FROM "AttendanceEntry" ae
+      WHERE ae."companyId" = ws."companyId"
+        AND ae."workDate" = ws."workDate"
+    )
+`;
+
+type OverviewDayRow = {
+  workDate: Date;
+  kind: 'pending' | 'saved';
+  scheduleId: string | null;
+  assignmentCount: number;
+  attendanceRows: number;
+};
+
+async function loadOverviewDaysForMonth(
+  companyId: string,
+  start: Date,
+  end: Date,
+): Promise<OverviewDayRow[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      workDate: Date;
+      kind: string;
+      scheduleId: string | null;
+      assignmentCount: bigint;
+      attendanceRows: bigint;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        combined."workDate",
+        combined.kind,
+        combined."scheduleId",
+        combined."assignmentCount",
+        combined."attendanceRows"
+      FROM (
+        SELECT
+          ws."workDate" AS "workDate",
+          'pending'::text AS kind,
+          ws.id AS "scheduleId",
+          (
+            SELECT COUNT(*)::bigint
+            FROM "WorkAssignment" wa
+            WHERE wa."companyId" = ws."companyId"
+              AND wa."workScheduleId" = ws.id
+          ) AS "assignmentCount",
+          0::bigint AS "attendanceRows"
+        ${pendingScheduleInMonthSql(companyId, start, end)}
+        UNION ALL
+        SELECT
+          ae."workDate" AS "workDate",
+          'saved'::text AS kind,
+          NULL::text AS "scheduleId",
+          0::bigint AS "assignmentCount",
+          COUNT(*)::bigint AS "attendanceRows"
+        FROM "AttendanceEntry" ae
+        WHERE ae."companyId" = ${companyId}
+          AND ae."workDate" >= ${start}
+          AND ae."workDate" < ${end}
+        GROUP BY ae."workDate"
+      ) AS combined
+      ORDER BY combined."workDate" DESC
+    `,
+  );
+
+  return rows.map((row) => ({
+    workDate: row.workDate,
+    kind: row.kind === 'pending' ? 'pending' : 'saved',
+    scheduleId: row.scheduleId,
+    assignmentCount: Number(row.assignmentCount),
+    attendanceRows: Number(row.attendanceRows),
+  }));
 }
 
 export async function GET(req: Request) {
@@ -18,19 +114,19 @@ export async function GET(req: Request) {
   if (!requirePerm(session.user, P.HR_ATTENDANCE_VIEW)) return errorResponse('Forbidden', 403);
 
   const { searchParams } = new URL(req.url);
-  const workDateRaw = searchParams.get('workDate');
-  if (!workDateRaw) return errorResponse('workDate query required (YYYY-MM-DD)', 400);
+  const monthRaw =
+    searchParams.get('month') ?? searchParams.get('workDate')?.trim().slice(0, 7) ?? currentMonthYmd();
 
-  let workDateYmd: string;
+  let monthYmd: string;
   try {
-    workDateYmd = ymdFromInput(workDateRaw);
+    monthYmd = parseMonthParam(monthRaw);
   } catch {
-    return errorResponse('Invalid workDate', 400);
+    return errorResponse('month query required (YYYY-MM)', 400);
   }
-  const workDate = dateFromYmd(workDateYmd);
-  const { start, end } = monthBoundsFromYmd(workDateYmd);
 
-  const [publishedSchedules, attendanceRowsInMonth, pendingPublished, previousAttendanceDays, selectedSchedule, selectedDayAttendanceRows] = await Promise.all([
+  const { start, end } = monthBounds(monthYmd);
+
+  const [publishedSchedules, attendanceRowsInMonth, days] = await Promise.all([
     prisma.workSchedule.findMany({
       where: { companyId, status: 'PUBLISHED', workDate: { gte: start, lt: end } },
       select: { id: true, workDate: true, _count: { select: { assignments: true } } },
@@ -41,85 +137,31 @@ export async function GET(req: Request) {
       where: { companyId, workDate: { gte: start, lt: end } },
       _count: { _all: true },
     }),
-    prisma.workSchedule.findMany({
-      where: { companyId, status: 'PUBLISHED', workDate: { lte: workDate } },
-      select: {
-        id: true,
-        workDate: true,
-        title: true,
-        status: true,
-        _count: { select: { assignments: true } },
-      },
-      orderBy: { workDate: 'desc' },
-      take: 30,
-    }),
-    prisma.attendanceEntry.groupBy({
-      by: ['workDate'],
-      where: { companyId, workDate: { lt: workDate } },
-      _count: { _all: true },
-      orderBy: { workDate: 'desc' },
-      take: 7,
-    }),
-    prisma.workSchedule.findFirst({
-      where: { companyId, workDate },
-      select: {
-        id: true,
-        workDate: true,
-        title: true,
-        clientDisplayName: true,
-        status: true,
-        publishedAt: true,
-        lockedAt: true,
-        _count: { select: { assignments: true, absences: true } },
-      },
-    }),
-    prisma.attendanceEntry.count({
-      where: { companyId, workDate },
-    }),
+    loadOverviewDaysForMonth(companyId, start, end),
   ]);
 
-  const attendanceCountByDate = new Map(attendanceRowsInMonth.map((r) => [r.workDate.toISOString().slice(0, 10), r._count._all]));
-  const fulfilledScheduleDays = publishedSchedules.filter((s) => (attendanceCountByDate.get(s.workDate.toISOString().slice(0, 10)) ?? 0) > 0).length;
-
-  const pendingWithCounts = await Promise.all(
-    pendingPublished.map(async (s) => {
-      const count = await prisma.attendanceEntry.count({
-        where: { companyId, workDate: s.workDate },
-      });
-      return {
-        id: s.id,
-        workDate: s.workDate,
-        title: s.title,
-        assignmentCount: s._count.assignments,
-        attendanceRows: count,
-      };
-    })
+  const attendanceCountByDate = new Map(
+    attendanceRowsInMonth.map((r) => [r.workDate.toISOString().slice(0, 10), r._count._all]),
   );
-  const pendingSchedules = pendingWithCounts.filter((x) => x.attendanceRows === 0);
+  const fulfilledScheduleDays = publishedSchedules.filter(
+    (s) => (attendanceCountByDate.get(s.workDate.toISOString().slice(0, 10)) ?? 0) > 0,
+  ).length;
 
   return successResponse({
-    selectedDay: {
-      workDate: workDateYmd,
-      attendanceRows: selectedDayAttendanceRows,
-      hasAttendance: selectedDayAttendanceRows > 0,
-      schedule: selectedSchedule
-        ? {
-            ...selectedSchedule,
-            needsAttendance: selectedSchedule.status === 'PUBLISHED' && selectedDayAttendanceRows === 0,
-          }
-        : null,
-    },
+    month: monthYmd,
     monthStats: {
-      month: workDateYmd.slice(0, 7),
+      month: monthYmd,
       publishedScheduleDays: publishedSchedules.length,
       fulfilledScheduleDays,
       pendingScheduleDays: Math.max(0, publishedSchedules.length - fulfilledScheduleDays),
       attendanceRowCount: attendanceRowsInMonth.reduce((sum, x) => sum + x._count._all, 0),
     },
-    pendingSchedules,
-    previousAttendanceDays: previousAttendanceDays.map((d) => ({
-      workDate: d.workDate,
-      rows: d._count._all,
+    days: days.map((day) => ({
+      workDate: day.workDate,
+      kind: day.kind,
+      scheduleId: day.scheduleId,
+      assignmentCount: day.assignmentCount,
+      attendanceRows: day.attendanceRows,
     })),
   });
 }

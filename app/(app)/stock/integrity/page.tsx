@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useGetStockIntegrityQuery } from '@/store/hooks';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
+import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
+import { useGetStockIntegrityPageQuery } from '@/store/hooks';
 
 function formatQty(value: number) {
   return new Intl.NumberFormat('en-US', {
@@ -26,25 +28,32 @@ export default function StockIntegrityPage() {
     perms.includes('transaction.stock_in') ||
     perms.includes('transaction.stock_out');
 
-  const { data, isFetching, isError, refetch } = useGetStockIntegrityQuery(undefined, {
-    skip: !canView,
-  });
-
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const deferredSearch = useDeferredValue(search);
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredSearch, filter, pageSize]);
+
+  const { data, isFetching, isError, refetch } = useGetStockIntegrityPageQuery(
+    {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      search: deferredSearch,
+      filter,
+    },
+    { skip: !canView },
+  );
 
   const rows = data?.rows ?? [];
   const summary = data?.summary;
-
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      if (query && !row.materialName.toLowerCase().includes(query)) return false;
-      if (filter === 'all') return true;
-      if (filter === 'with_exceptions') return row.exceptions.length > 0;
-      return row.exceptions.includes(filter);
-    });
-  }, [filter, rows, search]);
+  const totalRows = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const pageStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, totalRows);
 
   if (!canView) {
     return (
@@ -161,20 +170,20 @@ export default function StockIntegrityPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {isFetching && filteredRows.length === 0 ? (
+                  {isFetching && rows.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
                         Loading...
                       </td>
                     </tr>
-                  ) : filteredRows.length === 0 ? (
+                  ) : rows.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="px-4 py-10 text-center text-slate-500 dark:text-slate-400">
                         No rows match your filters.
                       </td>
                     </tr>
                   ) : (
-                    filteredRows.map((row) => (
+                    rows.map((row) => (
                       <tr
                         key={row.materialId}
                         className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
@@ -224,6 +233,20 @@ export default function StockIntegrityPage() {
             </div>
           )}
         </div>
+        {totalRows > 0 ? (
+          <DirectoryListPagination
+            className="border-t border-slate-200 px-4 py-3 dark:border-slate-800"
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            total={totalRows}
+            pageStart={pageStart}
+            pageEnd={pageEnd}
+            pageSizeOptions={LIST_PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </section>
 
       <p className="text-xs text-slate-500 dark:text-slate-500">

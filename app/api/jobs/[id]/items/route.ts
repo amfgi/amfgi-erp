@@ -1,44 +1,28 @@
 import { auth } from '@/auth';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/db/prisma';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
+import {
+  canEditJobBudgetJobsApi,
+  canViewJobBudgetJobsApi,
+} from '@/lib/permissions/stockModuleAccess';
 import { syncTrackedJobItemProgress } from '@/lib/job-costing/jobItemProgressTracking';
+import {
+  attachTrackableMaterialLinks,
+  cleanTrackableItemsForStorage,
+  syncTrackableMaterialLinks,
+} from '@/lib/job-costing/trackableMaterialLinks';
 import {
   assertCompanyEmployeesExist,
   normalizeAssignedEmployeeIds,
   serializeAssignedEmployeeIds,
 } from '@/lib/job-costing/jobItemAssignments';
-import { P } from '@/lib/permissions';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
-import { z } from 'zod';
-
-const JobItemSchema = z.object({
-  name: z.string().min(1).max(120),
-  description: z.string().max(2000).optional(),
-  formulaLibraryId: z.string().min(1),
-  specifications: z.unknown(),
-  assignedEmployeeIds: z.array(z.string()).optional(),
-  sortOrder: z.number().int().min(0).optional(),
-  progressStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD']).optional(),
-  progressPercent: z.number().min(0).max(100).optional(),
-  trackingItems: z.array(z.object({
-    id: z.string().min(1),
-    label: z.string().min(1).max(120),
-    unit: z.string().max(40).optional().nullable(),
-    targetValue: z.number().positive(),
-    sourceKey: z.string().max(180).optional().nullable(),
-  })).optional(),
-  trackingEnabled: z.boolean().optional(),
-  trackingLabel: z.string().max(120).optional().nullable(),
-  trackingUnit: z.string().max(40).optional().nullable(),
-  trackingTargetValue: z.number().min(0).optional().nullable(),
-  trackingSourceKey: z.string().max(180).optional().nullable(),
-  plannedStartDate: z.string().optional().nullable(),
-  plannedEndDate: z.string().optional().nullable(),
-  actualStartDate: z.string().optional().nullable(),
-  actualEndDate: z.string().optional().nullable(),
-  progressNote: z.string().max(2000).optional().nullable(),
-});
+import {
+  JobItemCreateSchema,
+  normalizeJobItemCreatePayload,
+} from '@/lib/job-costing/jobItemApiValidation';
 
 async function loadVariationJob(jobId: string, companyId: string) {
   return prisma.job.findFirst({
@@ -58,7 +42,7 @@ async function loadVariationJob(jobId: string, companyId: string) {
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_VIEW)) {
+  if (!canViewJobBudgetJobsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -98,16 +82,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   });
 
+  const itemsWithLinks = await attachTrackableMaterialLinks(prisma, companyId, rows);
+
   return successResponse({
     job,
-    items: rows.map(serializeAssignedEmployeeIds),
+    items: itemsWithLinks.map(serializeAssignedEmployeeIds),
   });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_EDIT)) {
+  if (!canEditJobBudgetJobsApi(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
@@ -124,47 +110,53 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const body = await req.json();
-  const parsed = JobItemSchema.safeParse(body);
+  const parsed = JobItemCreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+  const payload = normalizeJobItemCreatePayload(parsed.data);
+  const trackingItemsForStorage = cleanTrackableItemsForStorage(payload.trackingItems);
 
-  const formula = await prisma.formulaLibrary.findFirst({
-    where: {
-      id: parsed.data.formulaLibraryId,
-      companyId,
-      isActive: true,
-    },
-  });
-  if (!formula) return errorResponse('Formula library item not found for this company', 404);
+  if (payload.formulaLibraryId) {
+    const formula = await prisma.formulaLibrary.findFirst({
+      where: {
+        id: payload.formulaLibraryId,
+        companyId,
+        isActive: true,
+      },
+    });
+    if (!formula) return errorResponse('Formula library item not found for this company', 404);
+  }
 
-  const assignedEmployeeIds = normalizeAssignedEmployeeIds(parsed.data.assignedEmployeeIds);
+  const assignedEmployeeIds = normalizeAssignedEmployeeIds(payload.assignedEmployeeIds);
   const employeesExist = await assertCompanyEmployeesExist(companyId, assignedEmployeeIds);
   if (!employeesExist) return errorResponse('Assigned employee not found for this company', 422);
 
   const item = await prisma.$transaction(async (tx) => {
     const created = await tx.jobItem.create({
       data: {
+        id: randomUUID(),
         companyId,
         jobId: job.id,
         createdBy: session.user.id,
-        name: parsed.data.name,
-        description: parsed.data.description ?? null,
-        formulaLibraryId: parsed.data.formulaLibraryId,
-        specifications: parsed.data.specifications as Prisma.InputJsonValue,
-        sortOrder: parsed.data.sortOrder ?? 0,
-        progressStatus: parsed.data.progressStatus ?? 'NOT_STARTED',
-        progressPercent: parsed.data.progressPercent ?? 0,
-        trackingItems: parsed.data.trackingItems as Prisma.InputJsonValue | undefined,
-        trackingEnabled: parsed.data.trackingEnabled ?? false,
-        trackingLabel: parsed.data.trackingLabel?.trim() || null,
-        trackingUnit: parsed.data.trackingUnit?.trim() || null,
-        trackingTargetValue: parsed.data.trackingTargetValue ?? null,
-        trackingSourceKey: parsed.data.trackingSourceKey?.trim() || null,
-        plannedStartDate: parsed.data.plannedStartDate ? new Date(parsed.data.plannedStartDate) : null,
-        plannedEndDate: parsed.data.plannedEndDate ? new Date(parsed.data.plannedEndDate) : null,
-        actualStartDate: parsed.data.actualStartDate ? new Date(parsed.data.actualStartDate) : null,
-        actualEndDate: parsed.data.actualEndDate ? new Date(parsed.data.actualEndDate) : null,
-        progressNote: parsed.data.progressNote ?? null,
-        progressUpdatedAt: parsed.data.progressStatus !== undefined || parsed.data.progressPercent !== undefined || parsed.data.plannedStartDate !== undefined || parsed.data.plannedEndDate !== undefined || parsed.data.actualStartDate !== undefined || parsed.data.actualEndDate !== undefined || parsed.data.progressNote !== undefined ? new Date() : null,
+        name: payload.name,
+        description: payload.description ?? null,
+        formulaLibraryId: payload.formulaLibraryId,
+        specifications: payload.specifications as Prisma.InputJsonValue,
+        sortOrder: payload.sortOrder ?? 0,
+        progressStatus: payload.progressStatus ?? 'NOT_STARTED',
+        progressPercent: payload.progressPercent ?? 0,
+        trackingItems: trackingItemsForStorage as Prisma.InputJsonValue | undefined,
+        trackingEnabled: payload.trackingEnabled ?? false,
+        trackingLabel: payload.trackingLabel?.trim() || null,
+        trackingUnit: payload.trackingUnit?.trim() || null,
+        trackingTargetValue: payload.trackingTargetValue ?? null,
+        trackingSourceKey: payload.trackingSourceKey?.trim() || null,
+        plannedStartDate: payload.plannedStartDate ? new Date(payload.plannedStartDate) : null,
+        plannedEndDate: payload.plannedEndDate ? new Date(payload.plannedEndDate) : null,
+        actualStartDate: payload.actualStartDate ? new Date(payload.actualStartDate) : null,
+        actualEndDate: payload.actualEndDate ? new Date(payload.actualEndDate) : null,
+        progressNote: payload.progressNote ?? null,
+        progressUpdatedAt: payload.progressStatus !== undefined || payload.progressPercent !== undefined || payload.plannedStartDate !== undefined || payload.plannedEndDate !== undefined || payload.actualStartDate !== undefined || payload.actualEndDate !== undefined || payload.progressNote !== undefined ? new Date() : null,
+        updatedAt: new Date(),
       },
     });
 
@@ -172,14 +164,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await tx.jobItemAssignment.createMany({
         data: assignedEmployeeIds.map((employeeId, index) => ({
           companyId,
+          id: randomUUID(),
           jobItemId: created.id,
           employeeId,
           sortOrder: index,
+          updatedAt: new Date(),
         })),
       });
     }
 
-    if (parsed.data.trackingEnabled) {
+    await syncTrackableMaterialLinks(tx, companyId, created.id, payload.trackingItems ?? []);
+
+    if (payload.trackingEnabled) {
       await syncTrackedJobItemProgress(tx, companyId, created.id);
     }
 
@@ -209,5 +205,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   });
 
-  return successResponse(serializeAssignedEmployeeIds(item), 201);
+  const [itemWithLinks] = await attachTrackableMaterialLinks(prisma, companyId, [item]);
+  return successResponse(serializeAssignedEmployeeIds(itemWithLinks ?? item), 201);
 }

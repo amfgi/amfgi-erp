@@ -1,4 +1,21 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { adminApi } from '../adminApi';
+
+export const USER_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
+
+export type UsersListParams = {
+  limit: number;
+  offset: number;
+  search?: string;
+  status?: 'all' | 'active' | 'inactive';
+  tab?: 'erp' | 'self-service';
+  companyId?: string;
+};
+
+export type UsersListResponse = {
+  items: User[];
+  total: number;
+};
 
 export interface UserCompanyAccessItem {
   userId: string;
@@ -44,6 +61,27 @@ export const usersApi = adminApi.injectEndpoints({
           : [{ type: 'User', id: 'LIST' }],
     }),
 
+    getUsersPage: builder.query<UsersListResponse, UsersListParams>({
+      query: ({ limit, offset, search, status, tab, companyId }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (status && status !== 'all') params.set('status', status);
+        if (tab) params.set('tab', tab);
+        if (companyId && companyId !== 'all') params.set('companyId', companyId);
+        return `/users?${params.toString()}`;
+      },
+      transformResponse: (r: { data: UsersListResponse }) => r.data,
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'User', id: 'LIST' },
+              ...result.items.map((user) => ({ type: 'User' as const, id: user.id })),
+            ]
+          : [{ type: 'User', id: 'LIST' }],
+    }),
+
     createUser: builder.mutation<User, Partial<User> & { password: string }>({
       query: (body) => ({
         url: '/users',
@@ -56,7 +94,7 @@ export const usersApi = adminApi.injectEndpoints({
         try {
           const { data: created } = await queryFulfilled;
           dispatch(
-            adminApi.util.updateQueryData('getUsers', undefined, (draft) => {
+            usersApi.util.updateQueryData('getUsers', undefined, (draft) => {
               if (!draft.some((u) => u.id === created.id)) draft.unshift(created);
             }),
           );
@@ -76,7 +114,7 @@ export const usersApi = adminApi.injectEndpoints({
       invalidatesTags: [],
       async onQueryStarted({ id, data }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
-          adminApi.util.updateQueryData('getUsers', undefined, (draft) => {
+          usersApi.util.updateQueryData('getUsers', undefined, (draft) => {
             const row = draft.find((u) => u.id === id);
             if (row) applyUserDraftPatch(row, data);
           }),
@@ -84,7 +122,7 @@ export const usersApi = adminApi.injectEndpoints({
         try {
           const { data: serverUser } = await queryFulfilled;
           dispatch(
-            adminApi.util.updateQueryData('getUsers', undefined, (draft) => {
+            usersApi.util.updateQueryData('getUsers', undefined, (draft) => {
               const idx = draft.findIndex((u) => u.id === id);
               if (idx !== -1) draft[idx] = serverUser;
             }),
@@ -97,4 +135,9 @@ export const usersApi = adminApi.injectEndpoints({
   }),
 });
 
-export const { useGetUsersQuery, useCreateUserMutation, useUpdateUserMutation } = usersApi;
+export const {
+  useGetUsersQuery,
+  useGetUsersPageQuery,
+  useCreateUserMutation,
+  useUpdateUserMutation,
+} = usersApi;

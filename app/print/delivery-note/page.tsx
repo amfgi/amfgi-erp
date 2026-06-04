@@ -17,6 +17,7 @@ interface Transaction {
   date: string;
   totalCost: number;
   quantity: number;
+  deliveryNote?: { id: string; number: number } | null;
   material?: { name: string; unit: string; unitCost: number };
   job?: { jobNumber: string; description: string; site?: string; lpoNumber?: string; quotationNumber?: string };
   performedByUser?: {
@@ -43,6 +44,7 @@ export default function PrintDeliveryNotePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const transactionId = searchParams.get('id');
+  const deliveryNoteId = searchParams.get('deliveryNoteId');
   const templateId = searchParams.get('templateId');
 
   const [transaction, setTransaction] = useState<Transaction | null>(null);
@@ -51,45 +53,118 @@ export default function PrintDeliveryNotePage() {
   const [screenPageCount, setScreenPageCount] = useState(1);
 
   useEffect(() => {
+    if (!transactionId && !deliveryNoteId) {
+      setLoading(false);
+      toast.error('No delivery note or transaction reference provided');
+      router.back();
+      return;
+    }
+
+    if (deliveryNoteId && !transactionId && !session?.user?.activeCompanyId) {
+      return;
+    }
+
+    let cancelled = false;
+
     const load = async () => {
-      if (!transactionId) {
-        toast.error('No transaction ID provided');
-        router.back();
-        return;
-      }
-
       try {
-        const txnRes = await fetch(`/api/transactions/${transactionId}`);
+        if (transactionId) {
+          const txnRes = await fetch(`/api/transactions/${transactionId}`);
 
-        if (!txnRes.ok) {
-          toast.error('Transaction not found');
-          router.back();
-          return;
-        }
+          if (!txnRes.ok) {
+            toast.error('Transaction not found');
+            router.back();
+            return;
+          }
 
-        const txnData = await txnRes.json();
-        const txn = txnData.data as Transaction;
-        setTransaction(txn);
+          const txnData = await txnRes.json();
+          const txn = txnData.data as Transaction;
+          if (cancelled) return;
+          setTransaction(txn);
 
-        // Must load the transaction's company — GET /api/companies returns a list, not one row with printTemplates.
-        const cid = txn?.companyId;
-        if (cid) {
-          const companyRes = await fetch(`/api/companies/${cid}`);
-          if (companyRes.ok) {
+          const cid = txn?.companyId;
+          if (cid) {
+            const companyRes = await fetch(`/api/companies/${cid}`);
+            if (companyRes.ok && !cancelled) {
+              const companyJson = await companyRes.json();
+              setCompany(companyJson.data as Company);
+            }
+          }
+        } else if (deliveryNoteId && session?.user?.activeCompanyId) {
+          const dnRes = await fetch(`/api/delivery-notes/${encodeURIComponent(deliveryNoteId)}`);
+          const dnJson = await dnRes.json();
+          if (!dnRes.ok || !dnJson.data) {
+            toast.error(dnJson.error || 'Delivery note not found');
+            router.back();
+            return;
+          }
+
+          const dn = dnJson.data as {
+            id: string;
+            number: number;
+            date: string;
+            documentNotes: string | null;
+            customItemsJson: unknown;
+            job: Record<string, unknown> | null;
+          };
+
+          let notesBody = (dn.documentNotes ?? '').trim();
+          notesBody = notesBody ? `${notesBody}\n` : '';
+          notesBody += `--- DELIVERY NOTE #${dn.number}\n`;
+          const contact = typeof dn.job?.contactPerson === 'string' ? dn.job.contactPerson.trim() : '';
+          if (contact) {
+            notesBody += `--- DELIVERY CONTACT PERSON:${contact}\n`;
+          }
+          notesBody += '--- DELIVERY NOTE ITEMS (For Printing) ---\n';
+          if (Array.isArray(dn.customItemsJson)) {
+            for (const row of dn.customItemsJson as Array<Record<string, unknown>>) {
+              const name = String(row.name ?? '');
+              const desc = typeof row.description === 'string' ? row.description : '';
+              const qty = String(row.qty ?? '');
+              const unit = String(row.unit ?? '');
+              const left = desc.trim() ? `${name} - ${desc.trim()}` : name;
+              notesBody += `• ${left} | ${qty} ${unit}\n`;
+            }
+          }
+
+          const companyId = session.user.activeCompanyId;
+          const synthetic: Transaction = {
+            id: dn.id,
+            companyId,
+            isDeliveryNote: true,
+            notes: notesBody.trim(),
+            date: typeof dn.date === 'string' ? dn.date : new Date(dn.date).toISOString(),
+            totalCost: 0,
+            quantity: 0,
+            deliveryNote: { id: dn.id, number: dn.number },
+            job: dn.job as unknown as Transaction['job'],
+            material: undefined,
+            performedByUser: null,
+          };
+          if (cancelled) return;
+          setTransaction(synthetic);
+
+          const companyRes = await fetch(`/api/companies/${companyId}`);
+          if (companyRes.ok && !cancelled) {
             const companyJson = await companyRes.json();
             setCompany(companyJson.data as Company);
           }
         }
       } catch (err) {
         console.error('Failed to load data:', err);
-        toast.error('Failed to load transaction');
+        toast.error('Failed to load delivery note');
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    load();
-  }, [transactionId, router]);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [transactionId, deliveryNoteId, router, session?.user?.activeCompanyId]);
 
   // Auto-print after data loads
   useEffect(() => {

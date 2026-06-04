@@ -1,4 +1,7 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
+
+export const HR_EMPLOYEE_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
 
 export type HrEmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
 
@@ -25,11 +28,34 @@ export interface HrEmployee {
     | null;
 }
 
+/** Full employee row for Excel export (all importable master fields). */
+export interface HrEmployeeExportRecord {
+  id: string;
+  employeeCode: string;
+  fullName: string;
+  preferredName: string | null;
+  email: string | null;
+  phone: string | null;
+  nationality: string | null;
+  dateOfBirth: string | Date | null;
+  gender: string | null;
+  designation: string | null;
+  department: string | null;
+  employmentType: string | null;
+  hireDate: string | Date | null;
+  terminationDate: string | Date | null;
+  status: HrEmployeeStatus;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  bloodGroup: string | null;
+  portalEnabled: boolean;
+  profileExtension: unknown;
+}
+
 export interface HrScheduleRow {
   id: string;
   workDate: string;
   status: 'DRAFT' | 'PUBLISHED' | 'LOCKED';
-  title?: string | null;
   clientDisplayName?: string | null;
   createdAt: string;
   publishedAt: string | null;
@@ -42,25 +68,7 @@ export interface HrScheduleRow {
 }
 
 export interface HrAttendanceOverview {
-  selectedDay: {
-    workDate: string;
-    attendanceRows: number;
-    hasAttendance: boolean;
-    schedule: {
-      id: string;
-      workDate: string;
-      title: string | null;
-      clientDisplayName: string | null;
-      status: 'DRAFT' | 'PUBLISHED' | 'LOCKED';
-      publishedAt: string | null;
-      lockedAt: string | null;
-      needsAttendance: boolean;
-      _count: {
-        assignments: number;
-        absences: number;
-      };
-    } | null;
-  };
+  month: string;
   monthStats: {
     month: string;
     publishedScheduleDays: number;
@@ -68,15 +76,19 @@ export interface HrAttendanceOverview {
     pendingScheduleDays: number;
     attendanceRowCount: number;
   };
-  pendingSchedules: Array<{
-    id: string;
-    workDate: string;
-    title: string | null;
+  days: Array<{
+    workDate: string | Date;
+    kind: 'pending' | 'saved';
+    scheduleId: string | null;
     assignmentCount: number;
     attendanceRows: number;
   }>;
-  previousAttendanceDays: Array<{ workDate: string; rows: number }>;
 }
+
+export type HrAttendanceOverviewParams = {
+  /** Calendar month to load (YYYY-MM). Defaults to current month on the server. */
+  month: string;
+};
 
 export interface HrDocumentType {
   id: string;
@@ -112,6 +124,21 @@ type HrEmployeesArg = {
   status?: 'ALL' | HrEmployeeStatus;
 };
 
+export type HrEmployeesListParams = {
+  limit: number;
+  offset: number;
+  q?: string;
+  status?: 'ALL' | HrEmployeeStatus;
+  employeeType?: 'ALL' | '__none__' | string;
+  portal?: 'ALL' | 'enabled' | 'disabled';
+};
+
+export type HrEmployeesListResponse = {
+  items: HrEmployee[];
+  total: number;
+  employeeTypes: string[];
+};
+
 export const hrApi = appApi.injectEndpoints({
   endpoints: (builder) => ({
     getHrEmployees: builder.query<HrEmployee[], HrEmployeesArg | void>({
@@ -129,6 +156,47 @@ export const hrApi = appApi.injectEndpoints({
           : [{ type: 'Employee', id: 'LIST' }],
     }),
 
+    getHrEmployeesForExport: builder.query<HrEmployeeExportRecord[], void>({
+      query: () => '/hr/employees?forExport=1',
+      transformResponse: (r: { data: HrEmployeeExportRecord[] }) => r.data,
+    }),
+
+    bulkImportEmployees: builder.mutation<
+      { created: number; updated: number; skipped: number; warnings: string[] },
+      { newRows: unknown[]; updateRows: unknown[] }
+    >({
+      query: (body) => ({
+        url: '/hr/employees/import/bulk',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (r: {
+        data: { created: number; updated: number; skipped: number; warnings: string[] };
+      }) => r.data,
+      invalidatesTags: [{ type: 'Employee', id: 'LIST' }],
+    }),
+
+    getHrEmployeesPage: builder.query<HrEmployeesListResponse, HrEmployeesListParams>({
+      query: ({ limit, offset, q, status, employeeType, portal }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (q?.trim()) params.set('q', q.trim());
+        if (status && status !== 'ALL') params.set('status', status);
+        if (employeeType && employeeType !== 'ALL') params.set('employeeType', employeeType);
+        if (portal && portal !== 'ALL') params.set('portal', portal);
+        return `/hr/employees?${params.toString()}`;
+      },
+      transformResponse: (r: { data: HrEmployeesListResponse }) => r.data,
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'Employee', id: 'LIST' },
+              ...result.items.map((employee) => ({ type: 'Employee' as const, id: employee.id })),
+            ]
+          : [{ type: 'Employee', id: 'LIST' }],
+    }),
+
     getHrSchedules: builder.query<HrScheduleRow[], void>({
       query: () => '/hr/schedule',
       transformResponse: (r: { data: HrScheduleRow[] }) => r.data,
@@ -138,11 +206,49 @@ export const hrApi = appApi.injectEndpoints({
           : [{ type: 'WorkSchedule', id: 'LIST' }],
     }),
 
-    getHrAttendanceOverview: builder.query<HrAttendanceOverview, string>({
-      query: (workDate) => `/hr/attendance/overview?workDate=${encodeURIComponent(workDate)}`,
+    getHrSchedulesPage: builder.query<
+      { items: HrScheduleRow[]; total: number },
+      { limit: number; offset: number; q?: string; status?: string }
+    >({
+      query: ({ limit, offset, q, status }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (q?.trim()) params.set('q', q.trim());
+        if (status && status !== 'ALL') params.set('status', status);
+        return `/hr/schedule?${params.toString()}`;
+      },
+      transformResponse: (r: { data: { items: HrScheduleRow[]; total: number } }) => r.data,
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'WorkSchedule', id: 'LIST' },
+              ...result.items.map((schedule) => ({ type: 'WorkSchedule' as const, id: schedule.id })),
+            ]
+          : [{ type: 'WorkSchedule', id: 'LIST' }],
+    }),
+
+    getHrSchedulesForMonth: builder.query<HrScheduleRow[], { month: string }>({
+      query: ({ month }) => `/hr/schedule?month=${encodeURIComponent(month)}`,
+      transformResponse: (r: { data: HrScheduleRow[] }) => r.data,
+      providesTags: (result, _error, arg) =>
+        result
+          ? [
+              { type: 'WorkSchedule', id: `MONTH-${arg.month}` },
+              ...result.map((schedule) => ({ type: 'WorkSchedule' as const, id: schedule.id })),
+            ]
+          : [{ type: 'WorkSchedule', id: `MONTH-${arg.month}` }],
+    }),
+
+    getHrAttendanceOverview: builder.query<HrAttendanceOverview, HrAttendanceOverviewParams>({
+      query: (arg) => {
+        const params = new URLSearchParams();
+        params.set('month', arg.month);
+        return `/hr/attendance/overview?${params.toString()}`;
+      },
       transformResponse: (r: { data: HrAttendanceOverview }) => r.data,
-      providesTags: (result, error, workDate) => [
-        { type: 'AttendanceOverview', id: workDate },
+      providesTags: (_result, _error, arg) => [
+        { type: 'AttendanceOverview', id: arg.month },
         { type: 'AttendanceOverview', id: 'LIST' },
       ],
     }),
@@ -176,7 +282,13 @@ export const hrApi = appApi.injectEndpoints({
 
 export const {
   useGetHrEmployeesQuery,
+  useGetHrEmployeesPageQuery,
+  useGetHrEmployeesForExportQuery,
+  useLazyGetHrEmployeesForExportQuery,
+  useBulkImportEmployeesMutation,
   useGetHrSchedulesQuery,
+  useGetHrSchedulesPageQuery,
+  useGetHrSchedulesForMonthQuery,
   useGetHrAttendanceOverviewQuery,
   useGetHrDocumentTypesQuery,
   useGetHrEmployeeTypeSettingsQuery,

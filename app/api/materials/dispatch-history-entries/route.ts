@@ -1,8 +1,25 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { serializeJobWithContacts } from '@/lib/jobs/jobContacts';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
+
+function mapCustomItemsFromJson(json: unknown): Array<{ name: string; description: string; unit: string; qty: string }> {
+  if (!Array.isArray(json)) return [];
+  const out: Array<{ name: string; description: string; unit: string; qty: string }> = [];
+  for (const row of json) {
+    if (!row || typeof row !== 'object') continue;
+    const o = row as Record<string, unknown>;
+    out.push({
+      name: typeof o.name === 'string' ? o.name : String(o.name ?? ''),
+      description: typeof o.description === 'string' ? o.description : '',
+      unit: typeof o.unit === 'string' ? o.unit : String(o.unit ?? ''),
+      qty: typeof o.qty === 'string' ? o.qty : String(o.qty ?? ''),
+    });
+  }
+  return out;
+}
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -17,6 +34,11 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const filterType = searchParams.get('filterType') ?? 'all';
   const dateStr = searchParams.get('date');
+  const limitParam = searchParams.get('limit');
+  const offset = parseListOffset(searchParams.get('offset'));
+  const noteType = searchParams.get('noteType') ?? 'all';
+  const jobSearch = searchParams.get('jobSearch')?.trim().toLowerCase() ?? '';
+  const deliveryNoteSearchRaw = searchParams.get('deliveryNoteSearch')?.trim().replace(/^#/i, '') ?? '';
 
   let startDate = new Date(0);
   let endDate = new Date();
@@ -50,8 +72,13 @@ export async function GET(req: Request) {
       notes: true,
       isDeliveryNote: true,
       date: true,
+      createdAt: true,
       totalCost: true,
       signedCopyUrl: true,
+      deliveryNoteId: true,
+      deliveryNote: {
+        select: { id: true, number: true, documentNotes: true, customItemsJson: true },
+      },
       warehouse: {
         select: { id: true, name: true },
       },
@@ -89,7 +116,11 @@ export async function GET(req: Request) {
   for (const txn of transactions) {
     const dateOnly = txn.date.toISOString().split('T')[0];
     const isDeliveryNote = txn.isDeliveryNote ?? false;
-    const key = isDeliveryNote ? `${txn.jobId}-${dateOnly}-dn-${txn.id}` : `${txn.jobId}-${dateOnly}`;
+    const key = isDeliveryNote
+      ? txn.deliveryNoteId
+        ? `dn-${txn.deliveryNoteId}`
+        : `${txn.jobId}-${dateOnly}-dn-${txn.id}`
+      : `${txn.jobId}-${dateOnly}`;
     if (!groupedMap.has(key)) {
       groupedMap.set(key, []);
     }
@@ -153,7 +184,21 @@ export async function GET(req: Request) {
       const serializedJob = firstTxn.job ? serializeJobWithContacts(firstTxn.job) : null;
       const dateOnly = firstTxn.date.toISOString().split('T')[0];
       const isDeliveryNote = firstTxn.isDeliveryNote ?? false;
-      const entryId = isDeliveryNote ? `${firstTxn.jobId}-${dateOnly}-dn-${firstTxn.id}` : `${firstTxn.jobId}-${dateOnly}`;
+      const entryId = isDeliveryNote
+        ? firstTxn.deliveryNoteId
+          ? `dn-${firstTxn.deliveryNoteId}`
+          : `${firstTxn.jobId}-${dateOnly}-dn-${firstTxn.id}`
+        : `${firstTxn.jobId}-${dateOnly}`;
+      const deliveryNoteNumber =
+        firstTxn.deliveryNote?.number ??
+        (() => {
+          const m = firstTxn.notes?.match(/--- DELIVERY NOTE #(\d+)/);
+          return m?.[1] ? parseInt(m[1], 10) : null;
+        })();
+
+      const ledgerCreatedAt = new Date(
+        Math.max(...groupedTxns.map((t) => new Date(t.createdAt).getTime()))
+      );
 
       return {
         id: entryId,
@@ -165,6 +210,7 @@ export async function GET(req: Request) {
         jobContactPerson: serializedJob?.contactPerson ?? undefined,
         jobContactsJson: serializedJob?.contactsJson ?? undefined,
         dispatchDate: firstTxn.date,
+        ledgerCreatedAt,
         totalQuantity: totalNetQuantity,
         totalValuation,
         materialsCount: materialsMap.size,
@@ -173,6 +219,10 @@ export async function GET(req: Request) {
         transactionCount: groupedTxns.length,
         notes: firstTxn.notes ?? undefined,
         isDeliveryNote: firstTxn.isDeliveryNote ?? false,
+        deliveryNoteId: firstTxn.deliveryNoteId ?? undefined,
+        deliveryNoteNumber: deliveryNoteNumber ?? undefined,
+        documentNotes: firstTxn.deliveryNote?.documentNotes ?? undefined,
+        customItemsJson: firstTxn.deliveryNote?.customItemsJson ?? undefined,
         signedCopyUrl: firstTxn.signedCopyUrl ?? undefined,
         createdByUserId: firstTxn.performedByUserId ?? undefined,
         createdByName:
@@ -190,14 +240,111 @@ export async function GET(req: Request) {
     })
   );
 
-  enrichedEntries.sort((a, b) => b.dispatchDate.getTime() - a.dispatchDate.getTime());
+  const seenDeliveryNoteIds = new Set(
+    enrichedEntries.map((e) => e.deliveryNoteId).filter((id): id is string => Boolean(id))
+  );
+
+  const standaloneCandidates = await prisma.deliveryNote.findMany({
+    where: {
+      companyId,
+      date: { gte: startDate, lte: endDate },
+      materialDispatchSkipped: true,
+    },
+    select: {
+      id: true,
+      number: true,
+      jobId: true,
+      date: true,
+      createdAt: true,
+      documentNotes: true,
+      customItemsJson: true,
+      job: {
+        select: {
+          id: true,
+          jobNumber: true,
+          description: true,
+          contactPerson: true,
+          contacts: {
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      },
+    },
+  });
+
+  for (const dn of standaloneCandidates) {
+    if (seenDeliveryNoteIds.has(dn.id)) continue;
+
+    const serializedJob = dn.job ? serializeJobWithContacts(dn.job) : null;
+
+    enrichedEntries.push({
+      id: `dn-${dn.id}`,
+      _id: `dn-${dn.id}`,
+      entryId: `dn-${dn.id}`,
+      jobId: dn.jobId ?? '',
+      jobNumber: dn.job?.jobNumber ?? 'N/A',
+      jobDescription: dn.job?.description ?? '',
+      jobContactPerson: serializedJob?.contactPerson ?? undefined,
+      jobContactsJson: serializedJob?.contactsJson ?? undefined,
+      dispatchDate: dn.date,
+      ledgerCreatedAt: dn.createdAt,
+      totalQuantity: 0,
+      totalValuation: 0,
+      materialsCount: 0,
+      materials: [],
+      transactionIds: [],
+      transactionCount: 0,
+      isDeliveryNote: true,
+      deliveryNoteId: dn.id,
+      deliveryNoteNumber: dn.number,
+      documentNotes: dn.documentNotes ?? undefined,
+      customItemsJson: dn.customItemsJson ?? undefined,
+    } as unknown as (typeof enrichedEntries)[number]);
+  }
+
+  enrichedEntries.sort((a, b) => {
+    const ta = new Date(a.ledgerCreatedAt ?? a.dispatchDate).getTime();
+    const tb = new Date(b.ledgerCreatedAt ?? b.dispatchDate).getTime();
+    return tb - ta;
+  });
+
+  const filteredEntries = enrichedEntries.filter((entry) => {
+    if (noteType === 'delivery' && !entry.isDeliveryNote) return false;
+    if (noteType === 'dispatch' && entry.isDeliveryNote) return false;
+    if (jobSearch) {
+      const hay = [entry.jobNumber, entry.jobDescription].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(jobSearch)) return false;
+    }
+    if (deliveryNoteSearchRaw) {
+      if (!entry.isDeliveryNote) return false;
+      const dn =
+        entry.deliveryNoteNumber ??
+        (() => {
+          const m = entry.notes?.match(/--- DELIVERY NOTE #(\d+)/);
+          return m?.[1] ? parseInt(m[1], 10) : null;
+        })();
+      if (dn == null || !String(dn).includes(deliveryNoteSearchRaw)) return false;
+    }
+    return true;
+  });
+
+  const dateRange = {
+    startDate,
+    endDate,
+    filterType,
+  };
+
+  if (limitParam !== null) {
+    const limit = parseListLimit(limitParam);
+    return successResponse({
+      entries: filteredEntries.slice(offset, offset + limit),
+      total: filteredEntries.length,
+      dateRange,
+    });
+  }
 
   return successResponse({
-    entries: enrichedEntries,
-    dateRange: {
-      startDate,
-      endDate,
-      filterType,
-    },
+    entries: filteredEntries,
+    dateRange,
   });
 }

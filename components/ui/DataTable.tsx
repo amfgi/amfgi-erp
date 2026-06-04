@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { fuzzyMatch } from '@/lib/utils/fuzzyMatch';
 import { TableSkeleton } from './skeleton/TableSkeleton';
 
@@ -34,6 +36,21 @@ interface DataTableProps<T extends { id: string }> {
   onRowDoubleClick?: (row: T, e: React.MouseEvent) => void;
   onRowClick?: (row: T, e: React.MouseEvent) => void;
   selectedRowId?: string | null;
+  /** When set, rows are server-paginated; built-in search and client pagination are disabled. */
+  serverPagination?: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pageSizeOptions?: readonly number[];
+    onPageChange: (page: number) => void;
+    onPageSizeChange: (pageSize: number) => void;
+  };
+  /** When set with serverPagination, sorting is applied on the server (no client reorder). */
+  serverSort?: {
+    sortKey: string | null;
+    sortDir: 'asc' | 'desc';
+    onSortChange: (sortKey: string, sortDir: 'asc' | 'desc') => void;
+  };
 }
 
 function normalizeSearchValue(value: unknown) {
@@ -112,10 +129,14 @@ export default function DataTable<T extends { id: string }>({
   onRowDoubleClick,
   onRowClick,
   selectedRowId,
+  serverPagination,
+  serverSort,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [clientSortKey, setClientSortKey] = useState<string | null>(null);
+  const [clientSortDir, setClientSortDir] = useState<'asc' | 'desc'>('asc');
+  const activeSortKey = serverSort?.sortKey ?? clientSortKey;
+  const activeSortDir = serverSort?.sortDir ?? clientSortDir;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [searchScope, setSearchScope] = useState<string>('all');
@@ -284,6 +305,7 @@ export default function DataTable<T extends { id: string }>({
   }, [searchOptions, searchScope]);
 
   const filtered = useMemo(() => {
+    if (serverPagination) return data;
     if (!search || activeSearchKeys.length === 0) return data;
 
     const q = normalizeSearchValue(search);
@@ -312,17 +334,17 @@ export default function DataTable<T extends { id: string }>({
     return data.filter((row) =>
       activeSearchKeys.some((key) => normalizeSearchValue(row[key]).includes(q))
     );
-  }, [activeSearchKeys, data, fuzzySearch, search, searchMode]);
+  }, [activeSearchKeys, data, fuzzySearch, search, searchMode, serverPagination]);
 
   const sorted = useMemo(() => {
-    if (!sortKey) return filtered;
+    if (serverSort || !activeSortKey) return filtered;
     return [...filtered].sort((a, b) => {
-      const av = (a as Record<string, unknown>)[sortKey];
-      const bv = (b as Record<string, unknown>)[sortKey];
+      const av = (a as Record<string, unknown>)[activeSortKey];
+      const bv = (b as Record<string, unknown>)[activeSortKey];
       const cmp = String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true });
-      return sortDir === 'asc' ? cmp : -cmp;
+      return activeSortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filtered, sortDir, sortKey]);
+  }, [activeSortDir, activeSortKey, filtered, serverSort]);
 
   const totalPages = useMemo(() => {
     if (!pageSize || pageSize <= 0) return 1;
@@ -330,14 +352,20 @@ export default function DataTable<T extends { id: string }>({
   }, [pageSize, sorted.length]);
 
   const paged = useMemo(() => {
+    if (serverPagination) return sorted;
     if (!pageSize || pageSize <= 0) return sorted;
     const start = (page - 1) * pageSize;
     return sorted.slice(start, start + pageSize);
-  }, [page, pageSize, sorted]);
+  }, [page, pageSize, serverPagination, sorted]);
+
+  const serverTotalPages = serverPagination
+    ? Math.max(1, Math.ceil(serverPagination.total / serverPagination.pageSize))
+    : 1;
+  const serverPageStart = serverPagination ? (serverPagination.page - 1) * serverPagination.pageSize : 0;
 
   useEffect(() => {
     setPage(1);
-  }, [pageSize, search, searchMode, searchScope, sortDir, sortKey]);
+  }, [pageSize, search, searchMode, searchScope, activeSortDir, activeSortKey]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -346,13 +374,22 @@ export default function DataTable<T extends { id: string }>({
   }, [page, totalPages]);
 
   const handleSort = (key: string) => {
-    if (sortKey === key) {
-      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+    if (serverSort) {
+      if (serverSort.sortKey === key) {
+        serverSort.onSortChange(key, serverSort.sortDir === 'asc' ? 'desc' : 'asc');
+        return;
+      }
+      serverSort.onSortChange(key, 'asc');
       return;
     }
 
-    setSortKey(key);
-    setSortDir('asc');
+    if (clientSortKey === key) {
+      setClientSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setClientSortKey(key);
+    setClientSortDir('asc');
   };
 
   const toggleColumnVisibility = (key: string) => {
@@ -394,8 +431,9 @@ export default function DataTable<T extends { id: string }>({
 
   return (
     <div className="flex flex-col gap-3">
-      {searchKeys.length > 0 ? (
+      {(searchKeys.length > 0 && !serverPagination) || enableColumnDisplayOptions ? (
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          {searchKeys.length > 0 && !serverPagination ? (
           <div className="flex-1 space-y-3">
             <div className="relative">
               <svg
@@ -447,6 +485,9 @@ export default function DataTable<T extends { id: string }>({
               </div>
             ) : null}
           </div>
+          ) : (
+            <div className="flex-1" aria-hidden />
+          )}
 
           {enableColumnDisplayOptions ? (
             <details className="group relative">
@@ -543,13 +584,13 @@ export default function DataTable<T extends { id: string }>({
                 >
                   <span className="flex items-center gap-1">
                     {col.header}
-                    {col.sortable && sortKey === col.key ? (
+                    {col.sortable && activeSortKey === col.key ? (
                       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           strokeWidth={2}
-                          d={sortDir === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}
+                          d={activeSortDir === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}
                         />
                       </svg>
                     ) : null}
@@ -600,7 +641,19 @@ export default function DataTable<T extends { id: string }>({
         </table>
       </div>
 
-      {sorted.length > 0 ? (
+      {serverPagination ? (
+        <DirectoryListPagination
+          page={serverPagination.page}
+          pageSize={serverPagination.pageSize}
+          totalPages={serverTotalPages}
+          total={serverPagination.total}
+          pageStart={serverPageStart}
+          pageEnd={serverPageStart + paged.length}
+          pageSizeOptions={serverPagination.pageSizeOptions ?? LIST_PAGE_SIZE_OPTIONS}
+          onPageChange={serverPagination.onPageChange}
+          onPageSizeChange={serverPagination.onPageSizeChange}
+        />
+      ) : sorted.length > 0 ? (
         <div className="flex flex-col gap-2 text-xs text-slate-500 dark:text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             {pageSize > 0 ? (

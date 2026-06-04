@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { buildTransactionActorFields } from '@/lib/utils/auditActor';
 import { calculateFIFOConsumption } from '@/lib/utils/fifoConsumption';
@@ -83,6 +84,10 @@ export async function GET(req: Request) {
   const companyId = session.user.activeCompanyId;
   const { searchParams } = new URL(req.url);
   const requestedDate = searchParams.get('date');
+  const limitParam = searchParams.get('limit');
+  const offset = parseListOffset(searchParams.get('offset'));
+  const historySearch = searchParams.get('search')?.trim().toLowerCase() ?? '';
+  const omitHistory = searchParams.get('omitHistory') === '1';
   const referenceDate = requestedDate ? new Date(requestedDate) : new Date();
   if (Number.isNaN(referenceDate.getTime())) {
     return errorResponse('Invalid date', 422);
@@ -132,47 +137,81 @@ export async function GET(req: Request) {
       },
       orderBy: [{ jobNumber: 'asc' }],
     }),
-    prisma.transaction.findMany({
-      where: {
-        companyId,
-        type: 'STOCK_OUT',
-        notes: {
-          contains: 'Non-stock reconcile',
-        },
-      },
-      select: {
-        id: true,
-        quantity: true,
-        totalCost: true,
-        averageCost: true,
-        notes: true,
-        date: true,
-        createdAt: true,
-        material: {
-          select: {
-            name: true,
-            unit: true,
+    omitHistory
+      ? Promise.resolve([])
+      : prisma.transaction.findMany({
+          where: {
+            companyId,
+            type: 'STOCK_OUT',
+            notes: {
+              contains: 'Non-stock reconcile',
+            },
           },
-        },
-        job: {
           select: {
             id: true,
-            jobNumber: true,
-            description: true,
-            customer: {
+            quantity: true,
+            totalCost: true,
+            averageCost: true,
+            notes: true,
+            date: true,
+            createdAt: true,
+            material: {
               select: {
                 name: true,
+                unit: true,
+              },
+            },
+            job: {
+              select: {
+                id: true,
+                jobNumber: true,
+                description: true,
+                customer: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
-        },
-      },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      take: 80,
-    }),
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+          ...(limitParam === null ? { take: 500 } : {}),
+        }),
   ]);
 
-  return successResponse({
+  const historyRows = history.map((entry) => ({
+    id: entry.id,
+    quantity: decimalToNumberOrZero(entry.quantity),
+    totalCost: decimalToNumberOrZero(entry.totalCost),
+    averageCost: decimalToNumberOrZero(entry.averageCost),
+    notes: entry.notes,
+    date: entry.date,
+    createdAt: entry.createdAt,
+    materialName: entry.material.name,
+    unit: entry.material.unit,
+    jobId: entry.job?.id ?? '',
+    jobNumber: entry.job?.jobNumber ?? '-',
+    jobDescription: entry.job?.description ?? '',
+    customerName: entry.job?.customer?.name ?? '',
+  }));
+
+  const filteredHistory = historySearch
+    ? historyRows.filter((entry) => {
+        const hay = [
+          entry.materialName,
+          entry.jobNumber,
+          entry.jobDescription,
+          entry.customerName,
+          entry.notes,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(historySearch);
+      })
+    : historyRows;
+
+  const payload: Record<string, unknown> = {
     materials,
     jobs: jobs.map((job) => ({
       id: job.id,
@@ -181,22 +220,21 @@ export async function GET(req: Request) {
       customerName: job.customer?.name ?? '',
     })),
     selectedMonth: monthStart.toISOString(),
-    history: history.map((entry) => ({
-      id: entry.id,
-      quantity: entry.quantity,
-      totalCost: entry.totalCost,
-      averageCost: entry.averageCost,
-      notes: entry.notes,
-      date: entry.date,
-      createdAt: entry.createdAt,
-      materialName: entry.material.name,
-      unit: entry.material.unit,
-      jobId: entry.job?.id ?? '',
-      jobNumber: entry.job?.jobNumber ?? '-',
-      jobDescription: entry.job?.description ?? '',
-      customerName: entry.job?.customer?.name ?? '',
-    })),
-  });
+  };
+
+  if (omitHistory) {
+    return successResponse(payload);
+  }
+
+  if (limitParam !== null) {
+    const limit = parseListLimit(limitParam);
+    payload.history = filteredHistory.slice(offset, offset + limit);
+    payload.historyTotal = filteredHistory.length;
+  } else {
+    payload.history = filteredHistory;
+  }
+
+  return successResponse(payload);
 }
 
 export async function POST(req: Request) {

@@ -149,6 +149,7 @@ export async function applyMaterialWarehouseDelta(
       materialId,
       warehouseId,
       currentStock: delta,
+      updatedAt: new Date(),
     },
   });
 }

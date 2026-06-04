@@ -217,6 +217,7 @@ type SchedulePreviewDetail = {
   }> | null;
   driverLogs?: Array<{
     driver?: { fullName?: string | null } | null;
+    guestDriverName?: string | null;
     routeText?: string | null;
   }> | null;
 };
@@ -511,7 +512,7 @@ export function TemplateBuilder({
       };
 
       const driverTrips = (schedule.driverLogs ?? []).map((log) => ({
-        driverName: String(log.driver?.fullName ?? '').trim(),
+        driverName: String(log.guestDriverName ?? log.driver?.fullName ?? '').trim(),
         tripOrder: String(log.routeText ?? '').trim(),
       }));
 

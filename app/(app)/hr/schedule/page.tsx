@@ -1,18 +1,18 @@
 ﻿'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
-import { Card, CardContent } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
+import Modal from '@/components/ui/Modal';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
 import { cn } from '@/lib/utils';
-import { useGetHrSchedulesQuery } from '@/store/api/endpoints/hr';
+import { useGetHrSchedulesForMonthQuery } from '@/store/api/endpoints/hr';
 
 async function readApiEnvelope<T>(res: Response) {
   const text = await res.text();
@@ -24,53 +24,53 @@ async function readApiEnvelope<T>(res: Response) {
   }
 }
 
+function currentMonthYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDateLabel(iso: string) {
+function monthFromSearchParams(searchParams: URLSearchParams | null) {
+  const raw = searchParams?.get('month')?.trim().slice(0, 7) ?? '';
+  return /^\d{4}-\d{2}$/.test(raw) ? raw : '';
+}
+
+function workDateFromSearchParams(searchParams: URLSearchParams | null) {
+  const raw = searchParams?.get('workDate')?.trim().slice(0, 10) ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+}
+
+function formatDateLabel(ymd: string) {
   try {
-    return new Date(iso).toLocaleDateString('en-GB', {
+    return new Date(`${ymd.slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', {
       weekday: 'short',
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     });
   } catch {
-    return iso;
+    return ymd;
   }
 }
 
-function StatCard({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: number | string;
-  tone?: 'default' | 'emerald' | 'amber';
-}) {
-  const toneClass =
-    tone === 'emerald'
-      ? 'text-emerald-600 dark:text-emerald-300'
-      : tone === 'amber'
-        ? 'text-amber-700 dark:text-amber-300'
-        : 'text-foreground';
-
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className={cn('mt-2 text-2xl font-semibold tabular-nums', toneClass)}>{value}</p>
-      </CardContent>
-    </Card>
-  );
+function formatMonthLabel(monthYmd: string) {
+  try {
+    const [year, month] = monthYmd.split('-');
+    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-GB', {
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return monthYmd;
+  }
 }
 
 function workflowBadgeClasses(row: {
   status: string;
   attendanceRows: number;
-  workDate: string;
 }) {
   const attendanceReady = row.attendanceRows > 0;
   if (row.status === 'LOCKED') {
@@ -86,55 +86,52 @@ function workflowBadgeClasses(row: {
 
 export default function HrScheduleListPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const linkedWorkDate = workDateFromSearchParams(searchParams);
+  const linkedMonth = monthFromSearchParams(searchParams);
   const { data: session } = useSession();
+  const [month, setMonth] = useState(() => linkedMonth || linkedWorkDate.slice(0, 7) || currentMonthYmd());
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createDate, setCreateDate] = useState(todayYmd());
   const [creating, setCreating] = useState(false);
-  const [newDate, setNewDate] = useState(todayYmd);
-  const [search, setSearch] = useState('');
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.schedule.view');
   const canEdit = isSA || perms.includes('hr.schedule.edit');
 
-  const { data: rows = [], isLoading: loading } = useGetHrSchedulesQuery(undefined, {
-    skip: !canView,
-  });
+  useEffect(() => {
+    if (linkedMonth) setMonth(linkedMonth);
+    else if (linkedWorkDate) setMonth(linkedWorkDate.slice(0, 7));
+  }, [linkedMonth, linkedWorkDate]);
 
-  const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) =>
-      [row.workDate, row.status]
-        .join(' ')
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [rows, search]);
+  useEffect(() => {
+    if (linkedWorkDate) setCreateDate(linkedWorkDate);
+  }, [linkedWorkDate]);
 
-  const summary = useMemo(() => {
-    const today = todayYmd();
-    return rows.reduce(
-      (acc, row) => {
-        acc.total += 1;
-        if (row.status === 'DRAFT') acc.draft += 1;
-        if (row.status === 'PUBLISHED') acc.published += 1;
-        if (row.status === 'LOCKED') acc.locked += 1;
-        if (row.status === 'PUBLISHED' && row.attendanceRows === 0 && row.workDate.slice(0, 10) <= today) {
-          acc.pendingAttendance += 1;
-        }
-        return acc;
-      },
-      { total: 0, draft: 0, published: 0, locked: 0, pendingAttendance: 0 },
-    );
-  }, [rows]);
+  const {
+    data: schedules = [],
+    isLoading: loading,
+    isFetching: refreshing,
+    refetch,
+  } = useGetHrSchedulesForMonthQuery({ month }, { skip: !canView });
+
+  const openCreateModal = () => {
+    setCreateDate(linkedWorkDate || todayYmd());
+    setCreateModalOpen(true);
+  };
 
   const createSchedule = async () => {
-    if (!newDate) return;
+    const ymd = createDate.trim();
+    if (!ymd) {
+      toast.error('Choose a work date');
+      return;
+    }
     setCreating(true);
     const res = await fetch('/api/hr/schedule', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workDate: newDate }),
+      body: JSON.stringify({ workDate: ymd }),
     });
     const json = await readApiEnvelope<{ id: string; workDate: string }>(res);
     setCreating(false);
@@ -143,7 +140,11 @@ export default function HrScheduleListPage() {
       return;
     }
     toast.success('Schedule draft created');
-    router.push(`/hr/schedule/${newDate}`);
+    setCreateModalOpen(false);
+    const createdMonth = ymd.slice(0, 7);
+    if (createdMonth !== month) setMonth(createdMonth);
+    await refetch();
+    router.push(`/hr/schedule?workDate=${encodeURIComponent(ymd)}`);
   };
 
   if (!canView) {
@@ -156,24 +157,66 @@ export default function HrScheduleListPage() {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="flex w-full min-w-0 flex-col gap-5">
-        <div className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
-          ))}
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-5">
+      <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">HR planning</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Schedule planning</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Day schedules for the selected month. Create a draft, plan teams, then hand off to attendance.
+          </p>
         </div>
-        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        {canEdit ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button type="button" size="sm" onClick={openCreateModal}>
+              Create schedule draft
+            </Button>
+          </div>
+        ) : null}
+      </header>
+
+      {linkedWorkDate ? (
+        <Alert className="border-cyan-500/30 bg-cyan-500/10">
+          <AlertDescription className="text-cyan-950 dark:text-cyan-100">
+            Linked to <strong>{formatDateLabel(linkedWorkDate)}</strong>. Open <strong>Plan</strong> on that row, or
+            create a new draft for the date.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">Schedule register</h2>
+            <p className="text-sm text-muted-foreground">
+              {schedules.length} schedule{schedules.length === 1 ? '' : 's'} in {formatMonthLabel(month)}
+              {refreshing ? ' · refreshing…' : ''}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+            <label htmlFor="schedule-list-month" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Month
+            </label>
+            <Input
+              id="schedule-list-month"
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="h-10 w-full min-w-42 sm:w-auto"
+            />
+          </div>
+        </div>
+
+        {loading && schedules.length === 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-[980px] w-full text-left text-sm">
-              <thead className="bg-muted/50">
+              <thead className="border-b border-border bg-muted/50">
                 <tr>
                   {['Date', 'Workflow', 'Teams', 'Absences', 'Attendance', 'Actions'].map((h) => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:pl-5 last:pr-5"
+                      className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:pl-5 last:pr-5"
                     >
                       {h}
                     </th>
@@ -185,96 +228,30 @@ export default function HrScheduleListPage() {
               </tbody>
             </table>
           </div>
-        </section>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex w-full min-w-0 flex-col gap-5">
-      <header className="w-full min-w-0 space-y-6 border-b border-border pb-4">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">HR planning</p>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Schedule planning</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Create the day schedule, assign teams and drivers, then hand it off cleanly into attendance.
-            </p>
+        ) : schedules.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
+            No schedules for {formatMonthLabel(month)}.
           </div>
-
-          {canEdit ? (
-            <Card className="w-full shrink-0 lg:max-w-sm">
-              <CardContent className="space-y-4 p-4">
-                <div className="space-y-2">
-                  <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Work date
-                  </span>
-                  <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <Button type="button" variant="ghost" size="sm" className="h-auto px-0 text-xs" onClick={() => setNewDate(todayYmd())}>
-                    Use today
-                  </Button>
-                  <Button type="button" disabled={creating || !newDate} size="sm" onClick={() => void createSchedule()}>
-                    {creating ? 'Creating…' : 'Create schedule draft'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <StatCard label="Total schedules" value={summary.total} />
-          <StatCard label="Drafts" value={summary.draft} />
-          <StatCard label="Published" value={summary.published} tone="emerald" />
-          <StatCard label="Locked" value={summary.locked} />
-          <StatCard label="Needs attendance" value={summary.pendingAttendance} tone="amber" />
-        </div>
-      </header>
-
-      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Schedule register</h2>
-            <p className="text-sm text-muted-foreground">
-              Recent days with planning progress and attendance handoff status.
-            </p>
-          </div>
-          <Input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by date or status"
-            className="lg:max-w-sm"
-          />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full text-left text-sm">
-            <thead className="border-b border-border bg-muted/50">
-              <tr>
-                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date</th>
-                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workflow</th>
-                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Teams</th>
-                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Absences</th>
-                <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Attendance</th>
-                <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border text-muted-foreground">
-              {filteredRows.length === 0 ? (
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full text-left text-sm">
+              <thead className="border-b border-border bg-muted/50">
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-muted-foreground">
-                    No schedules match the current filter.
-                  </td>
+                  <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date</th>
+                  <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workflow</th>
+                  <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Teams</th>
+                  <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Absences</th>
+                  <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Attendance</th>
+                  <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Actions
+                  </th>
                 </tr>
-              ) : (
-                filteredRows.map((row) => {
+              </thead>
+              <tbody className="divide-y divide-border text-muted-foreground">
+                {schedules.map((row) => {
                   const workDateYmd = row.workDate.slice(0, 10);
                   const attendanceReady = row.attendanceRows > 0;
+                  const isLinkedRow = linkedWorkDate === workDateYmd;
                   const workflowLabel =
                     row.status === 'LOCKED'
                       ? 'Locked'
@@ -285,14 +262,17 @@ export default function HrScheduleListPage() {
                         : 'Draft planning in progress';
 
                   return (
-                    <tr key={row.id} className="transition-colors hover:bg-muted/40">
+                    <tr
+                      key={row.id}
+                      className={cn('transition-colors hover:bg-muted/40', isLinkedRow && 'bg-muted/25')}
+                    >
                       <td className="px-5 py-4">
                         <button
                           type="button"
                           onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
                           className="text-left"
                         >
-                          <p className="font-medium text-foreground">{formatDateLabel(row.workDate)}</p>
+                          <p className="font-medium text-foreground">{formatDateLabel(workDateYmd)}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{workDateYmd}</p>
                         </button>
                       </td>
@@ -302,8 +282,8 @@ export default function HrScheduleListPage() {
                         </Badge>
                         <p className="mt-2 text-xs text-muted-foreground">{workflowLabel}</p>
                       </td>
-                      <td className="px-5 py-4">{row._count.assignments}</td>
-                      <td className="px-5 py-4">{row._count.absences}</td>
+                      <td className="px-5 py-4 tabular-nums">{row._count.assignments}</td>
+                      <td className="px-5 py-4 tabular-nums">{row._count.absences}</td>
                       <td className="px-5 py-4">
                         <span
                           className={
@@ -319,15 +299,22 @@ export default function HrScheduleListPage() {
                         </p>
                       </td>
                       <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" type="button" onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
+                          >
                             Plan
                           </Button>
                           <Button
                             variant={attendanceReady ? 'secondary' : 'default'}
                             size="sm"
                             type="button"
-                            onClick={() => router.push(`/hr/attendance?workDate=${encodeURIComponent(workDateYmd)}`)}
+                            onClick={() =>
+                              router.push(`/hr/attendance?month=${encodeURIComponent(workDateYmd.slice(0, 7))}`)
+                            }
                           >
                             {attendanceReady ? 'Attendance' : 'Create attendance'}
                           </Button>
@@ -335,12 +322,43 @@ export default function HrScheduleListPage() {
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
+
+      <Modal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title="Create schedule draft"
+        description="Choose the work date for the new schedule."
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)} disabled={creating}>
+              Cancel
+            </Button>
+            <Button type="button" disabled={creating} onClick={() => void createSchedule()}>
+              {creating ? 'Creating…' : 'Create draft'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <label htmlFor="schedule-create-date" className="text-sm font-medium text-foreground">
+            Work date
+          </label>
+          <Input
+            id="schedule-create-date"
+            type="date"
+            value={createDate}
+            onChange={(e) => setCreateDate(e.target.value)}
+            className="h-11 w-full text-base sm:text-sm"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -10,16 +11,21 @@ import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
 import { cn } from '@/lib/utils';
+import SupplierImportModal from '@/components/suppliers/SupplierImportModal';
+import { exportSuppliersToXlsx } from '@/lib/import-export/exportSuppliers';
+import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import {
   useDeleteSupplierMutation,
-  useGetSuppliersQuery,
+  useGetSuppliersPageQuery,
+  useLazyGetSuppliersForExportQuery,
+  SUPPLIER_PAGE_SIZE_OPTIONS,
   type Supplier,
+  type SupplierSourceFilter,
 } from '@/store/hooks';
-
-type SupplierSourceFilter = 'all' | 'local' | 'synced';
 
 type DeleteCheck = {
   source: string;
@@ -55,6 +61,107 @@ function formatDate(value?: string | Date | null) {
   return parsed.toLocaleDateString();
 }
 
+function InfoField({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <div className={className}>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function supplierContactsForDisplay(supplier: Supplier): Array<Record<string, unknown>> {
+  if (Array.isArray(supplier.contactsJson) && supplier.contactsJson.length > 0) {
+    return supplier.contactsJson as Array<Record<string, unknown>>;
+  }
+  if (supplier.contactPerson?.trim() || supplier.phone?.trim() || supplier.email?.trim()) {
+    return [
+      {
+        contact_name: supplier.contactPerson?.trim() ?? '',
+        email: supplier.email?.trim() ?? '',
+        phone: supplier.phone?.trim() ?? '',
+      },
+    ];
+  }
+  return [];
+}
+
+function SupplierReadOnlyDetails({ supplier }: { supplier: Supplier }) {
+  const contacts = supplierContactsForDisplay(supplier);
+
+  return (
+    <div className="max-h-[70vh] space-y-6 overflow-y-auto pr-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant={supplier.isActive ? 'secondary' : 'outline'}
+          className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide"
+        >
+          {supplier.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+        {supplier.source === 'PARTY_API_SYNC' ? (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] uppercase tracking-wide',
+              'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-200',
+            )}
+          >
+            Synced from party API
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Local
+          </Badge>
+        )}
+      </div>
+
+      <div className="grid gap-4 rounded-lg border border-border bg-muted/30 p-4 md:grid-cols-2">
+        <InfoField label="Primary contact" value={supplier.contactPerson || 'Not set'} />
+        <InfoField label="Email" value={supplier.email || 'Not set'} />
+        <InfoField label="Phone" value={supplier.phone || 'Not set'} />
+        <InfoField label="External ID" value={supplier.externalPartyId?.toString() ?? 'Not linked'} />
+        <InfoField label="City" value={supplier.city || 'Not set'} />
+        <InfoField label="Country" value={supplier.country || 'Not set'} />
+        <InfoField label="Address" value={supplier.address || 'Not set'} className="md:col-span-2" />
+        <InfoField label="Trade license number" value={supplier.tradeLicenseNumber || 'Not set'} />
+        <InfoField label="Trade license authority" value={supplier.tradeLicenseAuthority || 'Not set'} />
+        <InfoField label="Trade license expiry" value={formatDate(supplier.tradeLicenseExpiry)} />
+        <InfoField label="TRN number" value={supplier.trnNumber || 'Not set'} />
+        <InfoField label="TRN expiry" value={formatDate(supplier.trnExpiry)} />
+      </div>
+
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-foreground">Contact rows</h3>
+          <p className="text-xs text-muted-foreground">
+            {contacts.length} contact{contacts.length === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        {contacts.length === 0 ? (
+          <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+            No structured contacts saved for this supplier.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {contacts.map((row, index) => (
+              <div key={index} className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="font-medium text-foreground">
+                  {String(row.contact_name ?? '').trim() || 'Unnamed contact'}
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <InfoField label="Email" value={String(row.email ?? '').trim() || 'Not set'} />
+                  <InfoField label="Phone" value={String(row.phone ?? '').trim() || 'Not set'} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function deleteModalCopy(check: DeleteCheck | null) {
   if (!check) return 'Checking delete rules...';
   if (check.deleteBlockedReason === 'synced_from_party_api') {
@@ -70,14 +177,43 @@ function deleteModalCopy(check: DeleteCheck | null) {
 }
 
 export default function SuppliersPage() {
+  const router = useRouter();
   const { data: session } = useSession();
+  const { openMenu: openContextMenu } = useGlobalContextMenu();
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
   const canCreateSupplier = isSA || perms.includes('transaction.stock_in');
 
-  const { data: suppliers = [], isFetching, error } = useGetSuppliersQuery(undefined, {
-    refetchOnMountOrArgChange: 30,
-  });
+  const [pageSize, setPageSize] = useState<number>(SUPPLIER_PAGE_SIZE_OPTIONS[0]);
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<SupplierSourceFilter>('all');
+  const [detailsSupplierId, setDetailsSupplierId] = useState<string | null>(null);
+
+  const deferredQuery = useDeferredValue(searchQuery.trim());
+
+  const listOffset = (page - 1) * pageSize;
+  const {
+    data: suppliersPage,
+    isFetching,
+    error,
+  } = useGetSuppliersPageQuery(
+    {
+      limit: pageSize,
+      offset: listOffset,
+      search: deferredQuery || undefined,
+      source: sourceFilter,
+    },
+    { refetchOnMountOrArgChange: 30 },
+  );
+  const suppliers = suppliersPage?.items ?? [];
+  const totalSuppliers = suppliersPage?.total ?? 0;
+
+  const detailsSupplier = useMemo(
+    () => (detailsSupplierId ? suppliers.find((supplier) => supplier.id === detailsSupplierId) ?? null : null),
+    [detailsSupplierId, suppliers],
+  );
+
   const [deleteSupplier, { isLoading: isDeleting }] = useDeleteSupplierMutation();
 
   const [supplierSourceMode, setSupplierSourceMode] = useState<'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY'>('HYBRID');
@@ -106,9 +242,8 @@ export default function SuppliersPage() {
 
   const canCreateLocalSupplier = canCreateSupplier && supplierSourceMode !== 'EXTERNAL_ONLY';
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<SupplierSourceFilter>('all');
-  const [cityFilter, setCityFilter] = useState('');
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [fetchSuppliersForExport] = useLazyGetSuppliersForExportQuery();
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
     supplier: Supplier | null;
@@ -116,38 +251,16 @@ export default function SuppliersPage() {
     loading: boolean;
   }>({ open: false, supplier: null, check: null, loading: false });
 
-  const deferredQuery = useDeferredValue(searchQuery.trim().toLowerCase());
+  const totalPages = Math.max(1, Math.ceil(totalSuppliers / pageSize));
+  const safePage = Math.min(page, totalPages);
 
-  const cities = useMemo(
-    () =>
-      Array.from(new Set(suppliers.map((supplier) => supplier.city).filter(Boolean) as string[])).sort(),
-    [suppliers],
-  );
+  useEffect(() => {
+    setPage(1);
+  }, [deferredQuery, sourceFilter, pageSize]);
 
-  const filteredSuppliers = useMemo(() => {
-    return suppliers.filter((supplier) => {
-      if (!supplier.isActive) return false;
-      if (
-        deferredQuery &&
-        ![
-          supplier.name,
-          supplier.email,
-          supplier.contactPerson,
-          supplier.phone,
-          supplier.externalPartyId?.toString() ?? '',
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(deferredQuery)
-      ) {
-        return false;
-      }
-      if (sourceFilter === 'local' && supplier.source === 'PARTY_API_SYNC') return false;
-      if (sourceFilter === 'synced' && supplier.source !== 'PARTY_API_SYNC') return false;
-      if (cityFilter && supplier.city !== cityFilter) return false;
-      return true;
-    });
-  }, [cityFilter, deferredQuery, sourceFilter, suppliers]);
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
 
   const openDeleteModal = async (supplier: Supplier) => {
     setDeleteModal({
@@ -180,19 +293,81 @@ export default function SuppliersPage() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const all = await fetchSuppliersForExport().unwrap();
+      if (all.length === 0) {
+        toast.error('No suppliers to export');
+        return;
+      }
+      exportSuppliersToXlsx(all);
+      toast.success(`Exported ${all.length} supplier(s)`);
+    } catch {
+      toast.error('Failed to export suppliers');
+    }
+  };
+
   const confirmDelete = async () => {
     if (!deleteModal.supplier) return;
 
     try {
       const result = await deleteSupplier(deleteModal.supplier.id).unwrap();
       toast.success(result.message ?? (result.permanent ? 'Supplier deleted' : 'Supplier deactivated'));
+      if (detailsSupplierId === deleteModal.supplier.id) setDetailsSupplierId(null);
       setDeleteModal({ open: false, supplier: null, check: null, loading: false });
     } catch (error) {
       toast.error(extractApiErrorMessage(error, 'Failed to delete supplier'));
     }
   };
 
-  const tableHeaders = ['Supplier', 'Source', 'External ID', 'Primary contact', 'Compliance', 'Location', 'Actions'];
+  const openSupplierDetails = (supplierId: string) => {
+    setDetailsSupplierId(supplierId);
+  };
+
+  const openSupplierContextMenu = (supplier: Supplier, event: React.MouseEvent) => {
+    event.preventDefault();
+
+    const options = [
+      {
+        label: 'Open details',
+        action: () => openSupplierDetails(supplier.id),
+      },
+      canCreateSupplier
+        ? {
+            label: 'Edit supplier',
+            action: () => router.push(`/suppliers/${supplier.id}/edit`),
+          }
+        : null,
+      canCreateSupplier
+        ? {
+            label:
+              supplier.source === 'PARTY_API_SYNC'
+                ? 'Deletion disabled for synced supplier'
+                : 'Delete supplier',
+            action: () => {
+              if (supplier.source === 'PARTY_API_SYNC') {
+                toast.error('Synced suppliers cannot be deleted here. Edit the record to deactivate it if needed.');
+                return;
+              }
+              void openDeleteModal(supplier);
+            },
+            danger: supplier.source !== 'PARTY_API_SYNC',
+          }
+        : null,
+    ].filter(Boolean) as Array<{ label: string; action: () => void; danger?: boolean }>;
+
+    openContextMenu(
+      event.clientX,
+      event.clientY,
+      options.flatMap((option, index) => {
+        const item: Array<{ label?: string; action?: () => void; danger?: boolean; divider?: boolean }> = [option];
+        if (index < options.length - 1) item.push({ divider: true });
+        return item;
+      }),
+    );
+  };
+
+  const tableHeaders = ['Supplier', 'Source', 'External ID', 'Primary contact', 'Compliance', 'Location'];
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
@@ -205,7 +380,7 @@ export default function SuppliersPage() {
           </p>
         </div>
         <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {compactNumber(suppliers.length)} supplier{suppliers.length === 1 ? '' : 's'}
+          {compactNumber(totalSuppliers)} supplier{totalSuppliers === 1 ? '' : 's'}
         </p>
       </header>
 
@@ -220,7 +395,7 @@ export default function SuppliersPage() {
 
       <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="grid min-w-0 flex-1 gap-4 md:grid-cols-[minmax(0,1.6fr)_12rem_12rem]">
+          <div className="grid min-w-0 flex-1 gap-4 md:grid-cols-[minmax(0,1.6fr)_12rem]">
             <div className="space-y-2">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search</span>
               <Input
@@ -240,20 +415,17 @@ export default function SuppliersPage() {
                 <option value="synced">Synced only</option>
               </Select>
             </div>
-            <div className="space-y-2">
-              <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">City</span>
-              <Select value={cityFilter} onChange={(event) => setCityFilter(event.target.value)}>
-                <option value="">All cities</option>
-                {cities.map((city) => (
-                  <option key={city} value={city}>
-                    {city}
-                  </option>
-                ))}
-              </Select>
-            </div>
           </div>
 
           <div className="flex shrink-0 flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={handleExport}>
+              Export
+            </Button>
+            {canCreateSupplier ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => setImportModalOpen(true)}>
+                Import
+              </Button>
+            ) : null}
             {canCreateLocalSupplier ? (
               <Link href="/suppliers/new" className={buttonVariants({ size: 'sm' })}>
                 New supplier
@@ -272,6 +444,8 @@ export default function SuppliersPage() {
           </div>
         </div>
       </section>
+
+      <SupplierImportModal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} />
 
       {error ? (
         <Alert variant="destructive">
@@ -294,23 +468,25 @@ export default function SuppliersPage() {
                 </tr>
               </thead>
               <tbody>
-                <TableSkeleton rows={6} columns={7} />
+                <TableSkeleton rows={6} columns={6} />
               </tbody>
             </table>
           </div>
         </section>
-      ) : filteredSuppliers.length === 0 ? (
+      ) : totalSuppliers === 0 ? (
         <section className="rounded-lg border border-border bg-card p-10 text-center shadow-sm">
           <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Suppliers</p>
           <h2 className="mt-3 text-lg font-semibold text-foreground">
-            {suppliers.length === 0 ? 'No suppliers yet' : 'No suppliers match these filters'}
+            {!deferredQuery && sourceFilter === 'all'
+              ? 'No suppliers yet'
+              : 'No suppliers match these filters'}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            {suppliers.length === 0
+            {!deferredQuery && sourceFilter === 'all'
               ? 'Create a supplier to start building your supplier master.'
               : 'Adjust the filters or search query to widen the results.'}
           </p>
-          {suppliers.length === 0 && canCreateLocalSupplier ? (
+          {!deferredQuery && sourceFilter === 'all' && canCreateLocalSupplier ? (
             <div className="mt-5 flex justify-center gap-3">
               <Link href="/suppliers/new" className={buttonVariants({ size: 'sm' })}>
                 Create supplier
@@ -335,10 +511,12 @@ export default function SuppliersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredSuppliers.map((supplier) => (
+                {suppliers.map((supplier) => (
                   <tr
                     key={supplier.id}
-                    className="border-t border-border align-top transition-colors hover:bg-muted/40"
+                    className="cursor-pointer border-t border-border align-top transition-colors hover:bg-muted/40"
+                    onDoubleClick={() => openSupplierDetails(supplier.id)}
+                    onContextMenu={(event) => openSupplierContextMenu(supplier, event)}
                   >
                     <td className="px-4 py-4">
                       <div className="space-y-1">
@@ -404,26 +582,48 @@ export default function SuppliersPage() {
                         <p className="text-xs text-muted-foreground">{supplier.address || 'No address'}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        <Link
-                          href={`/suppliers/${supplier.id}/edit`}
-                          className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                        >
-                          Edit
-                        </Link>
-                        <Button type="button" variant="destructive" size="sm" onClick={() => openDeleteModal(supplier)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <DirectoryListPagination
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            total={totalSuppliers}
+            pageStart={listOffset}
+            pageEnd={listOffset + suppliers.length}
+            pageSizeOptions={SUPPLIER_PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </section>
       )}
+
+      <Modal
+        isOpen={Boolean(detailsSupplier)}
+        onClose={() => setDetailsSupplierId(null)}
+        title={detailsSupplier?.name ?? 'Supplier details'}
+        size="lg"
+        actions={
+          detailsSupplier && canCreateSupplier ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                router.push(`/suppliers/${detailsSupplier.id}/edit`);
+                setDetailsSupplierId(null);
+              }}
+            >
+              Edit supplier
+            </Button>
+          ) : undefined
+        }
+      >
+        {detailsSupplier ? <SupplierReadOnlyDetails supplier={detailsSupplier} /> : null}
+      </Modal>
 
       <Modal
         isOpen={deleteModal.open}
@@ -470,3 +670,4 @@ export default function SuppliersPage() {
     </div>
   );
 }
+

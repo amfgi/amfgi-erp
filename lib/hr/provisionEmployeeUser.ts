@@ -1,11 +1,12 @@
 import type { Prisma } from '@prisma/client';
+import { EMPLOYEE_SELF_ROLE_SLUG } from '@/lib/permissions';
+import { ensureEmployeeSelfServiceRole } from '@/lib/hr/ensureEmployeeSelfServiceRole';
 
-/** Matches `scripts/seed.ts` — Employee (self-service) role slug */
-export const EMPLOYEE_SELF_ROLE_SLUG = 'employee-self';
+export { EMPLOYEE_SELF_ROLE_SLUG };
 
 export type ProvisionResult =
   | { ok: true; userId: string; createdUser: boolean }
-  | { ok: false; code: 'NO_ROLE' | 'EMAIL_LINKED_OTHER' | 'EMAIL_USER_CONFLICT'; message: string };
+  | { ok: false; code: 'EMAIL_LINKED_OTHER' | 'EMAIL_USER_CONFLICT'; message: string };
 
 /**
  * Ensures a `User` exists for `email`, is linked to this employee, and has company access
@@ -25,14 +26,7 @@ export async function provisionEmployeeUser(
     return { ok: false, code: 'EMAIL_USER_CONFLICT', message: 'Email is required to provision login' };
   }
 
-  const role = await db.role.findFirst({ where: { slug: EMPLOYEE_SELF_ROLE_SLUG } });
-  if (!role) {
-    return {
-      ok: false,
-      code: 'NO_ROLE',
-      message: `Missing role "${EMPLOYEE_SELF_ROLE_SLUG}". Run database seed or create this system role.`,
-    };
-  }
+  const role = await ensureEmployeeSelfServiceRole(db);
 
   const linkedUser = await db.user.findUnique({
     where: { linkedEmployeeId: params.employeeId },

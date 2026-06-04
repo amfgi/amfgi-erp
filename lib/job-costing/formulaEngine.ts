@@ -92,9 +92,21 @@ function resolveFormulaValue(value: number | string, values: FormulaVariableMap)
 function applyResolvedFormulaEntries(
   values: FormulaVariableMap,
   entries: Array<{ key: string; value: number | string }>,
-  tokenPrefix: 'formula.' | 'rule.' | 'area.formula.'
+  tokenPrefix: 'formula.' | 'rule.' | 'area.formula.',
+  overrides: Record<string, number | string> = {}
 ) {
-  const activeEntries = entries.filter((entry) => entry.key.trim());
+  const entryMap = new Map<string, number | string>();
+  for (const entry of entries) {
+    const key = entry.key.trim();
+    if (!key) continue;
+    entryMap.set(key, entry.value);
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) continue;
+    entryMap.set(normalizedKey, value);
+  }
+  const activeEntries = Array.from(entryMap.entries()).map(([key, value]) => ({ key, value }));
   const maxPasses = Math.max(activeEntries.length, 1);
   const deferredKeys = new Set<string>();
 
@@ -156,7 +168,7 @@ function splitAreaMeasurementsAndVariables(areaSpecs: JobItemSpecificationArea |
       variables[key] = normalizeFormulaValue(value);
     }
   }
-  const reserved = new Set(['measurements', 'variables']);
+  const reserved = new Set(['measurements', 'variables', 'instances']);
   const already = new Set([...Object.keys(measurements), ...Object.keys(variables)]);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key) || already.has(key)) continue;
@@ -172,12 +184,15 @@ function buildVariableMap(
   specs: JobItemSpecifications,
   areaKey: string,
   formulaVariables?: Record<string, number | string>,
-  formulaConstants?: FormulaConstant[]
+  formulaConstants?: FormulaConstant[],
+  areaSpecsOverride?: JobItemSpecificationArea
 ): FormulaVariableMap {
   const globalVariables = specs.global ?? {};
-  const areaSpecs = specs.areas?.[areaKey];
+  const areaSpecs = areaSpecsOverride ?? specs.areas?.[areaKey];
   const { measurements, variables: areaVariables } = splitAreaMeasurementsAndVariables(areaSpecs);
   const ruleVariables = areaRule.variables ?? {};
+  const globalFormulaOverrides = specs.formulaOverrides?.global ?? {};
+  const areaFormulaOverrides = specs.formulaOverrides?.areas?.[areaKey] ?? {};
 
   const values: FormulaVariableMap = {};
   for (const [key, value] of Object.entries(globalVariables)) {
@@ -201,23 +216,40 @@ function buildVariableMap(
   }
   applyResolvedFormulaEntries(
     values,
-    Object.entries(formulaVariables ?? {}).map(([key, value]) => ({ key, value })),
-    'formula.'
-  );
-  applyResolvedFormulaEntries(
-    values,
-    (formulaConstants ?? []).map((constant) => ({ key: constant.key, value: constant.value })),
-    'formula.'
+    [
+      ...Object.entries(formulaVariables ?? {}).map(([key, value]) => ({ key, value })),
+      ...(formulaConstants ?? []).map((constant) => ({ key: constant.key, value: constant.value })),
+    ],
+    'formula.',
+    globalFormulaOverrides
   );
   applyResolvedFormulaEntries(
     values,
     Object.entries(ruleVariables).map(([key, value]) => ({ key, value })),
-    'area.formula.'
+    'area.formula.',
+    areaFormulaOverrides
   );
   for (const [key] of Object.entries(ruleVariables)) {
     values[`rule.${key}`] = values[`area.formula.${key}`];
   }
   return values;
+}
+
+function getAreaSpecsToEvaluate(
+  areaRule: FormulaAreaRule,
+  specs: JobItemSpecifications
+): JobItemSpecificationArea[] {
+  const areaSpecs = specs.areas?.[areaRule.key];
+  if (!areaRule.dynamic || !areaSpecs?.instances) {
+    return [areaSpecs ?? {}];
+  }
+  if (areaSpecs.instances.length === 0) {
+    return [];
+  }
+  return areaSpecs.instances.map((instance) => ({
+    measurements: instance.measurements,
+    variables: instance.variables,
+  }));
 }
 
 function nextWorkingDate(start: Date, offsetDays: number, nonWorkingWeekdays: number[]) {
@@ -346,89 +378,92 @@ export function buildJobItemEstimate({
           : 'ON_TRACK';
 
   for (const areaRule of formulaLibrary.formulaConfig.areas) {
-    const variables = buildVariableMap(
-      areaRule,
-      jobItem.specifications,
-      areaRule.key,
-      formulaLibrary.formulaConfig.variables,
-      formulaLibrary.formulaConfig.constants
-    );
-    for (const materialRule of areaRule.materials) {
-      const materialId = resolveMaterialRuleId(
-        materialRule,
+    for (const areaSpecs of getAreaSpecsToEvaluate(areaRule, jobItem.specifications)) {
+      const variables = buildVariableMap(
+        areaRule,
         jobItem.specifications,
-        formulaLibrary.formulaConfig.defaultMaterialSelections
+        areaRule.key,
+        formulaLibrary.formulaConfig.variables,
+        formulaLibrary.formulaConfig.constants,
+        areaSpecs
       );
-      if (!materialId) {
-        warnings.push(
-          materialRule.materialSelectorKey
-            ? `Select a material for ${materialRule.materialSelectorKey}.`
-            : 'A formula material rule has no material selected.'
+      for (const materialRule of areaRule.materials) {
+        const materialId = resolveMaterialRuleId(
+          materialRule,
+          jobItem.specifications,
+          formulaLibrary.formulaConfig.defaultMaterialSelections
         );
-        continue;
+        if (!materialId) {
+          warnings.push(
+            materialRule.materialSelectorKey
+              ? `Select a material for ${materialRule.materialSelectorKey}.`
+              : 'A formula material rule has no material selected.'
+          );
+          continue;
+        }
+
+        const material = materialCatalog.get(materialId);
+        if (!material) {
+          warnings.push(`Material ${materialId} is no longer available in this company.`);
+          continue;
+        }
+
+        const baseQuantityRaw = evaluateNumericFormulaExpression(materialRule.quantityExpression, variables);
+        const wasteFactor = 1 + ((materialRule.wastePercent ?? 0) / 100);
+        const factorToBase = materialFactorToBase(materialId, materialRule.quantityUomId);
+        const estimatedBaseQuantity = baseQuantityRaw * wasteFactor * factorToBase;
+        const price = materialPricing.get(materialId);
+        const actual = actualConsumption.get(materialId);
+        const existing = materialTotals.get(materialId);
+        const quotedUnitCost = price?.baseUnitCost ?? 0;
+        const quotedCost = estimatedBaseQuantity * quotedUnitCost;
+        const expectedIssuedBaseQuantity = estimatedBaseQuantity * (percentComplete / 100);
+        const expectedIssuedCost = expectedIssuedBaseQuantity * quotedUnitCost;
+        const actualIssuedBaseQuantity = actual?.actualIssuedBaseQuantity ?? 0;
+        const actualIssuedCost = actual?.actualIssuedCost ?? 0;
+        const issuePaceVariance = actualIssuedBaseQuantity - expectedIssuedBaseQuantity;
+        const issuePaceStatus = resolveIssuePaceStatus(
+          expectedIssuedBaseQuantity,
+          actualIssuedBaseQuantity,
+          provisionalScheduleStatus
+        );
+
+        materialTotals.set(materialId, {
+          materialId,
+          materialName: material.name,
+          baseUnit: material.unit,
+          estimatedBaseQuantity: (existing?.estimatedBaseQuantity ?? 0) + estimatedBaseQuantity,
+          expectedIssuedBaseQuantity: (existing?.expectedIssuedBaseQuantity ?? 0) + expectedIssuedBaseQuantity,
+          quotedUnitCost,
+          quotedCost: (existing?.quotedCost ?? 0) + quotedCost,
+          expectedIssuedCost: (existing?.expectedIssuedCost ?? 0) + expectedIssuedCost,
+          actualIssuedBaseQuantity,
+          actualIssuedCost,
+          quantityVariance: (existing?.estimatedBaseQuantity ?? 0) + estimatedBaseQuantity - actualIssuedBaseQuantity,
+          costVariance: ((existing?.quotedCost ?? 0) + quotedCost) - actualIssuedCost,
+          issuePaceVariance: (existing?.issuePaceVariance ?? 0) + issuePaceVariance,
+          issuePaceStatus,
+          issueReconcileCompatible: true,
+          pricingSource: price?.source ?? pricingMode,
+        });
       }
 
-      const material = materialCatalog.get(materialId);
-      if (!material) {
-        warnings.push(`Material ${materialId} is no longer available in this company.`);
-        continue;
+      const laborRows = buildLaborEstimate(areaRule, variables, teamProfiles);
+      for (const laborRow of laborRows) {
+        const existing = laborTotals.get(laborRow.expertiseName);
+        if (!existing) {
+          laborTotals.set(laborRow.expertiseName, laborRow);
+          continue;
+        }
+        laborTotals.set(laborRow.expertiseName, {
+          ...existing,
+          requiredWorkers: Math.max(existing.requiredWorkers, laborRow.requiredWorkers),
+          estimatedDays: existing.estimatedDays + laborRow.estimatedDays,
+          assignedEmployeeIds: Array.from(new Set([...existing.assignedEmployeeIds, ...laborRow.assignedEmployeeIds])),
+          assignedEmployeeNames: Array.from(new Set([...existing.assignedEmployeeNames, ...laborRow.assignedEmployeeNames])),
+          missingExpertises: Array.from(new Set([...existing.missingExpertises, ...laborRow.missingExpertises])),
+        });
       }
-
-      const baseQuantityRaw = evaluateNumericFormulaExpression(materialRule.quantityExpression, variables);
-      const wasteFactor = 1 + ((materialRule.wastePercent ?? 0) / 100);
-      const factorToBase = materialFactorToBase(materialId, materialRule.quantityUomId);
-      const estimatedBaseQuantity = baseQuantityRaw * wasteFactor * factorToBase;
-      const price = materialPricing.get(materialId);
-      const actual = actualConsumption.get(materialId);
-      const existing = materialTotals.get(materialId);
-      const quotedUnitCost = price?.baseUnitCost ?? 0;
-      const quotedCost = estimatedBaseQuantity * quotedUnitCost;
-      const expectedIssuedBaseQuantity = estimatedBaseQuantity * (percentComplete / 100);
-      const expectedIssuedCost = expectedIssuedBaseQuantity * quotedUnitCost;
-      const actualIssuedBaseQuantity = actual?.actualIssuedBaseQuantity ?? 0;
-      const actualIssuedCost = actual?.actualIssuedCost ?? 0;
-      const issuePaceVariance = actualIssuedBaseQuantity - expectedIssuedBaseQuantity;
-      const issuePaceStatus = resolveIssuePaceStatus(
-        expectedIssuedBaseQuantity,
-        actualIssuedBaseQuantity,
-        provisionalScheduleStatus
-      );
-
-      materialTotals.set(materialId, {
-        materialId,
-        materialName: material.name,
-        baseUnit: material.unit,
-        estimatedBaseQuantity: (existing?.estimatedBaseQuantity ?? 0) + estimatedBaseQuantity,
-        expectedIssuedBaseQuantity: (existing?.expectedIssuedBaseQuantity ?? 0) + expectedIssuedBaseQuantity,
-        quotedUnitCost,
-        quotedCost: (existing?.quotedCost ?? 0) + quotedCost,
-        expectedIssuedCost: (existing?.expectedIssuedCost ?? 0) + expectedIssuedCost,
-        actualIssuedBaseQuantity,
-        actualIssuedCost,
-        quantityVariance: (existing?.estimatedBaseQuantity ?? 0) + estimatedBaseQuantity - actualIssuedBaseQuantity,
-        costVariance: ((existing?.quotedCost ?? 0) + quotedCost) - actualIssuedCost,
-        issuePaceVariance: (existing?.issuePaceVariance ?? 0) + issuePaceVariance,
-        issuePaceStatus,
-        issueReconcileCompatible: true,
-        pricingSource: price?.source ?? pricingMode,
-      });
-    }
-
-    const laborRows = buildLaborEstimate(areaRule, variables, teamProfiles);
-    for (const laborRow of laborRows) {
-      const existing = laborTotals.get(laborRow.expertiseName);
-      if (!existing) {
-        laborTotals.set(laborRow.expertiseName, laborRow);
-        continue;
-      }
-      laborTotals.set(laborRow.expertiseName, {
-        ...existing,
-        requiredWorkers: Math.max(existing.requiredWorkers, laborRow.requiredWorkers),
-        estimatedDays: existing.estimatedDays + laborRow.estimatedDays,
-        assignedEmployeeIds: Array.from(new Set([...existing.assignedEmployeeIds, ...laborRow.assignedEmployeeIds])),
-        assignedEmployeeNames: Array.from(new Set([...existing.assignedEmployeeNames, ...laborRow.assignedEmployeeNames])),
-        missingExpertises: Array.from(new Set([...existing.missingExpertises, ...laborRow.missingExpertises])),
-      });
     }
   }
 

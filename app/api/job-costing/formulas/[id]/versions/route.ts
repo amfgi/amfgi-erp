@@ -1,15 +1,12 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
-import { P } from '@/lib/permissions';
+import { canViewFormulaLibrary } from '@/lib/permissions/stockModuleAccess';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (
-    !session.user.isSuperAdmin &&
-    (!session.user.permissions.includes(P.JOB_VIEW) || !session.user.permissions.includes(P.MATERIAL_VIEW))
-  ) {
+  if (!canViewFormulaLibrary(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);

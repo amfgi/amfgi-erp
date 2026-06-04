@@ -45,6 +45,13 @@ function trackerLabel(item: DailyQuantityLogItem, trackerId: string | null) {
   return t?.label ?? trackerId;
 }
 
+function trackerStockTargetLabel(tracker: DailyQuantityLogTracker | undefined | null) {
+  if (!tracker?.finishedGoodMaterialId) return 'Progress only - no stock update';
+  return `Stock in: ${tracker.finishedGoodMaterialName ?? 'Finished goods'} -> ${
+    tracker.finishedGoodWarehouseName ?? 'warehouse'
+  }`;
+}
+
 function remainingForTracker(item: DailyQuantityLogItem, tracker: DailyQuantityLogTracker): number | null {
   const target = Number(tracker.targetValue || 0);
   if (target <= 0) return null;
@@ -175,6 +182,7 @@ export default function DailyQuantityLogEntryPage() {
   const isSA = session?.user?.isSuperAdmin ?? false;
   const canView = isSA || perms.includes('job.view');
   const canEdit = isSA || perms.includes('job.edit');
+  const canViewReports = isSA || perms.includes('report.view');
 
   const { data, isLoading, isFetching, error, refetch } = useGetDailyQuantityLogQuery(workDateParam, {
     skip: !canView || !workDateOk,
@@ -353,7 +361,7 @@ export default function DailyQuantityLogEntryPage() {
       const errBody = (error as { data?: { error?: unknown } }).data;
       if (errBody && typeof errBody.error === 'string') return errBody.error;
     }
-    return 'Failed to load daily quantity log';
+    return 'Failed to load production log';
   }, [error]);
 
   const jobsAlreadyOnSheet = useMemo(() => {
@@ -653,7 +661,7 @@ export default function DailyQuantityLogEntryPage() {
           href="/stock/daily-quantity-log"
           className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-8 px-2')}
         >
-          Daily quantity log
+          Production log
         </Link>
         <span aria-hidden>/</span>
         <span className="text-foreground">{workDateParam}</span>
@@ -662,7 +670,7 @@ export default function DailyQuantityLogEntryPage() {
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 max-w-3xl space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantity log entry</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Production log entry</p>
             {isFinalized ? (
               <Badge label="Finalized" variant="green" />
             ) : (
@@ -683,6 +691,14 @@ export default function DailyQuantityLogEntryPage() {
               ? 'This day is finalized. Existing logged quantities can still be corrected, but adding jobs or new quantity rows requires unlocking the day first.'
               : 'Enter quantities for each scheduled or ad-hoc job, then save once to log and finalize this calendar day.'}
           </p>
+          {canViewReports ? (
+            <p className="text-sm text-muted-foreground">
+              <Link href="/reports/production-by-job" className="font-medium text-primary underline-offset-4 hover:underline">
+                Production by job report
+              </Link>{' '}
+              — compare recorded output to jobs over a range of dates.
+            </p>
+          ) : null}
         </div>
 
         {canEdit ? (
@@ -851,7 +867,7 @@ export default function DailyQuantityLogEntryPage() {
                 {isFinalizingEmpty ? 'Finalizing…' : 'Mark day as finalized with no entries'}
               </Button>
               <p className="max-w-md text-xs text-muted-foreground">
-                Closes this date in the quantity log so it stops appearing as pending. You can still re-open the day later if entries become
+                Closes this date in the production log so it stops appearing as pending. You can still re-open the day later if entries become
                 possible (it will move to edit-only mode).
               </p>
             </div>
@@ -1212,6 +1228,7 @@ function ItemRow({
             Already logged on {workDateYmd}
           </p>
           {item.existingEntries.map((entry: DailyQuantityLogExistingEntry) => {
+            const entryTracker = item.trackingItems.find((tracker) => tracker.id === entry.trackerId);
             const draftValue = editDrafts[entry.id] ?? '';
             const draftQty = Number(draftValue);
             const hasValue = draftValue.trim() !== '';
@@ -1242,6 +1259,9 @@ function ItemRow({
                     ) : overshoot ? (
                       <span className="ml-1 font-semibold text-red-700 dark:text-red-300"> over limit</span>
                     ) : null}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">
+                    {trackerStockTargetLabel(entryTracker)}
                   </p>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -1343,6 +1363,9 @@ function ItemRow({
                         </span>
                       </>
                     ) : null}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">
+                    {trackerStockTargetLabel(tracker)}
                   </p>
                   {progressPct !== null ? (
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-700/60">

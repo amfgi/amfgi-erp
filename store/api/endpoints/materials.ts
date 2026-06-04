@@ -1,4 +1,20 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
+
+export const MATERIAL_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
+
+export type MaterialsListParams = {
+  limit: number;
+  offset: number;
+  search?: string;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+};
+
+export type MaterialsListResponse = {
+  items: Material[];
+  total: number;
+};
 
 export interface MaterialUomDto {
   id: string;
@@ -66,6 +82,13 @@ export interface MaterialAssembly {
   components: MaterialAssemblyRow[];
 }
 
+export interface StockDashboardStats {
+  activeMaterials: number;
+  lowStockCount: number;
+  openBatches: number;
+  totalBatches: number;
+}
+
 interface CrossCompanyMaterial {
   id: string;
   name: string;
@@ -103,6 +126,40 @@ export const materialsApi = appApi.injectEndpoints({
         result
           ? [{ type: 'Material', id: 'LIST' }, ...result.map((m) => ({ type: 'Material' as const, id: m.id }))]
           : [{ type: 'Material', id: 'LIST' }],
+    }),
+
+    getMaterialsPage: builder.query<MaterialsListResponse, MaterialsListParams>({
+      query: ({ limit, offset, search, sortBy, sortDir }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (sortBy?.trim()) params.set('sortBy', sortBy.trim());
+        if (sortDir) params.set('sortDir', sortDir);
+        return `/materials?${params.toString()}`;
+      },
+      transformResponse: (r: { data: MaterialsListResponse }) => ({
+        items: r.data.items.map(normalizeMaterial),
+        total: r.data.total,
+      }),
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'Material', id: 'LIST' },
+              ...result.items.map((m) => ({ type: 'Material' as const, id: m.id })),
+            ]
+          : [{ type: 'Material', id: 'LIST' }],
+    }),
+
+    getMaterialsForExport: builder.query<Material[], void>({
+      query: () => '/materials',
+      transformResponse: (r: { data: Material[] }) => r.data.map(normalizeMaterial),
+    }),
+
+    getStockDashboardStats: builder.query<StockDashboardStats, void>({
+      query: () => '/stock/dashboard-stats',
+      transformResponse: (r: { data: StockDashboardStats }) => r.data,
+      providesTags: ['Material', 'StockBatch'],
     }),
 
     getMaterialById: builder.query<Material, string>({
@@ -223,7 +280,13 @@ export const materialsApi = appApi.injectEndpoints({
 
 export const {
   useGetMaterialsQuery,
+  useGetMaterialsPageQuery,
+  useLazyGetMaterialsPageQuery,
+  useLazyGetMaterialsForExportQuery,
+  useGetMaterialsForExportQuery,
+  useGetStockDashboardStatsQuery,
   useGetMaterialByIdQuery,
+  useLazyGetMaterialByIdQuery,
   useCreateMaterialMutation,
   useUpdateMaterialMutation,
   useDeleteMaterialMutation,

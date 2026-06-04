@@ -3,11 +3,14 @@ import { prisma }          from '@/lib/db/prisma';
 import { GLOBAL_LIVE_UPDATE_COMPANY_ID, publishLiveUpdate } from '@/lib/live-updates/server';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z }               from 'zod';
+import { ensureMissingSystemRoles } from '@/lib/auth/systemRoles';
 import { ALL_PERMISSIONS } from '@/lib/permissions';
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
+
+  await ensureMissingSystemRoles(prisma);
 
   const roles = await prisma.role.findMany({
     orderBy: [

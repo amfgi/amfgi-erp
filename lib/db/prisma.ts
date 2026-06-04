@@ -19,10 +19,11 @@
  *   // Throws inside the callback → automatic rollback.
  */
 import { PrismaClient } from '@prisma/client';
-import { createPostgresAdapter } from './postgresAdapter';
+import { createPostgresAdapter, type PostgresPrismaAdapter } from './postgresAdapter';
 
 declare global {
   var _prisma: PrismaClient | undefined;
+  var _prismaAdapter: PostgresPrismaAdapter | undefined;
 }
 
 const prismaLog =
@@ -33,19 +34,27 @@ if (!databaseUrl) {
   throw new Error('DATABASE_URL is not set.');
 }
 
-const prismaAdapter = createPostgresAdapter(databaseUrl);
+function prismaClientHasExpectedModels(client: PrismaClient): boolean {
+  return ['mediaAsset', 'globalSetting'].every(
+    (modelName) => modelName in (client as PrismaClient & Record<string, unknown>)
+  );
+}
 
 // After `prisma generate`, Next dev can still hold a pre-generate client on `global._prisma`.
 const existingPrisma: PrismaClient | undefined = global._prisma;
 if (
   process.env.NODE_ENV !== 'production' &&
   existingPrisma &&
-  !['mediaAsset', 'globalSetting'].every(
-    (modelName) => modelName in (existingPrisma as PrismaClient & Record<string, unknown>)
-  )
+  !prismaClientHasExpectedModels(existingPrisma)
 ) {
+  void existingPrisma.$disconnect();
   global._prisma = undefined;
+  global._prismaAdapter = undefined;
 }
+
+// HMR reloads this module but must not create a new pg pool each time (exhausts Aiven slots).
+const prismaAdapter =
+  global._prismaAdapter ?? createPostgresAdapter(databaseUrl);
 
 export const prisma =
   global._prisma ??
@@ -56,4 +65,5 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') {
   global._prisma = prisma;
+  global._prismaAdapter = prismaAdapter;
 }

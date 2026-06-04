@@ -1,16 +1,19 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button } from '@/components/ui/shadcn/button';
+import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
 import Spinner from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
-import { useGetDailyQuantityLogPendingQuery } from '@/store/hooks';
+import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
+import { useGetDailyQuantityLogPendingPageQuery } from '@/store/hooks';
 
 type RowStatus = 'PENDING' | 'FINALIZED';
 
@@ -18,13 +21,10 @@ type Row = {
   workDate: string;
   status: RowStatus;
   scheduleId: string | null;
-  title: string | null;
   clientDisplayName: string | null;
   assignmentCount: number | null;
   submittedAt: string | Date | null;
 };
-
-const PAGE_SIZE = 10;
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
@@ -50,62 +50,51 @@ export default function DailyQuantityLogLandingPage() {
   const isSA = session?.user?.isSuperAdmin ?? false;
   const canView = isSA || perms.includes('job.view');
   const canEdit = isSA || perms.includes('job.edit');
-
-  const { data, isLoading, error } = useGetDailyQuantityLogPendingQuery(undefined, { skip: !canView });
+  const canViewReports = isSA || perms.includes('report.view');
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_LIST_PAGE_SIZE);
   const [statusFilter, setStatusFilter] = useState<'ALL' | RowStatus>('ALL');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createDate, setCreateDate] = useState(todayYmd());
 
-  const rows: Row[] = useMemo(() => {
-    if (!data) return [];
-    const merged: Row[] = [];
-    for (const row of data.pending ?? []) {
-      merged.push({
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, pageSize]);
+
+  const listOffset = (page - 1) * pageSize;
+  const { data, isLoading, error } = useGetDailyQuantityLogPendingPageQuery(
+    {
+      limit: pageSize,
+      offset: listOffset,
+      status: statusFilter,
+    },
+    { skip: !canView },
+  );
+
+  const pageRows: Row[] = useMemo(
+    () =>
+      (data?.items ?? []).map((row) => ({
         workDate: row.workDate,
-        status: 'PENDING',
+        status: row.status,
         scheduleId: row.scheduleId,
-        title: row.title,
         clientDisplayName: row.clientDisplayName,
         assignmentCount: row.assignmentCount,
-        submittedAt: null,
-      });
-    }
-    for (const row of data.recentFinalized ?? []) {
-      merged.push({
-        workDate: row.workDate,
-        status: 'FINALIZED',
-        scheduleId: null,
-        title: null,
-        clientDisplayName: null,
-        assignmentCount: null,
-        submittedAt: row.submittedAt ?? null,
-      });
-    }
-    merged.sort((a, b) => (a.workDate < b.workDate ? 1 : a.workDate > b.workDate ? -1 : 0));
-    return merged;
-  }, [data]);
+        submittedAt: row.submittedAt,
+      })),
+    [data?.items],
+  );
 
-  const filteredRows = useMemo(() => {
-    if (statusFilter === 'ALL') return rows;
-    return rows.filter((r) => r.status === statusFilter);
-  }, [rows, statusFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const totalRows = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageStart = (safePage - 1) * PAGE_SIZE;
-  const pageRows = filteredRows.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const counts = useMemo(() => {
-    let pending = 0;
-    let finalized = 0;
-    for (const r of rows) {
-      if (r.status === 'PENDING') pending += 1;
-      else finalized += 1;
-    }
-    return { pending, finalized, total: rows.length };
-  }, [rows]);
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+
+  const counts = data?.counts ?? { pending: 0, finalized: 0, total: 0 };
+  const finalizedDates = data?.finalizedDates ?? [];
 
   const errorMessage = useMemo(() => {
     if (!error) return null;
@@ -125,7 +114,7 @@ export default function DailyQuantityLogLandingPage() {
       toast.error('Pick a valid date');
       return;
     }
-    const finalizedSet = new Set(rows.filter((r) => r.status === 'FINALIZED').map((r) => r.workDate));
+    const finalizedSet = new Set(finalizedDates);
     if (finalizedSet.has(createDate)) {
       toast(`That day is already finalized — opening in edit mode.`);
     }
@@ -142,7 +131,7 @@ export default function DailyQuantityLogLandingPage() {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <header className="border-b border-border pb-4">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Daily quantity log</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Production log</h1>
         </header>
         <Alert>
           <AlertDescription>You do not have permission to view jobs.</AlertDescription>
@@ -156,12 +145,21 @@ export default function DailyQuantityLogLandingPage() {
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock workspace</p>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Daily quantity log</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Production log</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            One row per calendar day. Click a <strong className="font-medium text-foreground">Pending</strong> day to log
-            quantities, or a <strong className="font-medium text-foreground">Finalized</strong> day to edit saved values.
-            Finalized days cannot accept new progress lines.
+            One <strong className="font-medium text-foreground">production log entry</strong> per calendar day. Open a{' '}
+            <strong className="font-medium text-foreground">Pending</strong> day to record quantities, or a{' '}
+            <strong className="font-medium text-foreground">Finalized</strong> day to adjust saved values. Finalized days
+            cannot accept new progress lines.
           </p>
+          {canViewReports ? (
+            <p className="text-sm text-muted-foreground">
+              <Link href="/reports/production-by-job" className="font-medium text-primary underline-offset-4 hover:underline">
+                Production by job report
+              </Link>{' '}
+              — totals by job and budget line across any date range.
+            </p>
+          ) : null}
         </div>
         {canEdit ? (
           <Button
@@ -206,7 +204,7 @@ export default function DailyQuantityLogLandingPage() {
         <div className="flex h-64 items-center justify-center rounded-lg border border-border bg-card">
           <Spinner size="lg" />
         </div>
-      ) : filteredRows.length === 0 ? (
+      ) : totalRows === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center">
           <p className="text-sm font-semibold text-foreground">
             {statusFilter === 'PENDING'
@@ -218,7 +216,7 @@ export default function DailyQuantityLogLandingPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {canEdit
               ? 'Use “Create new” above to open a date and start logging.'
-              : 'Ask an admin to schedule work or finalize a quantity log.'}
+              : 'Ask an admin to schedule work or finalize a production log entry.'}
           </p>
         </div>
       ) : (
@@ -257,7 +255,7 @@ export default function DailyQuantityLogLandingPage() {
                     <td className="px-4 py-3 align-middle">
                       {row.status === 'PENDING' ? (
                         <span className="text-sm text-foreground">
-                          {row.title || row.clientDisplayName || 'Work schedule'}
+                          {row.clientDisplayName || 'Work schedule'}
                         </span>
                       ) : (
                         <span className="text-sm text-muted-foreground">Submitted {formatRelative(row.submittedAt)}</span>
@@ -280,23 +278,24 @@ export default function DailyQuantityLogLandingPage() {
               </tbody>
             </table>
           </div>
-          {filteredRows.length > PAGE_SIZE ? (
-            <Pagination
-              page={safePage}
-              totalPages={totalPages}
-              total={filteredRows.length}
-              pageStart={pageStart}
-              pageEnd={pageStart + pageRows.length}
-              onPageChange={setPage}
-            />
-          ) : null}
+          <DirectoryListPagination
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            total={totalRows}
+            pageStart={listOffset}
+            pageEnd={listOffset + pageRows.length}
+            pageSizeOptions={LIST_PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </section>
       )}
 
       <Modal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        title="Create quantity log entry"
+        title="Create production log entry"
         size="sm"
         actions={
           <>
@@ -311,8 +310,8 @@ export default function DailyQuantityLogLandingPage() {
       >
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Pick a calendar date. We&apos;ll open the entry screen where you can add jobs and quantities. If the date is
-            already finalized, you&apos;ll land in edit mode.
+            Pick a calendar date. We&apos;ll open the production log entry where you can add jobs and quantities. If the
+            date is already finalized, you&apos;ll land in edit mode.
           </p>
           <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Work date
@@ -375,41 +374,5 @@ function FilterChip({
       <span className="text-sm font-semibold">{label}</span>
       <span className="text-xs font-semibold tabular-nums">{count}</span>
     </button>
-  );
-}
-
-function Pagination({
-  page,
-  totalPages,
-  total,
-  pageStart,
-  pageEnd,
-  onPageChange,
-}: {
-  page: number;
-  totalPages: number;
-  total: number;
-  pageStart: number;
-  pageEnd: number;
-  onPageChange: (next: number) => void;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-between gap-3 border-t border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground sm:flex-row">
-      <span>
-        Showing <strong className="text-foreground">{pageStart + 1}</strong>–<strong className="text-foreground">{pageEnd}</strong> of{' '}
-        <strong className="text-foreground">{total}</strong>
-      </span>
-      <div className="flex items-center gap-1">
-        <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-          Previous
-        </Button>
-        <span className="px-3 font-semibold text-foreground">
-          Page {page} of {totalPages}
-        </span>
-        <Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
-          Next
-        </Button>
-      </div>
-    </div>
   );
 }

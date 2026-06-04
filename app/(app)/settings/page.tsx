@@ -304,6 +304,12 @@ function SettingsPageContent() {
                 >
                   API Center
                 </Link>
+                <Link
+                  href="/settings/email"
+                  className="inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Email
+                </Link>
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
                 <div>

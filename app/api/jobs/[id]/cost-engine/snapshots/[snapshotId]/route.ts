@@ -5,6 +5,12 @@ import type { JobCostEngineResultPayload, PricingMode } from '@/lib/job-costing/
 import { P } from '@/lib/permissions';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
+import { z } from 'zod';
+
+const PatchSnapshotSchema = z.object({
+  action: z.enum(['approve', 'rename']).optional(),
+  note: z.string().min(1).max(500).optional(),
+});
 
 function serializeSnapshotMeta(row: {
   id: string;
@@ -87,7 +93,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
 }
 
-export async function PATCH(_req: Request, { params }: { params: Promise<{ id: string; snapshotId: string }> }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string; snapshotId: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_EDIT)) {
@@ -106,6 +112,49 @@ export async function PATCH(_req: Request, { params }: { params: Promise<{ id: s
     select: { id: true, status: true },
   });
   if (!existing) return errorResponse('Cost version not found', 404);
+
+  const rawBody = (await req.text()).trim();
+  let patchBody: z.infer<typeof PatchSnapshotSchema> = {};
+  if (rawBody) {
+    let json: unknown;
+    try {
+      json = JSON.parse(rawBody);
+    } catch {
+      return errorResponse('Invalid JSON body', 422);
+    }
+    const parsedBody = PatchSnapshotSchema.safeParse(json);
+    if (!parsedBody.success) {
+      return errorResponse(parsedBody.error.issues[0]?.message ?? 'Validation error', 422);
+    }
+    patchBody = parsedBody.data;
+  }
+
+  if (patchBody.action === 'rename') {
+    const note = patchBody.note?.trim();
+    if (!note) return errorResponse('Version label is required', 422);
+
+    const row = await prisma.jobCostingSnapshot.update({
+      where: { id: snapshotId },
+      data: { note },
+      select: {
+        id: true,
+        versionNumber: true,
+        status: true,
+        pricingMode: true,
+        postingDate: true,
+        totalQuotedMaterialCost: true,
+        totalActualMaterialCost: true,
+        totalEstimatedCompletionDays: true,
+        createdAt: true,
+        createdBy: true,
+        approvedAt: true,
+        approvedBy: true,
+        note: true,
+      },
+    });
+
+    return successResponse({ snapshot: serializeSnapshotMeta(row) });
+  }
 
   const row = await prisma.$transaction(async (tx) => {
     await tx.jobCostingSnapshot.updateMany({
@@ -148,4 +197,31 @@ export async function PATCH(_req: Request, { params }: { params: Promise<{ id: s
   return successResponse({
     snapshot: serializeSnapshotMeta(row),
   });
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string; snapshotId: string }> }) {
+  const session = await auth();
+  if (!session?.user) return errorResponse('Unauthorized', 401);
+  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.JOB_EDIT)) {
+    return errorResponse('Forbidden', 403);
+  }
+  if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
+
+  const companyId = session.user.activeCompanyId;
+  const { id: jobId, snapshotId } = await params;
+
+  const budgetCtx = await resolveJobBudgetContext(prisma, companyId, jobId);
+  if (!budgetCtx) return errorResponse('Job not found', 404);
+
+  const existing = await prisma.jobCostingSnapshot.findFirst({
+    where: { companyId, jobId: budgetCtx.budgetJobId, id: snapshotId },
+    select: { id: true },
+  });
+  if (!existing) return errorResponse('Cost version not found', 404);
+
+  await prisma.jobCostingSnapshot.delete({
+    where: { id: snapshotId },
+  });
+
+  return successResponse({ deleted: true });
 }

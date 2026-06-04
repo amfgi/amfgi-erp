@@ -20,10 +20,18 @@ export type FormulaLaborRule = {
 export type FormulaAreaRule = {
   key: string;
   label: string;
+  dynamic?: boolean;
   measurementsPath?: string;
   variables?: Record<string, number | string>;
   materials: FormulaMaterialRule[];
   labor: FormulaLaborRule[];
+};
+
+export type JobItemSpecificationAreaInstance = {
+  id?: string;
+  label?: string;
+  measurements?: Record<string, number | string | boolean>;
+  variables?: Record<string, number | string | boolean>;
 };
 
 export type FormulaConstant = {
@@ -45,11 +53,39 @@ export type FormulaConfig = {
 export type JobItemSpecificationArea = {
   measurements?: Record<string, number | string | boolean>;
   variables?: Record<string, number | string | boolean>;
+  instances?: JobItemSpecificationAreaInstance[];
+};
+
+export type JobItemFormulaOverrides = {
+  global?: Record<string, number | string>;
+  areas?: Record<string, Record<string, number | string>>;
+};
+
+export type JobItemManualBudgetMaterialLine = {
+  id?: string;
+  materialId: string;
+  quantity: number;
+  wastePercent?: number;
+};
+
+export type JobItemManualBudgetLaborLine = {
+  id?: string;
+  expertiseName: string;
+  estimatedHours: number;
+  crewSize?: number;
+};
+
+export type JobItemManualBudgetPayload = {
+  materials: JobItemManualBudgetMaterialLine[];
+  labor: JobItemManualBudgetLaborLine[];
 };
 
 export type JobItemSpecifications = {
+  budgetMode?: 'manual';
+  manualBudget?: JobItemManualBudgetPayload;
   global?: Record<string, number | string>;
   areas?: Record<string, JobItemSpecificationArea>;
+  formulaOverrides?: JobItemFormulaOverrides;
 };
 
 export type EmployeeExpertiseProfile = {
@@ -112,7 +148,7 @@ export type JobItemLaborEstimate = {
 export type JobItemCostEstimate = {
   itemId: string;
   itemName: string;
-  formulaLibraryId: string;
+  formulaLibraryId: string | null;
   formulaLibraryName: string;
   fabricationType: string;
   materials: JobItemMaterialEstimate[];

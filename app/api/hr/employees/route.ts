@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
-import type { Prisma } from '@prisma/client';
+import type { Employee, Prisma } from '@prisma/client';
 import { provisionEmployeeUser } from '@/lib/hr/provisionEmployeeUser';
 import {
   basicHoursForProfileExtension,
@@ -9,6 +9,7 @@ import {
 } from '@/lib/hr/employeeTypeSettings';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -45,31 +46,165 @@ export async function GET(req: Request) {
   if (!requirePerm(session.user, P.HR_EMPLOYEE_VIEW)) return errorResponse('Forbidden', 403);
 
   const { searchParams } = new URL(req.url);
+  const idsParam = searchParams.get('ids');
+  const forExport = searchParams.get('forExport') === '1';
   const q = (searchParams.get('q') ?? '').trim();
   const status = searchParams.get('status');
+  const employeeType = searchParams.get('employeeType');
+  const portal = searchParams.get('portal');
+  const limitParam = searchParams.get('limit');
 
-  const where: Record<string, unknown> = { companyId };
-  if (status) where.status = status;
+  if (forExport) {
+    const list = await prisma.employee.findMany({
+      where: { companyId },
+      orderBy: [{ fullName: 'asc' }],
+      take: 10000,
+      select: {
+        id: true,
+        employeeCode: true,
+        fullName: true,
+        preferredName: true,
+        email: true,
+        phone: true,
+        nationality: true,
+        dateOfBirth: true,
+        gender: true,
+        designation: true,
+        department: true,
+        employmentType: true,
+        hireDate: true,
+        terminationDate: true,
+        status: true,
+        emergencyContactName: true,
+        emergencyContactPhone: true,
+        bloodGroup: true,
+        portalEnabled: true,
+        profileExtension: true,
+      },
+    });
+    return successResponse(list);
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { hrEmployeeTypeSettings: true, printTemplates: true },
+  });
+  const typeSettings = readEmployeeTypeSettingsFromCompanyData(company);
+
+  const mapEmployee = (employee: Employee) => {
+    const employeeTypeValue = employeeTypeFromProfileExtension(employee.profileExtension);
+    const timing = typeSettings[employeeTypeValue];
+    return {
+      ...employee,
+      employeeType: employeeTypeValue,
+      basicHoursPerDay: basicHoursForProfileExtension(employee.profileExtension, typeSettings),
+      defaultTiming: timing
+        ? {
+            dutyStart: timing.dutyStart,
+            dutyEnd: timing.dutyEnd,
+            breakStart: timing.breakStart,
+            breakEnd: timing.breakEnd,
+          }
+        : null,
+    };
+  };
+
+  if (idsParam) {
+    const ids = [...new Set(idsParam.split(',').map((part) => part.trim()).filter(Boolean))].slice(0, 100);
+    if (ids.length === 0) return successResponse([]);
+    const list = await prisma.employee.findMany({
+      where: { companyId, id: { in: ids } },
+      orderBy: [{ fullName: 'asc' }],
+    });
+    return successResponse(list.map(mapEmployee));
+  }
+
+  const where: Prisma.EmployeeWhereInput = { companyId };
+  if (status && status !== 'ALL') where.status = status as Prisma.EnumEmployeeStatusFilter;
+  if (portal === 'enabled') where.portalEnabled = true;
+  if (portal === 'disabled') where.portalEnabled = false;
   if (q) {
     where.OR = [
-      { fullName: { contains: q } },
-      { employeeCode: { contains: q } },
-      { email: { contains: q } },
+      { fullName: { contains: q, mode: 'insensitive' } },
+      { employeeCode: { contains: q, mode: 'insensitive' } },
+      { email: { contains: q, mode: 'insensitive' } },
+      { phone: { contains: q, mode: 'insensitive' } },
     ];
   }
 
-  const [company, list] = await Promise.all([
-    prisma.company.findUnique({
-      where: { id: companyId },
-      select: { hrEmployeeTypeSettings: true, printTemplates: true },
-    }),
-    prisma.employee.findMany({
-      where,
-      orderBy: [{ fullName: 'asc' }],
-      take: 500,
-    }),
-  ]);
-  const typeSettings = readEmployeeTypeSettingsFromCompanyData(company);
+  const applyEmployeeTypeFilter = <T extends { profileExtension: unknown }>(rows: T[]) => {
+    if (!employeeType || employeeType === 'ALL') return rows;
+    return rows.filter((employee) => {
+      const type = employeeTypeFromProfileExtension(employee.profileExtension);
+      if (employeeType === '__none__') return !type || type.trim() === '';
+      return type === employeeType;
+    });
+  };
+
+  if (limitParam !== null) {
+    const limit = parseListLimit(limitParam);
+    const offset = parseListOffset(searchParams.get('offset'));
+
+    const needsTypeFilter = Boolean(employeeType && employeeType !== 'ALL');
+
+    if (needsTypeFilter) {
+      const allRows = await prisma.employee.findMany({
+        where,
+        orderBy: [{ fullName: 'asc' }],
+      });
+      const filtered = applyEmployeeTypeFilter(allRows);
+      const items = filtered.slice(offset, offset + limit).map(mapEmployee);
+      const employeeTypes = Array.from(
+        new Set(
+          allRows
+            .map((row) => employeeTypeFromProfileExtension(row.profileExtension)?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+
+      return successResponse({
+        items,
+        total: filtered.length,
+        employeeTypes,
+      });
+    }
+
+    const [total, list, typeRows] = await Promise.all([
+      prisma.employee.count({ where }),
+      prisma.employee.findMany({
+        where,
+        orderBy: [{ fullName: 'asc' }],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.employee.findMany({
+        where: { companyId },
+        select: { profileExtension: true },
+        take: 2000,
+      }),
+    ]);
+
+    const employeeTypes = Array.from(
+      new Set(
+        typeRows
+          .map((row) => employeeTypeFromProfileExtension(row.profileExtension)?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    return successResponse({
+      items: list.map(mapEmployee),
+      total,
+      employeeTypes,
+    });
+  }
+
+  const list = await prisma.employee.findMany({
+    where,
+    orderBy: [{ fullName: 'asc' }],
+    take: 500,
+  });
+
   return successResponse(
     list.map((employee) => {
       const employeeType = employeeTypeFromProfileExtension(employee.profileExtension);
@@ -104,16 +239,6 @@ export async function POST(req: Request) {
   const d = parsed.data;
   const emailNorm = d.email ? d.email.trim().toLowerCase() : null;
   const auto = d.autoProvisionLogin !== false && Boolean(emailNorm);
-
-  if (auto) {
-    const role = await prisma.role.findFirst({ where: { slug: 'employee-self' } });
-    if (!role) {
-      return errorResponse(
-        'Auto-login requires the "employee-self" role. Run `npm run seed` once or create that role in Admin → Roles.',
-        503,
-      );
-    }
-  }
 
   try {
     const result = await prisma.$transaction(async (tx) => {

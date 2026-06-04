@@ -154,6 +154,14 @@ export default function JobConsumptionPage() {
           Select your date range and click Generate report.
         </div>
       )}
+
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        For output logged against job budget lines (production log), open{' '}
+        <Link href="/reports/production-by-job" className="font-medium text-primary underline-offset-4 hover:underline">
+          Production by job
+        </Link>
+        .
+      </p>
     </div>
   );
 }

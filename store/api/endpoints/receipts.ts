@@ -1,4 +1,7 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
+
+export const RECEIPT_ENTRY_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
 
 export interface ReceiptMaterial {
   materialId: string;
@@ -11,6 +14,12 @@ export interface ReceiptMaterial {
   unitCost: number;
   totalCost: number;
   batchNumber: string;
+  /** Alternate UOM used when the receipt was posted (empty = material base unit). */
+  quantityUomId?: string;
+  /** Quantity as entered on the receipt form (purchase UOM). */
+  displayQuantity?: number;
+  /** Unit cost as entered on the receipt form (per purchase UOM). */
+  displayUnitCost?: number;
 }
 
 export interface ReceiptEntry {
@@ -80,6 +89,19 @@ export interface ReceiptAdjustmentImpactResponse {
   rows: ReceiptAdjustmentImpactRow[];
 }
 
+export type ReceiptEntriesListParams = {
+  filterType: string;
+  date: string;
+  limit: number;
+  offset: number;
+  search?: string;
+};
+
+export type ReceiptEntriesListResponse = {
+  items: ReceiptEntry[];
+  total: number;
+};
+
 export const receiptsApi = appApi.injectEndpoints({
   endpoints: (builder) => ({
     getReceiptEntries: builder.query<
@@ -89,6 +111,23 @@ export const receiptsApi = appApi.injectEndpoints({
       query: ({ filterType, date }) =>
         `/materials/receipt-history-entries?filterType=${filterType}&date=${date}`,
       transformResponse: (r: { data: { entries: ReceiptEntry[] } }) => r.data.entries,
+      providesTags: [{ type: 'ReceiptEntry' }],
+    }),
+
+    getReceiptEntriesPage: builder.query<ReceiptEntriesListResponse, ReceiptEntriesListParams>({
+      query: ({ filterType, date, limit, offset, search }) => {
+        const params = new URLSearchParams();
+        params.set('filterType', filterType);
+        params.set('date', date);
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        return `/materials/receipt-history-entries?${params.toString()}`;
+      },
+      transformResponse: (r: { data: { entries: ReceiptEntry[]; total: number } }) => ({
+        items: r.data.entries,
+        total: r.data.total,
+      }),
       providesTags: [{ type: 'ReceiptEntry' }],
     }),
 
@@ -188,6 +227,7 @@ export const receiptsApi = appApi.injectEndpoints({
 
 export const {
   useGetReceiptEntriesQuery,
+  useGetReceiptEntriesPageQuery,
   useGetReceiptEntryQuery,
   useLazyGetReceiptAdjustmentImpactQuery,
   useDeleteReceiptEntryMutation,

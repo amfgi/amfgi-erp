@@ -1,14 +1,14 @@
 import { auth } from '@/auth';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
-import { P } from '@/lib/permissions';
+import { canEditFormulaLibrary } from '@/lib/permissions/stockModuleAccess';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { RestoreFormulaVersionSchema, formulaSnapshotData } from '../../_lib';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes(P.SETTINGS_MANAGE)) {
+  if (!canEditFormulaLibrary(session.user.permissions, session.user.isSuperAdmin)) {
     return errorResponse('Forbidden', 403);
   }
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);

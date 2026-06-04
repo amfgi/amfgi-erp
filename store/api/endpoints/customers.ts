@@ -1,4 +1,24 @@
+import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
+
+export const CUSTOMER_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
+
+export type CustomerStatusFilter = 'all' | 'active' | 'inactive';
+
+/** @deprecated Use CustomerStatusFilter — kept for page filter state typing */
+export type CustomerFilter = CustomerStatusFilter;
+
+export type CustomersListParams = {
+  limit: number;
+  offset: number;
+  search?: string;
+  status?: CustomerStatusFilter;
+};
+
+export type CustomersListResponse = {
+  items: Customer[];
+  total: number;
+};
 
 export type PartyRecordSource = 'LOCAL' | 'PARTY_API_SYNC';
 
@@ -40,6 +60,30 @@ export const customersApi = appApi.injectEndpoints({
         result
           ? [{ type: 'Customer', id: 'LIST' }, ...result.map((c) => ({ type: 'Customer' as const, id: c.id }))]
           : [{ type: 'Customer', id: 'LIST' }],
+    }),
+
+    getCustomersPage: builder.query<CustomersListResponse, CustomersListParams>({
+      query: ({ limit, offset, search, status }) => {
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('offset', String(offset));
+        if (search?.trim()) params.set('search', search.trim());
+        if (status && status !== 'all') params.set('status', status);
+        return `/customers?${params.toString()}`;
+      },
+      transformResponse: (r: { data: CustomersListResponse }) => r.data,
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'Customer', id: 'LIST' },
+              ...result.items.map((c) => ({ type: 'Customer' as const, id: c.id })),
+            ]
+          : [{ type: 'Customer', id: 'LIST' }],
+    }),
+
+    getCustomersForExport: builder.query<Customer[], void>({
+      query: () => '/customers',
+      transformResponse: (r: { data: Customer[] }) => r.data,
     }),
 
     createCustomer: builder.mutation<Customer, Partial<Customer>>({
@@ -89,14 +133,33 @@ export const customersApi = appApi.injectEndpoints({
       transformResponse: (r: { data: PartyListSyncResult }) => r.data,
       invalidatesTags: [{ type: 'Customer', id: 'LIST' }],
     }),
+
+    bulkImportCustomers: builder.mutation<
+      { created: number; updated: number; skipped: number; warnings: string[] },
+      { newRows: unknown[]; updateRows: unknown[] }
+    >({
+      query: (body) => ({
+        url: '/customers/import/bulk',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (r: {
+        data: { created: number; updated: number; skipped: number; warnings: string[] };
+      }) => r.data,
+      invalidatesTags: [{ type: 'Customer', id: 'LIST' }],
+    }),
   }),
   overrideExisting: true,
 });
 
 export const {
   useGetCustomersQuery,
+  useGetCustomersPageQuery,
+  useLazyGetCustomersForExportQuery,
+  useGetCustomersForExportQuery,
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useDeleteCustomerMutation,
   useSyncCustomersFromPartyApiMutation,
+  useBulkImportCustomersMutation,
 } = customersApi;
