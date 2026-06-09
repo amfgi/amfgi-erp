@@ -35,12 +35,11 @@
 
 - [[Lib HR]] (11 shared connections)
 - [[Components, HR, and Attendance Entry Grid]] (4 shared connections)
-- [[Reports, Components, and Settings]] (4 shared connections)
-- [[Stock, Components, and Reports]] (4 shared connections)
-- [[Stock, Customers, and Components]] (3 shared connections)
-- [[HR, Components, and Lib]] (1 shared connections)
-- [[HR, Components, and Admin]] (1 shared connections)
-- [[Stock Dispatch and Goods Receipt]] (1 shared connections)
+- [[Reports, Stock, and HR]] (4 shared connections)
+- [[Components, Stock, and Lib]] (4 shared connections)
+- [[HR, Components, and Stock]] (3 shared connections)
+- [[Components HR, Transactions, and Ui]] (2 shared connections)
+- [[HR, Suppliers, and Components]] (1 shared connections)
 
 ## Source Files
 

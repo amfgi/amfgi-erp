@@ -29,13 +29,13 @@
 
 ## Relationships
 
-- [[Lib Import Export and HR]] (5 shared connections)
-- [[Reports, Components, and Settings]] (4 shared connections)
-- [[Stock, HR, and Providers]] (3 shared connections)
+- [[Lib Import Export, HR, and Party Lists API]] (6 shared connections)
+- [[Stock, Settings, and Providers]] (3 shared connections)
+- [[Components HR, Transactions, and Ui]] (2 shared connections)
 - [[Stock, Components, and Customers]] (2 shared connections)
+- [[Components, Reports, and Stock]] (2 shared connections)
 - [[Components HR and Ui]] (1 shared connections)
-- [[HR, Components, and Lib]] (1 shared connections)
-- [[HR, Components, and Admin]] (1 shared connections)
+- [[HR, Suppliers, and Components]] (1 shared connections)
 - [[Components, Ui, and Multi Select Dropdown]] (1 shared connections)
 - [[Customers Jobs]] (1 shared connections)
 - [[Components Me]] (1 shared connections)

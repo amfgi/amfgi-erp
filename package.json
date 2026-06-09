@@ -6,7 +6,9 @@
 		"postinstall": "prisma generate",
 		"dev": "prisma generate && next dev",
 		"build": "prisma generate && node --max-old-space-size=3072 ./node_modules/next/dist/bin/next build",
-		"build:deploy": "node --max-old-space-size=1536 ./node_modules/next/dist/bin/next build",
+		"build:deploy": "node scripts/build-deploy.mjs",
+		"check": "npm run typecheck",
+		"predeploy": "npm run typecheck",
 		"start": "next start",
 		"lint": "eslint",
 		"typecheck": "node --max-old-space-size=3072 ./node_modules/typescript/bin/tsc --noEmit",
@@ -22,7 +24,9 @@
 		"vercel:deploy:with-check": "npm run typecheck && npm run vercel:deploy",
 		"vercel:deploy:prod": "vercel deploy --prod --yes",
 		"prisma:generate": "prisma generate",
-		"migrate:deploy": "prisma migrate deploy"
+		"migrate:deploy": "prisma migrate deploy",
+		"docker:build": "docker build -t amfgi-erp:local .",
+		"docker:publish": "bash scripts/docker-publish.sh"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",

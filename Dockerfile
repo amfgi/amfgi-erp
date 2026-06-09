@@ -1,5 +1,6 @@
 # Production image for Coolify / VPS.
-# Build on GitHub Actions (see .github/workflows/docker.yml) — do not build on a 4GB VPS.
+# Build on your PC: ./scripts/docker-publish.sh (see DOCKER_USER env var).
+# Do not build on a 4GB VPS — compile locally and let Coolify pull the image.
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
 RUN apt-get update -y \

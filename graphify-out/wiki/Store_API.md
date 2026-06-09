@@ -21,10 +21,10 @@
 ## Relationships
 
 - [[Lib Import Export and Party List Record Payload]] (6 shared connections)
-- [[Store, Stock, and Suppliers]] (4 shared connections)
+- [[Stock, Components, and Customers]] (4 shared connections)
 - [[Store API]] (4 shared connections)
 - [[Lib, Components, and Suppliers]] (2 shared connections)
-- [[Components Stock]] (2 shared connections)
+- [[Stock, Lib, and Auth]] (2 shared connections)
 
 ## Source Files
 

@@ -1,38 +1,29 @@
 # Store, API, and Endpoints
 
-> 13 nodes · cohesion 0.15
+> 8 nodes · cohesion 0.25
 
 ## Key Concepts
 
-- **materials.ts** (20 connections) — `store/api/endpoints/materials.ts`
-- **Material** (5 connections) — `store/api/endpoints/materials.ts`
-- **materialsApi** (2 connections) — `store/api/endpoints/materials.ts`
-- **MaterialsListParams** (1 connections) — `store/api/endpoints/materials.ts`
-- **MaterialsListResponse** (1 connections) — `store/api/endpoints/materials.ts`
-- **MaterialUomDto** (1 connections) — `store/api/endpoints/materials.ts`
-- **MaterialWarehouseStockDto** (1 connections) — `store/api/endpoints/materials.ts`
-- **MaterialAssemblyRow** (1 connections) — `store/api/endpoints/materials.ts`
-- **MaterialAssembly** (1 connections) — `store/api/endpoints/materials.ts`
-- **StockDashboardStats** (1 connections) — `store/api/endpoints/materials.ts`
-- **CrossCompanyMaterial** (1 connections) — `store/api/endpoints/materials.ts`
-- **normalizeMaterial()** (1 connections) — `store/api/endpoints/materials.ts`
-- **normalizeCrossCompanyMaterial()** (1 connections) — `store/api/endpoints/materials.ts`
+- **stockCountSessions.ts** (9 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **StockCountSessionLineDto** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **StockCountSessionRevisionDto** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **StockCountSessionDto** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **StockCountSessionListResponse** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **StockCountSessionSubmitResponse** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **UpsertStockCountSessionPayload** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
+- **stockCountSessionsApi** (1 connections) — `store/api/endpoints/stockCountSessions.ts`
 
 ## Relationships
 
-- [[Components Job Costing]] (4 shared connections)
-- [[Components Stock]] (3 shared connections)
-- [[Jobs, Id, and Cost Engine]] (2 shared connections)
-- [[Store, Stock, and Suppliers]] (2 shared connections)
 - [[Store API]] (2 shared connections)
 
 ## Source Files
 
-- `store/api/endpoints/materials.ts`
+- `store/api/endpoints/stockCountSessions.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 37 (100%)
+- EXTRACTED: 16 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
