@@ -33,16 +33,15 @@
 
 ## Relationships
 
-- [[Components Print Builder]] (10 shared connections)
-- [[Lib and API]] (6 shared connections)
+- [[Components Print Builder]] (8 shared connections)
+- [[Lib, API, and Profile]] (6 shared connections)
 - [[Components HR and Ui]] (4 shared connections)
 - [[Lib, Print, and Scripts]] (3 shared connections)
 - [[Lib Utils and Types]] (3 shared connections)
-- [[Lib Import Export, Material Master Data, and Utils]] (2 shared connections)
+- [[Lib Import Export and Utils]] (3 shared connections)
+- [[Lib and Components]] (2 shared connections)
+- [[Lib Types and Utils]] (2 shared connections)
 - [[HR Schedule]] (1 shared connections)
-- [[Lib Types]] (1 shared connections)
-- [[Components and Lib]] (1 shared connections)
-- [[Lib Utils, Dispatch Entry Revision, and Db]] (1 shared connections)
 
 ## Source Files
 

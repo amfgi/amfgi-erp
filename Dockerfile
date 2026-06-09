@@ -1,4 +1,5 @@
-# Coolify / VPS production image (avoids Nixpacks node_modules/.cache mount + npm ci EBUSY).
+# Production image for Coolify / VPS.
+# Build on GitHub Actions (see .github/workflows/docker.yml) — do not build on a 4GB VPS.
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
 RUN apt-get update -y \
@@ -15,6 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV SKIP_NEXT_TYPECHECK=1
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build:deploy
 
 FROM base AS runner
@@ -31,10 +33,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
-# Prisma migrate: isolated tree with a real node_modules layout (required for ESM deps).
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./migrate/node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./migrate/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./migrate/prisma.config.ts
 
 USER nextjs
 EXPOSE 3000

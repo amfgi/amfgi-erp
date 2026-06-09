@@ -1,6 +1,6 @@
 # Components HR
 
-> 23 nodes · cohesion 0.11
+> 22 nodes · cohesion 0.12
 
 ## Key Concepts
 
@@ -11,7 +11,6 @@
 - **buildOverviewEmployeeSignature()** (3 connections) — `components/hr/EmployeeProfileView.tsx`
 - **employeeMeta.ts** (3 connections) — `lib/hr/employeeMeta.ts`
 - **NATIONALITY_OPTIONS** (3 connections) — `lib/hr/employeeMeta.ts`
-- **WORKFORCE_EXPERTISE_OPTIONS** (3 connections) — `lib/hr/workforceProfile.ts`
 - **initials()** (2 connections) — `components/hr/EmployeeProfileView.tsx`
 - **tenureLabel()** (2 connections) — `components/hr/EmployeeProfileView.tsx`
 - **EmployeeProfilePage()** (1 connections) — `app/(app)/hr/employees/[id]/page.tsx`
@@ -30,13 +29,15 @@
 
 ## Relationships
 
-- [[Lib HR]] (7 shared connections)
-- [[Components, HR, and Reports]] (3 shared connections)
-- [[Customers, Stock, and Lib]] (3 shared connections)
-- [[Stock, Customers, and Components]] (2 shared connections)
-- [[Customers, Lib, and Components]] (2 shared connections)
-- [[Stock, Components, and HR]] (2 shared connections)
+- [[Lib Import Export and HR]] (5 shared connections)
+- [[Reports, Components, and Settings]] (4 shared connections)
+- [[Stock, HR, and Providers]] (3 shared connections)
+- [[Stock, Components, and Customers]] (2 shared connections)
 - [[Components HR and Ui]] (1 shared connections)
+- [[HR, Components, and Lib]] (1 shared connections)
+- [[HR, Components, and Admin]] (1 shared connections)
+- [[Components, Ui, and Multi Select Dropdown]] (1 shared connections)
+- [[Customers Jobs]] (1 shared connections)
 - [[Components Me]] (1 shared connections)
 
 ## Source Files
@@ -44,11 +45,10 @@
 - `app/(app)/hr/employees/[id]/page.tsx`
 - `components/hr/EmployeeProfileView.tsx`
 - `lib/hr/employeeMeta.ts`
-- `lib/hr/workforceProfile.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 77 (100%)
+- EXTRACTED: 74 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

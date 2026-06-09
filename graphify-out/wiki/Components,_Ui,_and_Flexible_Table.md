@@ -17,7 +17,7 @@
 
 ## Relationships
 
-- [[Stock, Lib, and Store]] (2 shared connections)
+- [[Stock Dispatch and Goods Receipt]] (2 shared connections)
 
 ## Source Files
 

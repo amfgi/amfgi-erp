@@ -21,7 +21,8 @@
 		"vercel:deploy": "vercel deploy --yes",
 		"vercel:deploy:with-check": "npm run typecheck && npm run vercel:deploy",
 		"vercel:deploy:prod": "vercel deploy --prod --yes",
-		"prisma:generate": "prisma generate"
+		"prisma:generate": "prisma generate",
+		"migrate:deploy": "prisma migrate deploy"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",

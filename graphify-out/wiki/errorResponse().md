@@ -2,7 +2,7 @@
 
 > God node · 385 connections · `lib/utils/apiResponse.ts`
 
-**Community:** [[API Stock Exception Approvals, Transactions, and Categories]]
+**Community:** [[API Categories, Transactions, and Units]]
 
 ## Connections by Relation
 
@@ -23,9 +23,9 @@
 - [[POST()]] `EXTRACTED`
 - [[GET()]] `EXTRACTED`
 - [[PUT()]] `EXTRACTED`
+- [[GET()]] `EXTRACTED`
 - [[prepareIntegrationRequest()]] `EXTRACTED`
 - [[GET()]] `EXTRACTED`
-- [[POST()]] `EXTRACTED`
 - [[POST()]] `EXTRACTED`
 
 ### contains
