@@ -40,7 +40,7 @@
 - [[Lib Utils]] (7 shared connections)
 - [[Lib, Print, and Scripts]] (7 shared connections)
 - [[Providers Theme Provider, App Providers, and Double Click Selection Guard]] (3 shared connections)
-- [[Stock, Customers, and Providers]] (2 shared connections)
+- [[Customers, Stock, and Lib]] (2 shared connections)
 - [[Components HR and Ui]] (2 shared connections)
 - [[Components Ui, Sidebar Nav Menu, and Auth]] (1 shared connections)
 - [[Lib and API]] (1 shared connections)

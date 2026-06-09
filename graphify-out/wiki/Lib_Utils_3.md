@@ -40,7 +40,7 @@
 - [[Lib Stock, Utils, and Warehouses]] (10 shared connections)
 - [[API Materials, Me, and Reports]] (8 shared connections)
 - [[API Stock Exception Approvals, Transactions, and Categories]] (6 shared connections)
-- [[Customers, Components, and Stock]] (6 shared connections)
+- [[Stock, Customers, and Components]] (6 shared connections)
 - [[Tests Integration]] (5 shared connections)
 - [[API, Lib, and Auth]] (2 shared connections)
 - [[API HR, Settings, and Stock Exception Approvals]] (1 shared connections)

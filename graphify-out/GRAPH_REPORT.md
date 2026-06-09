@@ -1,18 +1,18 @@
 # Graph Report - E:\almuraqib-custom-application\AMFGI  (2026-06-09)
 
 ## Corpus Check
-- 707 files · ~0 words
+- 708 files · ~0 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4480 nodes · 11654 edges · 221 communities (201 shown, 20 thin omitted)
+- 4481 nodes · 11654 edges · 218 communities (198 shown, 20 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 75 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_Components HR and Ui|Components HR and Ui]]
-- [[_COMMUNITY_Stock Daily Quantity Log, Integrity, and Inventory By Warehouse|Stock Daily Quantity Log, Integrity, and Inventory By Warehouse]]
-- [[_COMMUNITY_Reports, Components, and HR|Reports, Components, and HR]]
+- [[_COMMUNITY_Suppliers, Stock, and Components|Suppliers, Stock, and Components]]
+- [[_COMMUNITY_Components, HR, and Reports|Components, HR, and Reports]]
 - [[_COMMUNITY_Lib HR|Lib HR]]
 - [[_COMMUNITY_Components Ui, Sidebar Nav Menu, and Auth|Components Ui, Sidebar Nav Menu, and Auth]]
 - [[_COMMUNITY_API Materials, Me, and Reports|API Materials, Me, and Reports]]
@@ -27,8 +27,8 @@
 - [[_COMMUNITY_Components Print Builder|Components Print Builder]]
 - [[_COMMUNITY_Lib Job Costing|Lib Job Costing]]
 - [[_COMMUNITY_Stock, Daily Quantity Log, and Work Date|Stock, Daily Quantity Log, and Work Date]]
-- [[_COMMUNITY_Customers, Components, and Stock|Customers, Components, and Stock]]
-- [[_COMMUNITY_Stock, Customers, and Providers|Stock, Customers, and Providers]]
+- [[_COMMUNITY_Stock, Customers, and Components|Stock, Customers, and Components]]
+- [[_COMMUNITY_Customers, Stock, and Lib|Customers, Stock, and Lib]]
 - [[_COMMUNITY_Lib Utils|Lib Utils]]
 - [[_COMMUNITY_Lib Permissions|Lib Permissions]]
 - [[_COMMUNITY_Components Print Builder|Components Print Builder]]
@@ -61,7 +61,7 @@
 - [[_COMMUNITY_Stock, Materials, and Id|Stock, Materials, and Id]]
 - [[_COMMUNITY_Lib, HR, and Schedule Search API|Lib, HR, and Schedule Search API]]
 - [[_COMMUNITY_API, Lib, and Tests|API, Lib, and Tests]]
-- [[_COMMUNITY_Lib Job Costing|Lib Job Costing]]
+- [[_COMMUNITY_Lib, Job Costing, and Expression Evaluator|Lib, Job Costing, and Expression Evaluator]]
 - [[_COMMUNITY_Lib Utils|Lib Utils]]
 - [[_COMMUNITY_Lib Job Costing and Stock|Lib Job Costing and Stock]]
 - [[_COMMUNITY_Tests Integration|Tests Integration]]
@@ -99,7 +99,7 @@
 - [[_COMMUNITY_Lib HR|Lib HR]]
 - [[_COMMUNITY_Privacy Policy, Terms Of Service, and Components|Privacy Policy, Terms Of Service, and Components]]
 - [[_COMMUNITY_Store, API, and Endpoints|Store, API, and Endpoints]]
-- [[_COMMUNITY_Components, Job Costing, and Formula Builder|Components, Job Costing, and Formula Builder]]
+- [[_COMMUNITY_Components Job Costing|Components Job Costing]]
 - [[_COMMUNITY_Lib Job Costing|Lib Job Costing]]
 - [[_COMMUNITY_Package|Package]]
 - [[_COMMUNITY_Components Ui|Components Ui]]
@@ -133,7 +133,7 @@
 - [[_COMMUNITY_Tsconfig|Tsconfig]]
 - [[_COMMUNITY_.agents, Skills, and Shadcn|.agents, Skills, and Shadcn]]
 - [[_COMMUNITY_Components Workspace|Components Workspace]]
-- [[_COMMUNITY_Components HR, Ui, and Transactions|Components HR, Ui, and Transactions]]
+- [[_COMMUNITY_Store, API, and Admin Endpoints|Store, API, and Admin Endpoints]]
 - [[_COMMUNITY_Lib and API|Lib and API]]
 - [[_COMMUNITY_Package|Package]]
 - [[_COMMUNITY_Package|Package]]
@@ -145,7 +145,6 @@
 - [[_COMMUNITY_Lib and HR|Lib and HR]]
 - [[_COMMUNITY_.agents, Skills, and Shadcn|.agents, Skills, and Shadcn]]
 - [[_COMMUNITY_Store API and Slices|Store API and Slices]]
-- [[_COMMUNITY_Components, Admin, and Stock|Components, Admin, and Stock]]
 - [[_COMMUNITY_Store, API, and Endpoints|Store, API, and Endpoints]]
 - [[_COMMUNITY_Scripts and Relabel Graphify Communities|Scripts and Relabel Graphify Communities]]
 - [[_COMMUNITY_Readme|Readme]]
@@ -159,7 +158,6 @@
 - [[_COMMUNITY_Lib, HR, and Payroll|Lib, HR, and Payroll]]
 - [[_COMMUNITY_Skills Lock|Skills Lock]]
 - [[_COMMUNITY_Lib HR|Lib HR]]
-- [[_COMMUNITY_Customers|Customers]]
 - [[_COMMUNITY_Developer Guide|Developer Guide]]
 - [[_COMMUNITY_Developer Guide|Developer Guide]]
 - [[_COMMUNITY_Readme|Readme]]
@@ -174,7 +172,6 @@
 - [[_COMMUNITY_Readme|Readme]]
 - [[_COMMUNITY_.cursor and Mcp|.cursor and Mcp]]
 - [[_COMMUNITY_Lib HR|Lib HR]]
-- [[_COMMUNITY_Components Stock|Components Stock]]
 - [[_COMMUNITY_Lib Auth, HR, and Permissions|Lib Auth, HR, and Permissions]]
 - [[_COMMUNITY_Readme|Readme]]
 - [[_COMMUNITY_Jobs, Id, and Cost Engine|Jobs, Id, and Cost Engine]]
@@ -193,11 +190,10 @@
 - [[_COMMUNITY_Cursor Dashboard Redesign With Shadcn U|Cursor Dashboard Redesign With Shadcn U]]
 - [[_COMMUNITY_Next.config|Next.config]]
 - [[_COMMUNITY_Components Job Costing|Components Job Costing]]
-- [[_COMMUNITY_Store, Slices, and Company Slice|Store, Slices, and Company Slice]]
 - [[_COMMUNITY_API HR, Settings, and Stock Exception Approvals|API HR, Settings, and Stock Exception Approvals]]
 - [[_COMMUNITY_Lib HR|Lib HR]]
 - [[_COMMUNITY_Lib and Components|Lib and Components]]
-- [[_COMMUNITY_Stock, Dispatch, and Delivery Note|Stock, Dispatch, and Delivery Note]]
+- [[_COMMUNITY_Stock Dispatch, Warehouse Transfers, and Stock Batches|Stock Dispatch, Warehouse Transfers, and Stock Batches]]
 - [[_COMMUNITY_Components Job Costing|Components Job Costing]]
 - [[_COMMUNITY_API, Reports, and Stock Adjustments|API, Reports, and Stock Adjustments]]
 - [[_COMMUNITY_Lib HR|Lib HR]]
@@ -207,7 +203,7 @@
 - [[_COMMUNITY_Almuraqib Custom Application Amfgi|Almuraqib Custom Application Amfgi]]
 - [[_COMMUNITY_Lib, API, and Tests|Lib, API, and Tests]]
 - [[_COMMUNITY_Lib Utils|Lib Utils]]
-- [[_COMMUNITY_Lib, Proxy, and Dashboard|Lib, Proxy, and Dashboard]]
+- [[_COMMUNITY_Components, Reports, and Lib|Components, Reports, and Lib]]
 - [[_COMMUNITY_HR Payroll|HR Payroll]]
 
 ## God Nodes (most connected - your core abstractions)
@@ -234,19 +230,19 @@
 - `scheduleSearchInputProps()` --calls--> `cn()`  [EXTRACTED]
   app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx → lib/utils.ts
 
-## Communities (221 total, 20 thin omitted)
+## Communities (218 total, 20 thin omitted)
 
 ### Community 0 - "Components HR and Ui"
 Cohesion: 0.10
 Nodes (28): Material, Entry, formatCount(), DispatchPage(), FormulaRuleCounts, PayType, AllowanceType, VisaPeriod (+20 more)
 
-### Community 1 - "Stock Daily Quantity Log, Integrity, and Inventory By Warehouse"
-Cohesion: 0.10
-Nodes (8): RowStatus, Row, todayYmd(), DailyQuantityLogLandingPage(), Th(), FilterChip(), DirectoryListPaginationProps, DirectoryListPagination()
+### Community 1 - "Suppliers, Stock, and Components"
+Cohesion: 0.11
+Nodes (9): DeleteCheck, compactNumber(), formatDate(), supplierContactsForDisplay(), SupplierReadOnlyDetails(), deleteModalCopy(), SuppliersPage(), DirectoryListPaginationProps (+1 more)
 
-### Community 2 - "Reports, Components, and HR"
-Cohesion: 0.05
-Nodes (43): BalanceRow, Row, formatMoney(), jobStatusBadge(), SummaryTile(), JobProfitabilityPage(), formatMoney(), formatQty() (+35 more)
+### Community 2 - "Components, HR, and Reports"
+Cohesion: 0.03
+Nodes (68): AdminCompaniesPage(), Role, UserTab, StatusFilter, AdminUsersPage(), EmployeeStatus, STATUS_OPTIONS, statusBadgeClasses (+60 more)
 
 ### Community 3 - "Lib HR"
 Cohesion: 0.14
@@ -304,13 +300,13 @@ Nodes (17): TrackingItemSchema, JobItemCommonSchema, JobItemCreateSchema, JobIte
 Cohesion: 0.13
 Nodes (9): formatQty(), trackerKey(), remainingForTracker(), collectAssignmentDrafts(), AssignmentViewFilter, itemProgress(), assignmentMetrics(), DailyQuantityLogEntryPage() (+1 more)
 
-### Community 17 - "Customers, Components, and Stock"
-Cohesion: 0.06
-Nodes (28): CompanySourceMode, AdminCompanyProfilePage(), JobCostEnginePage, LedgerTabId, LEDGER_TABS, TABS_REQUIRING_SCOPE, MaterialSummary, JobContact (+20 more)
-
-### Community 18 - "Stock, Customers, and Providers"
+### Community 17 - "Stock, Customers, and Components"
 Cohesion: 0.05
-Nodes (34): Job, Customer, JobStatusFilter, JobScopeFilter, compactNumber(), CustomerJobsPage(), previewSrc(), EmptyAvatar() (+26 more)
+Nodes (34): CompanySourceMode, AdminCompanyProfilePage(), JobCostEnginePage, LedgerTabId, LEDGER_TABS, TABS_REQUIRING_SCOPE, MaterialSummary, JobContact (+26 more)
+
+### Community 18 - "Customers, Stock, and Lib"
+Cohesion: 0.05
+Nodes (39): CustomerFormMode, FILTER_OPTIONS, formatDate(), compactNumber(), customerContactsForDisplay(), CustomerReadOnlyDetails(), CustomersPage(), Job (+31 more)
 
 ### Community 19 - "Lib Utils"
 Cohesion: 0.10
@@ -334,7 +330,7 @@ Nodes (21): PageChromeEditorProps, empty, PageChromeEditor(), SearchableFieldSel
 
 ### Community 24 - "HR Schedule"
 Cohesion: 0.05
-Nodes (28): ScheduleDriverLogRecord, EmpOpt, JobOpt, EmployeeProfile, MemberRow, subTeamDraft, AsgDraft, ScheduleTemplateOption (+20 more)
+Nodes (32): ScheduleDriverLogRecord, EmpOpt, JobOpt, EmployeeProfile, MemberRow, subTeamDraft, AsgDraft, ScheduleTemplateOption (+24 more)
 
 ### Community 25 - "API Stock Exception Approvals, Transactions, and Categories"
 Cohesion: 0.05
@@ -345,8 +341,8 @@ Cohesion: 0.08
 Nodes (16): AssignmentOption, AttendanceGridAssignmentMeta, AttendanceEntryGridProps, STATUS_OPTIONS, AttendanceGridColumnKey, DEFAULT_GRID_COLUMNS, EMPLOYEE_TYPE_ROW_TONE, EmployeeTypeKey (+8 more)
 
 ### Community 27 - "HR Attendance and Schedule"
-Cohesion: 0.09
-Nodes (22): monthFromSearchParams(), todayYmd(), toDateYmd(), formatDateLabel(), formatMonthLabel(), AttendanceStatusBadge(), HrAttendancePage(), todayYmd() (+14 more)
+Cohesion: 0.08
+Nodes (19): monthFromSearchParams(), todayYmd(), toDateYmd(), formatDateLabel(), formatMonthLabel(), AttendanceStatusBadge(), HrAttendancePage(), todayYmd() (+11 more)
 
 ### Community 28 - "HR Attendance"
 Cohesion: 0.10
@@ -402,7 +398,7 @@ Nodes (11): CustomerImportRowSchema, BulkSchema, hasImportPermission(), POST(), 
 
 ### Community 41 - "Stock, Components, and HR"
 Cohesion: 0.04
-Nodes (47): HubItem, HUB_SECTIONS, EmployeeStatus, STATUS_OPTIONS, statusBadgeClasses, HrEmployeesPage(), SettingsMediaPageContent(), DraftState (+39 more)
+Nodes (40): HubItem, HUB_SECTIONS, Row, ApprovalStatusBadge(), EventCategoryBadge(), SummaryTile(), MaskedSecret, EmailSettingsView (+32 more)
 
 ### Community 42 - "Lib Import Export, Material Master Data, and Utils"
 Cohesion: 0.14
@@ -440,9 +436,9 @@ Nodes (14): ScheduleEmployeeRow, ScheduleJobRow, ScheduleSearchItem, toScheduleE
 Cohesion: 0.15
 Nodes (29): loadVariationJob(), GET(), POST(), loadJobItem(), GET(), PUT(), DELETE(), ProgressEntrySchema (+21 more)
 
-### Community 51 - "Lib Job Costing"
-Cohesion: 0.23
-Nodes (13): evaluatePlaygroundExpression(), FormulaValue, FormulaVariableMap, ALLOWED_IDENTIFIERS, escapeRegex(), toExpressionLiteral(), replaceFormulaTokens(), canonicalizeExpressionOperators() (+5 more)
+### Community 51 - "Lib, Job Costing, and Expression Evaluator"
+Cohesion: 0.29
+Nodes (10): FormulaValue, FormulaVariableMap, ALLOWED_IDENTIFIERS, escapeRegex(), toExpressionLiteral(), replaceFormulaTokens(), canonicalizeExpressionOperators(), validateNormalizedExpression() (+2 more)
 
 ### Community 52 - "Lib Utils"
 Cohesion: 0.16
@@ -469,8 +465,8 @@ Cohesion: 0.05
 Nodes (43): Suppliers page pagination settings, Behavior, What stayed the same, Files touched, Context menu (right-click a row), Double-click, Removed, Table interaction (+35 more)
 
 ### Community 58 - "Store, API, and Endpoints"
-Cohesion: 0.25
-Nodes (7): StockCountSessionLineDto, StockCountSessionRevisionDto, StockCountSessionDto, StockCountSessionListResponse, StockCountSessionSubmitResponse, UpsertStockCountSessionPayload, stockCountSessionsApi
+Cohesion: 0.22
+Nodes (8): ReceiptMaterial, ReceiptEntry, ReceiptAdjustmentImpactTransaction, ReceiptAdjustmentImpactRow, ReceiptAdjustmentImpactResponse, ReceiptEntriesListParams, ReceiptEntriesListResponse, receiptsApi
 
 ### Community 59 - "Lib Import Export and HR"
 Cohesion: 0.09
@@ -592,9 +588,9 @@ Nodes (3): metadata, metadata, LegalSection
 Cohesion: 0.07
 Nodes (25): BatchConsumption, Transaction, AddTransactionPayload, TransferPayload, TransferResult, BatchTransactionPayload, DispatchEntryResponse, DispatchRevisionLineDto (+17 more)
 
-### Community 89 - "Components, Job Costing, and Formula Builder"
-Cohesion: 0.43
-Nodes (8): buildGlobalFormulaOverrideMap(), buildAreaFormulaOverrideMap(), parsePlaygroundValue(), applyResolvedFormulaFields(), buildPlaygroundBaseValues(), addScopedAreaPlaygroundValues(), buildPlaygroundNumericValues(), buildPlaygroundPreview()
+### Community 89 - "Components Job Costing"
+Cohesion: 0.29
+Nodes (11): buildGlobalFormulaOverrideMap(), buildAreaFormulaOverrideMap(), parsePlaygroundValue(), evaluatePlaygroundExpression(), applyResolvedFormulaFields(), buildPlaygroundBaseValues(), addScopedAreaPlaygroundValues(), buildPlaygroundNumericValues() (+3 more)
 
 ### Community 90 - "Lib Job Costing"
 Cohesion: 0.12
@@ -658,7 +654,7 @@ Nodes (8): inter, metadata, EmployeePortalLayout(), ThemeAwareToaster(), Context
 
 ### Community 107 - "Store API"
 Cohesion: 0.07
-Nodes (28): appApi, Category, CategoryResponse, categoriesApi, DispatchEntry, dispatchApi, MaterialLog, PriceLog (+20 more)
+Nodes (27): appApi, Category, CategoryResponse, categoriesApi, DispatchEntry, dispatchApi, MaterialLog, PriceLog (+19 more)
 
 ### Community 111 - "API Stock Count Sessions, Jobs, and Users"
 Cohesion: 0.08
@@ -692,9 +688,9 @@ Nodes (18): Forms & Inputs, Contents, Forms use FieldGroup + Field, code:tsx (<F
 Cohesion: 0.23
 Nodes (7): buildHubLinks(), WorkspaceHubTone, workspaceHubToneBadgeClass, WorkspaceHubLink, WorkspaceHubLinkRow(), WorkspaceHubSectionData, WorkspaceHubSectionHeader()
 
-### Community 138 - "Components HR, Ui, and Transactions"
-Cohesion: 0.04
-Nodes (32): ComponentKind, ApplicationMode, SalaryComponentRow, formatQty(), ProductionByJobReportPage(), Th(), Td(), AllowanceType (+24 more)
+### Community 138 - "Store, API, and Admin Endpoints"
+Cohesion: 0.29
+Nodes (5): UsersListParams, UsersListResponse, UserCompanyAccessItem, User, usersApi
 
 ### Community 139 - "Lib and API"
 Cohesion: 0.52
@@ -737,12 +733,8 @@ Cohesion: 0.14
 Nodes (13): shadcn MCP Server, Setup, code:bash (shadcn mcp        # start the MCP server (stdio)), Tools, `shadcn:get_project_registries`, `shadcn:list_items_in_registries`, `shadcn:search_items_in_registries`, `shadcn:view_items_in_registries` (+5 more)
 
 ### Community 149 - "Store API and Slices"
-Cohesion: 0.08
-Nodes (22): LiveUpdateChannel, LiveUpdateMessage, ApiWithUtils, StockLiveUpdates(), store, RootState, AppDispatch, adminApi (+14 more)
-
-### Community 150 - "Components, Admin, and Stock"
-Cohesion: 0.08
-Nodes (20): AdminCompaniesPage(), Role, UserTab, StatusFilter, AdminUsersPage(), formatMoney(), formatQty(), formatDate() (+12 more)
+Cohesion: 0.09
+Nodes (20): LiveUpdateChannel, LiveUpdateMessage, ApiWithUtils, StockLiveUpdates(), store, RootState, AppDispatch, adminApi (+12 more)
 
 ### Community 151 - "Store, API, and Endpoints"
 Cohesion: 0.15
@@ -791,10 +783,6 @@ Nodes (7): version, skills, shadcn, source, sourceType, skillPath, computedHash
 ### Community 163 - "Lib HR"
 Cohesion: 0.14
 Nodes (16): EmployeeAllowanceItem, SalaryComponentKind, SalaryComponentApplication, SalaryComponentItem, SalaryComponentTotals, buildSalaryComponentTotals(), countPresentDays(), netSalaryComponentTotal() (+8 more)
-
-### Community 164 - "Customers"
-Cohesion: 0.19
-Nodes (8): CustomerFormMode, FILTER_OPTIONS, formatDate(), compactNumber(), customerContactsForDisplay(), CustomerReadOnlyDetails(), CustomersPage(), emptyCustomerPartyFormState()
 
 ### Community 165 - "Developer Guide"
 Cohesion: 0.29
@@ -852,10 +840,6 @@ Nodes (4): mcpServers, shadcn, command, args
 Cohesion: 0.13
 Nodes (16): LeaveTypeRow, LeavePayTierSchema, LeavePayTier, LeaveTypeRules, UAE_SICK_LEAVE_RULES, DEFAULT_ANNUAL_LEAVE_RULES, DEFAULT_PAID_LEAVE_RULES, DEFAULT_UNPAID_LEAVE_RULES (+8 more)
 
-### Community 179 - "Components Stock"
-Cohesion: 0.24
-Nodes (5): QtyMap, WarehouseMap, AllocationMap, formatNumber(), IssueReconcileForm()
-
 ### Community 180 - "Lib Auth, HR, and Permissions"
 Cohesion: 0.18
 Nodes (13): ROLE_PRESETS, RoleDb, SystemRolePreset, SystemRoleDefinition, SYSTEM_ROLE_DEFINITIONS, SYSTEM_ROLE_SLUGS, ensureSystemRole(), syncSystemRolePermissionsFromPresets() (+5 more)
@@ -892,10 +876,6 @@ Nodes (3): Database Setup, Prisma Schema, Key Constraints
 Cohesion: 0.22
 Nodes (9): parseFormula(), createGlobalFieldDraft(), createFormulaConstantDraft(), uid(), newField(), newMaterialRule(), newLaborRule(), newArea() (+1 more)
 
-### Community 205 - "Store, Slices, and Company Slice"
-Cohesion: 0.50
-Nodes (3): CompanyState, initialState, companySlice
-
 ### Community 207 - "API HR, Settings, and Stock Exception Approvals"
 Cohesion: 0.06
 Nodes (77): DELETE(), PatchSchema, parseDt(), diffMinutes(), PATCH(), GET(), GET(), ItemSchema (+69 more)
@@ -908,9 +888,9 @@ Nodes (12): applyAbsentToDraft(), AttendanceGridDraftRow, LeaveTypeOption, ApiAt
 Cohesion: 0.09
 Nodes (21): Props, Props, ExistingRecord, Props, Props, extractImportApiErrorMessage(), BulkImportChunkPayload, runChunkedBulkImport() (+13 more)
 
-### Community 212 - "Stock, Dispatch, and Delivery Note"
-Cohesion: 0.18
-Nodes (6): generateId(), CustomItem, Line, PendingChange, JobContactOption, DeliveryNoteCreatePage()
+### Community 212 - "Stock Dispatch, Warehouse Transfers, and Stock Batches"
+Cohesion: 0.05
+Nodes (30): SettingsMediaPageContent(), generateId(), CustomItem, Line, PendingChange, JobContactOption, DeliveryNoteCreatePage(), TransferLine (+22 more)
 
 ### Community 213 - "Components Job Costing"
 Cohesion: 0.20
@@ -944,9 +924,9 @@ Nodes (17): GET(), AdjustReceiptSchema, POST(), CancelReceiptSchema, POST(), bui
 Cohesion: 0.29
 Nodes (8): StockCountMaterialInput, StockCountDraftLine, roundQty(), buildStockCountDraftLines(), updateStockCountVariance(), buildManualAdjustmentLinesFromCount(), lines, counted
 
-### Community 227 - "Lib, Proxy, and Dashboard"
-Cohesion: 0.15
-Nodes (14): ROUTE_PERMISSIONS, proxy(), config, RootPage(), SECTION_COPY, DashboardPage(), UnauthorizedPage(), Header() (+6 more)
+### Community 227 - "Components, Reports, and Lib"
+Cohesion: 0.07
+Nodes (24): ROUTE_PERMISSIONS, proxy(), config, RootPage(), SECTION_COPY, DashboardPage(), formatQty(), ProductionByJobReportPage() (+16 more)
 
 ### Community 230 - "HR Payroll"
 Cohesion: 0.08
@@ -960,17 +940,17 @@ Nodes (19): formatMoney(), PreviewEmployee, PreviewPayload, EmployeeOption, curr
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `cn()` connect `Components Ui, Sidebar Nav Menu, and Auth` to `Components HR and Ui`, `Stock Daily Quantity Log, Integrity, and Inventory By Warehouse`, `Reports, Components, and HR`, `Components Workspace`, `Components HR, Ui, and Transactions`, `Jobs Id`, `Components Print Builder`, `Stock, Daily Quantity Log, and Work Date`, `Customers, Components, and Stock`, `Stock, Customers, and Providers`, `Components, Admin, and Stock`, `HR Schedule`, `Components, HR, and Attendance Entry Grid`, `HR Attendance and Schedule`, `HR Attendance`, `Stock, Lib, and Store`, `Jobs, Id, and Cost Engine`, `Components Stock`, `Components Job Costing`, `Customers`, `Customers, Lib, and Components`, `Stock, Components, and HR`, `Lib HR`, `Stock, Dispatch, and Entry`, `Stock, Materials, and Id`, `Components Stock`, `Stock, Dispatch, and Delivery Note`, `Components Job Costing`, `Package`, `Lib, Proxy, and Dashboard`, `Components, Stock, and Goods Receipt Line Grid`?**
+- **Why does `cn()` connect `Components Ui, Sidebar Nav Menu, and Auth` to `Components HR and Ui`, `Suppliers, Stock, and Components`, `Components, HR, and Reports`, `Components Workspace`, `Jobs Id`, `Components Print Builder`, `Stock, Daily Quantity Log, and Work Date`, `Stock, Customers, and Components`, `Customers, Stock, and Lib`, `HR Schedule`, `Components, HR, and Attendance Entry Grid`, `HR Attendance and Schedule`, `Stock, Lib, and Store`, `HR Attendance`, `Jobs, Id, and Cost Engine`, `Components Stock`, `Components Job Costing`, `Customers, Lib, and Components`, `Stock, Components, and HR`, `Lib HR`, `Stock, Dispatch, and Entry`, `Stock, Materials, and Id`, `Stock Dispatch, Warehouse Transfers, and Stock Batches`, `Components Job Costing`, `Package`, `Components, Reports, and Lib`, `Components, Stock, and Goods Receipt Line Grid`?**
   _High betweenness centrality (0.085) - this node is a cross-community bridge._
-- **Why does `Button` connect `Components HR, Ui, and Transactions` to `Components HR and Ui`, `Stock Daily Quantity Log, Integrity, and Inventory By Warehouse`, `Reports, Components, and HR`, `Lib HR`, `Components Ui, Sidebar Nav Menu, and Auth`, `Jobs Id`, `Stock, Daily Quantity Log, and Work Date`, `Customers, Components, and Stock`, `Stock, Customers, and Providers`, `Lib and HR`, `Components, Admin, and Stock`, `HR Schedule`, `HR Attendance and Schedule`, `HR Attendance`, `Stock, Lib, and Store`, `Components Job Costing`, `Components Stock`, `Components Job Costing`, `Lib and HR`, `Lib, Components, and Suppliers`, `Customers`, `Customers, Lib, and Components`, `Components HR`, `Stock, Components, and HR`, `Lib HR`, `Lib, Components, and HR`, `Stock, Dispatch, and Entry`, `Stock, Materials, and Id`, `Lib HR`, `Components Stock`, `Components, Materials, and Bulk Import Modal`, `Components, Jobs, and Job Consumption Costing Section`, `Lib HR`, `Lib and Components`, `Stock, Dispatch, and Delivery Note`, `HR Payroll`?**
+- **Why does `Button` connect `Components, HR, and Reports` to `Components HR and Ui`, `Suppliers, Stock, and Components`, `Lib HR`, `Components Ui, Sidebar Nav Menu, and Auth`, `Jobs Id`, `Stock, Daily Quantity Log, and Work Date`, `Stock, Customers, and Components`, `Customers, Stock, and Lib`, `Lib and HR`, `HR Schedule`, `HR Attendance and Schedule`, `Stock, Lib, and Store`, `HR Attendance`, `Components Job Costing`, `Components Stock`, `Components Job Costing`, `Lib and HR`, `Lib, Components, and Suppliers`, `Customers, Lib, and Components`, `Components HR`, `Stock, Components, and HR`, `Lib HR`, `Lib, Components, and HR`, `Stock, Dispatch, and Entry`, `Stock, Materials, and Id`, `Lib HR`, `Components, Materials, and Bulk Import Modal`, `Components, Jobs, and Job Consumption Costing Section`, `Lib HR`, `Lib and Components`, `Stock Dispatch, Warehouse Transfers, and Stock Batches`, `Components, Reports, and Lib`, `HR Payroll`?**
   _High betweenness centrality (0.046) - this node is a cross-community bridge._
 - **Why does `errorResponse()` connect `API Stock Exception Approvals, Transactions, and Categories` to `Lib HR`, `API Materials, Me, and Reports`, `Lib Mail and Auth`, `API Reports and Jobs`, `Lib Integrations, Party Contacts, and Party List Record Payload`, `Lib and API`, `API Transactions, Stock, and Reports`, `API Job Costing`, `Lib, Scripts, and API`, `Lib HR`, `Lib Import Export and Jobs`, `API Transactions`, `API HR, Stock, and Me`, `API and Lib`, `Lib Import Export, Material Master Data, and Utils`, `Lib, API, and Scripts`, `API, Lib, and Tests`, `Tests Integration`, `Lib Integrations`, `Lib and API`, `Lib Utils, Warehouses, and Stock`, `API, Lib, and Auth`, `API HR, Settings, and Stock Exception Approvals`, `Lib Utils`, `API, HR, and Attendance`, `API, Reports, and Stock Adjustments`, `Lib Utils`, `API Materials and Jobs`, `Lib, API, and Tests`, `Lib and API`, `Lib Auth`, `Lib Utils, Dispatch Entry Revision, and Db`, `API Stock Count Sessions, Jobs, and Users`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `requireCompanySession()` (e.g. with `DELETE()` and `GET()`) actually correct?**
   _`requireCompanySession()` has 7 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `name`, `version`, `private` to the rest of the system?**
   _1398 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Components HR and Ui` be split into smaller, more focused modules?**
   _Cohesion score 0.09759759759759759 - nodes in this community are weakly interconnected._
-- **Should `Stock Daily Quantity Log, Integrity, and Inventory By Warehouse` be split into smaller, more focused modules?**
-  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
+- **Should `Suppliers, Stock, and Components` be split into smaller, more focused modules?**
+  _Cohesion score 0.10822510822510822 - nodes in this community are weakly interconnected._

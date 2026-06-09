@@ -21,7 +21,7 @@
 
 ## Relationships
 
-- [[Customers, Components, and Stock]] (5 shared connections)
+- [[Stock, Customers, and Components]] (5 shared connections)
 
 ## Source Files
 

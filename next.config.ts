@@ -8,9 +8,6 @@ const nextConfig: NextConfig = {
 	typescript: {
 		ignoreBuildErrors: skipNextTypecheck,
 	},
-	eslint: {
-		ignoreDuringBuilds: skipNextTypecheck,
-	},
 	// Optimize for Vercel
 	productionBrowserSourceMaps: false,
 	// Keep Prisma on Node resolution so Turbopack does not bundle a stale generated client.
