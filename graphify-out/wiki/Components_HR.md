@@ -31,12 +31,13 @@
 ## Relationships
 
 - [[Lib HR]] (7 shared connections)
-- [[Components, HR, and Reports]] (3 shared connections)
-- [[Customers, Stock, and Lib]] (3 shared connections)
-- [[Stock, Customers, and Components]] (2 shared connections)
+- [[Stock, Customers, and Providers]] (3 shared connections)
+- [[Components HR, Ui, and Transactions]] (2 shared connections)
+- [[Customers, Components, and Stock]] (2 shared connections)
 - [[Customers, Lib, and Components]] (2 shared connections)
 - [[Stock, Components, and HR]] (2 shared connections)
 - [[Components HR and Ui]] (1 shared connections)
+- [[Components, Admin, and Stock]] (1 shared connections)
 - [[Components Me]] (1 shared connections)
 
 ## Source Files

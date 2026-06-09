@@ -19,7 +19,7 @@
 
 - [[Jobs Id]] (10 shared connections)
 - [[Components Ui, Sidebar Nav Menu, and Auth]] (1 shared connections)
-- [[Stock Dispatch, Warehouse Transfers, and Stock Batches]] (1 shared connections)
+- [[Stock, Components, and HR]] (1 shared connections)
 
 ## Source Files
 

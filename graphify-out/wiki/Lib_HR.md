@@ -33,9 +33,10 @@
 - [[Lib HR]] (41 shared connections)
 - [[Lib, Components, and HR]] (13 shared connections)
 - [[API HR, Settings, and Stock Exception Approvals]] (7 shared connections)
-- [[Components, HR, and Reports]] (6 shared connections)
+- [[Reports, Components, and HR]] (4 shared connections)
 - [[API Materials, Me, and Reports]] (3 shared connections)
 - [[API Stock Exception Approvals, Transactions, and Categories]] (2 shared connections)
+- [[Components HR, Ui, and Transactions]] (2 shared connections)
 - [[Components HR and Ui]] (1 shared connections)
 
 ## Source Files

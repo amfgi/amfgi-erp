@@ -36,7 +36,7 @@
 - [[Components Print Builder]] (10 shared connections)
 - [[Lib Types]] (5 shared connections)
 - [[Lib, Print, and Scripts]] (5 shared connections)
-- [[Customers, Stock, and Lib]] (5 shared connections)
+- [[Stock, Customers, and Providers]] (5 shared connections)
 - [[Lib and API]] (5 shared connections)
 - [[API Stock Count Sessions, Jobs, and Users]] (4 shared connections)
 - [[Lib Utils]] (3 shared connections)
