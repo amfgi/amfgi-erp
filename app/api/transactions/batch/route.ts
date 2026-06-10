@@ -50,6 +50,7 @@ import {
 } from '@/lib/dispatchEntryRevision';
 
 type DeliveryNoteCustomItemPayload = {
+  lineNo?: string;
   name: string;
   description?: string;
   unit: string;
@@ -77,6 +78,7 @@ async function applyDeliveryNoteStructuredFields(
   }
   if (params.deliveryNoteCustomItems !== undefined && params.deliveryNoteCustomItems !== null) {
     const rows = params.deliveryNoteCustomItems.map((c) => ({
+      ...(c.lineNo?.trim() ? { lineNo: c.lineNo.trim() } : {}),
       name: c.name.trim(),
       ...(c.description?.trim() ? { description: c.description.trim() } : {}),
       unit: c.unit.trim(),
@@ -193,10 +195,11 @@ const BatchSchema = z.object({
   deliveryNoteCustomItems: z
     .array(
       z.object({
+        lineNo: z.string().max(50).optional(),
         name: z.string().max(500),
         description: z.string().max(2000).optional(),
-        unit: z.string().max(50),
-        qty: z.string().max(50),
+        unit: z.string().max(50).optional().default(''),
+        qty: z.string().max(50).optional().default(''),
       })
     )
     .max(500)

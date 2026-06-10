@@ -2,7 +2,7 @@
 
 > God node · 173 connections · `lib/utils.ts`
 
-**Community:** [[Stock, Components, and Reports]]
+**Community:** [[Components Ui, Sidebar Nav Menu, and Workspace]]
 
 ## Connections by Relation
 

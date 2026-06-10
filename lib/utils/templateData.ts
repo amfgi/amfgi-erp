@@ -3,6 +3,11 @@ import type { ItemType } from '@/lib/types/documentTemplate';
 import { convertGoogleDriveUrl } from '@/lib/utils/googleDriveUrl';
 import { decimalToNumber } from './decimal';
 import { resolveDeliveryContactPerson, resolveDeliveryNoteNumber } from '@/lib/deliveryNoteNumber';
+import {
+  customItemsFromJson,
+  mapCustomItemsForTemplate,
+  parseDeliveryNoteCustomItemsFromNotes,
+} from '@/lib/utils/deliveryNoteCustomItems';
 
 export interface TemplateDataContext {
   company: {
@@ -71,6 +76,8 @@ export interface TemplateDataContext {
     trnNumber?: string;
   } | null;
   customItems: Array<{
+    lineNo: string;
+    slno: string;
     name: string;
     description: string;
     qty: string;
@@ -372,52 +379,6 @@ function parseDeliveryNoteNumber(notes?: string, deliveryNote?: { number: number
   return n > 0 ? String(n) : 'N/A';
 }
 
-function parseCustomItems(notes?: string): Array<{
-  name: string;
-  description: string;
-  qty: string;
-  unit: string;
-}> {
-  if (!notes) return [];
-
-  const itemsMatch = notes.match(
-    /--- DELIVERY NOTE ITEMS \(For Printing\) ---\r?\n([\s\S]*?)(?=\r?\n---|\r?\n$|$)/
-  );
-  if (!itemsMatch) return [];
-
-  const itemsText = itemsMatch[1];
-  const items: Array<{ name: string; description: string; qty: string; unit: string }> = [];
-
-  const lines = itemsText.split(/\r?\n/).filter((l) => l.trim());
-  for (const line of lines) {
-    // Same as dispatch/delivery-note save: `• name | qty unit` or `• name - description | qty unit`
-    const bullet = line.match(/^•\s*(.+)$/);
-    if (!bullet) continue;
-    const rest = bullet[1].trim();
-    const pipeIdx = rest.indexOf('|');
-    if (pipeIdx < 0) continue;
-    const left = rest.slice(0, pipeIdx).trim();
-    const right = rest.slice(pipeIdx + 1).trim();
-    const qtyUnit = right.match(/^(\S+)\s+(.+)$/);
-    if (!qtyUnit) continue;
-    const qty = qtyUnit[1].trim();
-    const unit = qtyUnit[2].trim();
-    const dashIdx = left.indexOf(' - ');
-    let name: string;
-    let description: string;
-    if (dashIdx >= 0) {
-      name = left.slice(0, dashIdx).trim();
-      description = left.slice(dashIdx + 3).trim();
-    } else {
-      name = left;
-      description = '';
-    }
-    items.push({ name, description, qty, unit });
-  }
-
-  return items;
-}
-
 /** One table row per STOCK_OUT line that has a material (dispatch lines are not stored in notes). */
 function stockOutMaterialTableRows(transactions: any[]): Array<{
   name: string;
@@ -439,23 +400,16 @@ function deliveryNoteTableRowsFromNotesAndTransactions(
   notes: string | undefined,
   stockOutTransactions: any[]
 ): Array<{ name: string; description: string; qty: string; unit: string }> {
-  return [...parseCustomItems(notes), ...stockOutMaterialTableRows(stockOutTransactions)];
+  return [...parseDeliveryNoteCustomItemsFromNotes(notes), ...stockOutMaterialTableRows(stockOutTransactions)];
 }
 
-function customItemsFromJson(json: unknown): TemplateDataContext['customItems'] {
-  if (!Array.isArray(json)) return [];
-  const items: TemplateDataContext['customItems'] = [];
-  for (const row of json) {
-    if (!row || typeof row !== 'object') continue;
-    const o = row as Record<string, unknown>;
-    items.push({
-      name: String(o.name ?? ''),
-      description: typeof o.description === 'string' ? o.description : '',
-      qty: String(o.qty ?? ''),
-      unit: String(o.unit ?? ''),
-    });
-  }
-  return items;
+function resolveCustomItemsForPrint(
+  notes?: string | null,
+  customItemsJson?: unknown
+): TemplateDataContext['customItems'] {
+  const fromJson = customItemsFromJson(customItemsJson);
+  const items = fromJson.length > 0 ? fromJson : parseDeliveryNoteCustomItemsFromNotes(notes);
+  return mapCustomItemsForTemplate(items);
 }
 
 /**
@@ -473,7 +427,7 @@ export function buildDeliveryNoteTemplateDataFromEntity(
   },
   company: any
 ): TemplateDataContext {
-  const customItems = customItemsFromJson(dn.customItemsJson);
+  const customItems = resolveCustomItemsForPrint(dn.documentNotes, dn.customItemsJson);
   const totalQty = customItems.reduce((sum, row) => sum + (Number.parseFloat(row.qty) || 0), 0);
   const selectedContactPerson =
     (typeof dn.contactPerson === 'string' ? dn.contactPerson.trim() : '') ||
@@ -529,7 +483,7 @@ export function buildDeliveryNoteTemplateData(
     return buildTemplateData(stockOutTransactions[0] ?? { notes: '', date: new Date() }, company);
   }
   const first = txs[0];
-  const customItems = parseCustomItems(first.notes);
+  const customItems = resolveCustomItemsForPrint(first.notes, first.deliveryNote?.customItemsJson);
   const items = stockOutMaterialTableRows(txs);
   const totalCost = txs.reduce((s, t) => s + (Number(t.totalCost) || 0), 0);
   const totalQty = txs.reduce((s, t) => s + (Number(t.quantity) || 0), 0);
@@ -581,7 +535,10 @@ export function buildTemplateData(
 ): TemplateDataContext {
   const stockOutSlice =
     transaction?.type === 'STOCK_OUT' ? [transaction] : [];
-  const customItems = parseCustomItems(transaction.notes);
+  const customItems = resolveCustomItemsForPrint(
+    transaction.notes,
+    transaction.deliveryNote?.customItemsJson
+  );
   const items = stockOutMaterialTableRows(stockOutSlice);
   const selectedContactPerson = resolveDeliveryContactPerson(
     transaction.notes,
@@ -738,12 +695,16 @@ export const MOCK_PREVIEW_DATA: TemplateDataContext = {
   },
   customItems: [
     {
+      lineNo: '1',
+      slno: '1',
       name: 'Steel Pipe 2"',
       description: 'Galvanized steel pipe',
       qty: '2',
       unit: 'PCS',
     },
     {
+      lineNo: '2',
+      slno: '2',
       name: 'Elbow Fitting',
       description: '90° elbow 2"',
       qty: '1',
@@ -785,6 +746,8 @@ export const MOCK_GRN_DATA: GoodsReceiptContext = {
   },
   customItems: [
     {
+      lineNo: '1',
+      slno: '1',
       name: 'Fiberglass Sheet 3mm',
       description: 'Clear fiberglass sheet',
       qty: '70',

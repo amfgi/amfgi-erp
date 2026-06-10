@@ -280,13 +280,13 @@
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\dispatch\\page.tsx": {
-    "mtime": 1781107080.6778917,
-    "ast_hash": "9378a134fa6320dc1cfeba451e64e9c9",
+    "mtime": 1781109864.756539,
+    "ast_hash": "671f01b2188b9d23bdff238360bcec67",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\dispatch\\delivery-note\\page.tsx": {
-    "mtime": 1781107086.9852817,
-    "ast_hash": "76b59156c5c21767876794901d708baf",
+    "mtime": 1781110229.9300725,
+    "ast_hash": "73ab5563866c9714dd3057a770ae96e3",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\stock\\dispatch\\entry\\page.tsx": {
@@ -1140,8 +1140,8 @@
     "semantic_hash": "39432209eedba60562a15ac7988ac367"
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\batch\\route.ts": {
-    "mtime": 1781107053.4876182,
-    "ast_hash": "b445fbf9817e96939415f7b304c5a7dd",
+    "mtime": 1781109851.361671,
+    "ast_hash": "c1868e8a5eabedc9bc73447a365d7661",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\dispatch-entry\\route.ts": {
@@ -1185,8 +1185,8 @@
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\transactions\\[id]\\route.ts": {
-    "mtime": 1781107054.1639755,
-    "ast_hash": "ec4233ff9221469a1efc319c48603fb8",
+    "mtime": 1781109727.9123914,
+    "ast_hash": "a656830be12ddfe82a56f25351469ece",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\units\\route.ts": {
@@ -1270,8 +1270,8 @@
     "semantic_hash": "d00bac5a038b02b65ba63c24a057c376"
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\print\\delivery-note\\page.tsx": {
-    "mtime": 1781107077.428162,
-    "ast_hash": "ca642d455698363ab6111eed929747d6",
+    "mtime": 1781109728.1352248,
+    "ast_hash": "4838cf639098aa90612e2f1a113363a1",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\privacy-policy\\page.tsx": {
@@ -1470,8 +1470,8 @@
     "semantic_hash": "67603dc81085e29bebb5e3c7b9c32577"
   },
   "E:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\DocumentRenderer.tsx": {
-    "mtime": 1781103558.393397,
-    "ast_hash": "a3663fbf0aa7a52b82a17dcb77c32bb1",
+    "mtime": 1781109838.7322464,
+    "ast_hash": "e3b8253d40cba07d9bd07e23d87e2d46",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\components\\print-builder\\PageChromeEditor.tsx": {
@@ -2355,8 +2355,8 @@
     "semantic_hash": "4b6722b61a7b5c6f22b9cbdfffff8a18"
   },
   "E:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\templateData.ts": {
-    "mtime": 1781107085.750131,
-    "ast_hash": "715495531d5dd7899c0a060a2080e2ad",
+    "mtime": 1781109836.0932474,
+    "ast_hash": "56492a2630a4b1c3334741ec714b3209",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\transactionBatchLinks.ts": {
@@ -3905,8 +3905,8 @@
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\components\\stock\\DeliveryNoteCustomItemsGrid.tsx": {
-    "mtime": 1781077861.5075972,
-    "ast_hash": "d4a602c1075c527d13cf6750a32a8161",
+    "mtime": 1781110217.8911324,
+    "ast_hash": "9173c61da48996d9aeb55e355d5e883f",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\__tests__\\unit\\deliveryNoteNumber.test.ts": {
@@ -3927,6 +3927,16 @@
   "E:\\almuraqib-custom-application\\AMFGI\\lib\\print\\openDeliveryNotePrint.ts": {
     "mtime": 1781100056.3533635,
     "ast_hash": "ee31a111569567743218f175fa0bdee7",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\lib\\utils\\deliveryNoteCustomItems.ts": {
+    "mtime": 1781110208.278913,
+    "ast_hash": "92b4f9c298109882b63fb33a2d568ff6",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\__tests__\\unit\\deliveryNoteCustomItems.test.ts": {
+    "mtime": 1781110229.9311845,
+    "ast_hash": "96683e9e25f680f995b2b69dff98c08d",
     "semantic_hash": ""
   }
 }

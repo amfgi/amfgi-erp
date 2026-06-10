@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { DocumentRenderer } from '@/components/print-builder/DocumentRenderer';
 import { readCompanyDocumentTemplates } from '@/lib/utils/companyPrintTemplates';
+import { formatDeliveryNoteCustomItemBullet } from '@/lib/utils/deliveryNoteCustomItems';
 import { buildDataContext } from '@/lib/utils/templateData';
 import { DEFAULT_DELIVERY_NOTE } from '@/lib/utils/documentDefaults';
 import type { DocumentTemplate } from '@/lib/types/documentTemplate';
@@ -148,12 +149,12 @@ export default function PrintDeliveryNotePage() {
           notesBody += '--- DELIVERY NOTE ITEMS (For Printing) ---\n';
           if (Array.isArray(dn.customItemsJson)) {
             for (const row of dn.customItemsJson as Array<Record<string, unknown>>) {
-              const name = String(row.name ?? '');
-              const desc = typeof row.description === 'string' ? row.description : '';
-              const qty = String(row.qty ?? '');
-              const unit = String(row.unit ?? '');
-              const left = desc.trim() ? `${name} - ${desc.trim()}` : name;
-              notesBody += `• ${left} | ${qty} ${unit}\n`;
+              notesBody += `${formatDeliveryNoteCustomItemBullet({
+                name: String(row.name ?? ''),
+                description: typeof row.description === 'string' ? row.description : '',
+                qty: String(row.qty ?? ''),
+                unit: String(row.unit ?? ''),
+              })}\n`;
             }
           }
 
@@ -166,7 +167,12 @@ export default function PrintDeliveryNotePage() {
             date: typeof dn.date === 'string' ? dn.date : new Date(dn.date).toISOString(),
             totalCost: 0,
             quantity: 0,
-            deliveryNote: { id: dn.id, number: dn.number },
+            deliveryNote: {
+              id: dn.id,
+              number: dn.number,
+              contactPerson: dn.contactPerson ?? null,
+              customItemsJson: dn.customItemsJson,
+            },
             job: dn.job as unknown as Transaction['job'],
             material: undefined,
             performedByUser: null,

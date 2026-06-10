@@ -12,6 +12,12 @@ import DeliveryNoteCustomItemsGrid, {
 } from '@/components/stock/DeliveryNoteCustomItemsGrid';
 import DispatchLineGrid from '@/components/stock/DispatchLineGrid';
 import { cn } from '@/lib/utils';
+import {
+  formatDeliveryNoteCustomItemBullet,
+  inferCustomItemsLineNoAuto,
+  parseDeliveryNoteCustomItemsFromNotes,
+  resolveCustomItemLineNoForSave,
+} from '@/lib/utils/deliveryNoteCustomItems';
 import toast from 'react-hot-toast';
 import {
   useGetJobsQuery,
@@ -132,8 +138,9 @@ export default function DeliveryNoteCreatePage() {
   const [overrideReason, setOverrideReason] = useState('');
   const [skipMaterialDispatch, setSkipMaterialDispatch] = useState(false);
   const [customItems, setCustomItems] = useState<DeliveryNoteCustomItem[]>([
-    { id: generateId(), name: '', description: '', unit: '', qty: '' },
+    { id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' },
   ]);
+  const [customItemsLineNoAuto, setCustomItemsLineNoAuto] = useState(true);
   const [lines, setLines] = useState<Line[]>(() => [
     {
       id: generateId(),
@@ -219,21 +226,10 @@ export default function DeliveryNoteCreatePage() {
     [lines, skipMaterialDispatch]
   );
 
-  /** Any non-empty material grid field blocks enabling "custom items only" until the user clears rows. */
   const materialRowsHaveData = useMemo(
-    () =>
-      lines.some(
-        (l) =>
-          Boolean(l.materialId?.trim()) ||
-          Boolean(l.dispatchQty?.trim()) ||
-          Boolean(l.returnQty?.trim()) ||
-          Boolean(l.warehouseId?.trim()) ||
-          Boolean(l.quantityUomId?.trim())
-      ),
+    () => lines.some((line) => Boolean(line.materialId?.trim())),
     [lines]
   );
-
-  const cannotEnableSkipMaterialOnly = materialRowsHaveData && !skipMaterialDispatch;
 
   const budgetWarningLinesKey = useMemo(() => JSON.stringify(budgetWarningLines), [budgetWarningLines]);
 
@@ -328,36 +324,12 @@ export default function DeliveryNoteCreatePage() {
     return match ? parseInt(match[1], 10) : null;
   };
 
-  // Parse custom items from notes
   const parseCustomItems = (notesText: string): DeliveryNoteCustomItem[] => {
-    const match = notesText.match(/--- DELIVERY NOTE ITEMS \(For Printing\) ---\n([\s\S]*?)(?=\n--- |$)/);
-    if (!match) return [{ id: generateId(), name: '', description: '', unit: '', qty: '' }];
-
-    const itemsText = match[1];
-    const items = itemsText.split('\n').filter(line => line.startsWith('• '));
-
-    if (items.length === 0) {
-      return [{ id: generateId(), name: '', description: '', unit: '', qty: '' }];
+    const parsed = parseDeliveryNoteCustomItemsFromNotes(notesText);
+    if (parsed.length === 0) {
+      return [{ id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' }];
     }
-
-    return items.map(item => {
-      // Format: • Name - Description | Qty Unit
-      const cleanItem = item.replace('• ', '');
-      const [leftPart, rightPart] = cleanItem.split(' | ');
-      const [name, description] = leftPart.includes(' - ')
-        ? leftPart.split(' - ')
-        : [leftPart, ''];
-
-      const [qtyStr, unit] = rightPart?.trim().split(' ') || ['', ''];
-
-      return {
-        id: generateId(),
-        name: name.trim(),
-        description: description?.trim() || '',
-        unit: unit?.trim() || '',
-        qty: qtyStr?.trim() || '',
-      };
-    });
+    return parsed.map((item) => ({ ...item, id: generateId() }));
   };
 
   const parseDeliveryContactPerson = (notesText: string): string => {
@@ -516,13 +488,26 @@ export default function DeliveryNoteCreatePage() {
         const rows = Array.isArray(d.customItemsJson)
           ? (d.customItemsJson as Array<Record<string, unknown>>).map((row) => ({
               id: generateId(),
+              lineNo:
+                typeof row.lineNo === 'string'
+                  ? row.lineNo
+                  : typeof row.slno === 'string'
+                    ? row.slno
+                    : row.lineNo != null
+                      ? String(row.lineNo)
+                      : row.slno != null
+                        ? String(row.slno)
+                        : '',
               name: String(row.name ?? ''),
               description: String(row.description ?? ''),
               unit: String(row.unit ?? ''),
               qty: String(row.qty ?? ''),
             }))
           : [];
-        setCustomItems(rows.length > 0 ? rows : [{ id: generateId(), name: '', description: '', unit: '', qty: '' }]);
+        const loadedCustomItems =
+          rows.length > 0 ? rows : [{ id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' }];
+        setCustomItems(loadedCustomItems);
+        setCustomItemsLineNoAuto(inferCustomItemsLineNoAuto(loadedCustomItems));
 
         setSkipMaterialDispatch(Boolean(d.materialDispatchSkipped));
 
@@ -634,6 +619,7 @@ export default function DeliveryNoteCreatePage() {
             // Parse custom items from notes
             const customItemsParsed = parseCustomItems(txn.notes || '');
             setCustomItems(customItemsParsed);
+            setCustomItemsLineNoAuto(inferCustomItemsLineNoAuto(customItemsParsed));
             setOverrideReason(parseOverrideReason(txn.notes || ''));
 
             // Extract base notes (without delivery note headers)
@@ -803,7 +789,8 @@ export default function DeliveryNoteCreatePage() {
     const { type, newValue } = changeWarningModal.pendingChange;
     if (type === 'job') setSelectedJob(newValue);
     if (type === 'date') setDate(newValue);
-    setCustomItems([{ id: generateId(), name: '', description: '', unit: '', qty: '' }]);
+    setCustomItems([{ id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' }]);
+    setCustomItemsLineNoAuto(true);
     setLines(Array.from({ length: 3 }, () => ({
       id: generateId(),
       jobId: '',
@@ -819,7 +806,7 @@ export default function DeliveryNoteCreatePage() {
   };
 
   const addCustomItem = () => {
-    setCustomItems([...customItems, { id: generateId(), name: '', description: '', unit: '', qty: '' }]);
+    setCustomItems([...customItems, { id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' }]);
   };
 
   const removeCustomItem = (id: string) => {
@@ -848,6 +835,18 @@ export default function DeliveryNoteCreatePage() {
     ));
   };
 
+  const handleCustomItemsLineNoAutoChange = (auto: boolean) => {
+    if (!auto) {
+      setCustomItems((prev) =>
+        prev.map((item, idx) => ({
+          ...item,
+          lineNo: item.lineNo.trim() || String(idx + 1),
+        }))
+      );
+    }
+    setCustomItemsLineNoAuto(auto);
+  };
+
   const addLine = () => {
     setLines((prev) => [...prev, {
       id: generateId(),
@@ -866,20 +865,28 @@ export default function DeliveryNoteCreatePage() {
 
   const updateLine = (id: string, field: keyof Line, value: string) => {
     setLines((prev) =>
-      prev.map((l) =>
-        l.id === id
-          ? {
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        if (field === 'materialId') {
+          if (!value.trim()) {
+            return {
               ...l,
-              [field]: value,
-              ...(field === 'materialId'
-                ? {
-                    quantityUomId: '',
-                    warehouseId: materials.find((m) => m.id === value)?.warehouseId ?? '',
-                  }
-                : {}),
-            }
-          : l
-      )
+              materialId: '',
+              dispatchQty: '',
+              returnQty: '',
+              quantityUomId: '',
+              warehouseId: '',
+            };
+          }
+          return {
+            ...l,
+            materialId: value,
+            quantityUomId: '',
+            warehouseId: materials.find((m) => m.id === value)?.warehouseId ?? '',
+          };
+        }
+        return { ...l, [field]: value };
+      })
     );
   };
 
@@ -1065,9 +1072,7 @@ export default function DeliveryNoteCreatePage() {
 
         if (validCustomItems.length > 0) {
           const customItemsText = `${contactLine}\n--- DELIVERY NOTE ITEMS (For Printing) ---\n` +
-            validCustomItems.map(item =>
-              `• ${item.name}${item.description ? ' - ' + item.description : ''} | ${item.qty} ${item.unit}`
-            ).join('\n');
+            validCustomItems.map((item) => formatDeliveryNoteCustomItemBullet(item)).join('\n');
           finalNotes = finalNotes ? finalNotes + '\n' + deliveryNoteHeader + customItemsText : (deliveryNoteHeader + customItemsText);
         } else {
           finalNotes = finalNotes
@@ -1090,7 +1095,8 @@ export default function DeliveryNoteCreatePage() {
         jobId: selectedJob,
         notes: finalNotes || undefined,
         baseNotes: notes?.trim() ? notes.trim() : '',
-        deliveryNoteCustomItems: validCustomItems.map((item) => ({
+        deliveryNoteCustomItems: validCustomItems.map((item, idx) => ({
+          lineNo: resolveCustomItemLineNoForSave(item, idx, customItemsLineNoAuto),
           name: item.name.trim(),
           description: item.description?.trim() || undefined,
           unit: item.unit.trim(),
@@ -1122,7 +1128,8 @@ export default function DeliveryNoteCreatePage() {
       setNotes('');
       setOverrideReason('');
       setSkipMaterialDispatch(false);
-      setCustomItems([{ id: generateId(), name: '', description: '', unit: '', qty: '' }]);
+      setCustomItemsLineNoAuto(true);
+      setCustomItems([{ id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' }]);
       setLines(Array.from({ length: 3 }, () => ({
         id: generateId(),
         jobId: '',
@@ -1201,7 +1208,7 @@ export default function DeliveryNoteCreatePage() {
       id: generateId(),
     }));
 
-    setCustomItems(newCustomItems.length > 0 ? newCustomItems : [{ id: generateId(), name: '', description: '', unit: '', qty: '' }]);
+    setCustomItems(newCustomItems.length > 0 ? newCustomItems : [{ id: generateId(), lineNo: '', name: '', description: '', unit: '', qty: '' }]);
     setLines(newLines.length > 0 ? newLines : Array.from({ length: 3 }, () => ({
       id: generateId(),
       jobId: '',
@@ -1326,9 +1333,9 @@ export default function DeliveryNoteCreatePage() {
             <p className="text-sm font-medium text-foreground">Custom items only</p>
             <p className="text-xs text-muted-foreground">
               Skip material dispatch — delivery note for printing only (no stock movement)
-              {cannotEnableSkipMaterialOnly ? (
+              {materialRowsHaveData && !skipMaterialDispatch ? (
                 <span className="mt-1 block text-amber-700 dark:text-amber-200">
-                  Clear material lines above to turn this on.
+                  Turning this on will clear any material lines above.
                 </span>
               ) : null}
             </p>
@@ -1337,22 +1344,27 @@ export default function DeliveryNoteCreatePage() {
             type="button"
             role="switch"
             aria-checked={skipMaterialDispatch}
-            aria-disabled={cannotEnableSkipMaterialOnly}
-            title={
-              cannotEnableSkipMaterialOnly
-                ? 'Clear all material line fields before enabling custom items only'
-                : undefined
-            }
             onClick={() => {
-              if (!skipMaterialDispatch && materialRowsHaveData) {
-                toast.error('Clear all material line fields before enabling custom items only.');
-                return;
+              const next = !skipMaterialDispatch;
+              if (next) {
+                setLines((prev) =>
+                  prev.map((line) => ({
+                    ...line,
+                    materialId: '',
+                    dispatchQty: '',
+                    returnQty: '',
+                    quantityUomId: '',
+                    warehouseId: '',
+                    originalDispatchQty: undefined,
+                    originalWarehouseId: undefined,
+                  }))
+                );
               }
-              setSkipMaterialDispatch(!skipMaterialDispatch);
+              setSkipMaterialDispatch(next);
             }}
-            className={`relative inline-flex h-7 w-12 shrink-0 rounded-full border-2 border-transparent transition-colors ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background ${
+            className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background ${
               skipMaterialDispatch ? 'bg-primary' : 'bg-muted'
-            } ${cannotEnableSkipMaterialOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+            }`}
           >
             <span
               className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
@@ -1618,6 +1630,8 @@ export default function DeliveryNoteCreatePage() {
             </div>
             <DeliveryNoteCustomItemsGrid
               items={customItems}
+              lineNoAuto={customItemsLineNoAuto}
+              onLineNoAutoChange={handleCustomItemsLineNoAutoChange}
               onUpdateItem={updateCustomItem}
               onDuplicateItem={duplicateCustomItem}
               onRemoveItem={removeCustomItem}

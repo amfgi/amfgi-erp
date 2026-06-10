@@ -1752,7 +1752,14 @@ function TableRenderer({
                       item == null
                         ? ''
                         : col.field === 'slno'
-                          ? String(itemIdx + 1)
+                          ? (() => {
+                              const explicit = item.slno ?? item.lineNo;
+                              return explicit != null && String(explicit).trim() !== ''
+                                ? String(explicit)
+                                : ds === 'customItems'
+                                  ? ''
+                                  : String(itemIdx + 1);
+                            })()
                           : item[col.field];
                     return (
                       <td
@@ -1873,7 +1880,13 @@ function TableRenderer({
                 let cellValue: unknown = '';
                 if (item !== null) {
                   if (col.field === 'slno') {
-                    cellValue = String(globalRowIdx + 1);
+                    const explicit = item.slno ?? item.lineNo;
+                    cellValue =
+                      explicit != null && String(explicit).trim() !== ''
+                        ? String(explicit)
+                        : ds === 'customItems'
+                          ? ''
+                          : String(globalRowIdx + 1);
                   } else {
                     cellValue = item[col.field] ?? '';
                   }

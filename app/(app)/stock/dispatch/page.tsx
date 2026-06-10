@@ -34,6 +34,10 @@ import {
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { DocumentTemplate } from '@/lib/types/documentTemplate';
 import { openDeliveryNotePrint } from '@/lib/print/openDeliveryNotePrint';
+import {
+  customItemsFromJson,
+  parseDeliveryNoteCustomItemsFromNotes,
+} from '@/lib/utils/deliveryNoteCustomItems';
 
 interface Material {
   materialId: string;
@@ -192,28 +196,6 @@ export default function DispatchPage() {
     return match ? parseInt(match[1], 10) : null;
   };
 
-  // Parse custom items from notes (for delivery notes)
-  const parseCustomItems = (notes?: string): Array<{ name: string; description: string; unit: string; qty: string }> => {
-    if (!notes) return [];
-    const match = notes.match(/--- DELIVERY NOTE ITEMS \(For Printing\) ---\n([\s\S]*?)(?=\n--- |$)/);
-    if (!match) return [];
-    const itemsText = match[1];
-    const items = itemsText.split('\n').filter(line => line.startsWith('• '));
-    return items.map(item => {
-      const cleanItem = item.replace('• ', '');
-      const [leftPart, rightPart] = cleanItem.split(' | ');
-      const [name, description] = leftPart.includes(' - ')
-        ? leftPart.split(' - ')
-        : [leftPart, ''];
-      const [qtyStr, unit] = rightPart?.trim().split(' ') || ['', ''];
-      return {
-        name: name?.trim() || '',
-        description: description?.trim() || '',
-        unit: unit?.trim() || '',
-        qty: qtyStr?.trim() || '',
-      };
-    });
-  };
 
   // Extract base notes (without delivery note headers and custom items)
   const getBaseNotes = (notes?: string): string => {
@@ -226,15 +208,9 @@ export default function DispatchPage() {
   };
 
   function parseCustomItemsFromEntry(entry: Entry): Array<{ name: string; description: string; unit: string; qty: string }> {
-    if (Array.isArray(entry.customItemsJson)) {
-      return (entry.customItemsJson as Array<Record<string, unknown>>).map((row) => ({
-        name: String(row.name ?? ''),
-        description: typeof row.description === 'string' ? row.description : '',
-        unit: String(row.unit ?? ''),
-        qty: String(row.qty ?? ''),
-      }));
-    }
-    return parseCustomItems(entry.notes);
+    const fromJson = customItemsFromJson(entry.customItemsJson);
+    if (fromJson.length > 0) return fromJson;
+    return parseDeliveryNoteCustomItemsFromNotes(entry.notes);
   }
 
   function getBaseNotesForEntry(entry: Entry): string {
@@ -780,7 +756,7 @@ export default function DispatchPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-card/80 border-b border-border">
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase w-8">#</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase w-12">No.</th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">Item Name</th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">Description</th>
                             <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase w-24">Qty</th>
@@ -789,7 +765,9 @@ export default function DispatchPage() {
                         <tbody>
                           {customItems.map((item, idx) => (
                             <tr key={idx} className="border-b border-border/50 last:border-b-0">
-                              <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{idx + 1}</td>
+                              <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">
+                                {item.lineNo?.trim() || '—'}
+                              </td>
                               <td className="px-3 py-2.5 font-medium text-foreground">{item.name || '—'}</td>
                               <td className="px-3 py-2.5 text-muted-foreground text-xs">{item.description || '—'}</td>
                               <td className="px-3 py-2.5 text-right font-mono text-foreground">

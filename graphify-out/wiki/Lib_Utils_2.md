@@ -1,49 +1,63 @@
 # Lib Utils
 
-> 19 nodes · cohesion 0.22
+> 33 nodes · cohesion 0.12
 
 ## Key Concepts
 
-- **googleDrive.ts** (50 connections) — `lib/utils/googleDrive.ts`
-- **sanitizeFolderName()** (11 connections) — `lib/utils/googleDrive.ts`
-- **ensureFolderPath()** (9 connections) — `lib/utils/googleDrive.ts`
-- **moveDriveFile()** (8 connections) — `lib/utils/googleDrive.ts`
-- **route.ts** (7 connections) — `app/api/settings/google-drive/oauth/start/route.ts`
-- **createOAuthClient()** (6 connections) — `lib/utils/googleDrive.ts`
-- **getDriveClientForCompany()** (6 connections) — `lib/utils/googleDrive.ts`
-- **GET()** (4 connections) — `app/api/settings/google-drive/oauth/start/route.ts`
-- **ensureChildFolder()** (4 connections) — `lib/utils/googleDrive.ts`
-- **createGoogleDriveAuthorizationUrl()** (4 connections) — `lib/utils/googleDrive.ts`
-- **loadGlobalDriveOAuthRefreshToken()** (3 connections) — `lib/utils/googleDrive.ts`
-- **renameFolderIfNeeded()** (3 connections) — `lib/utils/googleDrive.ts`
-- **buildCompanyDriveFolderName()** (3 connections) — `lib/utils/googleDrive.ts`
-- **canManageDrive()** (2 connections) — `app/api/settings/google-drive/oauth/start/route.ts`
-- **requireClientCredentials()** (2 connections) — `lib/utils/googleDrive.ts`
-- **getGoogleDriveOAuthRedirectUri()** (2 connections) — `lib/utils/googleDrive.ts`
-- **escapeDriveQueryValue()** (2 connections) — `lib/utils/googleDrive.ts`
-- **isFolderAccessible()** (2 connections) — `lib/utils/googleDrive.ts`
-- **DriveUploadFolderTarget** (1 connections) — `lib/utils/googleDrive.ts`
+- **route.ts** (26 connections) — `app/api/materials/receipt-history-entries/[receiptNumber]/route.ts`
+- **route.ts** (19 connections) — `app/api/materials/receipt-history-entries/route.ts`
+- **receiptLineMetadata.ts** (14 connections) — `lib/utils/receiptLineMetadata.ts`
+- **GET()** (12 connections) — `app/api/materials/receipt-history-entries/[receiptNumber]/route.ts`
+- **receiptHeaderMetadata.ts** (12 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **receiptHeaderMetadata.test.ts** (10 connections) — `__tests__/unit/receiptHeaderMetadata.test.ts`
+- **receiptLineMetadata.test.ts** (10 connections) — `__tests__/unit/receiptLineMetadata.test.ts`
+- **parseReceiptHeaderMetadata()** (7 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **parseReceiptLineMetadata()** (7 connections) — `lib/utils/receiptLineMetadata.ts`
+- **resolveReceiptBillAmount()** (5 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **buildStockBatchReceiptHeaderMeta()** (5 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **stripReceiptCancellationMarkers()** (4 connections) — `lib/utils/receiptCancellation.ts`
+- **buildStockBatchReceiptLineMeta()** (4 connections) — `lib/utils/receiptLineMetadata.ts`
+- **parseReceiptLineMetadataFromNotes()** (4 connections) — `lib/utils/receiptLineMetadata.ts`
+- **stripReceiptLineMetadata()** (4 connections) — `lib/utils/receiptLineMetadata.ts`
+- **normalizeOptionalString()** (3 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **normalizeOptionalNumber()** (3 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **mergeStockBatchReceiptMeta()** (3 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **parseMarkerNumber()** (3 connections) — `lib/utils/receiptLineMetadata.ts`
+- **appendReceiptLineMetadata()** (3 connections) — `lib/utils/receiptLineMetadata.ts`
+- **readReceiptLineFromMeta()** (2 connections) — `lib/utils/receiptLineMetadata.ts`
+- **ReceiptHeaderMetadata** (1 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **EMPTY_HEADER** (1 connections) — `lib/utils/receiptHeaderMetadata.ts`
+- **ReceiptLineDisplayMetadata** (1 connections) — `lib/utils/receiptLineMetadata.ts`
+- **StockBatchReceiptLineMetaInput** (1 connections) — `lib/utils/receiptLineMetadata.ts`
+- *... and 8 more nodes in this community*
 
 ## Relationships
 
-- [[API Upload, HR, and Media]] (16 shared connections)
-- [[API Settings and Upload]] (12 shared connections)
-- [[Lib Dispatch Entry Revision, Delivery Note Number, and Utils]] (10 shared connections)
-- [[Lib Utils and Types]] (5 shared connections)
-- [[API Materials, Me, and Transactions]] (3 shared connections)
-- [[API and Lib]] (3 shared connections)
-- [[API Me, Media, and HR]] (2 shared connections)
-- [[API, Lib, and Auth]] (1 shared connections)
-- [[Lib and API]] (1 shared connections)
+- [[API Reports, Materials, and Transactions]] (12 shared connections)
+- [[API and Lib]] (9 shared connections)
+- [[Lib Utils, Dispatch Entry Revision, and Delivery Note Number]] (8 shared connections)
+- [[API HR, Settings, and Stock Exception Approvals]] (3 shared connections)
+- [[API Materials, Settings, and Stock Exception Approvals]] (3 shared connections)
+- [[Tests Integration]] (3 shared connections)
+- [[API, Lib, and Auth]] (2 shared connections)
+- [[API Suppliers, Transactions, and Customers]] (2 shared connections)
+- [[Lib Stock, Warehouses, and Utils]] (2 shared connections)
+- [[Stock, Components, and Lib]] (1 shared connections)
+- [[API HR, Stock, and Me]] (1 shared connections)
 
 ## Source Files
 
-- `app/api/settings/google-drive/oauth/start/route.ts`
-- `lib/utils/googleDrive.ts`
+- `__tests__/unit/receiptHeaderMetadata.test.ts`
+- `__tests__/unit/receiptLineMetadata.test.ts`
+- `app/api/materials/receipt-history-entries/[receiptNumber]/route.ts`
+- `app/api/materials/receipt-history-entries/route.ts`
+- `lib/utils/receiptCancellation.ts`
+- `lib/utils/receiptHeaderMetadata.ts`
+- `lib/utils/receiptLineMetadata.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 129 (100%)
+- EXTRACTED: 172 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

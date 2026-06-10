@@ -1,23 +1,31 @@
 'use client';
 
-import { Copy, Trash2 } from 'lucide-react';
+import { Copy, ListOrdered, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface DeliveryNoteCustomItem {
   id: string;
+  lineNo: string;
   name: string;
   description: string;
   unit: string;
   qty: string;
 }
 
-const GRID_TEMPLATE_COLUMNS = '48px minmax(200px, 1.4fr) minmax(220px, 1.6fr) 100px 100px 72px';
+const GRID_TEMPLATE_COLUMNS = '88px minmax(200px, 1.4fr) minmax(220px, 1.6fr) 100px 100px 72px';
 
 const cellInputClassName =
-  'h-full w-full border-0 bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0';
+  'w-full border-0 bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0';
+
+const multilineCellClassName = cn(
+  cellInputClassName,
+  'min-h-[3.25rem] resize-y leading-snug whitespace-pre-wrap'
+);
 
 interface DeliveryNoteCustomItemsGridProps {
   items: DeliveryNoteCustomItem[];
+  lineNoAuto: boolean;
+  onLineNoAutoChange: (auto: boolean) => void;
   onUpdateItem: (id: string, field: keyof Omit<DeliveryNoteCustomItem, 'id'>, value: string) => void;
   onDuplicateItem: (id: string) => void;
   onRemoveItem: (id: string) => void;
@@ -25,6 +33,8 @@ interface DeliveryNoteCustomItemsGridProps {
 
 export default function DeliveryNoteCustomItemsGrid({
   items,
+  lineNoAuto,
+  onLineNoAutoChange,
   onUpdateItem,
   onDuplicateItem,
   onRemoveItem,
@@ -37,12 +47,12 @@ export default function DeliveryNoteCustomItemsGrid({
           style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
         >
           {[
-            { key: 'line', label: '#', align: 'left' },
-            { key: 'name', label: 'Item name', align: 'left' },
-            { key: 'description', label: 'Description', align: 'left' },
-            { key: 'unit', label: 'Unit', align: 'center' },
-            { key: 'qty', label: 'Qty', align: 'right' },
-            { key: 'actions', label: '', align: 'center' },
+            { key: 'line', label: 'No.', align: 'center' as const },
+            { key: 'name', label: 'Item name', align: 'left' as const },
+            { key: 'description', label: 'Description', align: 'left' as const },
+            { key: 'unit', label: 'Unit', align: 'center' as const },
+            { key: 'qty', label: 'Qty', align: 'right' as const },
+            { key: 'actions', label: '', align: 'center' as const },
           ].map((column) => (
             <div
               key={column.key}
@@ -52,7 +62,31 @@ export default function DeliveryNoteCustomItemsGrid({
                 column.align === 'center' && 'justify-center'
               )}
             >
-              <span className="min-w-0 truncate">{column.label}</span>
+              {column.key === 'line' ? (
+                <div className="flex w-full flex-col items-center gap-1 py-0.5">
+                  <span className="min-w-0 truncate normal-case tracking-normal">{column.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => onLineNoAutoChange(!lineNoAuto)}
+                    title={
+                      lineNoAuto
+                        ? 'Auto numbering (1, 2, 3…). Click for manual entry.'
+                        : 'Manual numbering. Click for auto serial numbers.'
+                    }
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal transition-colors',
+                      lineNoAuto
+                        ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )}
+                  >
+                    <ListOrdered className="h-3 w-3 shrink-0" />
+                    {lineNoAuto ? 'Auto' : 'Manual'}
+                  </button>
+                </div>
+              ) : (
+                <span className="min-w-0 truncate">{column.label}</span>
+              )}
             </div>
           ))}
         </div>
@@ -62,29 +96,41 @@ export default function DeliveryNoteCustomItemsGrid({
             No custom items yet. Click &quot;+ Add row&quot; below to start.
           </div>
         ) : (
-          items.map((item, idx) => (
+          items.map((item, index) => (
             <div
               key={item.id}
-              className="grid border-b border-border hover:bg-muted/40"
+              className="grid items-start border-b border-border hover:bg-muted/40"
               style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
             >
-              <div className="border-r border-border px-2 py-3 font-mono text-xs text-muted-foreground">{idx + 1}</div>
+              <div className="border-r border-border">
+                {lineNoAuto ? (
+                  <div className="px-2 py-3 text-center font-mono text-xs text-muted-foreground">{index + 1}</div>
+                ) : (
+                  <input
+                    type="text"
+                    value={item.lineNo}
+                    onChange={(e) => onUpdateItem(item.id, 'lineNo', e.target.value)}
+                    placeholder="No."
+                    className={cn(cellInputClassName, 'text-center font-mono text-xs')}
+                  />
+                )}
+              </div>
               <div className="min-w-0 border-r border-border">
-                <input
-                  type="text"
+                <textarea
                   value={item.name}
                   onChange={(e) => onUpdateItem(item.id, 'name', e.target.value)}
                   placeholder="e.g. Steel pipe"
-                  className={cellInputClassName}
+                  rows={2}
+                  className={multilineCellClassName}
                 />
               </div>
               <div className="min-w-0 border-r border-border">
-                <input
-                  type="text"
+                <textarea
                   value={item.description}
                   onChange={(e) => onUpdateItem(item.id, 'description', e.target.value)}
                   placeholder="Optional description"
-                  className={cellInputClassName}
+                  rows={2}
+                  className={multilineCellClassName}
                 />
               </div>
               <div className="border-r border-border">
@@ -105,7 +151,7 @@ export default function DeliveryNoteCustomItemsGrid({
                   className={cn(cellInputClassName, 'text-right')}
                 />
               </div>
-              <div className="flex items-center justify-center gap-0.5 px-1">
+              <div className="flex items-center justify-center gap-0.5 px-1 py-2">
                 <button
                   type="button"
                   onClick={() => onDuplicateItem(item.id)}
