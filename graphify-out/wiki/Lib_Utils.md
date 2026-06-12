@@ -1,54 +1,56 @@
 # Lib Utils
 
-> 22 nodes · cohesion 0.19
+> 20 nodes · cohesion 0.21
 
 ## Key Concepts
 
-- **googleDrive.ts** (50 connections) — `lib/utils/googleDrive.ts`
-- **sanitizeFolderName()** (11 connections) — `lib/utils/googleDrive.ts`
-- **ensureFolderPath()** (9 connections) — `lib/utils/googleDrive.ts`
-- **moveDriveFile()** (8 connections) — `lib/utils/googleDrive.ts`
-- **route.ts** (7 connections) — `app/api/settings/google-drive/oauth/start/route.ts`
-- **createOAuthClient()** (6 connections) — `lib/utils/googleDrive.ts`
-- **getDriveClientForCompany()** (6 connections) — `lib/utils/googleDrive.ts`
-- **driveFileIdToDisplayUrl()** (5 connections) — `lib/utils/googleDriveUrl.ts`
-- **GET()** (4 connections) — `app/api/settings/google-drive/oauth/start/route.ts`
-- **readCompanyGoogleDriveFolderRegistry()** (4 connections) — `lib/utils/companyPrintTemplates.ts`
-- **writeCompanyGoogleDriveFolderRegistry()** (4 connections) — `lib/utils/companyPrintTemplates.ts`
-- **ensureChildFolder()** (4 connections) — `lib/utils/googleDrive.ts`
-- **createGoogleDriveAuthorizationUrl()** (4 connections) — `lib/utils/googleDrive.ts`
-- **loadGlobalDriveOAuthRefreshToken()** (3 connections) — `lib/utils/googleDrive.ts`
-- **renameFolderIfNeeded()** (3 connections) — `lib/utils/googleDrive.ts`
-- **buildCompanyDriveFolderName()** (3 connections) — `lib/utils/googleDrive.ts`
-- **canManageDrive()** (2 connections) — `app/api/settings/google-drive/oauth/start/route.ts`
-- **requireClientCredentials()** (2 connections) — `lib/utils/googleDrive.ts`
-- **getGoogleDriveOAuthRedirectUri()** (2 connections) — `lib/utils/googleDrive.ts`
-- **escapeDriveQueryValue()** (2 connections) — `lib/utils/googleDrive.ts`
-- **isFolderAccessible()** (2 connections) — `lib/utils/googleDrive.ts`
-- **DriveUploadFolderTarget** (1 connections) — `lib/utils/googleDrive.ts`
+- **route.ts** (27 connections) — `app/api/materials/receipt-history-entries/[receiptNumber]/adjust/route.ts`
+- **route.ts** (26 connections) — `app/api/materials/receipt-history-entries/[receiptNumber]/cancel/route.ts`
+- **route.ts** (14 connections) — `app/api/reports/stock-exceptions/route.ts`
+- **receiptCancellation.ts** (14 connections) — `lib/utils/receiptCancellation.ts`
+- **parseReceiptCancellationMetadata()** (10 connections) — `lib/utils/receiptCancellation.ts`
+- **GET()** (9 connections) — `app/api/reports/stock-exceptions/route.ts`
+- **parseReceiptAdjustmentMetadata()** (9 connections) — `lib/utils/receiptCancellation.ts`
+- **stockExceptionApproval.ts** (7 connections) — `lib/utils/stockExceptionApproval.ts`
+- **upsertStockExceptionApproval()** (6 connections) — `lib/utils/stockExceptionApproval.ts`
+- **sanitizeReason()** (5 connections) — `lib/utils/receiptCancellation.ts`
+- **buildReceiptCancellationNotes()** (3 connections) — `lib/utils/receiptCancellation.ts`
+- **buildReceiptAdjustmentNotes()** (3 connections) — `lib/utils/receiptCancellation.ts`
+- **buildReceiptCancellationTransactionNote()** (3 connections) — `lib/utils/receiptCancellation.ts`
+- **buildReceiptAdjustmentTransactionNote()** (3 connections) — `lib/utils/receiptCancellation.ts`
+- **parseOverrideReason()** (2 connections) — `app/api/reports/stock-exceptions/route.ts`
+- **uniqueStrings()** (2 connections) — `app/api/reports/stock-exceptions/route.ts`
+- **AdjustReceiptSchema** (1 connections) — `app/api/materials/receipt-history-entries/[receiptNumber]/adjust/route.ts`
+- **CancelReceiptSchema** (1 connections) — `app/api/materials/receipt-history-entries/[receiptNumber]/cancel/route.ts`
+- **Tx** (1 connections) — `lib/utils/stockExceptionApproval.ts`
+- **StockExceptionApprovalInput** (1 connections) — `lib/utils/stockExceptionApproval.ts`
 
 ## Relationships
 
-- [[API and Lib]] (16 shared connections)
-- [[API Upload, HR, and Media]] (14 shared connections)
-- [[Lib Delivery Note Number, Dispatch Entry Revision, and Db]] (10 shared connections)
-- [[Lib, Utils, and Company Print Templates]] (5 shared connections)
-- [[API Materials, Stock Exception Approvals, and Auth]] (4 shared connections)
-- [[API Materials, Me, and Categories]] (2 shared connections)
-- [[API HR, Stock Exception Approvals, and Me]] (1 shared connections)
-- [[Components Print Builder]] (1 shared connections)
-- [[API User]] (1 shared connections)
+- [[API Jobs, Reports, and Transactions]] (14 shared connections)
+- [[Lib Utils]] (10 shared connections)
+- [[API Materials, Me, and Stock Exception Approvals]] (9 shared connections)
+- [[Tests Integration]] (8 shared connections)
+- [[API and Lib]] (7 shared connections)
+- [[API Transactions, Companies, and Delivery Notes]] (4 shared connections)
+- [[Lib Stock and Utils]] (4 shared connections)
+- [[API, Lib, and Auth]] (3 shared connections)
+- [[API HR and Stock Exception Approvals]] (3 shared connections)
+- [[Lib Utils and Stock Control]] (3 shared connections)
+- [[Lib Stock and Warehouses]] (2 shared connections)
+- [[Lib Dispatch Entry Revision, Utils, and Db]] (2 shared connections)
 
 ## Source Files
 
-- `app/api/settings/google-drive/oauth/start/route.ts`
-- `lib/utils/companyPrintTemplates.ts`
-- `lib/utils/googleDrive.ts`
-- `lib/utils/googleDriveUrl.ts`
+- `app/api/materials/receipt-history-entries/[receiptNumber]/adjust/route.ts`
+- `app/api/materials/receipt-history-entries/[receiptNumber]/cancel/route.ts`
+- `app/api/reports/stock-exceptions/route.ts`
+- `lib/utils/receiptCancellation.ts`
+- `lib/utils/stockExceptionApproval.ts`
 
 ## Audit Trail
 
-- EXTRACTED: 142 (100%)
+- EXTRACTED: 147 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

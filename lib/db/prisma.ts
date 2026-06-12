@@ -23,10 +23,13 @@ declare global {
 
 const prismaLog =
   process.env.NODE_ENV === 'development' ? (['error', 'warn'] as const) : (['error'] as const);
-const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl) {
-  throw new Error('DATABASE_URL is not set.');
+function getDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error('DATABASE_URL is not set.');
+  }
+  return url;
 }
 
 /** Model delegates that must exist; extend when adding new Prisma models. */
@@ -48,7 +51,7 @@ function resolvePrismaClient(): PrismaClient {
   // while global._prismaAdapter is still cached, leaking slots on the next access.
   global._prisma = undefined;
 
-  const adapter = global._prismaAdapter ?? createPostgresAdapter(databaseUrl!);
+  const adapter = global._prismaAdapter ?? createPostgresAdapter(getDatabaseUrl());
   const client = new PrismaClient({
     log: [...prismaLog],
     adapter,

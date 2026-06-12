@@ -34,13 +34,11 @@
 ## Relationships
 
 - [[Lib HR]] (11 shared connections)
-- [[Reports, Components, and HR]] (6 shared connections)
+- [[Components, HR, and Admin]] (6 shared connections)
+- [[Stock, Components, and HR]] (5 shared connections)
 - [[Components, HR, and Attendance Entry Grid]] (4 shared connections)
-- [[HR, Components, and Admin]] (2 shared connections)
-- [[Stock, Components, and Settings]] (2 shared connections)
-- [[Components Ui, Sidebar Nav Menu, and App Shell]] (2 shared connections)
-- [[Components, HR, and Suppliers]] (1 shared connections)
-- [[Components HR and Ui]] (1 shared connections)
+- [[Reports, Components, and HR]] (2 shared connections)
+- [[Stock, Components, and Lib]] (1 shared connections)
 
 ## Source Files
 

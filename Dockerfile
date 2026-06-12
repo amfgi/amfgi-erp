@@ -18,6 +18,10 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV SKIP_NEXT_TYPECHECK=1
 ENV NODE_OPTIONS=--max-old-space-size=1536
+# Placeholders for `next build` only — runtime env from Coolify overrides in the runner stage.
+ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build?schema=public
+ENV AUTH_SECRET=build-time-placeholder-secret-min-32-chars
+ENV AUTH_URL=http://localhost:3000
 RUN npm run build:deploy
 
 FROM base AS runner

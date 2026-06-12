@@ -2,7 +2,7 @@
 
 > God node · 173 connections · `lib/utils.ts`
 
-**Community:** [[Components Ui, Sidebar Nav Menu, and App Shell]]
+**Community:** [[Reports, Components, and HR]]
 
 ## Connections by Relation
 
@@ -24,9 +24,9 @@
 - [[SidebarMenuItem()]] `EXTRACTED`
 - [[DashboardPage()]] `EXTRACTED`
 - [[AttendanceCreatePage()]] `EXTRACTED`
+- [[DeliveryNoteCreatePage()]] `EXTRACTED`
 - [[IssueReconcilePage()]] `EXTRACTED`
 - [[IssueReconcileForm()]] `EXTRACTED`
-- [[SidebarMenu()]] `EXTRACTED`
 
 ### contains
 - [[utils.ts]] `EXTRACTED`
@@ -48,8 +48,8 @@
 - [[page.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
+- [[DispatchLineGrid.tsx]] `EXTRACTED`
 - [[GoodsReceiptLineGrid.tsx]] `EXTRACTED`
-- [[page.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
 - [[page.tsx]] `EXTRACTED`
 
