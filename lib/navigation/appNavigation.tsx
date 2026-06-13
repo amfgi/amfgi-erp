@@ -105,7 +105,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     ),
   },
   {
-    href: '/reports/job-profitability',
+    href: '/reports',
     label: 'Reports',
     shortTitle: 'Reports',
     description: 'Review consumption, operational summaries, and analytics.',

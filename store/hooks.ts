@@ -155,7 +155,6 @@ export {
 export {
   useGetStockValuationQuery,
   useGetConsumptionQuery,
-  useLazyGetJobConsumptionQuery,
   useLazyGetProductionByJobQuery,
   useGetJobProfitabilityQuery,
   useGetSupplierTraceabilityQuery,
@@ -167,6 +166,7 @@ export {
   useGetStockExceptionApprovalsQuery,
   useGetStockAdjustmentsQuery,
   useGetStockCountSessionsReportQuery,
+  useLazyGetMonthlyJobSummaryQuery,
   useUpdateStockExceptionApprovalMutation,
   type InventoryByWarehouseResponse,
   type InventoryByWarehouseRow,

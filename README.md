@@ -313,11 +313,10 @@ See `__tests__/README.md` for detailed test coverage documentation.
 - **POST** `/api/transactions/transfer` — Inter-company transfer (atomic)
 - **DELETE** `/api/transactions/[id]` — Delete transaction (reverse changes)
 
-### Reports (3 routes)
+### Reports (2 routes)
 
 - **GET** `/api/reports/stock-valuation` — Inventory value + last month consumption
 - **GET** `/api/reports/consumption` — Material consumption by period
-- **GET** `/api/reports/job-consumption` — Per-job material consumption
 
 ### Admin (11 routes)
 

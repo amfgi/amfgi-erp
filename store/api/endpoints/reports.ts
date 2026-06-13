@@ -44,17 +44,6 @@ interface ConsumptionResponse {
   currentMonth: ConsumptionData | null;
 }
 
-interface JobConsumptionRow {
-  jobId: string;
-  jobNumber: string;
-  materialId: string;
-  materialName: string;
-  unit: string;
-  dispatched: number;
-  returned: number;
-  netConsumed: number;
-}
-
 export interface ProductionByJobRow {
   jobId: string;
   jobNumber: string;
@@ -432,21 +421,6 @@ export const reportsApi = appApi.injectEndpoints({
       providesTags: ['Consumption'],
     }),
 
-    getJobConsumption: builder.query<
-      JobConsumptionRow[],
-      { from?: string; to?: string; jobIds: string[] }
-    >({
-      query: (params) => {
-        const searchParams = new URLSearchParams();
-        if (params.from) searchParams.append('from', params.from);
-        if (params.to) searchParams.append('to', params.to);
-        params.jobIds.forEach((id) => searchParams.append('jobId[]', id));
-        return `/reports/job-consumption?${searchParams.toString()}`;
-      },
-      transformResponse: (r: { data: JobConsumptionRow[] }) => r.data,
-      providesTags: ['JobConsumption'],
-    }),
-
     getProductionByJob: builder.query<
       ProductionByJobRow[],
       { from?: string; to?: string; jobIds: string[] }
@@ -568,6 +542,35 @@ export const reportsApi = appApi.injectEndpoints({
       providesTags: ['StockCountSession', 'StockExceptionApproval', 'Warehouse', 'Material'],
     }),
 
+    getMonthlyJobSummary: builder.query<
+      import('@/lib/reports/monthlyJobSummary').MonthlyJobSummaryReport,
+      {
+        from?: string | null;
+        to?: string | null;
+        groupBy?: 'parent' | 'variation';
+        materialLabel?: 'name' | 'external';
+        includeConsumption?: boolean;
+        includeProduction?: boolean;
+        includeCosting?: boolean;
+        includeWorkHours?: boolean;
+      }
+    >({
+      query: (params) => {
+        const searchParams = new URLSearchParams();
+        if (params.from) searchParams.set('from', params.from);
+        if (params.to) searchParams.set('to', params.to);
+        if (params.groupBy) searchParams.set('groupBy', params.groupBy);
+        if (params.materialLabel) searchParams.set('materialLabel', params.materialLabel);
+        if (params.includeConsumption === false) searchParams.set('includeConsumption', 'false');
+        if (params.includeProduction === false) searchParams.set('includeProduction', 'false');
+        if (params.includeCosting === false) searchParams.set('includeCosting', 'false');
+        if (params.includeWorkHours === false) searchParams.set('includeWorkHours', 'false');
+        return `/reports/monthly-job-summary?${searchParams.toString()}`;
+      },
+      transformResponse: (r: { data: import('@/lib/reports/monthlyJobSummary').MonthlyJobSummaryReport }) => r.data,
+      providesTags: ['Job', 'ProductionByJob', 'Transaction', 'Material'],
+    }),
+
     updateStockExceptionApproval: builder.mutation<
       {
         id: string;
@@ -602,7 +605,6 @@ export const reportsApi = appApi.injectEndpoints({
 export const {
   useGetStockValuationQuery,
   useGetConsumptionQuery,
-  useLazyGetJobConsumptionQuery,
   useLazyGetProductionByJobQuery,
   useGetJobProfitabilityQuery,
   useGetSupplierTraceabilityQuery,
@@ -614,5 +616,6 @@ export const {
   useGetStockExceptionApprovalsQuery,
   useGetStockAdjustmentsQuery,
   useGetStockCountSessionsReportQuery,
+  useLazyGetMonthlyJobSummaryQuery,
   useUpdateStockExceptionApprovalMutation,
 } = reportsApi;

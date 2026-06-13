@@ -264,14 +264,14 @@ export default function ProductionByJobReportPage() {
 
       <p className="text-xs leading-relaxed text-muted-foreground">
         Compare with{' '}
-        <Link href="/reports/job-consumption" className="font-medium text-primary underline-offset-4 hover:underline">
-          Job consumption
-        </Link>{' '}
-        for issued materials, or{' '}
         <Link href="/reports/job-profitability" className="font-medium text-primary underline-offset-4 hover:underline">
           Job profitability
         </Link>{' '}
-        for margin context.
+        for margin context, or{' '}
+        <Link href="/reports/monthly-job-summary" className="font-medium text-primary underline-offset-4 hover:underline">
+          Monthly job summary
+        </Link>{' '}
+        for per-job consumption and costing exports.
       </p>
     </div>
   );

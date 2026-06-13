@@ -126,7 +126,6 @@ export const API_DOC_SECTIONS: ApiDocSection[] = [
     title: 'Reports',
     endpoints: [
       { methods: 'GET', path: '/api/reports/consumption', auth: 'session_cookie', summary: 'Consumption report.' },
-      { methods: 'GET', path: '/api/reports/job-consumption', auth: 'session_cookie', summary: 'Job-level consumption.' },
       { methods: 'GET', path: '/api/reports/production-by-job', auth: 'session_cookie', summary: 'Production log totals by job and budget line.' },
       { methods: 'GET', path: '/api/reports/stock-valuation', auth: 'session_cookie', summary: 'Stock valuation.' },
     ],

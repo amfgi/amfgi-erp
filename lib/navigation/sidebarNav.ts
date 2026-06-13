@@ -108,7 +108,7 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
     ],
   },
   { type: 'link', href: '/me', label: 'My HR', icon: User, linkedEmployeeOnly: true },
-  { type: 'link', href: '/reports/job-profitability', label: 'Reports', icon: BarChart3, perm: 'report.view' },
+  { type: 'link', href: '/reports', label: 'Reports', icon: BarChart3, perm: 'report.view' },
   { type: 'link', href: '/settings/media', label: 'Media', icon: Image, perm: 'settings.manage' },
   { type: 'link', href: '/admin/users', label: 'Users', icon: UserCog, perm: 'user.view' },
   { type: 'link', href: '/admin/roles', label: 'Roles', icon: ShieldCheck, perm: 'role.manage' },
