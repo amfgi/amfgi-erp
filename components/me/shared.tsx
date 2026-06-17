@@ -272,7 +272,7 @@ export function MetricCard({
 }: {
   label: string;
   value: string;
-  tone?: 'slate' | 'emerald' | 'rose' | 'sky';
+  tone?: 'slate' | 'emerald' | 'rose' | 'sky' | 'amber';
 }) {
   const toneClass =
     tone === 'emerald'
@@ -281,7 +281,9 @@ export function MetricCard({
         ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20'
         : tone === 'sky'
           ? 'bg-sky-50 border-sky-200 dark:bg-sky-500/10 dark:border-sky-500/20'
-          : 'bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700';
+          : tone === 'amber'
+            ? 'bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/20'
+            : 'bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700';
 
   return (
     <div className={`rounded-2xl border px-4 py-3 ${toneClass}`}>

@@ -51,7 +51,7 @@ export const rolesApi = adminApi.injectEndpoints({
         body: hardDelete ? { hardDelete: true } : undefined,
       }),
       transformResponse: (r: { deleted: boolean }) => r,
-      invalidatesTags: (result, error, id) => [
+      invalidatesTags: (result, error, { id }) => [
         { type: 'Role', id },
         { type: 'Role', id: 'LIST' },
       ],

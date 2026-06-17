@@ -262,7 +262,7 @@ async function buildMergedPayLinesForEmployee(
         payTypeLinks: holiday?.payTypeLinks ?? line.holidayPayTypeLinks ?? [],
         resolvedPayTypeId: resolved.payTypeId,
         employeePayTypeId,
-        employeePayMode,
+        employeePayMode: employeePayMode ?? undefined,
       });
       next = {
         ...line,
@@ -282,8 +282,8 @@ async function buildMergedPayLinesForEmployee(
       ? await resolveLeavePayPercentForDay(prisma, {
           companyId,
           employeeId,
-          workDateYmd: line.workDate,
-          leaveTypeId: line.leaveTypeId,
+          workDateYmd: next.workDate,
+          leaveTypeId: next.leaveTypeId,
           rules: leaveDay.rules,
         })
       : 100;

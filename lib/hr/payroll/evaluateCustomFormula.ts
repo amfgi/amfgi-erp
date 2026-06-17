@@ -14,6 +14,7 @@ import {
   type SumDaysTrace,
 } from '@/lib/hr/payroll/formulaEngine';
 import { averageLineBasicHours, lineBasicHours } from '@/lib/hr/payroll/lineBasicHours';
+import { mergeCustomDayTrace } from '@/lib/hr/payroll/payDayBreakdown';
 import { resolveExcludedWeekdays, resolveOtPercent } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import type { CompensationInput, PayLineInput, PayLineResult, PayTypeConfig } from '@/lib/hr/payroll/types';
 
@@ -156,6 +157,6 @@ export function evaluateCustomFormula(params: {
   return {
     gross: roundMoney(result.gross),
     breakdown,
-    days: result.dayTrace,
+    days: mergeCustomDayTrace(params.lines, result.dayTrace),
   };
 }

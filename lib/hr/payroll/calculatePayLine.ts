@@ -14,6 +14,7 @@ import {
   shouldPayExcludedWeekdayWorkAtOtOnly,
 } from '@/lib/hr/payroll/excludedWeekdayOtPay';
 import { isPaidLeaveType } from '@/lib/hr/leaveTypes';
+import type { Prisma } from '@prisma/client';
 import {
   daysInMonth,
   denomDaysExcludingWeekdays,
@@ -693,12 +694,12 @@ export function attendanceLinesForPayroll(
   rows: Array<{
     workDate: Date;
     status: string;
-    leaveType: string | null;
+    leaveType?: string | null;
     leaveTypeId?: string | null;
     leaveRequestId?: string | null;
     leaveTypeRef?: { name?: string; code?: string } | null;
     leavePayPercent?: number;
-    basicHours: { toString(): string } | number;
+    basicHours: number | Prisma.Decimal | { toString(): string };
     workedMinutes?: number;
     checkInAt: Date | null;
     checkOutAt: Date | null;
@@ -723,7 +724,7 @@ export function attendanceLinesForPayroll(
       return {
         workDate: ymd,
         status: r.status,
-        leaveType: r.leaveType,
+        leaveType: r.leaveType ?? null,
         leaveTypeLabel: r.leaveTypeRef?.name ?? null,
         leaveTypeId: r.leaveTypeId ?? null,
         leaveTypeCode: r.leaveTypeRef?.code ?? null,

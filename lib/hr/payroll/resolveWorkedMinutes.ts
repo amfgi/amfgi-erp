@@ -1,10 +1,11 @@
 import { basicHoursToMinutes } from '@/lib/hr/attendanceBasicHours';
+import type { Prisma } from '@prisma/client';
 
 const PAYABLE_WITHOUT_PUNCH = new Set(['PRESENT', 'HALF_DAY', 'MISSING_PUNCH']);
 
 export type AttendanceWorkedMinutesInput = {
   status: string;
-  basicHours: { toString(): string } | number;
+  basicHours: number | Prisma.Decimal | { toString(): string };
   workedMinutes?: number;
   overtimeMinutes?: number;
   checkInAt?: Date | null;

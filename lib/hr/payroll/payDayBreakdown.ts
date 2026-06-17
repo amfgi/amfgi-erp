@@ -18,7 +18,8 @@ export function resolveDayHoursForBreakdown(line: PayLineInput): {
   otHours: number;
   lineBasic: number;
 } {
-  const lineBasic = lineBasicHours(line);
+  const lineBasicRaw = lineBasicHours(line);
+  const lineBasic = lineBasicRaw ?? 0;
   const workedHours = workedHoursFromMinutes(line.workedMinutes);
   if (workedHours <= 0) {
     return { totalHours: 0, basicHours: 0, otHours: 0, lineBasic };
@@ -65,7 +66,9 @@ export function emptyPayDayBreakdown(line: PayLineInput): PayDayBreakdown {
   };
 }
 
-export function finishPayDayBreakdown(row: Omit<PayDayBreakdown, 'amount'>): PayDayBreakdown {
+export function finishPayDayBreakdown(
+  row: Omit<PayDayBreakdown, 'amount' | 'totalHours'> & { totalHours?: number }
+): PayDayBreakdown {
   const totalHours =
     row.totalHours != null && row.totalHours > 0
       ? row.totalHours

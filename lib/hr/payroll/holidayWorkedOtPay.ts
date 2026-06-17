@@ -37,7 +37,7 @@ export function holidayWorkedOtPay(
   const workedHours = workedHoursFromMinutes(line.workedMinutes);
   const lineBasic = lineBasicHours(line);
   const otHours =
-    employeeConfig.mode === 'DAILY_WAGE' && lineBasic > 0
+    employeeConfig.mode === 'DAILY_WAGE' && lineBasic != null && lineBasic > 0
       ? Math.max(0, workedHours - lineBasic)
       : workedHours;
   if (otHours <= 0) {
@@ -77,7 +77,7 @@ export function buildPaidHolidayDayRow(params: {
   const allowance = roundMoney(componentEarning - componentDeduction);
   const totalSalary = roundMoney(holidayPay + otPay + allowance);
   const workedHours = workedHoursFromMinutes(line.workedMinutes);
-  const totalHours = workedHours > 0 ? workedHours : lineBasic;
+  const totalHours = workedHours > 0 ? workedHours : (lineBasic ?? 0);
 
   let detail = line.holidayPayTypeConfig ? 'Paid public holiday (custom structure)' : 'Paid public holiday';
   if (otPay > 0) {
@@ -89,7 +89,7 @@ export function buildPaidHolidayDayRow(params: {
     date: line.workDate,
     status: formatPayDayStatus(line, employeeConfig),
     totalHours,
-    basicHours: lineBasic,
+    basicHours: lineBasic ?? 0,
     otHours,
     basicHourRate: lineBasic ? roundMoney(holidayPay / lineBasic) : holidayPay,
     basicHourSalary: holidayPay,

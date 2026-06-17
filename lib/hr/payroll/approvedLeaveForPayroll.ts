@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { legacyLeaveRequestTypeFromCode } from '@/lib/hr/leaveTypeRules';
 import { datesInRangeInclusive } from '@/lib/hr/leaveTypes';
 import { isSundayYmd, monthBounds } from '@/lib/hr/payroll/calendar';
+import type { PayLineInput } from '@/lib/hr/payroll/types';
 
 export type ApprovedLeaveDay = {
   employeeId: string;
