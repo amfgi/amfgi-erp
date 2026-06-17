@@ -10,6 +10,11 @@ import {
 } from '@/lib/hr/workforceProfile';
 import { parsePartyListDateInput } from '@/lib/partyListsApi';
 import { normalizeNationalityCountryName } from '@/lib/hr/countryNames';
+import {
+  catalogLabelForValue,
+  GENDER_OPTIONS,
+  parseGenderInput,
+} from '@/lib/hr/employeeFieldOptions';
 import type { HrEmployeeExportRecord } from '@/store/api/endpoints/hr';
 
 export const EMPLOYEE_IMPORT_FIELDS: ImportFieldDef[] = [
@@ -93,7 +98,7 @@ export function employeeToExportRow(employee: HrEmployeeExportRecord): Record<st
     Phone: employee.phone ?? '',
     Nationality: employee.nationality ?? '',
     'Date of Birth': formatDateExport(employee.dateOfBirth),
-    Gender: employee.gender ?? '',
+    Gender: employee.gender ? catalogLabelForValue(GENDER_OPTIONS, employee.gender) : '',
     Designation: employee.designation ?? '',
     Department: employee.department ?? '',
     'Employment Type': employee.employmentType ?? '',
@@ -193,9 +198,11 @@ export function mapEmployeeImportRow(
 
   const employeeCode = cellToString(parsed.employee_code as string | undefined);
   if (!employeeCode) parsed.__errors.push('Missing required field: Employee Code');
+  else parsed.employee_code = employeeCode.trim();
 
   const fullName = cellToString(parsed.full_name as string | undefined);
   if (!fullName) parsed.__errors.push('Missing required field: Full Name');
+  else parsed.full_name = fullName.trim();
 
   if (employeeCode.length > 80) {
     parsed.__errors.push(`Employee Code: maximum 80 characters (your value has ${employeeCode.length})`);
@@ -222,6 +229,12 @@ export function mapEmployeeImportRow(
   const phone = cellToString(parsed.phone as string | undefined);
   if (phone.length > 50) {
     parsed.__errors.push(`Phone: maximum 50 characters (your value has ${phone.length})`);
+  }
+
+  const genderRaw = cellToString(parsed.gender as string | undefined);
+  if (genderRaw) {
+    const gender = parseGenderInput(genderRaw, parsed.__errors);
+    if (gender) parsed.gender = gender;
   }
 
   for (const [key, label] of [
@@ -284,7 +297,7 @@ export function employeeImportRowToPayload(row: MappedImportRow): EmployeeImport
   if ('phone' in row) payload.phone = optionalMappedString(row, 'phone') ?? null;
   if ('nationality' in row) payload.nationality = optionalMappedString(row, 'nationality') ?? null;
   if ('date_of_birth' in row) payload.dateOfBirth = optionalMappedString(row, 'date_of_birth') ?? null;
-  if ('gender' in row) payload.gender = optionalMappedString(row, 'gender') ?? null;
+  if ('gender' in row) payload.gender = String(row.gender ?? '').trim() || null;
   if ('designation' in row) payload.designation = optionalMappedString(row, 'designation') ?? null;
   if ('department' in row) payload.department = optionalMappedString(row, 'department') ?? null;
   if ('employment_type' in row) payload.employmentType = optionalMappedString(row, 'employment_type') ?? null;
@@ -320,7 +333,7 @@ export function downloadEmployeeImportTemplate() {
     ['Visa Holding', 'No', 'Company provided, Self own, or No visa.'],
     ['Expertises', 'No', 'Comma-separated names from HR → Expertise catalog.'],
     ['Nationality', 'No', 'Use country names (e.g. India, United Arab Emirates). Legacy demonyms like Indian or Emirati are accepted on import.'],
-    ['Designation / Department / Employment Type', 'No', 'Free text or values from HR → Employment options.'],
+    ['Gender', 'No', 'Male, Female, or Prefer not to say (M/F/X also accepted).'],
     ['Dates', 'No', 'Use YYYY-MM-DD.'],
     ['Updates', '—', 'Only mapped columns with values are changed; blank cells keep existing data.'],
   ];
@@ -334,7 +347,7 @@ export function downloadEmployeeImportTemplate() {
       Phone: '+971500000000',
       Nationality: 'United Arab Emirates',
       'Date of Birth': '1990-01-15',
-      Gender: '',
+      Gender: 'Male',
       Designation: 'Technician',
       Department: 'Production',
       'Employment Type': 'Permanent',

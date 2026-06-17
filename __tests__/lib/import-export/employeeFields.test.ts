@@ -61,4 +61,17 @@ describe('employee import/export fields', () => {
     expect((merged as { customFlag?: boolean }).customFlag).toBe(true);
     expect(parseWorkforceProfile(merged).visaHolding).toBe('NO_VISA');
   });
+
+  it('normalizes gender labels on import', () => {
+    const mapped = mapEmployeeImportRow(
+      ['EMP-1', 'Jane Doe', 'Female'],
+      ['Employee Code', 'Full Name', 'Gender'],
+      { 0: 'employee_code', 1: 'full_name', 2: 'gender' },
+      2
+    );
+    expect(mapped.__errors).toEqual([]);
+    expect(mapped.gender).toBe('F');
+    const payload = employeeImportRowToPayload(mapped);
+    expect(payload.gender).toBe('F');
+  });
 });

@@ -172,6 +172,7 @@ export const hrApi = appApi.injectEndpoints({
         return `/hr/employees?${search.toString()}`;
       },
       transformResponse: (r: { data: HrEmployeeExportRecord[] }) => r.data,
+      providesTags: [{ type: 'Employee', id: 'EXPORT' }],
     }),
 
     bulkImportEmployees: builder.mutation<
@@ -186,7 +187,10 @@ export const hrApi = appApi.injectEndpoints({
       transformResponse: (r: {
         data: { created: number; updated: number; skipped: number; warnings: string[] };
       }) => r.data,
-      invalidatesTags: [{ type: 'Employee', id: 'LIST' }],
+      invalidatesTags: [
+        { type: 'Employee', id: 'LIST' },
+        { type: 'Employee', id: 'EXPORT' },
+      ],
     }),
 
     getHrEmployeesPage: builder.query<HrEmployeesListResponse, HrEmployeesListParams>({

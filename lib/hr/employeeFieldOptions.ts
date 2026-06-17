@@ -43,3 +43,17 @@ export function catalogLabelForValue(options: CatalogOption[], value: string): s
   const match = options.find((option) => option.value === value);
   return match?.label ?? value;
 }
+
+export function parseGenderInput(value: string, errors: string[]): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const upper = trimmed.toUpperCase();
+  const byValue = GENDER_OPTIONS.find((option) => option.value === upper);
+  if (byValue) return byValue.value;
+  const byLabel = GENDER_OPTIONS.find((option) => option.label.toLowerCase() === trimmed.toLowerCase());
+  if (byLabel) return byLabel.value;
+  if (upper === 'MALE') return 'M';
+  if (upper === 'FEMALE') return 'F';
+  errors.push(`Invalid gender "${value}" (use Male, Female, or Prefer not to say)`);
+  return undefined;
+}

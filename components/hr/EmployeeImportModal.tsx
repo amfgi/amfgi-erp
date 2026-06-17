@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import toast from 'react-hot-toast';
 
 import EntityImportModal from '@/components/import-export/EntityImportModal';
@@ -23,9 +24,26 @@ type Props = {
   onClose: () => void;
 };
 
+function employeeRecordKey(row: MappedImportRow) {
+  return String(row.employee_code ?? '')
+    .trim()
+    .toLowerCase();
+}
+
 export default function EmployeeImportModal({ isOpen, onClose }: Props) {
   const [bulkImport, { isLoading }] = useBulkImportEmployeesMutation();
-  const { data: employees = [] } = useGetHrEmployeesForExportQuery(undefined, { skip: !isOpen });
+  const {
+    data: employees = [],
+    isFetching,
+    refetch,
+  } = useGetHrEmployeesForExportQuery(undefined, {
+    skip: !isOpen,
+    refetchOnMountOrArgChange: true,
+  });
+
+  useEffect(() => {
+    if (isOpen) void refetch();
+  }, [isOpen, refetch]);
 
   return (
     <EntityImportModal<MappedImportRow>
@@ -39,9 +57,15 @@ export default function EmployeeImportModal({ isOpen, onClose }: Props) {
       previewColumn2Label="Full name"
       duplicateInFileLabel="employee code"
       duplicateMatchLabel="employee code"
-      duplicateNote="Rows matching an existing employee code can be updated. Only columns you map with values are changed. Login accounts are not created automatically during import."
+      duplicateNote="Rows matching an existing employee ID or code are listed under Duplicates and selected for update by default. Only mapped columns with values are changed."
       onDownloadTemplate={downloadEmployeeImportTemplate}
-      existingRecords={employees.map((e) => ({ id: e.id, name: e.employeeCode }))}
+      existingRecords={employees.map((e) => ({
+        id: e.id,
+        name: e.employeeCode.trim(),
+      }))}
+      existingRecordsLoading={isFetching}
+      defaultDuplicateAction="update"
+      getRecordKey={employeeRecordKey}
       isSubmitting={isLoading}
       mapRow={mapEmployeeImportRow}
       toPayload={(row: ImportPreviewRow<MappedImportRow>) => employeeImportRowToPayload(row)}

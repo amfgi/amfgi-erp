@@ -34,6 +34,8 @@ type Props<T extends MappedImportRow> = {
   ) => T;
   toPayload: (row: ImportPreviewRow<T>) => unknown;
   existingRecords: ExistingRecord[];
+  existingRecordsLoading?: boolean;
+  defaultDuplicateAction?: 'skip' | 'update';
   isSubmitting?: boolean;
   previewColumn1Label?: string;
   duplicateInFileLabel?: string;
@@ -66,6 +68,8 @@ export default function EntityImportModal<T extends MappedImportRow>({
   mapRow,
   toPayload,
   existingRecords,
+  existingRecordsLoading = false,
+  defaultDuplicateAction = 'skip',
   isSubmitting = false,
   previewColumn1Label = 'Name',
   duplicateInFileLabel = 'name',
@@ -136,7 +140,12 @@ export default function EntityImportModal<T extends MappedImportRow>({
   const canAdvanceFromMapping = requiredKeys.every((key) => mappedKeys.includes(key));
 
   const handlePreview = () => {
-    const existingIdMap = new Map(existingRecords.map((r) => [r.id, r]));
+    if (existingRecordsLoading) {
+      toast.error('Loading existing employees for duplicate matching. Please wait…');
+      return;
+    }
+
+    const existingIdMap = new Map(existingRecords.map((r) => [r.id.trim(), r]));
     const existingNameMap = new Map(existingRecords.map((r) => [r.name.trim().toLowerCase(), r]));
 
     const parsedResults = rawRows.map((row, rowIndex) => {
@@ -192,7 +201,7 @@ export default function EntityImportModal<T extends MappedImportRow>({
             : matchByName
               ? `Matches existing ${duplicateMatchLabel}: ${matchByName.name}`
               : undefined,
-          __action: 'skip' as const,
+          __action: match ? defaultDuplicateAction : 'skip',
           __blocked: Boolean(blockReason),
           __blockReason: blockReason ?? undefined,
         };
@@ -204,7 +213,15 @@ export default function EntityImportModal<T extends MappedImportRow>({
 
     setAllRows(previewRows);
     setInvalidRows(nextInvalid);
-    setPreviewTab(previewRows.some((r) => !r.__isDuplicate) ? 'new' : nextInvalid.length > 0 ? 'invalid' : 'duplicates');
+    setPreviewTab(
+      previewRows.some((r) => !r.__isDuplicate)
+        ? 'new'
+        : previewRows.some((r) => r.__isDuplicate)
+          ? 'duplicates'
+          : nextInvalid.length > 0
+            ? 'invalid'
+            : 'new'
+    );
     setStep(2);
   };
 
@@ -333,8 +350,13 @@ export default function EntityImportModal<T extends MappedImportRow>({
               <Button type="button" variant="ghost" onClick={resetState} className="flex-1">
                 Back
               </Button>
-              <Button type="button" onClick={handlePreview} disabled={!canAdvanceFromMapping} className="flex-1">
-                Preview
+              <Button
+                type="button"
+                onClick={handlePreview}
+                disabled={!canAdvanceFromMapping || existingRecordsLoading}
+                className="flex-1"
+              >
+                {existingRecordsLoading ? 'Loading employees…' : 'Preview'}
               </Button>
             </div>
           </div>
