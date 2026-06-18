@@ -1,10 +1,11 @@
 'use client';
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import AttendanceEntryGrid, {
+  type AttendanceGridAssignmentMeta,
   type AttendanceGridDraftRow,
   type AttendanceGridEmployee,
 } from '@/components/hr/AttendanceEntryGrid';
@@ -15,6 +16,13 @@ import {
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
 import { isEmployeeOnLeaveForWorkDate } from '@/lib/hr/employeeLeavePeriod';
+import {
+  fetchJobById,
+  jobToSearchItem,
+  searchJobsApi,
+  type ScheduleJobRow,
+} from '@/lib/hr/scheduleSearchApi';
+import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import { dubaiWallTimeToUtc, parseTimeCell } from '@/lib/hr/dubaiShift';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -44,6 +52,7 @@ interface EmployeeRow {
 interface AssignmentRow {
   id: string;
   label: string;
+  jobId: string | null;
   jobNumberSnapshot: string | null;
   siteNameSnapshot: string | null;
   customerName: string | null;
@@ -56,6 +65,14 @@ interface AssignmentRow {
   driver1EmployeeId?: string | null;
   driver2EmployeeId?: string | null;
   members?: Array<{ employeeId?: string }>;
+}
+
+interface AllJobOption {
+  value: string;
+  label: string;
+  searchText: string;
+  customerName: string;
+  siteName: string;
 }
 
 function assignmentFromScheduleRaw(
@@ -78,6 +95,7 @@ function assignmentFromScheduleRaw(
   return {
     id: String(raw.id),
     label: String(raw.label ?? ''),
+    jobId: String(raw.jobId ?? job?.id ?? '').trim() || null,
     jobNumberSnapshot: jobNumber,
     siteNameSnapshot: raw.siteNameSnapshot != null ? String(raw.siteNameSnapshot) : null,
     customerName,
@@ -95,6 +113,7 @@ function assignmentFromScheduleRaw(
 
 function assignmentFromAttendanceWorkAssignment(raw: Record<string, unknown>): AssignmentRow {
   const costing = (raw.costingSnapshot as Record<string, unknown> | null) ?? null;
+  const job = (raw.job as Record<string, unknown> | null) ?? null;
   const customerName =
     String(costing?.customerName ?? raw.clientNameSnapshot ?? '').trim() || null;
   const siteName = String(costing?.siteName ?? raw.siteNameSnapshot ?? '').trim() || null;
@@ -105,6 +124,7 @@ function assignmentFromAttendanceWorkAssignment(raw: Record<string, unknown>): A
   return {
     id: String(raw.id),
     label: String(raw.label ?? ''),
+    jobId: String(raw.jobId ?? job?.id ?? '').trim() || null,
     jobNumberSnapshot: jobNumber,
     siteNameSnapshot: raw.siteNameSnapshot != null ? String(raw.siteNameSnapshot) : null,
     customerName,
@@ -513,7 +533,14 @@ export default function AttendanceCreatePage() {
   const [insertEmployeeId, setInsertEmployeeId] = useState('');
   const [bulkAbsentSnapshot, setBulkAbsentSnapshot] = useState<AttendanceDraftRow[] | null>(null);
   const [bulkAbsentConfirm, setBulkAbsentConfirm] = useState<'mark' | 'undo' | null>(null);
+  const [includeAllJobs, setIncludeAllJobs] = useState(false);
+  const [allJobOptions, setAllJobOptions] = useState<AllJobOption[]>([]);
+  const [allJobsLoading, setAllJobsLoading] = useState(false);
+  const [jobsById, setJobsById] = useState<Map<string, ScheduleJobRow>>(new Map());
+  const [jobCatalogVersion, setJobCatalogVersion] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useJobLiveUpdate(useCallback(() => setJobCatalogVersion((version) => version + 1), []));
 
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -733,11 +760,99 @@ export default function AttendanceCreatePage() {
     [assignments]
   );
 
+  const assignmentMetaById = useMemo(
+    () =>
+      new Map<string, AttendanceGridAssignmentMeta>(
+        assignments.map((assignment) => [
+          assignment.id,
+          {
+            customerName: assignment.customerName,
+            siteName: assignment.siteName,
+            projectDetails: assignment.projectDetails,
+          },
+        ])
+      ),
+    [assignments]
+  );
+
+  const assignmentJobIdByAssignmentId = useMemo(
+    () =>
+      new Map(
+        assignments
+          .filter((assignment): assignment is AssignmentRow & { jobId: string } => Boolean(assignment.jobId))
+          .map((assignment) => [assignment.id, assignment.jobId])
+      ),
+    [assignments]
+  );
+
+  const mergeJobs = useCallback((rows: ScheduleJobRow[]) => {
+    if (rows.length === 0) return;
+    setJobsById((prev) => {
+      const next = new Map(prev);
+      for (const row of rows) next.set(row.id, row);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!includeAllJobs) {
+      setAllJobOptions([]);
+      setAllJobsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAllJobsLoading(true);
+    void searchJobsApi({ search: '', status: 'ACTIVE', limit: 500 })
+      .then((rows) => {
+        if (cancelled) return;
+        mergeJobs(rows);
+        setAllJobOptions(
+          rows.map((job) => {
+            const item = jobToSearchItem(job);
+            return {
+              value: job.id,
+              label: job.jobNumber,
+              searchText: item.searchText ?? '',
+              customerName: item.companyName,
+              siteName: item.siteName,
+            };
+          })
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to load jobs for attendance picker', error);
+        toast.error('Failed to load jobs');
+        setAllJobOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAllJobsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [includeAllJobs, mergeJobs, jobCatalogVersion]);
+
+  const externalJobMetaById = useMemo(() => {
+    const map = new Map<string, AttendanceGridAssignmentMeta>();
+    for (const [id, job] of jobsById) {
+      map.set(id, {
+        customerName: job.customerName ?? null,
+        siteName: job.site ?? null,
+        projectDetails: job.projectDetails ?? job.description ?? null,
+      });
+    }
+    return map;
+  }, [jobsById]);
+
   const assignmentOptions = useMemo(
     () =>
       assignments.map((assignment) => ({
         value: assignment.id,
         label: assignment.jobNumberSnapshot || '',
+        teamLabel: assignment.label || '',
         searchText: [
           assignment.jobNumberSnapshot,
           assignment.label,
@@ -788,7 +903,7 @@ export default function AttendanceCreatePage() {
         const basicMinutes = Math.round(basicHours * 60);
         const workedMinutes = calculateWorkedMinutes(row);
         acc.total += 1;
-        if (row.workAssignmentId) acc.assigned += 1;
+        if (row.workAssignmentId || row.externalJobId) acc.assigned += 1;
         if (row.source === 'existing') acc.existing += 1;
         if (isDraftNonWorking(row)) acc.exceptions += 1;
         acc.workedMinutes += workedMinutes;
@@ -807,6 +922,9 @@ export default function AttendanceCreatePage() {
         const assignment = draft.workAssignmentId
           ? assignmentsById.get(draft.workAssignmentId)
           : undefined;
+        const externalJobMeta = draft.externalJobId
+          ? externalJobMetaById.get(draft.externalJobId)
+          : undefined;
         const matchesSearch =
           !deferredSearch ||
           [
@@ -814,17 +932,19 @@ export default function AttendanceCreatePage() {
             employee?.preferredName ?? '',
             employee?.employeeCode ?? '',
             draft.jobNumber,
-            assignment?.customerName ?? '',
-            assignment?.siteName ?? '',
-            assignment?.projectDetails ?? '',
+            assignment?.customerName ?? externalJobMeta?.customerName ?? '',
+            assignment?.siteName ?? externalJobMeta?.siteName ?? '',
+            assignment?.projectDetails ?? externalJobMeta?.projectDetails ?? '',
             draft.status,
           ]
             .join(' ')
             .toLowerCase()
             .includes(deferredSearch);
         if (!matchesSearch) return false;
-        if (scopeFilter === 'assigned') return Boolean(draft.workAssignmentId);
-        if (scopeFilter === 'exceptions') return isDraftNonWorking(draft) || !draft.workAssignmentId;
+        if (scopeFilter === 'assigned') return Boolean(draft.workAssignmentId || draft.externalJobId);
+        if (scopeFilter === 'exceptions') {
+          return isDraftNonWorking(draft) || (!draft.workAssignmentId && !draft.externalJobId);
+        }
         return true;
       })
       .sort((a, b) => {
@@ -836,7 +956,7 @@ export default function AttendanceCreatePage() {
           sensitivity: 'base',
         });
       });
-  }, [assignmentsById, deferredSearch, drafts, employeeById, scopeFilter, workDate]);
+  }, [assignmentsById, deferredSearch, drafts, employeeById, externalJobMetaById, scopeFilter, workDate]);
 
   const visibleOnLeaveEmployees = useMemo(() => {
     const merged = new Map<string, { employee: EmployeeRow; draft: AttendanceDraftRow | null }>();
@@ -901,6 +1021,7 @@ export default function AttendanceCreatePage() {
     if (!assignment) {
       updateDraft(employeeId, {
         workAssignmentId: '',
+        externalJobId: null,
         jobNumber: '',
         status: 'ABSENT',
         leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
@@ -913,7 +1034,52 @@ export default function AttendanceCreatePage() {
       return;
     }
     const next = buildDraftFromDefaults(employee, assignment, new Set<string>(), leaveTypes);
-    updateDraft(employeeId, next);
+    updateDraft(employeeId, { ...next, externalJobId: null });
+  };
+
+  const onAllJobsChange = (employeeId: string, jobId: string) => {
+    const employee = employeeById.get(employeeId);
+    if (!employee) return;
+    if (!jobId) {
+      updateDraft(employeeId, {
+        workAssignmentId: '',
+        externalJobId: null,
+        jobNumber: '',
+        status: 'ABSENT',
+        leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
+        checkInAt: '',
+        checkOutAt: '',
+        breakInAt: '',
+        breakOutAt: '',
+        source: 'manual',
+      });
+      return;
+    }
+
+    const matchingAssignment = assignments.find((assignment) => assignment.jobId === jobId);
+    if (matchingAssignment) {
+      onAssignmentChange(employeeId, matchingAssignment.id);
+      return;
+    }
+
+    void (async () => {
+      let job = jobsById.get(jobId);
+      if (!job) {
+        const row = await fetchJobById(jobId);
+        if (row) {
+          mergeJobs([row]);
+          job = row;
+        }
+      }
+      updateDraft(employeeId, {
+        workAssignmentId: '',
+        externalJobId: jobId,
+        jobNumber: job?.jobNumber ?? '',
+        status: 'PRESENT',
+        leaveTypeId: null,
+        source: 'manual',
+      });
+    })();
   };
 
   const insertEmployeeRow = () => {
@@ -959,7 +1125,14 @@ export default function AttendanceCreatePage() {
       workDate,
       rows: drafts.map((draft) => ({
         employeeId: draft.employeeId,
-        workAssignmentId: draft.workAssignmentId || null,
+        workAssignmentId: (() => {
+          if (draft.workAssignmentId) return draft.workAssignmentId;
+          if (draft.externalJobId) {
+            const match = assignments.find((assignment) => assignment.jobId === draft.externalJobId);
+            return match?.id ?? null;
+          }
+          return null;
+        })(),
         status: draft.status,
         leaveTypeId: draft.status === 'ABSENT' ? defaultUnpaidLeaveTypeId(leaveTypes) : null,
         remarks: draft.remarks?.trim() || null,
@@ -1098,14 +1271,21 @@ export default function AttendanceCreatePage() {
         <AttendanceEntryGrid
           rows={visibleDrafts}
           employeesById={employeeById}
-          assignmentsById={assignmentsById}
+          assignmentsById={assignmentMetaById}
+          assignmentJobIdByAssignmentId={assignmentJobIdByAssignmentId}
+          externalJobMetaById={externalJobMetaById}
           assignmentOptions={assignmentOptions}
+          allJobOptions={allJobOptions}
+          allJobsLoading={allJobsLoading}
+          includeAllJobs={includeAllJobs}
+          onIncludeAllJobsChange={setIncludeAllJobs}
           leaveTypes={leaveTypes}
           leavePreviewByEmployeeId={leavePreviewByEmployeeId}
           canEdit={canEdit}
           emptyMessage="No employees match the current filters."
           onUpdateRow={updateDraft}
           onAssignmentChange={onAssignmentChange}
+          onAllJobsChange={onAllJobsChange}
           filters={
             <>
               <input

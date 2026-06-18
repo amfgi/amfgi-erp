@@ -29,6 +29,17 @@ export type ScheduleJobRow = {
   requiredExpertises?: unknown;
 };
 
+type ScheduleJobRowInput = ScheduleJobRow & {
+  customer?: { name?: string | null } | null;
+};
+
+export function normalizeScheduleJobRow(row: ScheduleJobRowInput): ScheduleJobRow {
+  return {
+    ...row,
+    customerName: String(row.customerName ?? row.customer?.name ?? '').trim() || null,
+  };
+}
+
 export type ScheduleSearchItem = {
   id: string;
   label: string;
@@ -139,7 +150,8 @@ export async function searchJobsApi(params: {
   });
   if (params.status) sp.set('status', params.status);
   const res = await fetch(`/api/jobs?${sp.toString()}`, { cache: 'no-store' });
-  return readApiItems<ScheduleJobRow>(res);
+  const rows = await readApiItems<ScheduleJobRow>(res);
+  return rows.map(normalizeScheduleJobRow);
 }
 
 /** Active employees for schedule (workers + drivers); API caps at 500 rows. */
@@ -154,7 +166,8 @@ export async function fetchJobsByIds(ids: string[]): Promise<ScheduleJobRow[]> {
   if (unique.length === 0) return [];
   const sp = new URLSearchParams({ ids: unique.join(',') });
   const res = await fetch(`/api/jobs?${sp.toString()}`, { cache: 'no-store' });
-  return readApiItems<ScheduleJobRow>(res);
+  const rows = await readApiItems<ScheduleJobRow>(res);
+  return rows.map(normalizeScheduleJobRow);
 }
 
 export async function fetchJobById(id: string): Promise<ScheduleJobRow | null> {
@@ -162,7 +175,7 @@ export async function fetchJobById(id: string): Promise<ScheduleJobRow | null> {
   const res = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
   const json = await res.json().catch(() => null);
   if (!res.ok || !json?.success) return null;
-  return json.data as ScheduleJobRow;
+  return normalizeScheduleJobRow(json.data as ScheduleJobRowInput);
 }
 
 export async function searchWorkersForSchedule(q: string): Promise<ReturnType<typeof toScheduleEmployee>[]> {

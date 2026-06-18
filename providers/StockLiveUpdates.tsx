@@ -10,6 +10,8 @@ import { useAppDispatch } from '@/store/hooks';
 import { switchActiveCompany } from '@/store/slices/companySlice';
 import type { RootState } from '@/store/store';
 import { isPermissionAffectingLiveUpdate } from '@/lib/live-updates/client';
+import { invalidateJobCaches } from '@/lib/jobs/jobCacheInvalidation';
+import { notifyJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import type { Permission } from '@/lib/permissions';
 
 type LiveUpdateChannel =
@@ -410,6 +412,8 @@ export default function StockLiveUpdates() {
   }, [fetchJson, selectCachedArgs, store, upsertQueryData]);
 
   const refreshCachedJobQueries = useCallback(async () => {
+    invalidateJobCaches(dispatch);
+
     const state = store.getState();
     const jobListArgs = selectCachedArgs(appApi, state, 'getJobs');
     const jobPageArgs = selectCachedArgs(appApi, state, 'getJobsPage');
@@ -463,7 +467,9 @@ export default function StockLiveUpdates() {
         upsertQueryData(appApi, 'getDailyQuantityLogPendingPage', arg, json.data);
       }),
     ]);
-  }, [fetchJson, selectCachedArgs, store, upsertQueryData]);
+
+    notifyJobLiveUpdate();
+  }, [dispatch, fetchJson, selectCachedArgs, store, upsertQueryData]);
 
   const refreshCachedSettingsQueries = useCallback(async () => {
     const state = store.getState();

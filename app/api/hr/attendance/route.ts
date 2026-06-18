@@ -39,6 +39,7 @@ const attendanceEntryInclude = {
       locationType: true,
       job: {
         select: {
+          id: true,
           jobNumber: true,
           site: true,
           projectName: true,

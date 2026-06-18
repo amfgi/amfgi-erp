@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -15,11 +14,18 @@ import { Skeleton } from '@/components/ui/shadcn/skeleton';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
 import JobVariationImportModal from '@/components/jobs/JobVariationImportModal';
+import JobQuickEditModal from '@/components/jobs/JobQuickEditModal';
 import ParentJobImportModal from '@/components/jobs/ParentJobImportModal';
 import { exportJobVariationsToXlsx } from '@/lib/import-export/exportJobVariations';
 import { exportParentJobsToXlsx } from '@/lib/import-export/exportParentJobs';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
-import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
+import {
+  DEFAULT_CUSTOMER_JOBS_LIST_PREFS,
+  readCustomerJobsListPrefs,
+  writeCustomerJobsListPrefs,
+  type JobScopeFilter,
+  type JobStatusFilter,
+} from '@/lib/jobs/customerJobsListPrefs';
 import {
   useDeleteJobMutation,
   useGetCustomersQuery,
@@ -52,9 +58,6 @@ interface Customer {
   id: string;
   name: string;
 }
-
-type JobStatusFilter = 'ALL' | 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
-type JobScopeFilter = 'ALL' | 'PARENT_ONLY' | 'VARIATION_ONLY';
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
@@ -99,11 +102,14 @@ function statusBadgeVariant(status: Job['status']): 'default' | 'secondary' | 'o
 export default function CustomerJobsPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('ALL');
-  const [scopeFilter, setScopeFilter] = useState<JobScopeFilter>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const companyId = session?.user?.activeCompanyId;
+  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.statusFilter);
+  const [scopeFilter, setScopeFilter] = useState<JobScopeFilter>(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.scopeFilter);
+  const [searchQuery, setSearchQuery] = useState(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.searchQuery);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.pageSize);
+  const [listPrefsHydrated, setListPrefsHydrated] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(searchQuery);
 
   const { data: jobsPage, isFetching: jobsLoading } = useGetJobsPageQuery(
@@ -139,6 +145,7 @@ export default function CustomerJobsPage() {
   const [jobSourceMode, setJobSourceMode] = useState<JobSourceModeUi>('HYBRID');
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [variationImportModalOpen, setVariationImportModalOpen] = useState(false);
+  const [quickEditJob, setQuickEditJob] = useState<Job | null>(null);
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
     job: Job | null;
@@ -146,6 +153,38 @@ export default function CustomerJobsPage() {
     linkedCount: number;
     canDelete: boolean;
   }>({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true });
+
+  useEffect(() => {
+    if (!companyId) {
+      setListPrefsHydrated(false);
+      return;
+    }
+
+    const stored = readCustomerJobsListPrefs(companyId);
+    if (stored) {
+      if (stored.searchQuery !== undefined) setSearchQuery(stored.searchQuery);
+      if (stored.statusFilter !== undefined) setStatusFilter(stored.statusFilter);
+      if (stored.scopeFilter !== undefined) setScopeFilter(stored.scopeFilter);
+      if (stored.pageSize !== undefined) setPageSize(stored.pageSize);
+    } else {
+      setSearchQuery(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.searchQuery);
+      setStatusFilter(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.statusFilter);
+      setScopeFilter(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.scopeFilter);
+      setPageSize(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.pageSize);
+    }
+    setPage(1);
+    setListPrefsHydrated(true);
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId || !listPrefsHydrated) return;
+    writeCustomerJobsListPrefs(companyId, {
+      searchQuery,
+      statusFilter,
+      scopeFilter,
+      pageSize,
+    });
+  }, [companyId, listPrefsHydrated, searchQuery, statusFilter, scopeFilter, pageSize]);
 
   useEffect(() => {
     if (!session?.user?.activeCompanyId) return;
@@ -169,7 +208,14 @@ export default function CustomerJobsPage() {
 
   useEffect(() => {
     setPage(1);
+    setSelectedJobId(null);
   }, [deferredSearch, statusFilter, scopeFilter, pageSize]);
+
+  useEffect(() => {
+    if (selectedJobId && !jobs.some((job) => job.id === selectedJobId)) {
+      setSelectedJobId(null);
+    }
+  }, [jobs, selectedJobId]);
 
   const customerNameById = useMemo(
     () => new Map(customers.map((customer: Customer) => [customer.id, customer.name])),
@@ -244,6 +290,10 @@ export default function CustomerJobsPage() {
 
     if (canEdit) {
       options.push({ divider: true });
+      options.push({
+        label: 'Quick edit',
+        action: () => setQuickEditJob(job),
+      });
       options.push({
         label: 'Edit Job',
         action: () => handleEditJob(job),
@@ -387,6 +437,11 @@ export default function CustomerJobsPage() {
         isOpen={variationImportModalOpen}
         onClose={() => setVariationImportModalOpen(false)}
       />
+      <JobQuickEditModal
+        isOpen={Boolean(quickEditJob)}
+        onClose={() => setQuickEditJob(null)}
+        job={quickEditJob}
+      />
 
       <div className="grid w-full min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
         {statTiles.map((item) => (
@@ -508,13 +563,25 @@ export default function CustomerJobsPage() {
                       : 'default';
 
                   return (
-                    <Link
+                    <div
                       key={job.id}
-                      href={`/customers/jobs/${job.id}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedJobId(job.id)}
+                      onDoubleClick={() => router.push(`/customers/jobs/${job.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') router.push(`/customers/jobs/${job.id}`);
+                        if (e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedJobId(job.id);
+                        }
+                      }}
                       onContextMenu={(e) => handleJobContextMenu(job, e)}
                       className={cn(
-                        'grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-muted/50 xl:grid-cols-[minmax(11rem,0.75fr)_minmax(0,1.25fr)_minmax(12rem,0.95fr)_9.5rem_minmax(9rem,1fr)] xl:items-center xl:gap-0',
-                        isVariation && 'bg-muted/15',
+                        'grid cursor-pointer grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-muted/50 xl:grid-cols-[minmax(11rem,0.75fr)_minmax(0,1.25fr)_minmax(12rem,0.95fr)_9.5rem_minmax(9rem,1fr)] xl:items-center xl:gap-0',
+                        isVariation && !selectedJobId && 'bg-muted/15',
+                        selectedJobId === job.id &&
+                          'bg-primary/10 ring-1 ring-inset ring-primary/30 hover:bg-primary/15',
                       )}
                     >
                       <div className="flex min-w-0 items-start gap-3">
@@ -567,12 +634,12 @@ export default function CustomerJobsPage() {
                       </div>
 
                       <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground xl:border-l xl:border-border xl:pl-4">
-                        <span className="hidden xl:inline">Right-click for more</span>
+                        <span className="hidden xl:inline">Double-click ledger · right-click more</span>
                         <span aria-hidden className="text-muted-foreground">
                           →
                         </span>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>

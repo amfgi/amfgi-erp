@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect }    from 'react';
+import { useCallback, useState, useEffect }    from 'react';
 import Modal                      from '@/components/ui/Modal';
 import { Button }                 from '@/components/ui/shadcn/button';
+import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import toast                      from 'react-hot-toast';
 
 interface MaterialUomRow {
@@ -55,6 +56,9 @@ export default function StockTransactionModal({ isOpen, onClose, onSuccess, mode
   const [notes,          setNotes]          = useState('');
   const [date,           setDate]           = useState(new Date().toISOString().split('T')[0]);
   const [loading,        setLoading]        = useState(false);
+  const [jobCatalogVersion, setJobCatalogVersion] = useState(0);
+
+  useJobLiveUpdate(useCallback(() => setJobCatalogVersion((version) => version + 1), []));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -62,7 +66,7 @@ export default function StockTransactionModal({ isOpen, onClose, onSuccess, mode
     if (mode !== 'STOCK_IN') {
       fetch('/api/jobs?status=ACTIVE').then((r) => r.json()).then((j) => setJobs(j.data ?? []));
     }
-  }, [isOpen, mode]);
+  }, [isOpen, mode, jobCatalogVersion]);
 
   useEffect(() => {
     if (preselectedJobId) setJobId(preselectedJobId);

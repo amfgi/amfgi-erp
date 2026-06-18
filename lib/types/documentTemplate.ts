@@ -211,6 +211,10 @@ export interface TableColumnDef {
   cellColor?: string;
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
+  /** Vertical gap between worker names when field is `workerBlocks` (mm). */
+  workerBlockGapMm?: number;
+  /** Extra height for sub-team spacer rows in `workerBlocks` (mm). */
+  workerBlockSpacerMm?: number;
 }
 
 export interface TextSection {

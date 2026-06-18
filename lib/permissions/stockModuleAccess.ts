@@ -91,7 +91,22 @@ export function canViewStockCountSessionApi(perms: PermList, isSuperAdmin: boole
 
 /** Job list API (e.g. job budget hub parent contracts). */
 export function canViewJobsListApi(perms: PermList, isSuperAdmin: boolean) {
-  return isSuperAdmin || has(perms, P.JOB_VIEW) || has(perms, P.STOCK_JOB_BUDGET_VIEW);
+  return (
+    isSuperAdmin ||
+    has(perms, P.JOB_VIEW) ||
+    has(perms, P.STOCK_JOB_BUDGET_VIEW) ||
+    has(perms, P.HR_ATTENDANCE_VIEW) ||
+    has(perms, P.HR_ATTENDANCE_EDIT)
+  );
+}
+
+/** Minimal job lookup for HR schedule / attendance pickers. */
+export function canViewJobDetailForHrPicker(perms: PermList, isSuperAdmin: boolean) {
+  return (
+    canViewJobsListApi(perms, isSuperAdmin) ||
+    has(perms, P.HR_SCHEDULE_VIEW) ||
+    has(perms, P.HR_SCHEDULE_EDIT)
+  );
 }
 
 /** Job budget line items API. */

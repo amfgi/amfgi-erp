@@ -13,15 +13,14 @@ import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
 import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect';
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { GENDER_OPTIONS, visaHoldingOptions, workforceRoleTypeOptions } from '@/lib/hr/employeeFieldOptions';
-import { buildWorkforceProfileExtension } from '@/lib/hr/workforceProfile';
-
-function generateEmployeeCode() {
-  const stamp = Date.now().toString(36).toUpperCase();
-  return `EMP-${stamp.slice(-6)}`;
-}
+import { createEmployeeRecord } from '@/lib/hr/createEmployeeClient';
+import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
+import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
+import { useAppDispatch } from '@/store/hooks';
 
 export default function NewEmployeePage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const { data: session } = useSession();
   const [saving, setSaving] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -54,35 +53,23 @@ export default function NewEmployeePage() {
     if (!canEdit) return;
     setSaving(true);
     try {
-      const legalName = fullName.trim() || preferredName.trim();
-      const displayName = preferredName.trim() || legalName;
-      const res = await fetch('/api/hr/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeCode: generateEmployeeCode(),
-          fullName: legalName,
-          preferredName: displayName || null,
-          nationality: nationality || null,
-          gender: gender || null,
-          phone: phone.trim() || null,
-          designation: designation.trim() || null,
-          department: department.trim() || null,
-          employmentType: employmentType.trim() || null,
-          profileExtension: buildWorkforceProfileExtension({
-            employeeType,
-            visaHolding,
-            expertises: [],
-          }),
-        }),
+      const employee = await createEmployeeRecord({
+        fullName,
+        preferredName: preferredName.trim() || null,
+        nationality: nationality || null,
+        gender: gender || null,
+        phone: phone.trim() || null,
+        designation: designation.trim() || null,
+        department: department.trim() || null,
+        employmentType: employmentType.trim() || null,
+        employeeType,
+        visaHolding,
       });
-      const json = await res.json();
-      if (!res.ok || !json?.success) {
-        toast.error(json?.error ?? 'Save failed');
-        return;
-      }
+      invalidateEmployeeCaches(dispatch);
       toast.success('Employee created');
-      router.push(`/hr/employees/${json.data.id}`);
+      router.push(`/hr/employees/${employee.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Save failed');
     } finally {
       setSaving(false);
     }

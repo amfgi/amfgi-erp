@@ -1327,19 +1327,25 @@ type ScheduleWorkerBlock = {
   text?: string;
 };
 
+const DEFAULT_WORKER_BLOCK_GAP_MM = 0.7;
+const DEFAULT_WORKER_BLOCK_SPACER_MM = 1.2;
+
 function renderScheduleWorkerBlocks(
   blocks: unknown,
-  u: (mm: number) => string
+  u: (mm: number) => string,
+  options?: { gapMm?: number; spacerMm?: number }
 ): React.ReactNode {
   if (!Array.isArray(blocks) || blocks.length === 0) return '\u00A0';
   const typedBlocks = blocks as ScheduleWorkerBlock[];
+  const gapMm = options?.gapMm ?? DEFAULT_WORKER_BLOCK_GAP_MM;
+  const spacerMm = options?.spacerMm ?? DEFAULT_WORKER_BLOCK_SPACER_MM;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: u(0.7) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: u(gapMm) }}>
       {typedBlocks.map((block, index) => {
         const kind = block?.kind ?? 'worker';
         const text = String(block?.text ?? '');
         if (kind === 'spacer') {
-          return <div key={`worker-block-${index}`} style={{ height: u(1.2) }} />;
+          return <div key={`worker-block-${index}`} style={{ height: u(spacerMm) }} />;
         }
         return (
           <div
@@ -1784,7 +1790,10 @@ function TableRenderer({
                         }}
                         >
                           {col.field === 'workerBlocks'
-                            ? renderScheduleWorkerBlocks(rawCellValue, u)
+                            ? renderScheduleWorkerBlocks(rawCellValue, u, {
+                                gapMm: col.workerBlockGapMm,
+                                spacerMm: col.workerBlockSpacerMm,
+                              })
                             : renderDynamicText(String(rawCellValue || (item == null ? '\u00A0' : '')))}
                         </td>
                       );
@@ -1915,7 +1924,10 @@ function TableRenderer({
                     }}
                   >
                     {col.field === 'workerBlocks'
-                      ? renderScheduleWorkerBlocks(cellValue, u)
+                      ? renderScheduleWorkerBlocks(cellValue, u, {
+                          gapMm: col.workerBlockGapMm,
+                          spacerMm: col.workerBlockSpacerMm,
+                        })
                       : renderDynamicText(String(cellValue || (item === null ? '\u00A0' : '')))}
                   </td>
                 );

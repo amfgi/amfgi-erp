@@ -12,6 +12,7 @@ import {
   isDraftNonWorking,
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
+import TimeEntryInput, { TIME_ENTRY_FLAT_INPUT_CLASS } from '@/components/hr/TimeEntryInput';
 import { cn } from '@/lib/utils';
 
 export interface AttendanceGridEmployee {
@@ -27,6 +28,8 @@ export interface AttendanceGridEmployee {
 export interface AttendanceGridDraftRow {
   employeeId: string;
   workAssignmentId: string;
+  /** Job picked from the full jobs list when it is not on today's schedule. */
+  externalJobId?: string | null;
   jobNumber: string;
   status: 'PRESENT' | 'ABSENT';
   leaveTypeId?: string | null;
@@ -50,6 +53,7 @@ function draftBasicMinutes(draft: AttendanceGridDraftRow, employee: AttendanceGr
 interface AssignmentOption {
   value: string;
   label: string;
+  teamLabel: string;
   searchText: string;
 }
 
@@ -59,11 +63,25 @@ export interface AttendanceGridAssignmentMeta {
   projectDetails: string | null;
 }
 
+interface AllJobOption {
+  value: string;
+  label: string;
+  searchText: string;
+  customerName: string;
+  siteName: string;
+}
+
 interface AttendanceEntryGridProps {
   rows: AttendanceGridDraftRow[];
   employeesById: Map<string, AttendanceGridEmployee>;
   assignmentsById: Map<string, AttendanceGridAssignmentMeta>;
+  assignmentJobIdByAssignmentId: Map<string, string>;
+  externalJobMetaById: Map<string, AttendanceGridAssignmentMeta>;
   assignmentOptions: AssignmentOption[];
+  allJobOptions: AllJobOption[];
+  allJobsLoading: boolean;
+  includeAllJobs: boolean;
+  onIncludeAllJobsChange: (value: boolean) => void;
   leaveTypes: LeaveTypeOption[];
   /** Approved leave from leave management for this date (preview only). */
   leavePreviewByEmployeeId?: Record<string, string>;
@@ -77,6 +95,7 @@ interface AttendanceEntryGridProps {
   tableFooter?: ReactNode;
   onUpdateRow: (employeeId: string, patch: Partial<AttendanceGridDraftRow>) => void;
   onAssignmentChange: (employeeId: string, assignmentId: string) => void;
+  onAllJobsChange: (employeeId: string, jobId: string) => void;
 }
 
 const ATTENDANCE_GRID_PREFERENCE_KEY = 'hr-attendance-create-line-grid';
@@ -166,8 +185,7 @@ const EMPLOYEE_TYPE_TAG: Record<EmployeeTypeKey, { label: string; className: str
 const COMPACT_TAG_BASE =
   'inline-flex h-auto shrink-0 items-center rounded border px-1 py-px text-[9px] font-medium leading-none tracking-wide';
 
-const FLAT_INPUT_CLASS =
-  'h-full w-full min-w-0 border-0 bg-transparent px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50';
+const FLAT_INPUT_CLASS = TIME_ENTRY_FLAT_INPUT_CLASS;
 
 type LineGridPreferencePayload = {
   order: string[];
@@ -240,67 +258,6 @@ function EmployeeTypeTag({ type }: { type: EmployeeTypeKey }) {
   );
 }
 
-function formatTimeForDisplay(timeVal: string): string {
-  if (!/^\d{2}:\d{2}$/.test(timeVal)) return timeVal;
-  const [hoursRaw, minutesRaw] = timeVal.split(':');
-  const hours = Number(hoursRaw);
-  const minutes = Number(minutesRaw);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return timeVal;
-  const suffix = hours >= 12 ? 'PM' : 'AM';
-  const hour12 = hours % 12 || 12;
-  return `${String(hour12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${suffix}`;
-}
-
-function parseFlexibleTimeInput(raw: string): string | null {
-  const trimmed = raw.trim().toLowerCase();
-  if (!trimmed) return '';
-
-  const normalized = trimmed.replace(/\s+/g, '').replace(/\./g, ':');
-  const meridiemMatch = normalized.match(/[ap]/);
-  const meridiem = meridiemMatch?.[0] ?? null;
-  const numericPart = normalized.replace(/[^0-9:]/g, '');
-  if (!numericPart) return null;
-
-  let hours: number | null = null;
-  let minutes = 0;
-
-  if (numericPart.includes(':')) {
-    const [hourPart, minutePart] = numericPart.split(':');
-    if (!hourPart || minutePart == null || minutePart === '') return null;
-    hours = Number(hourPart);
-    minutes = Number(minutePart);
-  } else if (/^\d{3,4}$/.test(numericPart)) {
-    const padded = numericPart.padStart(4, '0');
-    hours = Number(padded.slice(0, 2));
-    minutes = Number(padded.slice(2, 4));
-  } else if (/^\d{1,2}$/.test(numericPart)) {
-    hours = Number(numericPart);
-    minutes = 0;
-  }
-
-  if (hours == null || !Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  if (minutes < 0 || minutes > 59) return null;
-
-  if (meridiem) {
-    if (hours < 1 || hours > 12) return null;
-    let hours24 = hours % 12;
-    if (meridiem === 'p') hours24 += 12;
-    return `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
-
-  if (numericPart.includes(':')) {
-    if (hours < 0 || hours > 23) return null;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
-
-  if (numericPart.length >= 3) {
-    if (hours < 0 || hours > 23) return null;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
-
-  return null;
-}
-
 function minutesFromTimeValue(timeVal: string): number | null {
   if (!/^\d{2}:\d{2}$/.test(timeVal)) return null;
   const [hours, minutes] = timeVal.split(':').map(Number);
@@ -356,75 +313,17 @@ function ReadOnlyMetaCell({ value }: { value: string | null | undefined }) {
   );
 }
 
-function TimeEntryInput({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  const [rawValue, setRawValue] = useState(value ? formatTimeForDisplay(value) : '');
-  const [isEditing, setIsEditing] = useState(false);
-  const [isInvalid, setIsInvalid] = useState(false);
-  const displayValue = isEditing ? rawValue : value ? formatTimeForDisplay(value) : '';
-
-  const commitValue = () => {
-    const parsed = parseFlexibleTimeInput(rawValue);
-    if (parsed == null) {
-      if (rawValue.trim()) setIsInvalid(true);
-      return;
-    }
-    setIsInvalid(false);
-    setIsEditing(false);
-    onChange(parsed);
-    setRawValue(parsed ? formatTimeForDisplay(parsed) : '');
-  };
-
-  return (
-    <input
-      type="text"
-      value={displayValue}
-      disabled={disabled}
-      placeholder="--:--"
-      onFocus={(e) => {
-        setRawValue(value ? formatTimeForDisplay(value) : '');
-        setIsEditing(true);
-        e.currentTarget.select();
-      }}
-      onChange={(e) => {
-        setRawValue(e.target.value);
-        if (isInvalid) setIsInvalid(false);
-      }}
-      onBlur={commitValue}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          commitValue();
-          (e.target as HTMLInputElement).blur();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          setIsInvalid(false);
-          setIsEditing(false);
-          setRawValue(value ? formatTimeForDisplay(value) : '');
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className={cn(
-        FLAT_INPUT_CLASS,
-        'text-xs tabular-nums',
-        isInvalid && 'bg-destructive/10 text-destructive placeholder:text-destructive/60'
-      )}
-    />
-  );
-}
-
 export default function AttendanceEntryGrid({
   rows,
   employeesById,
   assignmentsById,
+  assignmentJobIdByAssignmentId,
+  externalJobMetaById,
   assignmentOptions,
+  allJobOptions,
+  allJobsLoading,
+  includeAllJobs,
+  onIncludeAllJobsChange,
   leaveTypes,
   leavePreviewByEmployeeId = {},
   canEdit,
@@ -434,6 +333,7 @@ export default function AttendanceEntryGrid({
   tableFooter,
   onUpdateRow,
   onAssignmentChange,
+  onAllJobsChange,
 }: AttendanceEntryGridProps) {
   const { data: session, status: sessionStatus } = useSession();
   const companyId = session?.user?.activeCompanyId;
@@ -655,6 +555,67 @@ export default function AttendanceEntryGrid({
           </div>
         );
       case 'job':
+        if (includeAllJobs) {
+          const selectedJobId =
+            draft.externalJobId ||
+            (draft.workAssignmentId
+              ? assignmentJobIdByAssignmentId.get(draft.workAssignmentId) ?? ''
+              : '');
+          if (allJobsLoading) {
+            return (
+              <div
+                key={columnKey}
+                className={cn(
+                  cellClassName,
+                  'flex items-center bg-background/60 px-2 py-1.5 text-xs text-muted-foreground dark:bg-background/40'
+                )}
+              >
+                Loading jobs…
+              </div>
+            );
+          }
+          return (
+            <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
+              <SearchSelect
+                value={selectedJobId}
+                onChange={(jobId) => onAllJobsChange(draft.employeeId, jobId)}
+                onBlurInputValue={(value) => {
+                  if (value.trim() === '') onAllJobsChange(draft.employeeId, '');
+                }}
+                placeholder={allJobOptions.length === 0 ? 'No active jobs' : 'Job num'}
+                disabled={!canEdit || allJobOptions.length === 0}
+                openOnFocus
+                minCharactersToSearch={0}
+                dropdownInPortal
+                allowClearButton={false}
+                renderItem={(item) => {
+                  if (!item.id) return <span className="text-muted-foreground">—</span>;
+                  const option = allJobOptions.find((entry) => entry.value === item.id);
+                  const jobNumber = option?.label?.trim() ?? item.label;
+                  const meta = [option?.customerName, option?.siteName].filter(Boolean).join(' · ');
+                  return (
+                    <div>
+                      <div className="font-medium">{jobNumber}</div>
+                      {meta ? <div className="text-[11px] text-muted-foreground">{meta}</div> : null}
+                    </div>
+                  );
+                }}
+                items={[
+                  { id: '', label: '', searchText: '' },
+                  ...allJobOptions.map((option) => ({
+                    id: option.value,
+                    label: option.label,
+                    searchText: option.searchText,
+                  })),
+                ]}
+                inputProps={{
+                  className:
+                    '!rounded-none !border-0 !bg-transparent !px-2 !py-1.5 !text-sm focus:!ring-0 min-w-0',
+                }}
+              />
+            </div>
+          );
+        }
         return (
           <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
             <SearchSelect
@@ -668,6 +629,18 @@ export default function AttendanceEntryGrid({
               openOnFocus
               minCharactersToSearch={0}
               dropdownInPortal
+              allowClearButton={false}
+              renderItem={(item) => {
+                if (!item.id) return <span className="text-muted-foreground">—</span>;
+                const option = assignmentOptions.find((entry) => entry.value === item.id);
+                const teamLabel = option?.teamLabel?.trim() ?? '';
+                const jobNumber = option?.label?.trim() ?? '';
+                const text =
+                  teamLabel && jobNumber
+                    ? `${teamLabel} · ${jobNumber}`
+                    : teamLabel || jobNumber || '—';
+                return <div className="font-medium">{text}</div>;
+              }}
               items={[
                 { id: '', label: '', searchText: '' },
                 ...assignmentOptions.map((option) => ({
@@ -902,9 +875,38 @@ export default function AttendanceEntryGrid({
 								key={column.key}
 								className='relative flex min-w-0 items-center border-r border-border py-1 pl-2 pr-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground last:border-r-0'
 							>
-								<span className='min-w-0 flex-1 truncate pr-1'>
-									{column.label}
-								</span>
+								<div className='flex min-w-0 flex-1 items-center gap-1 pr-2'>
+									<span className='min-w-0 flex-1 truncate'>
+										{column.label}
+									</span>
+									{column.key === 'job' ? (
+										<button
+											type='button'
+											title={
+												includeAllJobs
+													? 'Showing all active jobs'
+													: 'Show all active jobs (not only schedule)'
+											}
+											aria-pressed={includeAllJobs}
+											aria-label={
+												includeAllJobs
+													? 'Using all active jobs'
+													: 'Use schedule jobs only'
+											}
+											onClick={() => onIncludeAllJobsChange(!includeAllJobs)}
+											className={cn(
+												'relative z-2 shrink-0 rounded border px-1 py-0.5 text-[8px] font-bold normal-case tracking-normal transition-colors',
+												includeAllJobs
+													? 'border-primary/50 bg-primary/15 text-primary'
+													: 'border-border bg-background text-muted-foreground hover:bg-muted',
+												allJobsLoading && includeAllJobs ? 'opacity-60' : ''
+											)}
+											disabled={allJobsLoading}
+										>
+											All
+										</button>
+									) : null}
+								</div>
 								<button
 									type='button'
 									aria-label={`Resize ${column.label} column`}
@@ -944,7 +946,9 @@ export default function AttendanceEntryGrid({
 										: 'outline';
 							const assignmentMeta = draft.workAssignmentId
 								? assignmentsById.get(draft.workAssignmentId)
-								: undefined;
+								: draft.externalJobId
+									? externalJobMetaById.get(draft.externalJobId)
+									: undefined;
 
 							const cellCtx = {
 								draft,

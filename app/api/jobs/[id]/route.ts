@@ -10,6 +10,7 @@ import {
   syncJobRequiredExpertises,
 } from '@/lib/jobs/jobRequiredExpertises';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
+import { canViewJobDetailForHrPicker } from '@/lib/permissions/stockModuleAccess';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalEqualsNullable, decimalToNumber } from '@/lib/utils/decimal';
 import { z } from 'zod';
@@ -54,7 +55,7 @@ const UpdateSchema = z.object({
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes('job.view')) {
+  if (!canViewJobDetailForHrPicker(session.user.permissions, session.user.isSuperAdmin ?? false)) {
     return errorResponse('Forbidden', 403);
   }
 
@@ -85,7 +86,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     },
   });
   if (!job) return errorResponse('Job not found', 404);
-  return successResponse(serializeRequiredExpertises(serializeJobWithContacts(job)));
+  const serialized = serializeRequiredExpertises(serializeJobWithContacts(job));
+  return successResponse({
+    ...serialized,
+    customerName: job.customer?.name ?? null,
+  });
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

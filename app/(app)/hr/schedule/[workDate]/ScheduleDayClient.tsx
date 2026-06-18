@@ -1,15 +1,5 @@
 'use client';
 
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragOverEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core';
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -27,16 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/shadcn/table';
-import ScheduleAbsencesPanel from '@/components/hr/ScheduleAbsencesPanel';
+import CreateEmployeeModal from '@/components/hr/CreateEmployeeModal';
 import ScheduleSearchSelect from '@/components/hr/ScheduleSearchSelect';
-import {
-  parseScheduleTeamDropId,
-  parseScheduleWorkerDragId,
-  ScheduleFlatTeamDropSurface,
-  ScheduleTeamDropZone,
-  ScheduleWorkerDraggableCard,
-  scheduleTeamDropId,
-} from '@/components/hr/ScheduleWorkerDnD';
+import { ScheduleWorkerPoolCard } from '@/components/hr/ScheduleWorkerPoolCard';
+import TimeEntryInput from '@/components/hr/TimeEntryInput';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { cn } from '@/lib/utils';
 import type { EmployeeTypeTimingSetting } from '@/lib/hr/employeeTypeSettings';
@@ -47,7 +31,9 @@ import {
   fetchJobById,
   fetchJobsByIds,
   jobToSearchItem,
+  normalizeScheduleJobRow,
   searchJobsApi,
+  toScheduleEmployee,
   type ScheduleEmployeeRow,
   type ScheduleJobRow,
 } from '@/lib/hr/scheduleSearchApi';
@@ -152,7 +138,16 @@ interface ScheduleTemplateOption {
   status: string;
 }
 
-const TEAM_COLUMN_CLASS = 'min-w-[13rem] w-[13rem] align-top';
+type WorkerCreateTarget =
+  | { kind: 'flat'; colIdx: number; memberIndex: number }
+  | { kind: 'subTeam'; colIdx: number; subTeamIndex: number; memberIndex: number };
+
+type PendingWorkerCreate = {
+  suggestedName: string;
+  target: WorkerCreateTarget;
+};
+
+const TEAM_COLUMN_CLASS = 'min-w-[20rem] w-[20rem] align-top';
 const STICKY_ROW_LABEL_CLASS =
   'sticky left-0 z-20 min-w-[8rem] w-[8rem] border-r border-border bg-muted px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)]';
 
@@ -161,7 +156,7 @@ const SCHEDULE_GRID_FLAT_INPUT =
   'flex h-9 w-full min-w-0 rounded-md border border-border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
 const SCHEDULE_GRID_SEARCH_INPUT =
-  '!h-9 !rounded-md !border !border-border !bg-background !px-2 !text-sm focus-visible:!ring-2 focus-visible:!ring-ring min-w-0';
+  '!h-8 !rounded-md !border !border-border !bg-background !px-2 !text-sm focus-visible:!ring-2 focus-visible:!ring-ring min-w-0';
 
 function scheduleSearchInputProps(navProps?: Record<string, unknown>) {
   const nav = (navProps ?? {}) as { className?: string };
@@ -228,7 +223,7 @@ function createEmptySubTeam(index: number): subTeamDraft {
   return {
     id: crypto.randomUUID(),
     label: nextSubTeamLabel(index),
-    members: [],
+    members: normalizeWorkerMemberList([]),
   };
 }
 
@@ -238,6 +233,32 @@ function normalizeMemberList(members: MemberRow[]): MemberRow[] {
     role: member.role === 'HELPER' || member.role === 'TEAM_LEADER' ? member.role : 'WORKER',
     slot: index + 1,
   }));
+}
+
+const MIN_WORKER_SLOTS = 2;
+
+function normalizeWorkerMemberList(members: MemberRow[]): MemberRow[] {
+  const filled = members.filter((member) => member.employeeId);
+  const rows: MemberRow[] = filled.map((member, index) => ({
+    employeeId: member.employeeId,
+    role:
+      index === 0 && member.role === 'TEAM_LEADER'
+        ? 'TEAM_LEADER'
+        : member.role === 'HELPER'
+          ? 'HELPER'
+          : 'WORKER',
+    slot: index + 1,
+  }));
+
+  while (rows.length < MIN_WORKER_SLOTS) {
+    rows.push({ employeeId: '', role: 'WORKER', slot: rows.length + 1 });
+  }
+
+  if (rows.every((member) => member.employeeId)) {
+    rows.push({ employeeId: '', role: 'WORKER', slot: rows.length + 1 });
+  }
+
+  return normalizeMemberList(rows);
 }
 
 function extractSubTeamsFromMembers(members: MemberRow[]): { splitMode: boolean; members: MemberRow[]; subTeams: subTeamDraft[] } {
@@ -335,8 +356,13 @@ function normalizeDraft(raw: Partial<AsgDraft>, fallbackIndex = 0): AsgDraft {
     breakEnd: String(raw.breakEnd ?? ''),
     remarks: String(raw.remarks ?? ''),
     splitMode,
-    members: splitMode ? [] : baseMembers,
-    subTeams: splitMode ? subTeams : [],
+    members: splitMode ? [] : normalizeWorkerMemberList(baseMembers),
+    subTeams: splitMode
+      ? subTeams.map((subTeam) => ({
+          ...subTeam,
+          members: normalizeWorkerMemberList(subTeam.members),
+        }))
+      : [],
   };
 }
 
@@ -358,8 +384,30 @@ function createEmptyDraft(columnIndex: number, label: string): AsgDraft {
     breakEnd: '',
     remarks: '',
     splitMode: false,
-    members: [],
+    members: normalizeWorkerMemberList([]),
     subTeams: [],
+  };
+}
+
+function applyTimingFromTemplate(
+  draft: AsgDraft,
+  timing:
+    | {
+        dutyStart?: string;
+        dutyEnd?: string;
+        breakStart?: string;
+        breakEnd?: string;
+      }
+    | null
+    | undefined
+): AsgDraft {
+  if (!timing) return draft;
+  return {
+    ...draft,
+    dutyStart: draft.dutyStart || timing.dutyStart || '',
+    dutyEnd: draft.dutyEnd || timing.dutyEnd || '',
+    breakStart: draft.breakStart || timing.breakStart || '',
+    breakEnd: draft.breakEnd || timing.breakEnd || '',
   };
 }
 
@@ -411,7 +459,7 @@ function parseJobExpertise(job: JobOpt | undefined): string[] {
 const FIELD_ROWS: { key: string; label: string }[] = [
   { key: 'locationType', label: 'Location' },
   { key: 'job', label: 'Job number' },
-  { key: 'jobCompany', label: 'Customer / reference' },
+  { key: 'jobCompany', label: 'Customer' },
   { key: 'workProcessDetails', label: 'Work process details' },
   { key: 'dutyRange', label: 'Duty in / duty out' },
   { key: 'breakRange', label: 'Break out / break in' },
@@ -507,14 +555,6 @@ export default function HrScheduleDayPage() {
   const [showRowLabels, setShowRowLabels] = useState(() => readStoredScheduleViewPrefs().showRowLabels);
   const [viewScale, setViewScale] = useState(() => readStoredScheduleViewPrefs().viewScale);
   const [useLightGridTheme, setUseLightGridTheme] = useState(() => readStoredScheduleViewPrefs().useLightGridTheme);
-  const [draggingWorkerId, setDraggingWorkerId] = useState('');
-  const [workerDragSessionActive, setWorkerDragSessionActive] = useState(false);
-  const [activeDropColumn, setActiveDropColumn] = useState<number | null>(null);
-  const [activeDropSubTeam, setActiveDropSubTeam] = useState<number | null>(null);
-  const isWorkerDragActive = workerDragSessionActive;
-  const workerDragSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
   const [undoStack, setUndoStack] = useState<AsgDraft[][]>([]);
   const [redoStack, setRedoStack] = useState<AsgDraft[][]>([]);
   const suspendHistoryRef = useRef(false);
@@ -522,11 +562,13 @@ export default function HrScheduleDayPage() {
   const draftsRef = useRef<AsgDraft[]>([]);
   const teamBoardBodyRef = useRef<HTMLDivElement>(null);
   const [workerRailMaxHeight, setWorkerRailMaxHeight] = useState<number | null>(null);
+  const [pendingWorkerCreate, setPendingWorkerCreate] = useState<PendingWorkerCreate | null>(null);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.schedule.view');
   const canEdit = isSA || perms.includes('hr.schedule.edit');
+  const canCreateEmployee = isSA || perms.includes('hr.employee.edit');
   const canPub = isSA || perms.includes('hr.schedule.publish');
   const status = schedule && typeof schedule === 'object' ? String((schedule as { status?: string }).status ?? '') : '';
   const locked = status === 'LOCKED';
@@ -674,11 +716,10 @@ export default function HrScheduleDayPage() {
     [getRowThemeClasses],
   );
 
-  const teamHeaderCls = (colIdx: number) =>
+  const teamHeaderCls = () =>
     cn(
       TEAM_COLUMN_CLASS,
       'sticky top-0 z-20 border-b border-border bg-muted px-3 py-3 text-left align-top',
-      getColumnDragDimmedCls(colIdx),
     );
 
   const mergeEmployees = useCallback((rows: ScheduleEmployeeRow[] | EmployeeProfile[]) => {
@@ -698,7 +739,10 @@ export default function HrScheduleDayPage() {
   const mergeJobs = useCallback((rows: ScheduleJobRow[] | JobOpt[]) => {
     setJobById((prev) => {
       const next = new Map(prev);
-      for (const row of rows) next.set(row.id, row as JobOpt);
+      for (const row of rows) {
+        const normalized = normalizeScheduleJobRow(row as ScheduleJobRow & { customer?: { name?: string | null } });
+        next.set(normalized.id, normalized as JobOpt);
+      }
       return next;
     });
   }, []);
@@ -748,6 +792,23 @@ export default function HrScheduleDayPage() {
 
   const mapFromApi = useCallback((sch: Record<string, unknown>) => {
     const asg = (sch.assignments as Array<Record<string, unknown>>) ?? [];
+    const jobsFromAssignments = asg
+      .map((a) => a.job as Record<string, unknown> | undefined)
+      .filter((job): job is Record<string, unknown> => Boolean(job?.id))
+      .map((job) =>
+        normalizeScheduleJobRow({
+          id: String(job.id),
+          jobNumber: String(job.jobNumber ?? ''),
+          customerName: String((job.customer as { name?: string } | undefined)?.name ?? ''),
+          description: (job.description as string | null | undefined) ?? null,
+          projectDetails: (job.projectDetails as string | null | undefined) ?? null,
+          quotationNumber: (job.quotationNumber as string | null | undefined) ?? null,
+          lpoNumber: (job.lpoNumber as string | null | undefined) ?? null,
+          site: (job.site as string | null | undefined) ?? null,
+          customer: job.customer as { name?: string | null } | null | undefined,
+        })
+      );
+    if (jobsFromAssignments.length > 0) mergeJobs(jobsFromAssignments);
     suspendHistoryRef.current = true;
     setScheduleInfo(String((sch as { notes?: string | null }).notes ?? ''));
     setDrafts(
@@ -791,7 +852,7 @@ export default function HrScheduleDayPage() {
     queueMicrotask(() => {
       suspendHistoryRef.current = false;
     });
-  }, []);
+  }, [mergeJobs]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -1249,13 +1310,19 @@ export default function HrScheduleDayPage() {
   const addColumn = () => {
     applyDrafts((prev) => {
       const nextNumber = getNextTeamNumber(prev);
-      return [
-        ...prev,
-        createEmptyDraft(
-          prev.length ? Math.max(...prev.map((x) => x.columnIndex)) + 1 : 1,
-          `Team#${nextNumber}`
-        ),
-      ];
+      const empty = createEmptyDraft(
+        prev.length ? Math.max(...prev.map((x) => x.columnIndex)) + 1 : 1,
+        `Team#${nextNumber}`
+      );
+      const timing = labourTypeTiming
+        ? {
+            dutyStart: labourTypeTiming.dutyStart,
+            dutyEnd: labourTypeTiming.dutyEnd,
+            breakStart: labourTypeTiming.breakStart,
+            breakEnd: labourTypeTiming.breakEnd,
+          }
+        : null;
+      return [...prev, applyTimingFromTemplate(empty, timing)];
     });
   };
 
@@ -1500,7 +1567,7 @@ export default function HrScheduleDayPage() {
           return {
             ...row,
             splitMode: false,
-            members: normalizeMemberList(row.subTeams.flatMap((subTeam) => subTeam.members)),
+            members: normalizeWorkerMemberList(row.subTeams.flatMap((subTeam) => subTeam.members)),
             subTeams: [],
           };
         }
@@ -1511,7 +1578,7 @@ export default function HrScheduleDayPage() {
           subTeams: [
             {
               ...createEmptySubTeam(0),
-              members: normalizeMemberList(row.members),
+              members: normalizeWorkerMemberList(row.members),
             },
           ],
         };
@@ -1525,49 +1592,14 @@ export default function HrScheduleDayPage() {
         if (employeeId && getDraftAssignedIds(row, { excludeFlatMemberIndex: memberIndex }).has(employeeId)) {
           return row;
         }
+        const updated = row.members.map((member, index) =>
+          index === memberIndex ? { ...member, employeeId, slot: memberIndex + 1 } : member
+        );
         return {
           ...row,
-          members: row.members.map((member, index) =>
-            index === memberIndex ? { ...member, employeeId, slot: memberIndex + 1 } : member
-          ),
+          members: normalizeWorkerMemberList(updated),
         };
       })
-    );
-
-  const addFlatMember = (colIdx: number, employeeId = '') =>
-    applyDrafts((rows) =>
-      rows.map((row, idx) => {
-        if (idx !== colIdx || row.splitMode) return row;
-        if (employeeId && getDraftAssignedIds(row).has(employeeId)) return row;
-        const emptyIndex = row.members.findIndex((member) => !member.employeeId);
-        if (emptyIndex >= 0) {
-          return {
-            ...row,
-            members: row.members.map((member, index) =>
-              index === emptyIndex ? { ...member, employeeId, slot: index + 1 } : member
-            ),
-          };
-        }
-        return {
-          ...row,
-          members: [
-            ...row.members,
-            { employeeId, role: 'WORKER' as const, slot: row.members.length + 1 },
-          ],
-        };
-      })
-    );
-
-  const removeFlatMember = (colIdx: number, memberIndex: number) =>
-    applyDrafts((rows) =>
-      rows.map((row, idx) =>
-        idx === colIdx && !row.splitMode
-          ? {
-              ...row,
-              members: normalizeMemberList(row.members.filter((_, index) => index !== memberIndex)),
-            }
-          : row
-      )
     );
 
   const addSubTeam = (colIdx: number) =>
@@ -1631,10 +1663,12 @@ export default function HrScheduleDayPage() {
             index === subTeamIndex
               ? {
                   ...subTeam,
-                  members: subTeam.members.map((member, innerIndex) =>
-                    innerIndex === memberIndex
-                      ? { ...member, employeeId, slot: memberIndex + 1 }
-                      : member
+                  members: normalizeWorkerMemberList(
+                    subTeam.members.map((member, innerIndex) =>
+                      innerIndex === memberIndex
+                        ? { ...member, employeeId, slot: memberIndex + 1 }
+                        : member
+                    )
                   ),
                 }
               : subTeam
@@ -1643,55 +1677,50 @@ export default function HrScheduleDayPage() {
       })
     );
 
-  const addSubTeamMember = (colIdx: number, subTeamIndex: number, employeeId = '') =>
-    applyDrafts((rows) =>
-      rows.map((row, idx) => {
-        if (idx !== colIdx || !row.splitMode) return row;
-        if (employeeId && getDraftAssignedIds(row).has(employeeId)) return row;
-        return {
-          ...row,
-          subTeams: row.subTeams.map((subTeam, index) => {
-            if (index !== subTeamIndex) return subTeam;
-            const emptyIndex = subTeam.members.findIndex((member) => !member.employeeId);
-            if (emptyIndex >= 0) {
-              return {
-                ...subTeam,
-                members: subTeam.members.map((member, innerIndex) =>
-                  innerIndex === emptyIndex
-                    ? { ...member, employeeId, slot: innerIndex + 1 }
-                    : member
-                ),
-              };
-            }
-            return {
-              ...subTeam,
-              members: [
-                ...subTeam.members,
-                { employeeId, role: 'WORKER' as const, slot: subTeam.members.length + 1 },
-              ],
-            };
-          }),
-        };
-      })
-    );
+  const openWorkerCreateModal = useCallback((suggestedName: string, target: WorkerCreateTarget) => {
+    const trimmed = suggestedName.trim();
+    if (!trimmed) return;
+    setPendingWorkerCreate({ suggestedName: trimmed, target });
+  }, []);
 
-  const removeSubTeamMember = (colIdx: number, subTeamIndex: number, memberIndex: number) =>
-    applyDrafts((rows) =>
-      rows.map((row, idx) => {
-        if (idx !== colIdx || !row.splitMode) return row;
-        return {
-          ...row,
-          subTeams: row.subTeams.map((subTeam, index) =>
-            index === subTeamIndex
-              ? {
-                  ...subTeam,
-                  members: normalizeMemberList(subTeam.members.filter((_, innerIndex) => innerIndex !== memberIndex)),
-                }
-              : subTeam
-          ),
-        };
-      })
-    );
+  const buildWorkerEmptyAction = useCallback(
+    (target: WorkerCreateTarget) => {
+      if (!canCreateEmployee || dis) return undefined;
+      return {
+        label: (query: string) => `Create employee "${query.trim()}"`,
+        onAction: (query: string) => openWorkerCreateModal(query, target),
+      };
+    },
+    [canCreateEmployee, dis, openWorkerCreateModal],
+  );
+
+  const handleWorkerEmployeeCreated = (
+    employee: {
+      id: string;
+      fullName: string;
+      preferredName: string | null;
+      employeeCode: string;
+      profileExtension?: unknown;
+    },
+  ) => {
+    const row: ScheduleEmployeeRow = {
+      id: employee.id,
+      fullName: employee.fullName,
+      preferredName: employee.preferredName,
+      employeeCode: employee.employeeCode,
+      status: 'ACTIVE',
+      profileExtension: employee.profileExtension,
+    };
+    mergeEmployees([toScheduleEmployee(row)]);
+
+    const target = pendingWorkerCreate?.target;
+    if (!target) return;
+    if (target.kind === 'flat') {
+      updateFlatMember(target.colIdx, target.memberIndex, employee.id);
+    } else {
+      updateSubTeamMember(target.colIdx, target.subTeamIndex, target.memberIndex, employee.id);
+    }
+  };
 
   const addWorkerToTeam = (colIdx: number, employeeId: string) =>
     applyDrafts((rows) =>
@@ -1700,17 +1729,15 @@ export default function HrScheduleDayPage() {
         if (getDraftAssignedIds(row).has(employeeId)) return row;
         if (!row.splitMode) {
           const emptyIndex = row.members.findIndex((member) => !member.employeeId);
-          if (emptyIndex >= 0) {
-            return {
-              ...row,
-              members: row.members.map((member, index) =>
-                index === emptyIndex ? { ...member, employeeId, slot: index + 1 } : member
-              ),
-            };
-          }
+          const updated =
+            emptyIndex >= 0
+              ? row.members.map((member, index) =>
+                  index === emptyIndex ? { ...member, employeeId, slot: index + 1 } : member
+                )
+              : [...row.members, { employeeId, role: 'WORKER' as const, slot: row.members.length + 1 }];
           return {
             ...row,
-            members: [...row.members, { employeeId, role: 'WORKER' as const, slot: row.members.length + 1 }],
+            members: normalizeWorkerMemberList(updated),
           };
         }
         const targetIndex = row.subTeams.length > 0 ? row.subTeams.length - 1 : 0;
@@ -1719,159 +1746,26 @@ export default function HrScheduleDayPage() {
           ...row,
           splitMode: true,
           members: [],
-          subTeams: nextSubTeams.map((subTeam, index) =>
-            index === targetIndex
-              ? {
-                  ...subTeam,
-                  members: [...subTeam.members, { employeeId, role: 'WORKER' as const, slot: subTeam.members.length + 1 }],
-                }
-              : subTeam
-          ),
-        };
-      })
-    );
-
-  const endWorkerDragSession = useCallback(() => {
-    setDraggingWorkerId('');
-    setWorkerDragSessionActive(false);
-    setActiveDropColumn(null);
-    setActiveDropSubTeam(null);
-  }, []);
-
-  const assignWorkerToSubTeam = (colIdx: number, subTeamIndex: number, employeeId: string) => {
-    applyDrafts((rows) =>
-      rows.map((row, idx) => {
-        if (idx !== colIdx) return row;
-        if (!row.splitMode) {
-          if (getDraftAssignedIds(row).has(employeeId)) return row;
-          const emptyIndex = row.members.findIndex((member) => !member.employeeId);
-          if (emptyIndex >= 0) {
-            return {
-              ...row,
-              members: row.members.map((member, index) =>
-                index === emptyIndex ? { ...member, employeeId, slot: index + 1 } : member
-              ),
-            };
-          }
-          return {
-            ...row,
-            members: [...row.members, { employeeId, role: 'WORKER' as const, slot: row.members.length + 1 }],
-          };
-        }
-        if (getDraftAssignedIds(row).has(employeeId)) return row;
-        const nextSubTeams = [...row.subTeams];
-        while (nextSubTeams.length <= subTeamIndex) {
-          nextSubTeams.push(createEmptySubTeam(nextSubTeams.length));
-        }
-        return {
-          ...row,
-          members: [],
           subTeams: nextSubTeams.map((subTeam, index) => {
-            if (index !== subTeamIndex) return subTeam;
+            if (index !== targetIndex) return subTeam;
             const emptyIndex = subTeam.members.findIndex((member) => !member.employeeId);
-            if (emptyIndex >= 0) {
-              return {
-                ...subTeam,
-                members: subTeam.members.map((member, innerIndex) =>
-                  innerIndex === emptyIndex
-                    ? { ...member, employeeId, slot: innerIndex + 1 }
-                    : member
-                ),
-              };
-            }
+            const updated =
+              emptyIndex >= 0
+                ? subTeam.members.map((member, innerIndex) =>
+                    innerIndex === emptyIndex ? { ...member, employeeId, slot: innerIndex + 1 } : member
+                  )
+                : [
+                    ...subTeam.members,
+                    { employeeId, role: 'WORKER' as const, slot: subTeam.members.length + 1 },
+                  ];
             return {
               ...subTeam,
-              members: [
-                ...subTeam.members,
-                { employeeId, role: 'WORKER' as const, slot: subTeam.members.length + 1 },
-              ],
+              members: normalizeWorkerMemberList(updated),
             };
           }),
         };
       })
     );
-  };
-
-  const handleScheduleWorkerDragStart = useCallback(
-    (event: DragStartEvent) => {
-      if (dis) return;
-      const employeeId = parseScheduleWorkerDragId(event.active.id);
-      if (!employeeId) return;
-      setDraggingWorkerId(employeeId);
-      setWorkerDragSessionActive(true);
-      setActiveDropColumn(null);
-      setActiveDropSubTeam(null);
-    },
-    [dis],
-  );
-
-  const handleScheduleWorkerDragOver = useCallback((event: DragOverEvent) => {
-    const target = event.over ? parseScheduleTeamDropId(event.over.id) : null;
-    if (!target) {
-      setActiveDropColumn(null);
-      setActiveDropSubTeam(null);
-      return;
-    }
-    setActiveDropColumn(target.colIdx);
-    setActiveDropSubTeam(target.subTeamIndex);
-  }, []);
-
-  const handleScheduleWorkerDragEnd = (event: DragEndEvent) => {
-    const employeeId = parseScheduleWorkerDragId(event.active.id);
-    const target = event.over ? parseScheduleTeamDropId(event.over.id) : null;
-    endWorkerDragSession();
-    if (dis || !employeeId || !target) return;
-
-    const draft = draftsRef.current[target.colIdx];
-    if (!draft) return;
-
-    if (draft.splitMode || target.subTeamIndex !== null) {
-      assignWorkerToSubTeam(target.colIdx, target.subTeamIndex ?? 0, employeeId);
-      return;
-    }
-    addWorkerToTeam(target.colIdx, employeeId);
-  };
-
-  const handleScheduleWorkerDragCancel = useCallback(() => {
-    endWorkerDragSession();
-  }, [endWorkerDragSession]);
-
-  const draggingWorkerOverlay = useMemo(() => {
-    if (!draggingWorkerId) return null;
-    const employee = employeeById.get(draggingWorkerId);
-    if (!employee) return null;
-    return employee;
-  }, [draggingWorkerId, employeeById]);
-
-  const getColumnDragDimmedCls = useCallback(
-    (colIdx: number) => {
-      if (!isWorkerDragActive) return '';
-      const isTargetColumn = activeDropColumn === colIdx;
-      return cn(
-        'select-none transition-all duration-150',
-        isTargetColumn ? 'opacity-30 blur-[3px] saturate-50' : 'opacity-50 blur-[1.5px]',
-      );
-    },
-    [activeDropColumn, isWorkerDragActive],
-  );
-
-  const getWorkersColumnDragCls = useCallback(
-    (colIdx: number) => {
-      if (!isWorkerDragActive) return '';
-      const isTargetColumn = activeDropColumn === colIdx;
-      return cn(
-        'relative z-10',
-        isTargetColumn ? 'bg-primary/5' : 'opacity-80',
-      );
-    },
-    [activeDropColumn, isWorkerDragActive],
-  );
-
-  const isColumnFieldLocked = useCallback(
-    (colIdx: number) => isWorkerDragActive && activeDropColumn === colIdx,
-    [activeDropColumn, isWorkerDragActive],
-  );
-
 
   const empName = useCallback(
     (id: string) => {
@@ -1926,59 +1820,6 @@ export default function HrScheduleDayPage() {
     }),
     [handleScheduleGridKeyDown]
   );
-
-  const labourDefaultTiming = useMemo(
-    () =>
-      labourTypeTiming
-        ? {
-            dutyStart: labourTypeTiming.dutyStart,
-            dutyEnd: labourTypeTiming.dutyEnd,
-            breakStart: labourTypeTiming.breakStart,
-            breakEnd: labourTypeTiming.breakEnd,
-          }
-        : null,
-    [labourTypeTiming]
-  );
-
-  function applyTimingFromTemplate(
-    draft: AsgDraft,
-    timing:
-      | {
-          dutyStart?: string;
-          dutyEnd?: string;
-          breakStart?: string;
-          breakEnd?: string;
-        }
-      | null
-      | undefined
-  ): AsgDraft {
-    if (!timing) return draft;
-    return {
-      ...draft,
-      dutyStart: draft.dutyStart || timing.dutyStart || '',
-      dutyEnd: draft.dutyEnd || timing.dutyEnd || '',
-      breakStart: draft.breakStart || timing.breakStart || '',
-      breakEnd: draft.breakEnd || timing.breakEnd || '',
-    };
-  }
-
-  function fillTimingTemplate(colIdx: number, mode: 'worker' | 'clear') {
-    applyDrafts((rows) =>
-      rows.map((row, idx) => {
-        if (idx !== colIdx) return row;
-        if (mode === 'clear') {
-          return {
-            ...row,
-            dutyStart: '',
-            dutyEnd: '',
-            breakStart: '',
-            breakEnd: '',
-            };
-          }
-          return applyTimingFromTemplate(row, labourDefaultTiming);
-        })
-    );
-  }
 
   const suggestedWorkersByColumn = useMemo(() => {
     const byColumn = new Map<number, EmployeeProfile[]>();
@@ -2219,25 +2060,8 @@ export default function HrScheduleDayPage() {
     );
   }
 
-  const renderWorkerDropAreas = (draft: AsgDraft, colIdx: number) => (
-    <div className="flex min-h-32 flex-col gap-2">
-      {[0, 1].map((subTeamIndex) => (
-        <ScheduleTeamDropZone
-          key={`sub-drop-${subTeamIndex}`}
-          dropId={scheduleTeamDropId(colIdx, subTeamIndex)}
-          label={draft.subTeams[subTeamIndex]?.label?.trim() || `Sub-team ${subTeamIndex + 1}`}
-          isHighlighted={
-            isWorkerDragActive &&
-            activeDropColumn === colIdx &&
-            activeDropSubTeam === subTeamIndex
-          }
-        />
-      ))}
-    </div>
-  );
-
   const renderCell = (d: AsgDraft, colIdx: number, fieldKey: string) => {
-    const fieldDisabled = dis || isColumnFieldLocked(colIdx);
+    const fieldDisabled = dis;
 
     switch (fieldKey) {
       case 'locationType': {
@@ -2308,17 +2132,16 @@ export default function HrScheduleDayPage() {
         );
       case 'jobCompany': {
         const job = getJob(d.jobId);
+        const customerName = String(job?.customerName ?? '').trim();
         return (
-          <div className="flex min-h-9 items-center px-2 py-1.5">
-            <span className="truncate text-xs text-foreground/90" title={job?.customerName || undefined}>
-              {job?.customerName?.trim() || '—'}
+          <div className="flex min-h-4 items-center px-2 py-1">
+            <span className="truncate text-xs text-foreground/90" title={customerName || undefined}>
+              {customerName || '—'}
             </span>
           </div>
         );
       }
       case 'workProcessDetails': {
-        const job = getJob(d.jobId);
-        const resolvedWorkProcess = resolveWorkProcessDetails(d.workProcessDetails, job);
         return (
           <div className="space-y-1 px-2 py-1.5">
             <textarea
@@ -2330,11 +2153,6 @@ export default function HrScheduleDayPage() {
               className={gridTextareaCls}
               {...getGridNavProps(NAV_ROW.workProcess, colIdx + 1)}
             />
-            {resolvedWorkProcess ? (
-              <p className="text-[10px] text-muted-foreground">
-                This value is loaded from the job and will update the job when you save.
-              </p>
-            ) : null}
           </div>
         );
       }
@@ -2375,23 +2193,25 @@ export default function HrScheduleDayPage() {
             <div className="grid grid-cols-2 gap-1">
               <div>
                 <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Duty in</p>
-                <input type="time" value={d.dutyStart} onChange={(e) => upd(colIdx, { dutyStart: e.target.value })} disabled={fieldDisabled} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 0)} />
+                <TimeEntryInput
+                  value={d.dutyStart}
+                  onChange={(value) => upd(colIdx, { dutyStart: value })}
+                  disabled={fieldDisabled}
+                  className={gridFlatInputCls}
+                  {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 0)}
+                />
               </div>
               <div>
                 <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Duty out</p>
-                <input type="time" value={d.dutyEnd} onChange={(e) => upd(colIdx, { dutyEnd: e.target.value })} disabled={fieldDisabled} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 1)} />
+                <TimeEntryInput
+                  value={d.dutyEnd}
+                  onChange={(value) => upd(colIdx, { dutyEnd: value })}
+                  disabled={fieldDisabled}
+                  className={gridFlatInputCls}
+                  {...getGridNavProps(NAV_ROW.duty, colIdx + 1, 1)}
+                />
               </div>
             </div>
-            {!dis && (
-              <div className="flex flex-wrap gap-1">
-                <button type="button" onClick={() => fillTimingTemplate(colIdx, 'worker')} className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted">
-                  Use worker default
-                </button>
-                <button type="button" onClick={() => fillTimingTemplate(colIdx, 'clear')} className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted">
-                  Clear timing
-                </button>
-              </div>
-            )}
           </div>
         );
       case 'breakRange':
@@ -2399,11 +2219,23 @@ export default function HrScheduleDayPage() {
           <div className="grid grid-cols-2 gap-1 px-2 py-1.5">
             <div>
               <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Break out</p>
-              <input type="time" value={d.breakStart} onChange={(e) => upd(colIdx, { breakStart: e.target.value })} disabled={dis} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.break, colIdx + 1, 0)} />
+              <TimeEntryInput
+                value={d.breakStart}
+                onChange={(value) => upd(colIdx, { breakStart: value })}
+                disabled={dis}
+                className={gridFlatInputCls}
+                {...getGridNavProps(NAV_ROW.break, colIdx + 1, 0)}
+              />
             </div>
             <div>
               <p className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Break in</p>
-              <input type="time" value={d.breakEnd} onChange={(e) => upd(colIdx, { breakEnd: e.target.value })} disabled={dis} className={gridFlatInputCls} {...getGridNavProps(NAV_ROW.break, colIdx + 1, 1)} />
+              <TimeEntryInput
+                value={d.breakEnd}
+                onChange={(value) => upd(colIdx, { breakEnd: value })}
+                disabled={dis}
+                className={gridFlatInputCls}
+                {...getGridNavProps(NAV_ROW.break, colIdx + 1, 1)}
+              />
             </div>
           </div>
         );
@@ -2425,11 +2257,11 @@ export default function HrScheduleDayPage() {
 
   const renderWorkersCell = (draft: AsgDraft, colIdx: number) => {
     const blockCls = 'rounded-lg border border-border bg-muted/30 p-2';
-    const fieldDisabled = dis || isColumnFieldLocked(colIdx);
+    const fieldDisabled = dis;
 
     return (
       <div className="min-w-0 space-y-2">
-        {!dis && !isWorkerDragActive && (
+        {!dis && (
           <div className="flex flex-wrap items-center gap-1">
             <Button type="button" variant="outline" size="sm" onClick={() => toggleSplitMode(colIdx)}>
               {draft.splitMode ? 'Use single team' : 'Split team'}
@@ -2447,44 +2279,26 @@ export default function HrScheduleDayPage() {
             {draft.members.map((member, memberIndex) => {
               const isMulti = member.employeeId ? multiAssigned.has(member.employeeId) : false;
               return (
-                <div key={`flat-worker-${memberIndex}`} className={`flex items-center gap-1 ${isMulti ? 'rounded ring-2 ring-amber-400/60' : ''}`}>
-                  <div className="flex-1">
-                    <SearchSelect
-                      items={getSelectableWorkerItems(draft, { excludeFlatMemberIndex: memberIndex })}
-                      value={member.employeeId}
-                      onChange={(value) => updateFlatMember(colIdx, memberIndex, value)}
-                      placeholder={memberIndex === 0 ? 'Team Leader' : `Worker ${memberIndex}`}
-                      disabled={fieldDisabled}
-                      minCharactersToSearch={1}
-                      inputProps={{ className: SCHEDULE_GRID_SEARCH_INPUT }}
-                    />
-                  </div>
-                  {!dis && !isWorkerDragActive && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => removeFlatMember(colIdx, memberIndex)}
-                      title="Remove worker"
-                      aria-label="Remove worker"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                <div
+                  key={`flat-worker-${memberIndex}`}
+                  className={isMulti ? 'rounded ring-2 ring-amber-400/60' : ''}
+                >
+                  <SearchSelect
+                    items={getSelectableWorkerItems(draft, { excludeFlatMemberIndex: memberIndex })}
+                    value={member.employeeId}
+                    onChange={(value) => updateFlatMember(colIdx, memberIndex, value)}
+                    placeholder={memberIndex === 0 ? 'Team Leader' : ``}
+                    disabled={fieldDisabled}
+                    minCharactersToSearch={1}
+                    allowClearButton={false}
+                    clearOnEmptyInput
+                    dropdownInPortal
+                    emptyAction={buildWorkerEmptyAction({ kind: 'flat', colIdx, memberIndex })}
+                    inputProps={{ className: SCHEDULE_GRID_SEARCH_INPUT }}
+                  />
                 </div>
               );
             })}
-            {!dis && !isWorkerDragActive && (
-              <button
-                type="button"
-                onClick={() => addFlatMember(colIdx)}
-                className="text-xs font-semibold text-primary hover:underline"
-                {...getGridNavProps(NAV_ROW.workers, colIdx + 1)}
-              >
-                + Add worker
-              </button>
-            )}
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -2501,7 +2315,7 @@ export default function HrScheduleDayPage() {
                     className={cn(gridFlatInputCls, 'min-w-36 flex-1')}
                     placeholder={nextSubTeamLabel(subTeamIndex)}
                   />
-                  {!dis && !isWorkerDragActive && (
+                  {!dis && (
                     <Button type="button" variant="destructive" size="sm" onClick={() => removeSubTeam(colIdx, subTeamIndex)}>
                       Remove
                     </Button>
@@ -2511,42 +2325,34 @@ export default function HrScheduleDayPage() {
                   {subTeam.members.map((member, memberIndex) => {
                     const isMulti = member.employeeId ? multiAssigned.has(member.employeeId) : false;
                     return (
-                      <div key={`${subTeam.id}-member-${memberIndex}`} className={`flex items-center gap-1 ${isMulti ? 'rounded ring-2 ring-amber-400/60' : ''}`}>
-                        <div className="flex-1">
-                          <SearchSelect
-                            items={getSelectableWorkerItems(draft, {
-                              excludeSubTeamIndex: subTeamIndex,
-                              excludeSubTeamMemberIndex: memberIndex,
-                            })}
-                            value={member.employeeId}
-                            onChange={(value) => updateSubTeamMember(colIdx, subTeamIndex, memberIndex, value)}
-                            placeholder={memberIndex === 0 ? 'Team Leader' : `Worker ${memberIndex}`}
-                            disabled={fieldDisabled}
-                            minCharactersToSearch={1}
-                            inputProps={{ className: SCHEDULE_GRID_SEARCH_INPUT }}
-                          />
-                        </div>
-                        {!dis && !isWorkerDragActive && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
-                            onClick={() => removeSubTeamMember(colIdx, subTeamIndex, memberIndex)}
-                            title="Remove worker"
-                            aria-label="Remove worker"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
+                      <div
+                        key={`${subTeam.id}-member-${memberIndex}`}
+                        className={isMulti ? 'rounded ring-2 ring-amber-400/60' : ''}
+                      >
+                        <SearchSelect
+                          items={getSelectableWorkerItems(draft, {
+                            excludeSubTeamIndex: subTeamIndex,
+                            excludeSubTeamMemberIndex: memberIndex,
+                          })}
+                          value={member.employeeId}
+                          onChange={(value) => updateSubTeamMember(colIdx, subTeamIndex, memberIndex, value)}
+                          placeholder={memberIndex === 0 ? 'Team Leader' : ``}
+                          disabled={fieldDisabled}
+                          minCharactersToSearch={1}
+                          allowClearButton={false}
+                          clearOnEmptyInput
+                          dropdownInPortal
+                          emptyAction={buildWorkerEmptyAction({
+                            kind: 'subTeam',
+                            colIdx,
+                            subTeamIndex,
+                            memberIndex,
+                          })}
+                          inputProps={{ className: SCHEDULE_GRID_SEARCH_INPUT }}
+                        />
                       </div>
                     );
                   })}
-                  {!dis && !isWorkerDragActive && (
-                    <button type="button" onClick={() => addSubTeamMember(colIdx, subTeamIndex)} className="text-xs text-emerald-400 hover:text-emerald-300">
-                      + Add worker
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -2639,18 +2445,12 @@ export default function HrScheduleDayPage() {
       ) : null}
 
       {schedule ? (
-        <DndContext
-          sensors={workerDragSensors}
-          onDragStart={handleScheduleWorkerDragStart}
-          onDragOver={handleScheduleWorkerDragOver}
-          onDragEnd={handleScheduleWorkerDragEnd}
-          onDragCancel={handleScheduleWorkerDragCancel}
-        >
+        <>
         <div
           className={cn(
             'grid gap-5',
             showWorkerRail
-              ? 'xl:grid-cols-[1fr_17rem] xl:items-stretch'
+              ? 'xl:grid-cols-[1fr_12rem] xl:items-stretch'
               : 'grid-cols-1',
           )}
         >
@@ -2744,7 +2544,7 @@ export default function HrScheduleDayPage() {
                       <th
                         key={ci}
                         scope="col"
-                        className={teamHeaderCls(ci)}
+                        className={teamHeaderCls()}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <Badge variant="secondary" className="shrink-0">
@@ -2807,7 +2607,7 @@ export default function HrScheduleDayPage() {
                     {drafts.map((d, ci) => (
                       <td
                         key={ci}
-                        className={cn(plannerCellCls(f.key), getColumnDragDimmedCls(ci))}
+                        className={plannerCellCls(f.key)}
                       >
                         <div className="min-w-0">{renderCell(d, ci, f.key)}</div>
                       </td>
@@ -2818,42 +2618,8 @@ export default function HrScheduleDayPage() {
                 <tr className={getRowThemeClasses('workers').row}>
                   {showRowLabels && <th className={getRowThemeClasses('workers').label}>Workers</th>}
                   {drafts.map((d, ci) => (
-                    <td
-                      key={ci}
-                      className={cn(
-                        plannerCellCls('workers'),
-                        getWorkersColumnDragCls(ci),
-                      )}
-                    >
-                      <div className="relative min-h-20 min-w-0">
-                        {isWorkerDragActive ? (
-                          <>
-                            <div
-                              className={cn(
-                                'pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-md transition-all duration-150',
-                                activeDropColumn === ci ? 'opacity-25 blur-xs' : 'opacity-40 blur-[2px]',
-                              )}
-                              aria-hidden
-                            >
-                              {renderWorkersCell(d, ci)}
-                            </div>
-                            {d.splitMode ? (
-                              <div className="relative z-10 p-2">{renderWorkerDropAreas(d, ci)}</div>
-                            ) : (
-                              <ScheduleFlatTeamDropSurface
-                                colIdx={ci}
-                                isHighlighted={
-                                  isWorkerDragActive &&
-                                  activeDropColumn === ci &&
-                                  activeDropSubTeam === null
-                                }
-                              />
-                            )}
-                          </>
-                        ) : (
-                          renderWorkersCell(d, ci)
-                        )}
-                      </div>
+                    <td key={ci} className={plannerCellCls('workers')}>
+                      <div className="relative min-h-20 min-w-0">{renderWorkersCell(d, ci)}</div>
                     </td>
                   ))}
                 </tr>
@@ -2863,7 +2629,7 @@ export default function HrScheduleDayPage() {
                   {drafts.map((d, ci) => (
                     <td
                       key={ci}
-                      className={cn(plannerCellCls('workerCount'), getColumnDragDimmedCls(ci))}
+                      className={plannerCellCls('workerCount')}
                     >
                         <div className="inline-flex min-w-12 items-center justify-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground">
                         {getDraftWorkerCount(d)}
@@ -2881,7 +2647,7 @@ export default function HrScheduleDayPage() {
                     return (
                       <td
                         key={ci}
-                        className={cn(plannerCellCls('suggestedWorkers'), getColumnDragDimmedCls(ci))}
+                        className={plannerCellCls('suggestedWorkers')}
                       >
                         {required.length === 0 ? (
                           <p className="text-[11px] text-muted-foreground">No job expertise configured yet.</p>
@@ -2893,7 +2659,7 @@ export default function HrScheduleDayPage() {
                               <button
                                 key={w.id}
                                 type="button"
-                                disabled={dis || isColumnFieldLocked(ci)}
+                                disabled={dis}
                                 onClick={() => addWorkerToTeam(ci, w.id)}
                                 className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-800 hover:bg-emerald-500/20 disabled:opacity-60 dark:text-emerald-300"
                                 title={w.workforce.expertises.join(', ')}
@@ -2913,7 +2679,7 @@ export default function HrScheduleDayPage() {
                   {drafts.map((d, ci) => (
                     <td
                       key={ci}
-                      className={cn(plannerCellCls('targetQty'), getColumnDragDimmedCls(ci))}
+                      className={plannerCellCls('targetQty')}
                     >
                       <div className="min-w-0">{renderCell(d, ci, 'targetQty')}</div>
                     </td>
@@ -2925,7 +2691,7 @@ export default function HrScheduleDayPage() {
                   {drafts.map((d, ci) => (
                     <td
                       key={ci}
-                      className={cn(plannerCellCls('driver1EmployeeId'), getColumnDragDimmedCls(ci))}
+                      className={plannerCellCls('driver1EmployeeId')}
                     >
                       <div className="min-w-0">{renderCell(d, ci, 'driver1EmployeeId')}</div>
                     </td>
@@ -2937,7 +2703,7 @@ export default function HrScheduleDayPage() {
                   {drafts.map((d, ci) => (
                     <td
                       key={ci}
-                      className={cn(plannerCellCls('driver2EmployeeId'), getColumnDragDimmedCls(ci))}
+                      className={plannerCellCls('driver2EmployeeId')}
                     >
                       <div className="min-w-0">{renderCell(d, ci, 'driver2EmployeeId')}</div>
                     </td>
@@ -2950,7 +2716,7 @@ export default function HrScheduleDayPage() {
                   {drafts.map((d, ci) => (
                     <td
                       key={ci}
-                      className={cn(plannerCellCls('remarks'), getColumnDragDimmedCls(ci))}
+                      className={plannerCellCls('remarks')}
                     >
                       <div className="min-w-0">{renderCell(d, ci, 'remarks')}</div>
                     </td>
@@ -2972,9 +2738,7 @@ export default function HrScheduleDayPage() {
               <CardHeader className="shrink-0 space-y-1 pb-2">
                 <CardTitle className="text-base">Worker pool</CardTitle>
                 <CardDescription>
-                  {dis
-                    ? 'Drag-and-drop is disabled while the schedule is locked or read-only.'
-                    : `Drag onto a team column · ${unassignedWorkers.length} available${workerPool.length > 0 ? ` of ${workerPool.length} workers` : ''}`}
+                  {`${unassignedWorkers.length} unassigned${workerPool.length > 0 ? ` of ${workerPool.length} workers` : ''}`}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0 pt-0">
@@ -2985,9 +2749,7 @@ export default function HrScheduleDayPage() {
                     ) : unassignedWorkers.length === 0 ? (
                       <p className="text-sm text-muted-foreground">All workers are assigned to teams.</p>
                     ) : (
-                      unassignedWorkers.map((e) => (
-                        <ScheduleWorkerDraggableCard key={e.id} employee={e} disabled={dis} />
-                      ))
+                      unassignedWorkers.map((e) => <ScheduleWorkerPoolCard key={e.id} employee={e} />)
                     )}
                   </div>
                 </div>
@@ -3008,23 +2770,6 @@ export default function HrScheduleDayPage() {
             </Card>
           ) : null}
         </div>
-
-        <ScheduleAbsencesPanel
-          scheduleId={schedule?.id ? String(schedule.id) : null}
-          workDate={workDate}
-          initialAbsences={
-            ((schedule?.absences as Array<{ employeeId: string; reason?: string | null }>) ?? []).map((a) => ({
-              employeeId: a.employeeId,
-              reason: a.reason,
-            }))
-          }
-          employees={employeeProfiles.map((e) => ({
-            id: e.id,
-            fullName: e.preferredName || e.fullName,
-            employeeCode: e.employeeCode,
-          }))}
-          disabled={dis}
-        />
 
         <section className="w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm">
           <div className="border-b border-border px-5 py-4">
@@ -3192,13 +2937,16 @@ export default function HrScheduleDayPage() {
           </div>
         </section>
 
-        <DragOverlay dropAnimation={null}>
-          {draggingWorkerOverlay ? (
-            <ScheduleWorkerDraggableCard employee={draggingWorkerOverlay} isOverlay disabled />
-          ) : null}
-        </DragOverlay>
-        </DndContext>
+        </>
       ) : null}
+
+      <CreateEmployeeModal
+        isOpen={Boolean(pendingWorkerCreate)}
+        onClose={() => setPendingWorkerCreate(null)}
+        initialFullName={pendingWorkerCreate?.suggestedName ?? ''}
+        defaultEmployeeType="LABOUR_WORKER"
+        onCreated={handleWorkerEmployeeCreated}
+      />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState }              from 'react';
-import { useSession }            from 'next-auth/react';
+import { useSession, signOut }   from 'next-auth/react';
 import { useRouter }             from 'next/navigation';
+import { LogOut }                  from 'lucide-react';
 import { useAppDispatch }        from '@/store/hooks';
 import { switchActiveCompany }   from '@/store/slices/companySlice';
 import toast                     from 'react-hot-toast';
@@ -116,6 +117,17 @@ export default function SelectCompanyPage() {
               <p className="text-sm mt-1">Contact your administrator.</p>
             </div>
           )}
+        </div>
+
+        <div className="mt-8 flex justify-center">
+          <button
+            type="button"
+            onClick={() => void signOut({ callbackUrl: '/login' })}
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+          >
+            <LogOut className="h-4 w-4" aria-hidden />
+            Log out
+          </button>
         </div>
       </div>
     </div>

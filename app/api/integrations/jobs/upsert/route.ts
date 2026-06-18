@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { resolveApiCredentialByKey } from '@/lib/integrations/apiKeys';
+import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { integrationDomainCheck } from '@/lib/integrations/domainAllowlist';
 import {
   JobSyncConflictError,
@@ -170,6 +171,12 @@ export async function POST(req: Request) {
         requestBody: rawBody as Prisma.InputJsonValue,
         responseBody: result as Prisma.InputJsonValue,
       },
+    });
+    publishLiveUpdate({
+      companyId: company.id,
+      channel: 'jobs',
+      entity: 'job',
+      action: result.created ? 'created' : 'updated',
     });
     return successResponse(result, result.created ? 201 : 200);
   } catch (err) {

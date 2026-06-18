@@ -1448,6 +1448,44 @@ export function SectionEditor({
                         onChange({ ...section, columns });
                       }} min={0} max={40} />
                     </div>
+                    {col.field === 'workerBlocks' && (
+                      <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+                        <EditorInput
+                          label="Worker name gap (mm)"
+                          type="number"
+                          value={col.workerBlockGapMm ?? ''}
+                          onChange={(v) => {
+                            const columns = [...section.columns];
+                            columns[ci] = {
+                              ...columns[ci],
+                              workerBlockGapMm: Number.isFinite(v) ? v : undefined,
+                            };
+                            onChange({ ...section, columns });
+                          }}
+                          min={0}
+                          max={8}
+                          step={0.1}
+                          placeholder="0.7"
+                        />
+                        <EditorInput
+                          label="Sub-team spacer (mm)"
+                          type="number"
+                          value={col.workerBlockSpacerMm ?? ''}
+                          onChange={(v) => {
+                            const columns = [...section.columns];
+                            columns[ci] = {
+                              ...columns[ci],
+                              workerBlockSpacerMm: Number.isFinite(v) ? v : undefined,
+                            };
+                            onChange({ ...section, columns });
+                          }}
+                          min={0}
+                          max={12}
+                          step={0.1}
+                          placeholder="1.2"
+                        />
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
                       <div className="min-w-0">
                         <label className="block text-xs text-slate-400 mb-1">Horizontal Align</label>

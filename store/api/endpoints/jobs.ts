@@ -1,3 +1,5 @@
+import { JOB_CACHE_INVALIDATES } from '@/lib/jobs/jobCacheInvalidation';
+import { notifyJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
 
@@ -560,6 +562,7 @@ export const jobsApi = appApi.injectEndpoints({
     getJobsForExport: builder.query<Job[], void>({
       query: () => '/jobs',
       transformResponse: (r: { data: Job[] }) => r.data,
+      providesTags: [{ type: 'Job', id: 'LIST' }],
     }),
 
     getJobById: builder.query<JobWithMaterials, string>({
@@ -999,7 +1002,15 @@ export const jobsApi = appApi.injectEndpoints({
         body,
       }),
       transformResponse: (r: { data: Job }) => r.data,
-      invalidatesTags: [{ type: 'Job', id: 'LIST' }],
+      invalidatesTags: [...JOB_CACHE_INVALIDATES],
+      async onQueryStarted(_arg, { queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          notifyJobLiveUpdate({ action: 'created' });
+        } catch {
+          /* mutation failed — skip live notify */
+        }
+      },
     }),
 
     updateJob: builder.mutation<Job, { id: string; data: Partial<Job> }>({
@@ -1039,7 +1050,15 @@ export const jobsApi = appApi.injectEndpoints({
       transformResponse: (r: {
         data: { created: number; updated: number; skipped: number; warnings: string[] };
       }) => r.data,
-      invalidatesTags: [{ type: 'Job', id: 'LIST' }],
+      invalidatesTags: [...JOB_CACHE_INVALIDATES],
+      async onQueryStarted(_arg, { queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          notifyJobLiveUpdate({ action: 'bulk_import' });
+        } catch {
+          /* mutation failed — skip live notify */
+        }
+      },
     }),
 
     bulkImportJobVariations: builder.mutation<
@@ -1054,7 +1073,15 @@ export const jobsApi = appApi.injectEndpoints({
       transformResponse: (r: {
         data: { created: number; updated: number; skipped: number; warnings: string[] };
       }) => r.data,
-      invalidatesTags: [{ type: 'Job', id: 'LIST' }],
+      invalidatesTags: [...JOB_CACHE_INVALIDATES],
+      async onQueryStarted(_arg, { queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          notifyJobLiveUpdate({ action: 'bulk_import' });
+        } catch {
+          /* mutation failed — skip live notify */
+        }
+      },
     }),
   }),
 });
