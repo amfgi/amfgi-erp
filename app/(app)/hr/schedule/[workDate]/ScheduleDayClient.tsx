@@ -100,6 +100,8 @@ interface JobOpt {
   customerName?: string | null;
   description?: string | null;
   projectDetails?: string | null;
+  projectType?: string | null;
+  projectQtyArea?: string | null;
   quotationNumber?: string | null;
   lpoNumber?: string | null;
   site?: string | null;
@@ -212,6 +214,8 @@ function scheduleJobRowsEqual(a: ScheduleJobRow, b: JobOpt | undefined): boolean
     (a.customerName ?? '') === (b.customerName ?? '') &&
     (a.description ?? '') === (b.description ?? '') &&
     (a.projectDetails ?? '') === (b.projectDetails ?? '') &&
+    (a.projectType ?? '') === (b.projectType ?? '') &&
+    (a.projectQtyArea ?? '') === (b.projectQtyArea ?? '') &&
     (a.site ?? '') === (b.site ?? '')
   );
 }
@@ -561,6 +565,8 @@ const FIELD_ROWS: { key: string; label: string }[] = [
   { key: 'job', label: 'Job number' },
   { key: 'jobCompany', label: 'Customer' },
   { key: 'workProcessDetails', label: 'Work process details' },
+  { key: 'projectType', label: 'Project type' },
+  { key: 'projectQtyArea', label: 'Project qty / area' },
   { key: 'dutyRange', label: 'Duty in / duty out' },
   { key: 'breakRange', label: 'Break out / break in' },
 ];
@@ -790,6 +796,8 @@ export default function HrScheduleDayPage() {
         rowKey === 'job' ||
         rowKey === 'jobCompany' ||
         rowKey === 'workProcessDetails' ||
+        rowKey === 'projectType' ||
+        rowKey === 'projectQtyArea' ||
         rowKey === 'targetQty'
       ) {
         return {
@@ -999,6 +1007,8 @@ export default function HrScheduleDayPage() {
           customerName: String((job.customer as { name?: string } | undefined)?.name ?? ''),
           description: (job.description as string | null | undefined) ?? null,
           projectDetails: (job.projectDetails as string | null | undefined) ?? null,
+          projectType: (job.projectType as string | null | undefined) ?? null,
+          projectQtyArea: (job.projectQtyArea as string | null | undefined) ?? null,
           quotationNumber: (job.quotationNumber as string | null | undefined) ?? null,
           lpoNumber: (job.lpoNumber as string | null | undefined) ?? null,
           site: (job.site as string | null | undefined) ?? null,
@@ -2471,6 +2481,8 @@ export default function HrScheduleDayPage() {
               : draft.factoryCode || draft.jobNumberSnapshot || '',
           customerName: job?.customerName ?? '',
           projectDetails: String(job?.projectDetails ?? '').trim(),
+          projectType: String(job?.projectType ?? '').trim(),
+          projectQtyArea: String(job?.projectQtyArea ?? '').trim(),
           workProcessDetails: resolvedWorkProcess,
           targetQty: draft.targetQty,
           teamLeaderName: flatWorkerNames[0] ?? '',
@@ -2660,6 +2672,21 @@ export default function HrScheduleDayPage() {
               className={gridTextareaCls}
               {...getGridNavProps(NAV_ROW.workProcess, colIdx + 1)}
             />
+          </div>
+        );
+      }
+      case 'projectType':
+      case 'projectQtyArea': {
+        const job = getJob(d.jobId);
+        const value =
+          fieldKey === 'projectType'
+            ? String(job?.projectType ?? '').trim()
+            : String(job?.projectQtyArea ?? '').trim();
+        return (
+          <div className="flex min-h-4 items-center px-2 py-1">
+            <span className="truncate text-xs text-foreground/90" title={value || undefined}>
+              {value || '—'}
+            </span>
           </div>
         );
       }

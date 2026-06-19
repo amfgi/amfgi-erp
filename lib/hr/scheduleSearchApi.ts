@@ -23,6 +23,8 @@ export type ScheduleJobRow = {
   customerName?: string | null;
   description?: string | null;
   projectDetails?: string | null;
+  projectType?: string | null;
+  projectQtyArea?: string | null;
   quotationNumber?: string | null;
   lpoNumber?: string | null;
   site?: string | null;
@@ -89,7 +91,7 @@ export function jobToSearchItem(job: ScheduleJobRow): ScheduleSearchItem & {
   return {
     id: job.id,
     label: job.jobNumber,
-    searchText: [job.jobNumber, quotationNumber, lpoNumber, companyName, siteName, job.projectDetails ?? '', job.description ?? '']
+    searchText: [job.jobNumber, quotationNumber, lpoNumber, companyName, siteName, job.projectDetails ?? '', job.projectType ?? '', job.projectQtyArea ?? '', job.description ?? '']
       .map((value) => String(value).trim())
       .filter(Boolean)
       .join(' '),

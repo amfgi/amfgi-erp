@@ -215,6 +215,8 @@ type SchedulePreviewDetail = {
       site?: string | null;
       description?: string | null;
       projectDetails?: string | null;
+      projectType?: string | null;
+      projectQtyArea?: string | null;
       customer?: { name?: string | null } | null;
     } | null;
     teamLeader?: { fullName?: string | null } | null;
@@ -471,6 +473,8 @@ export function TemplateBuilder({
             ''
         ).trim();
         const projectDetails = String(assignment.job?.projectDetails ?? '').trim();
+        const projectType = String(assignment.job?.projectType ?? '').trim();
+        const projectQtyArea = String(assignment.job?.projectQtyArea ?? '').trim();
           const siteName = String(assignment.job?.site ?? '').trim();
           const targetQty = String(assignment.targetQty ?? '').trim();
           return {
@@ -497,6 +501,8 @@ export function TemplateBuilder({
           jobNumber,
           customerName,
             projectDetails,
+            projectType,
+            projectQtyArea,
             workProcessDetails,
             targetQty,
             teamLeaderName: String(assignment.teamLeader?.fullName ?? '').trim(),

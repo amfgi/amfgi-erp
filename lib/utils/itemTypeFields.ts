@@ -285,6 +285,8 @@ export function getTableColumnFieldsForDataSource(
       { path: 'jobNumber', label: 'Job Number', category: 'Table row' },
       { path: 'customerName', label: 'Customer Name', category: 'Table row' },
       { path: 'projectDetails', label: 'Project Details', category: 'Table row' },
+      { path: 'projectType', label: 'Project Type', category: 'Table row' },
+      { path: 'projectQtyArea', label: 'Project Qty / Area', category: 'Table row' },
       { path: 'workProcessDetails', label: 'Work Process Details', category: 'Table row' },
       { path: 'teamLeaderName', label: 'Team Leader', category: 'Table row' },
         { path: 'driverNames', label: 'Driver Names', category: 'Table row' },

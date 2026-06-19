@@ -25,6 +25,8 @@ export function jobRecordToScheduleRow(job: Job): ScheduleJobRow {
     customerName: job.customerName ?? null,
     description: job.description ?? null,
     projectDetails: job.projectDetails ?? null,
+    projectType: job.projectType ?? null,
+    projectQtyArea: job.projectQtyArea ?? null,
     quotationNumber: job.quotationNumber ?? null,
     lpoNumber: job.lpoNumber ?? null,
     site: job.site ?? null,

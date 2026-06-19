@@ -179,6 +179,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               site: true,
               description: true,
               projectDetails: true,
+              projectType: true,
+              projectQtyArea: true,
               customer: { select: { name: true } },
             },
           },

@@ -205,6 +205,8 @@ export interface WorkScheduleContext {
     jobNumber: string;
     customerName: string;
     projectDetails: string;
+    projectType: string;
+    projectQtyArea: string;
     workProcessDetails: string;
     teamLeaderName: string;
     driverNames: string;
@@ -1029,6 +1031,8 @@ export const MOCK_WORK_SCHEDULE_DATA: WorkScheduleContext = {
       jobNumber: 'JOB-2026-018',
       customerName: 'Acme Contracting LLC',
       projectDetails: 'Tower facade repair',
+      projectType: 'Fit-out',
+      projectQtyArea: '1,200 sqm',
         workProcessDetails: 'Tower facade repair',
         teamLeaderName: 'Mohammad Ali',
         driverNames: 'Yousuf / Kareem',
@@ -1061,6 +1065,8 @@ export const MOCK_WORK_SCHEDULE_DATA: WorkScheduleContext = {
       jobNumber: 'JOB-2026-022',
       customerName: 'Gulf Projects',
       projectDetails: 'Pipe support installation',
+      projectType: 'Installation',
+      projectQtyArea: '3 areas / 42 brackets',
         workProcessDetails: 'Pipe support installation',
         teamLeaderName: 'Rizwan Khan',
         driverNames: 'Adnan',
@@ -1110,6 +1116,8 @@ export const MOCK_WORK_SCHEDULE_DATA: WorkScheduleContext = {
       jobNumber: 'FGI-YARD',
       customerName: '',
       projectDetails: 'Factory prep and loading support',
+      projectType: 'Factory support',
+      projectQtyArea: '250 pcs loading',
         workProcessDetails: 'Factory prep and loading support',
         teamLeaderName: '',
         driverNames: '',

@@ -1395,6 +1395,35 @@ function getScheduleWorkerRowLabel(
 
 // ── Table ──────────────────────────────────────────────────────────
 
+/** One line per grid edge — avoids doubled borders when every cell used `border: 1px` on all sides. */
+function getTableGridBorderStyles(
+  showBorders: boolean,
+  borderW: number,
+  borderColor: string,
+): { table: React.CSSProperties; cell: React.CSSProperties } {
+  if (!showBorders) {
+    return {
+      table: { borderCollapse: 'collapse', borderSpacing: 0 },
+      cell: {},
+    };
+  }
+  const line = `${borderW}px solid ${borderColor}`;
+  return {
+    table: {
+      borderCollapse: 'collapse',
+      borderSpacing: 0,
+      borderTop: line,
+      borderLeft: line,
+    },
+    cell: {
+      borderTop: 'none',
+      borderLeft: 'none',
+      borderRight: line,
+      borderBottom: line,
+    },
+  };
+}
+
 function TableRenderer({
   section,
   data,
@@ -1431,7 +1460,7 @@ function TableRenderer({
   const borderW = section.borderWidthPx ?? 1;
   const borderColor = section.borderColor?.trim() || '#000000';
   const borderRadius = section.borderRadiusPx ?? 0;
-  const borderStyle = section.showBorders ? `${borderW}px solid ${borderColor}` : 'none';
+  const gridBorder = getTableGridBorderStyles(section.showBorders, borderW, borderColor);
   const cellPadding = u(section.rowPadding);
 
   const wrapTableWithRadius = (table: React.ReactNode, key?: string) => {
@@ -1497,7 +1526,7 @@ function TableRenderer({
         <table
           style={{
             width: '100%',
-            borderCollapse: 'collapse',
+            ...gridBorder.table,
             fontSize: pt(effectiveFontSize),
             pageBreakInside: 'auto',
             tableLayout: fitMatrixForPrint ? 'fixed' : 'auto',
@@ -1507,7 +1536,7 @@ function TableRenderer({
             <tr style={{ backgroundColor: section.headerBg, color: section.headerColor }}>
               <th
                 style={{
-                  border: borderStyle,
+                  ...gridBorder.cell,
                   padding: `${effectiveCellPadding} ${u(1.2)}`,
                   textAlign: 'left',
                   fontWeight: globalHeaderFontWeight,
@@ -1526,7 +1555,7 @@ function TableRenderer({
                 <th
                   key={`group-${idx}`}
                   style={{
-                    border: borderStyle,
+                    ...gridBorder.cell,
                     padding: `${effectiveCellPadding} ${u(1.2)}`,
                     textAlign: 'left',
                     fontWeight: globalHeaderFontWeight,
@@ -1560,7 +1589,7 @@ function TableRenderer({
                   >
                     <th
                       style={{
-                        border: borderStyle,
+                        ...gridBorder.cell,
                         padding: `${effectiveCellPadding} ${u(1.2)}`,
                         textAlign: 'left',
                         verticalAlign: col.verticalAlign ?? 'top',
@@ -1598,7 +1627,7 @@ function TableRenderer({
                         <td
                           key={`matrix-worker-cell-${rowIdx}-${workerIdx}-${itemIdx}`}
                           style={{
-                            border: borderStyle,
+                            ...gridBorder.cell,
                             padding: `${effectiveCellPadding} ${u(1.2)}`,
                             textAlign: col.align,
                             verticalAlign: col.verticalAlign ?? 'top',
@@ -1643,7 +1672,7 @@ function TableRenderer({
                   >
                     <th
                       style={{
-                        border: borderStyle,
+                        ...gridBorder.cell,
                         padding: `${effectiveCellPadding} ${u(1.2)}`,
                         textAlign: 'left',
                         verticalAlign: col.verticalAlign ?? 'top',
@@ -1679,7 +1708,7 @@ function TableRenderer({
                         <td
                           key={`matrix-structured-worker-cell-${rowIdx}-${workerIdx}-${itemIdx}`}
                           style={{
-                            border: borderStyle,
+                            ...gridBorder.cell,
                             padding: `${effectiveCellPadding} ${u(1.2)}`,
                             textAlign: col.align,
                             verticalAlign: col.verticalAlign ?? 'top',
@@ -1723,7 +1752,7 @@ function TableRenderer({
                 >
                   <th
                   style={{
-                      border: borderStyle,
+                      ...gridBorder.cell,
                       padding: `${effectiveCellPadding} ${u(1.2)}`,
                       textAlign: 'left',
                       verticalAlign: col.verticalAlign ?? 'top',
@@ -1772,7 +1801,7 @@ function TableRenderer({
                       <td
                         key={`matrix-cell-${rowIdx}-${itemIdx}`}
                         style={{
-                          border: borderStyle,
+                          ...gridBorder.cell,
                           padding: `${effectiveCellPadding} ${u(1.2)}`,
                           textAlign: col.align,
                           verticalAlign: col.verticalAlign ?? 'top',
@@ -1831,7 +1860,7 @@ function TableRenderer({
       key={`table-chunk-${chunkIdx}`}
       style={{
         width: '100%',
-        borderCollapse: 'collapse',
+        ...gridBorder.table,
         fontSize: pt(section.fontSize),
         pageBreakInside: 'auto',
         ...(chunkIdx > 0 && isPrint
@@ -1845,7 +1874,7 @@ function TableRenderer({
             <th
               key={ci}
               style={{
-                border: borderStyle,
+                ...gridBorder.cell,
                 padding: `${cellPadding} ${u(2)}`,
                 width: col.width ? `${col.width}%` : undefined,
                 textAlign: col.align,
@@ -1909,7 +1938,7 @@ function TableRenderer({
                   <td
                     key={ci}
                     style={{
-                      border: borderStyle,
+                      ...gridBorder.cell,
                       padding: `${cellPadding} ${u(2)}`,
                       textAlign: col.align,
                       verticalAlign: col.verticalAlign ?? 'top',

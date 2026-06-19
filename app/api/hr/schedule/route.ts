@@ -31,6 +31,8 @@ const scheduleDetailSelect = {
           site: true,
           description: true,
           projectDetails: true,
+          projectType: true,
+          projectQtyArea: true,
           customer: { select: { name: true } },
         },
       },
