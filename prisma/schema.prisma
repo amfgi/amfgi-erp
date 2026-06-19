@@ -70,6 +70,7 @@ model Company {
   workAssignmentMembers    WorkAssignmentMember[]
   scheduleAbsences         ScheduleAbsence[]
   driverRunLogs            DriverRunLog[]
+  scheduleEditorPresences  ScheduleEditorPresence[]
   attendanceEntries        AttendanceEntry[]
   leaveRequests            LeaveRequest[]
   leaveBalances            LeaveBalance[]
@@ -135,6 +136,7 @@ model User {
   createdDeliveryNotes          DeliveryNote[]            @relation("DeliveryNoteCreatedBy")
   passwordResetTokens         PasswordResetToken[]
   reviewedLeaveRequests       LeaveRequest[]         @relation("LeaveRequestReviewedBy")
+  scheduleEditorPresences     ScheduleEditorPresence[]
 
   @@index([activeCompanyId])
 }
@@ -1649,10 +1651,30 @@ model WorkSchedule {
   assignments WorkAssignment[]
   absences    ScheduleAbsence[]
   driverLogs  DriverRunLog[]
+  editorPresences ScheduleEditorPresence[]
 
   @@unique([companyId, id])
   @@unique([companyId, workDate])
   @@index([companyId, status])
+}
+
+/// Ephemeral "who is on the schedule page" — rows older than ~45s are ignored.
+model ScheduleEditorPresence {
+  id             String   @id @default(cuid())
+  companyId      String
+  workScheduleId String
+  userId         String
+  displayName    String
+  sessionId      String
+  lastSeenAt     DateTime @default(now())
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workSchedule WorkSchedule @relation(fields: [companyId, workScheduleId], references: [companyId, id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workScheduleId, sessionId])
+  @@index([companyId, workScheduleId, lastSeenAt])
+  @@index([userId])
 }
 
 model WorkAssignment {

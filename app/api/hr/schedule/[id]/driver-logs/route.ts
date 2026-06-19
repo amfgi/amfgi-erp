@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { publishLiveUpdate } from '@/lib/live-updates/server';
+import { scheduleLiveEntity } from '@/lib/hr/scheduleCollaboration';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -70,6 +72,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     where: { workScheduleId: scheduleId },
     orderBy: { sequence: 'asc' },
     include: { driver: { select: { id: true, fullName: true } } },
+  });
+  await publishLiveUpdate({
+    companyId,
+    channel: 'hr',
+    entity: scheduleLiveEntity(scheduleId, 'drivers'),
+    action: 'updated',
   });
   return successResponse(list);
 }

@@ -13,7 +13,7 @@ export function ScheduleWorkerPoolCard({ employee }: { employee: ScheduleWorkerP
       <p className="truncate text-xs font-semibold text-foreground">
         {employee.preferredName || employee.fullName}
       </p>
-      <p className="mt-0.5 text-[10px] text-muted-foreground">
+      <p className="mt-0.5 line-clamp-2 break-words text-[10px] text-muted-foreground">
         {employee.workforce.expertises.length > 0
           ? employee.workforce.expertises.join(', ')
           : 'No expertise set'}

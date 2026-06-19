@@ -1,6 +1,17 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { publishLiveUpdate } from '@/lib/live-updates/server';
+import { scheduleLiveEntity } from '@/lib/hr/scheduleCollaboration';
+import {
+  ScheduleAssignmentInputSchema,
+  validateScheduleAssignmentReferences,
+  upsertScheduleAssignment,
+  deleteScheduleAssignmentsByColumnIndexes,
+  pruneScheduleAssignmentsExcept,
+  fetchScheduleAssignmentByColumn,
+  assignmentDetailInclude,
+} from '@/lib/hr/scheduleAssignmentPersistence';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { nullableDecimalToNumber } from '@/lib/utils/decimal';
 import { z } from 'zod';
@@ -40,6 +51,133 @@ const PutSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
   assignments: z.array(AssignmentSchema),
 });
+
+const PatchSchema = z.object({
+  upserts: z.array(AssignmentSchema).default([]),
+  deleteColumnIndexes: z.array(z.number().int().min(1).max(99)).default([]),
+  pruneOtherColumns: z.boolean().optional(),
+  notes: z.string().max(5000).optional().nullable(),
+});
+
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await requireCompanySession();
+  if (!ctx.ok) return ctx.response;
+  const { session, companyId } = ctx;
+  if (!requirePerm(session.user, P.HR_SCHEDULE_VIEW)) return errorResponse('Forbidden', 403);
+  const { id: scheduleId } = await params;
+
+  const sch = await prisma.workSchedule.findFirst({
+    where: { id: scheduleId, companyId },
+    select: { id: true },
+  });
+  if (!sch) return errorResponse('Not found', 404);
+
+  const url = new URL(req.url);
+  const columnIndex = Number(url.searchParams.get('columnIndex'));
+  if (Number.isFinite(columnIndex) && columnIndex >= 1) {
+    const assignment = await fetchScheduleAssignmentByColumn(scheduleId, columnIndex);
+    if (!assignment) return errorResponse('Not found', 404);
+    return successResponse(assignment);
+  }
+
+  const assignments = await prisma.workAssignment.findMany({
+    where: { workScheduleId: scheduleId },
+    orderBy: { columnIndex: 'asc' },
+    include: assignmentDetailInclude,
+  });
+  return successResponse(assignments);
+}
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await requireCompanySession();
+  if (!ctx.ok) return ctx.response;
+  const { session, companyId } = ctx;
+  if (!requirePerm(session.user, P.HR_SCHEDULE_EDIT)) return errorResponse('Forbidden', 403);
+  const { id: scheduleId } = await params;
+
+  const sch = await prisma.workSchedule.findFirst({
+    where: { id: scheduleId, companyId },
+    select: { id: true, status: true },
+  });
+  if (!sch) return errorResponse('Not found', 404);
+  if (sch.status === 'LOCKED') return errorResponse('Schedule is locked', 403);
+
+  const body = await req.json();
+  const parsed = PatchSchema.safeParse(body);
+  if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const upserts = parsed.data.upserts;
+  const colSet = new Set(upserts.map((row) => row.columnIndex));
+  if (colSet.size !== upserts.length) return errorResponse('Duplicate columnIndex in upserts', 422);
+
+  for (const assignment of upserts) {
+    const error = await validateScheduleAssignmentReferences(companyId, assignment);
+    if (error) return errorResponse(error, 422);
+  }
+
+  if (parsed.data.deleteColumnIndexes.length > 0) {
+    await deleteScheduleAssignmentsByColumnIndexes(scheduleId, parsed.data.deleteColumnIndexes);
+    for (const columnIndex of parsed.data.deleteColumnIndexes) {
+      await publishLiveUpdate({
+        companyId,
+        channel: 'hr',
+        entity: scheduleLiveEntity(scheduleId, `column:${columnIndex}`),
+        action: 'deleted',
+      });
+    }
+  }
+
+  if (parsed.data.pruneOtherColumns) {
+    await pruneScheduleAssignmentsExcept(
+      scheduleId,
+      upserts.map((row) => row.columnIndex),
+    );
+    await publishLiveUpdate({
+      companyId,
+      channel: 'hr',
+      entity: scheduleLiveEntity(scheduleId, 'structure'),
+      action: 'changed',
+    });
+  }
+
+  for (const assignment of upserts) {
+    await upsertScheduleAssignment(companyId, scheduleId, assignment);
+    await publishLiveUpdate({
+      companyId,
+      channel: 'hr',
+      entity: scheduleLiveEntity(scheduleId, `column:${assignment.columnIndex}`),
+      action: 'updated',
+    });
+  }
+
+  if (parsed.data.notes !== undefined) {
+    await prisma.workSchedule.update({
+      where: { id: scheduleId },
+      data: { notes: parsed.data.notes?.trim() || null } as never,
+    });
+    await publishLiveUpdate({
+      companyId,
+      channel: 'hr',
+      entity: scheduleLiveEntity(scheduleId, 'notes'),
+      action: 'updated',
+    });
+  }
+
+  const updatedColumns = await Promise.all(
+    upserts.map((row) => fetchScheduleAssignmentByColumn(scheduleId, row.columnIndex)),
+  );
+
+  const schedule = await prisma.workSchedule.findFirst({
+    where: { id: scheduleId },
+    select: { id: true, notes: true, updatedAt: true },
+  });
+
+  return successResponse({
+    assignments: updatedColumns.filter(Boolean),
+    notes: schedule?.notes ?? null,
+    updatedAt: schedule?.updatedAt?.toISOString() ?? null,
+  });
+}
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCompanySession();

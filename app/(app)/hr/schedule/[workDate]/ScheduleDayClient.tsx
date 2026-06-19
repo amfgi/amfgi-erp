@@ -49,6 +49,7 @@ import {
   readLegacyScheduleViewPrefsFromLocalStorage,
   type ScheduleRowSettings,
 } from '@/lib/hr/scheduleViewPrefs';
+import { useScheduleCollaboration } from '@/hooks/useScheduleCollaboration';
 import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import { jobsApi } from '@/store/api/endpoints/jobs';
 import { useAppDispatch, useAppSelector, useGetJobsPageQuery, useUpdateJobMutation } from '@/store/hooks';
@@ -64,6 +65,13 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, GripVertical, 
 
 const GUEST_DRIVER_ROW_PREFIX = 'guest:';
 
+function createClientId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `cid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 function isGuestDriverRowKey(key: string) {
   return key.startsWith(GUEST_DRIVER_ROW_PREFIX);
 }
@@ -73,7 +81,7 @@ function guestDriverRowKeyFromLogId(logId: string) {
 }
 
 function createPendingGuestDriverRowKey() {
-  return `${GUEST_DRIVER_ROW_PREFIX}pending-${crypto.randomUUID()}`;
+  return `${GUEST_DRIVER_ROW_PREFIX}pending-${createClientId()}`;
 }
 
 type ScheduleDriverLogRecord = {
@@ -317,14 +325,7 @@ function formatScheduleTimeForPrint(raw: string | null | undefined): string {
 }
 
 function getInitialWorkProcessDetails(job: JobOpt | null | undefined): string {
-  const saved = String(job?.description ?? '').trim();
-  return saved;
-}
-
-function resolveWorkProcessDetails(workProcessDetails: string, job: JobOpt | null | undefined): string {
-  if (workProcessDetails) return String(workProcessDetails).trim();
-  if (job?.description) return String(job.description).trim();
-  return String(workProcessDetails ?? '').trim();
+  return String(job?.description ?? '').trim();
 }
 
 async function readApiEnvelope<T = Record<string, unknown>>(response: Response): Promise<T | null> {
@@ -352,7 +353,7 @@ function encodePersistedMemberSlot(subTeamIndex: number, memberIndex: number): n
 
 function createEmptySubTeam(index: number, withMinSlots = true): subTeamDraft {
   return {
-    id: crypto.randomUUID(),
+    id: createClientId(),
     label: nextSubTeamLabel(index),
     members: withMinSlots ? normalizeWorkerMemberList([]) : [],
   };
@@ -422,7 +423,7 @@ function extractSubTeamsFromMembers(members: MemberRow[]): { splitMode: boolean;
     const subTeams = [...subTeamMap.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([index, rows]) => ({
-        id: crypto.randomUUID(),
+        id: createClientId(),
         label: nextSubTeamLabel(index),
         members: normalizeMemberList(rows.filter(Boolean)),
       }));
@@ -459,7 +460,7 @@ function extractSubTeamsFromMembers(members: MemberRow[]): { splitMode: boolean;
   for (const member of ordered) {
     if (member.role === 'TEAM_LEADER') {
       currentSubTeam = {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         label: nextSubTeamLabel(subTeams.length),
         members: [
           {
@@ -475,7 +476,7 @@ function extractSubTeamsFromMembers(members: MemberRow[]): { splitMode: boolean;
 
     if (!currentSubTeam) {
       currentSubTeam = {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         label: nextSubTeamLabel(subTeams.length),
         members: [],
       };
@@ -513,7 +514,7 @@ function normalizeDraft(raw: Partial<AsgDraft>, fallbackIndex = 0): AsgDraft {
   const derived = extractSubTeamsFromMembers(baseMembers);
   const subTeams = Array.isArray(raw.subTeams) && raw.subTeams.length > 0
     ? raw.subTeams.map((subTeam, index) => ({
-        id: subTeam.id || crypto.randomUUID(),
+        id: subTeam.id || createClientId(),
         label: subTeam.label || nextSubTeamLabel(index),
         members: normalizeMemberList(Array.isArray(subTeam.members) ? subTeam.members : []),
       }))
@@ -710,7 +711,6 @@ function buildAssignmentsPutBody(
     notes: scheduleInfo || null,
     assignments: drafts.map((d) => {
       const job = getJob(d.jobId);
-      const resolvedWorkProcess = resolveWorkProcessDetails(d.workProcessDetails, job);
       const parsedTargetQty = Number.parseFloat(String(d.targetQty ?? '').trim());
       const nonSplitMembers = normalizeMemberList(d.members.filter((member) => member.employeeId));
       const splitMembers = d.subTeams.flatMap((subTeam, subTeamIndex) => {
@@ -738,7 +738,6 @@ function buildAssignmentsPutBody(
         factoryLabel: d.locationType === 'FACTORY' ? d.factoryCode || null : null,
         jobNumberSnapshot: d.jobNumberSnapshot || null,
         clientNameSnapshot: d.locationType === 'SITE_JOB' ? String(job?.customerName ?? '').trim() || null : null,
-        projectDetailsSnapshot: d.locationType === 'SITE_JOB' ? resolvedWorkProcess || null : null,
         teamLeaderEmployeeId,
         driver1EmployeeId: d.driver1EmployeeId || null,
         driver2EmployeeId: d.driver2EmployeeId || null,
@@ -750,6 +749,37 @@ function buildAssignmentsPutBody(
         members: memberPayload,
       };
     }),
+  };
+}
+
+function buildAssignmentPayloadFromDraft(d: AsgDraft, getJob: (id: string) => JobOpt | undefined) {
+  return buildAssignmentsPutBody([d], '', getJob).assignments[0];
+}
+
+function assignmentPayloadFingerprint(d: AsgDraft, getJob: (id: string) => JobOpt | undefined) {
+  return JSON.stringify(buildAssignmentPayloadFromDraft(d, getJob));
+}
+
+function apiAssignmentToDraftPartial(a: Record<string, unknown>, fallbackIndex: number): Partial<AsgDraft> {
+  return {
+    columnIndex: typeof a.columnIndex === 'number' ? a.columnIndex : fallbackIndex + 1,
+    label: String(a.label ?? `Team#${fallbackIndex + 1}`),
+    locationType: (a.locationType as AsgDraft['locationType']) ?? 'SITE_JOB',
+    jobId: (a.job as { id?: string })?.id ?? '',
+    factoryCode: String(a.factoryCode ?? ''),
+    jobNumberSnapshot: String(a.jobNumberSnapshot ?? ''),
+    targetQty: String(a.targetQty ?? ''),
+    driver1EmployeeId: String(a.driver1EmployeeId ?? ''),
+    driver2EmployeeId: String(a.driver2EmployeeId ?? ''),
+    dutyStart: String(a.shiftStart ?? ''),
+    dutyEnd: String(a.shiftEnd ?? ''),
+    ...parseBrk(String(a.breakWindow ?? '')),
+    remarks: String(a.remarks ?? ''),
+    members: ((a.members as Array<Record<string, unknown>>) ?? []).map((m, i) => ({
+      employeeId: String(m.employeeId),
+      role: (m.role as MemberRow['role']) ?? 'WORKER',
+      slot: typeof m.slot === 'number' ? m.slot : i + 1,
+    })),
   };
 }
 
@@ -767,6 +797,10 @@ function buildDriverLogsPutBody(driverTripRows: ScheduleDriverTripRow[]) {
       })
       .filter((row): row is NonNullable<typeof row> => row !== null),
   };
+}
+
+function driverLogsFingerprint(driverTripRows: ScheduleDriverTripRow[]) {
+  return JSON.stringify(buildDriverLogsPutBody(driverTripRows));
 }
 
 function schedulePersistenceFingerprint(
@@ -836,13 +870,18 @@ export default function HrScheduleDayPage() {
   const persistInFlightRef = useRef(false);
   const persistQueuedRef = useRef(false);
   const skipScheduleRemapRef = useRef(false);
+  const collaborationSessionIdRef = useRef(createClientId());
+  const persistedNotesRef = useRef('');
+  const persistedColumnFingerprintsRef = useRef<Map<number, string>>(new Map());
+  const persistedDriverFingerprintRef = useRef('');
+  const structureDirtyRef = useRef(false);
+  const jobDescriptionSaveTimersRef = useRef<Map<string, number>>(new Map());
+  const [jobDescriptionEdits, setJobDescriptionEdits] = useState<Record<string, string>>({});
   const autoSaveStatusTimerRef = useRef<number | null>(null);
   const [undoStack, setUndoStack] = useState<AsgDraft[][]>([]);
   const [redoStack, setRedoStack] = useState<AsgDraft[][]>([]);
   const suspendHistoryRef = useRef(false);
   const draftsRef = useRef<AsgDraft[]>([]);
-  const teamBoardBodyRef = useRef<HTMLDivElement>(null);
-  const [workerRailMaxHeight, setWorkerRailMaxHeight] = useState<number | null>(null);
   const [pendingWorkerCreate, setPendingWorkerCreate] = useState<PendingWorkerCreate | null>(null);
   const [pendingInactiveJob, setPendingInactiveJob] = useState<PendingInactiveJob | null>(null);
   const [pendingStaleJob, setPendingStaleJob] = useState<PendingStaleJob | null>(null);
@@ -1041,29 +1080,6 @@ export default function HrScheduleDayPage() {
     draftsRef.current = drafts;
   }, [drafts]);
 
-  useEffect(() => {
-    if (!showWorkerRail) return;
-    const node = teamBoardBodyRef.current;
-    if (!node) return;
-
-    const syncHeight = () => {
-      const height = Math.round(node.getBoundingClientRect().height);
-      setWorkerRailMaxHeight(height > 120 ? height : null);
-    };
-
-    const observer = new ResizeObserver(() => {
-      syncHeight();
-    });
-    observer.observe(node);
-    window.addEventListener('resize', syncHeight);
-    requestAnimationFrame(syncHeight);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', syncHeight);
-    };
-  }, [showWorkerRail, drafts.length, showRowLabels, viewScale, loading, schedule]);
-
   const getRowThemeClasses = useCallback((rowKey: string): { row: string; label: string; cell: string } => {
       if (!useLightGridTheme) {
         return {
@@ -1174,6 +1190,17 @@ export default function HrScheduleDayPage() {
   const getEmployee = useCallback((id: string) => (id ? employeeById.get(id) : undefined), [employeeById]);
   const getJob = useCallback((id: string) => (id ? jobById.get(id) : undefined), [jobById]);
 
+  const getJobWorkDetails = useCallback(
+    (jobId: string | null | undefined) => {
+      if (!jobId) return '';
+      if (Object.prototype.hasOwnProperty.call(jobDescriptionEdits, jobId)) {
+        return jobDescriptionEdits[jobId];
+      }
+      return String(getJob(jobId)?.description ?? '').trim();
+    },
+    [getJob, jobDescriptionEdits],
+  );
+
   const scheduleJobSeedItems = useMemo(
     () => (scheduleJobsPage?.items ?? []).map((job) => scheduleJobToSearchItem(job)),
     [scheduleJobsPage]
@@ -1205,11 +1232,12 @@ export default function HrScheduleDayPage() {
 
   useEffect(() => {
     if (!assignedJobIds.length) return;
+    const state = store.getState();
     const jobs = assignedJobIds
-      .map((id) => jobsApi.endpoints.getJobById.select(id)(store.getState())?.data)
+      .map((id) => jobsApi.endpoints.getJobById.select(id)(state)?.data)
       .filter((job): job is NonNullable<typeof job> => Boolean(job));
     if (jobs.length > 0) {
-      mergeJobs(jobs.map(jobRecordToScheduleRow));
+      mergeJobs(jobs.map((job) => jobRecordToScheduleRow(job)));
     }
   }, [assignedJobIds, assignedJobsFingerprint, mergeJobs, store]);
 
@@ -1300,45 +1328,51 @@ export default function HrScheduleDayPage() {
           customer: job.customer as { name?: string | null } | null | undefined,
         })
       );
+    const jobsById = new Map(jobsFromAssignments.map((job) => [job.id, job as JobOpt]));
+    const lookupJob = (id: string) => jobsById.get(id);
     if (jobsFromAssignments.length > 0) mergeJobs(jobsFromAssignments);
     suspendHistoryRef.current = true;
-    setScheduleInfo(String((sch as { notes?: string | null }).notes ?? ''));
-    setDrafts(
-      asg.map((a, idx) =>
-        normalizeDraft(
-          {
-            columnIndex: typeof a.columnIndex === 'number' ? a.columnIndex : idx + 1,
-            label: String(a.label ?? `Team#${idx + 1}`),
-            locationType: (a.locationType as AsgDraft['locationType']) ?? 'SITE_JOB',
-            jobId: (a.job as { id?: string })?.id ?? '',
-            factoryCode: String(a.factoryCode ?? ''),
-            jobNumberSnapshot: String(a.jobNumberSnapshot ?? ''),
-            workProcessDetails:
-              getInitialWorkProcessDetails({
-              id: String((a.job as { id?: string })?.id ?? ''),
-              jobNumber: String((a.job as { jobNumber?: string })?.jobNumber ?? a.jobNumberSnapshot ?? ''),
-                customerName: String((a.job as { customer?: { name?: string } })?.customer?.name ?? ''),
-                description: String((a.job as { description?: string })?.description ?? ''),
-                projectDetails:
-                  String((a.job as { projectDetails?: string })?.projectDetails ?? '') || '',
-              }) || String(a.projectDetailsSnapshot ?? ''),
-            targetQty: String(a.targetQty ?? ''),
-            driver1EmployeeId: String(a.driver1EmployeeId ?? ''),
-            driver2EmployeeId: String(a.driver2EmployeeId ?? ''),
-            dutyStart: String(a.shiftStart ?? ''),
-            dutyEnd: String(a.shiftEnd ?? ''),
-            ...parseBrk(String(a.breakWindow ?? '')),
-            remarks: String(a.remarks ?? ''),
-            members: ((a.members as Array<Record<string, unknown>>) ?? []).map((m, i) => ({
-              employeeId: String(m.employeeId),
-              role: (m.role as MemberRow['role']) ?? 'WORKER',
-              slot: typeof m.slot === 'number' ? m.slot : i + 1,
-            })),
-          },
-          idx
-        )
-      )
+    const notesValue = String((sch as { notes?: string | null }).notes ?? '');
+    setScheduleInfo(notesValue);
+    const normalizedDrafts = asg.map((a, idx) =>
+      normalizeDraft(
+        {
+          columnIndex: typeof a.columnIndex === 'number' ? a.columnIndex : idx + 1,
+          label: String(a.label ?? `Team#${idx + 1}`),
+          locationType: (a.locationType as AsgDraft['locationType']) ?? 'SITE_JOB',
+          jobId: (a.job as { id?: string })?.id ?? '',
+          factoryCode: String(a.factoryCode ?? ''),
+          jobNumberSnapshot: String(a.jobNumberSnapshot ?? ''),
+          workProcessDetails: getInitialWorkProcessDetails({
+            id: String((a.job as { id?: string })?.id ?? ''),
+            jobNumber: String((a.job as { jobNumber?: string })?.jobNumber ?? a.jobNumberSnapshot ?? ''),
+            customerName: String((a.job as { customer?: { name?: string } })?.customer?.name ?? ''),
+            description: String((a.job as { description?: string })?.description ?? ''),
+            projectDetails: String((a.job as { projectDetails?: string })?.projectDetails ?? '') || '',
+          }),
+          targetQty: String(a.targetQty ?? ''),
+          driver1EmployeeId: String(a.driver1EmployeeId ?? ''),
+          driver2EmployeeId: String(a.driver2EmployeeId ?? ''),
+          dutyStart: String(a.shiftStart ?? ''),
+          dutyEnd: String(a.shiftEnd ?? ''),
+          ...parseBrk(String(a.breakWindow ?? '')),
+          remarks: String(a.remarks ?? ''),
+          members: ((a.members as Array<Record<string, unknown>>) ?? []).map((m, i) => ({
+            employeeId: String(m.employeeId),
+            role: (m.role as MemberRow['role']) ?? 'WORKER',
+            slot: typeof m.slot === 'number' ? m.slot : i + 1,
+          })),
+        },
+        idx,
+      ),
     );
+    setDrafts(normalizedDrafts);
+    persistedNotesRef.current = notesValue;
+    persistedColumnFingerprintsRef.current = new Map(
+      normalizedDrafts.map((draft) => [draft.columnIndex, assignmentPayloadFingerprint(draft, lookupJob)]),
+    );
+    structureDirtyRef.current = false;
+    lastPersistedFingerprintRef.current = null;
     setUndoStack([]);
     setRedoStack([]);
     queueMicrotask(() => {
@@ -1346,14 +1380,20 @@ export default function HrScheduleDayPage() {
     });
   }, [mergeJobs]);
 
+  const mapFromApiRef = useRef(mapFromApi);
+  useEffect(() => {
+    mapFromApiRef.current = mapFromApi;
+  }, [mapFromApi]);
+
   useEffect(() => {
     queueMicrotask(() => {
       if (skipScheduleRemapRef.current) {
         skipScheduleRemapRef.current = false;
         return;
       }
-      if (schedule && typeof schedule === 'object' && 'id' in schedule) mapFromApi(schedule as Record<string, unknown>);
-      else {
+      if (schedule && typeof schedule === 'object' && 'id' in schedule) {
+        mapFromApiRef.current(schedule as Record<string, unknown>);
+      } else {
         suspendHistoryRef.current = true;
         setScheduleInfo('');
         setDrafts([]);
@@ -1364,7 +1404,7 @@ export default function HrScheduleDayPage() {
         });
       }
     });
-  }, [schedule, mapFromApi]);
+  }, [schedule]);
 
   const scheduleId =
     schedule && typeof schedule === 'object' && 'id' in schedule ? String((schedule as { id: string }).id) : '';
@@ -1373,6 +1413,21 @@ export default function HrScheduleDayPage() {
     lastPersistedFingerprintRef.current = null;
     setAutoSaveStatus('idle');
   }, [workDate, scheduleId]);
+
+  const markScheduleStructureDirty = () => {
+    structureDirtyRef.current = true;
+  };
+
+  const columnHasUnsavedChanges = useCallback(
+    (columnIndex: number) => {
+      const draft = draftsRef.current.find((row) => row.columnIndex === columnIndex);
+      if (!draft) return false;
+      const persisted = persistedColumnFingerprintsRef.current.get(columnIndex);
+      if (!persisted) return true;
+      return assignmentPayloadFingerprint(draft, getJob) !== persisted;
+    },
+    [getJob],
+  );
 
   const driverLogVersion =
     schedule && typeof schedule === 'object' && 'id' in schedule
@@ -1604,6 +1659,123 @@ export default function HrScheduleDayPage() {
     [driverItems, driverTripRows]
   );
 
+  const reloadScheduleFromServer = useCallback(async () => {
+    if (!scheduleId) return;
+    const res = await fetch(`/api/hr/schedule/${scheduleId}`, { cache: 'no-store' });
+    const json = await readApiEnvelope<{ success?: boolean; data?: Record<string, unknown> }>(res);
+    if (res.ok && json?.success && json.data) {
+      setSchedule(json.data);
+    }
+  }, [scheduleId]);
+
+  const hasUnsavedScheduleChanges = useCallback(() => {
+    if (structureDirtyRef.current) return true;
+    if (scheduleInfo !== persistedNotesRef.current) return true;
+    if (driverLogsFingerprint(driverTripRows) !== persistedDriverFingerprintRef.current) return true;
+    return draftsRef.current.some((draft) => columnHasUnsavedChanges(draft.columnIndex));
+  }, [columnHasUnsavedChanges, driverTripRows, scheduleInfo]);
+
+  const mergeRemoteColumn = useCallback(
+    async (columnIndex: number, action: string) => {
+      if (!scheduleId || persistInFlightRef.current) return;
+      if (columnHasUnsavedChanges(columnIndex)) return;
+
+      if (action === 'deleted') {
+        suspendHistoryRef.current = true;
+        setDrafts((prev) => prev.filter((row) => row.columnIndex !== columnIndex));
+        persistedColumnFingerprintsRef.current.delete(columnIndex);
+        queueMicrotask(() => {
+          suspendHistoryRef.current = false;
+        });
+        return;
+      }
+
+      const localDraft = draftsRef.current.find((row) => row.columnIndex === columnIndex);
+      if (!localDraft) {
+        if (!hasUnsavedScheduleChanges()) {
+          await reloadScheduleFromServer();
+        }
+        return;
+      }
+
+      const res = await fetch(
+        `/api/hr/schedule/${scheduleId}/assignments?columnIndex=${columnIndex}`,
+        { cache: 'no-store' },
+      );
+      const json = await readApiEnvelope<{ success?: boolean; data?: Record<string, unknown> }>(res);
+      if (!res.ok || !json?.success || !json.data) return;
+
+      const assignment = json.data;
+      const job = assignment.job as Record<string, unknown> | undefined;
+      if (job?.id) {
+        mergeJobs([
+          normalizeScheduleJobRow({
+            id: String(job.id),
+            jobNumber: String(job.jobNumber ?? ''),
+            customerName: String((job.customer as { name?: string } | undefined)?.name ?? ''),
+            description: (job.description as string | null | undefined) ?? null,
+            projectDetails: (job.projectDetails as string | null | undefined) ?? null,
+            projectType: (job.projectType as string | null | undefined) ?? null,
+            projectQtyArea: (job.projectQtyArea as string | null | undefined) ?? null,
+            quotationNumber: (job.quotationNumber as string | null | undefined) ?? null,
+            lpoNumber: (job.lpoNumber as string | null | undefined) ?? null,
+            site: (job.site as string | null | undefined) ?? null,
+            customer: job.customer as { name?: string | null } | null | undefined,
+          }),
+        ]);
+      }
+
+      const partial = apiAssignmentToDraftPartial(assignment, columnIndex - 1);
+      suspendHistoryRef.current = true;
+      setDrafts((prev) => {
+        const idx = prev.findIndex((row) => row.columnIndex === columnIndex);
+        if (idx < 0) return prev;
+        const merged = normalizeDraft({ ...prev[idx], ...partial }, idx);
+        persistedColumnFingerprintsRef.current.set(
+          columnIndex,
+          assignmentPayloadFingerprint(merged, getJob),
+        );
+        return prev.map((row, rowIdx) => (rowIdx === idx ? merged : row));
+      });
+      queueMicrotask(() => {
+        suspendHistoryRef.current = false;
+      });
+    },
+    [columnHasUnsavedChanges, getJob, hasUnsavedScheduleChanges, mergeJobs, reloadScheduleFromServer, scheduleId],
+  );
+
+  const collaborationDisplayName =
+    session?.user?.name?.trim() ||
+    session?.user?.email?.split('@')[0]?.trim() ||
+    'Editor';
+
+  const { presence: schedulePresence } = useScheduleCollaboration({
+    scheduleId: scheduleId || null,
+    sessionId: collaborationSessionIdRef.current,
+    displayName: collaborationDisplayName,
+    enabled: Boolean(scheduleId && canEdit && !locked),
+    onRemoteNotes: () => {
+      if (scheduleInfo !== persistedNotesRef.current) return;
+      void reloadScheduleFromServer();
+    },
+    onRemoteColumn: (columnIndex, action) => {
+      void mergeRemoteColumn(columnIndex, action);
+    },
+    onRemoteStructure: () => {
+      if (hasUnsavedScheduleChanges()) return;
+      void reloadScheduleFromServer();
+    },
+    onRemoteDrivers: () => {
+      if (driverLogsFingerprint(driverTripRows) !== persistedDriverFingerprintRef.current) return;
+      void reloadScheduleFromServer();
+    },
+  });
+
+  const otherScheduleEditors = useMemo(
+    () => schedulePresence.filter((row) => !row.isSelf),
+    [schedulePresence],
+  );
+
   const createSchedule = async () => {
     const res = await fetch('/api/hr/schedule', {
       method: 'POST',
@@ -1632,6 +1804,21 @@ export default function HrScheduleDayPage() {
         return false;
       }
 
+      const structureDirty = structureDirtyRef.current;
+      const notesDirty = scheduleInfo !== persistedNotesRef.current;
+      const driversDirty = driverLogsFingerprint(driverTripRows) !== persistedDriverFingerprintRef.current;
+      const dirtyColumns = structureDirty
+        ? drafts
+        : drafts.filter((draft) => {
+            const persisted = persistedColumnFingerprintsRef.current.get(draft.columnIndex);
+            const next = assignmentPayloadFingerprint(draft, getJob);
+            return !persisted || persisted !== next;
+          });
+
+      if (!structureDirty && dirtyColumns.length === 0 && !notesDirty && !driversDirty) {
+        return true;
+      }
+
       const saveFingerprint = schedulePersistenceFingerprint(drafts, scheduleInfo, driverTripRows);
       persistInFlightRef.current = true;
       if (!options?.silent) setSaving(true);
@@ -1640,72 +1827,91 @@ export default function HrScheduleDayPage() {
       const sid = String((schedule as { id: string }).id);
 
       try {
-        const uniqueJobUpdates = new Map<string, string>();
-        for (const draft of drafts) {
-          if (!draft.jobId || draft.locationType !== 'SITE_JOB') continue;
-          const job = getJob(draft.jobId);
-          const resolvedWorkProcess = resolveWorkProcessDetails(draft.workProcessDetails, job);
-          const currentSaved = String(job?.description ?? '').trim();
-          if (resolvedWorkProcess !== currentSaved) {
-            uniqueJobUpdates.set(draft.jobId, resolvedWorkProcess);
-          }
-        }
-
-        if (uniqueJobUpdates.size > 0) {
-          const jobUpdateResults = await Promise.all(
-            [...uniqueJobUpdates.entries()].map(async ([jobId, projectDetails]) => {
-              const response = await fetch(`/api/jobs/${jobId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ description: projectDetails }),
-              });
-              const json = await response.json().catch(() => null);
-              return { ok: response.ok && json?.success, error: json?.error as string | undefined };
-            }),
+        if (structureDirty || dirtyColumns.length > 0 || notesDirty) {
+          const upserts = (structureDirty ? drafts : dirtyColumns).map((draft) =>
+            buildAssignmentPayloadFromDraft(draft, getJob),
           );
+          const patchBody: {
+            upserts: ReturnType<typeof buildAssignmentPayloadFromDraft>[];
+            pruneOtherColumns?: boolean;
+            notes?: string;
+          } = { upserts };
+          if (structureDirty) {
+            patchBody.pruneOtherColumns = true;
+          }
+          if (notesDirty) {
+            patchBody.notes = scheduleInfo;
+          }
 
-          const failed = jobUpdateResults.find((result) => !result.ok);
-          if (failed) {
-            if (!options?.silent) toast.error(failed.error ?? 'Could not update work process details on the job.');
+          const res = await fetch(`/api/hr/schedule/${sid}/assignments`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patchBody),
+          });
+          const json = await readApiEnvelope<{
+            success?: boolean;
+            error?: string;
+            data?: { notes?: string | null };
+          }>(res);
+          if (!res.ok || !json?.success) {
+            if (!options?.silent) toast.error(json?.error ?? 'Save failed');
             else setAutoSaveStatus('error');
             return false;
           }
+
+          if (notesDirty) {
+            persistedNotesRef.current = scheduleInfo;
+            skipScheduleRemapRef.current = true;
+            setSchedule((prev) =>
+              prev && typeof prev === 'object'
+                ? { ...(prev as Record<string, unknown>), notes: json.data?.notes ?? scheduleInfo }
+                : prev,
+            );
+          }
+
+          const columnsToMarkSaved = structureDirty ? drafts : dirtyColumns;
+          for (const draft of columnsToMarkSaved) {
+            persistedColumnFingerprintsRef.current.set(
+              draft.columnIndex,
+              assignmentPayloadFingerprint(draft, getJob),
+            );
+          }
+          if (structureDirty) {
+            const activeColumnIndexes = new Set(drafts.map((draft) => draft.columnIndex));
+            for (const columnIndex of [...persistedColumnFingerprintsRef.current.keys()]) {
+              if (!activeColumnIndexes.has(columnIndex)) {
+                persistedColumnFingerprintsRef.current.delete(columnIndex);
+              }
+            }
+            structureDirtyRef.current = false;
+          }
         }
 
-        const body = buildAssignmentsPutBody(drafts, scheduleInfo, getJob);
-        const res = await fetch(`/api/hr/schedule/${sid}/assignments`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const json = await readApiEnvelope<{ success?: boolean; error?: string; data?: Record<string, unknown> }>(res);
-        if (!res.ok || !json?.success) {
-          if (!options?.silent) toast.error(json?.error ?? 'Save failed');
-          else setAutoSaveStatus('error');
-          return false;
-        }
+        if (driversDirty) {
+          const driverRes = await fetch(`/api/hr/schedule/${sid}/driver-logs`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildDriverLogsPutBody(driverTripRows)),
+          });
+          const driverJson = await readApiEnvelope<{ success?: boolean; error?: string; data?: unknown }>(driverRes);
+          if (!driverRes.ok || !driverJson?.success) {
+            if (!options?.silent) toast.error(driverJson?.error ?? 'Driver trip save failed');
+            else setAutoSaveStatus('error');
+            return false;
+          }
 
-        const driverRes = await fetch(`/api/hr/schedule/${sid}/driver-logs`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildDriverLogsPutBody(driverTripRows)),
-        });
-        const driverJson = await readApiEnvelope<{ success?: boolean; error?: string; data?: unknown }>(driverRes);
-        if (!driverRes.ok || !driverJson?.success) {
-          if (!options?.silent) toast.error(driverJson?.error ?? 'Driver trip save failed');
-          else setAutoSaveStatus('error');
-          return false;
+          const savedLogs = (driverJson.data ?? []) as ScheduleDriverLogRecord[];
+          persistedDriverFingerprintRef.current = driverLogsFingerprint(driverTripRows);
+          skipScheduleRemapRef.current = true;
+          setSchedule((prev) =>
+            prev && typeof prev === 'object'
+              ? { ...(prev as Record<string, unknown>), driverLogs: savedLogs }
+              : prev,
+          );
+          syncDriverTripStateFromLogs(savedLogs, driverLogVersion, false);
         }
 
         lastPersistedFingerprintRef.current = saveFingerprint;
-        const savedLogs = (driverJson.data ?? []) as ScheduleDriverLogRecord[];
-        skipScheduleRemapRef.current = true;
-        setSchedule((prev) =>
-          prev && typeof prev === 'object'
-            ? { ...(prev as Record<string, unknown>), driverLogs: savedLogs }
-            : prev,
-        );
-        syncDriverTripStateFromLogs(savedLogs, driverLogVersion, false);
 
         if (!options?.silent) {
           toast.success('Saved');
@@ -1749,6 +1955,7 @@ export default function HrScheduleDayPage() {
     const fingerprint = schedulePersistenceFingerprint(drafts, scheduleInfo, driverTripRows);
     if (lastPersistedFingerprintRef.current === null) {
       lastPersistedFingerprintRef.current = fingerprint;
+      persistedDriverFingerprintRef.current = driverLogsFingerprint(driverTripRows);
       return;
     }
     if (lastPersistedFingerprintRef.current === fingerprint) return;
@@ -1778,10 +1985,13 @@ export default function HrScheduleDayPage() {
       return;
     }
     mapFromApi(json.data as Record<string, unknown>);
+    markScheduleStructureDirty();
+    lastPersistedFingerprintRef.current = null;
     toast.success(`Template loaded from ${selectedTemplateDate}`);
   };
 
   const addColumn = () => {
+    markScheduleStructureDirty();
     applyDrafts((prev) => {
       const nextNumber = getNextTeamNumber(prev);
       const empty = createEmptyDraft(
@@ -1801,6 +2011,7 @@ export default function HrScheduleDayPage() {
   };
 
   const duplicateColumn = (idx: number) => {
+    markScheduleStructureDirty();
     applyDrafts((prev) => {
       const src = prev[idx];
       if (!src) return prev;
@@ -1812,7 +2023,7 @@ export default function HrScheduleDayPage() {
         members: src.members.map((m) => ({ ...m })),
         subTeams: src.subTeams.map((subTeam) => ({
           ...subTeam,
-          id: crypto.randomUUID(),
+          id: createClientId(),
           members: subTeam.members.map((member) => ({ ...member })),
         })),
       };
@@ -1820,9 +2031,13 @@ export default function HrScheduleDayPage() {
     });
   };
 
-  const removeColumn = (idx: number) => applyDrafts((d) => d.filter((_, i) => i !== idx));
+  const removeColumn = (idx: number) => {
+    markScheduleStructureDirty();
+    applyDrafts((d) => d.filter((_, i) => i !== idx));
+  };
 
-  const reorderTeamColumns = (fromIndex: number, toIndex: number) =>
+  const reorderTeamColumns = (fromIndex: number, toIndex: number) => {
+    markScheduleStructureDirty();
     applyDrafts((rows) => {
       const reordered = moveArrayItem(rows, fromIndex, toIndex);
       return reordered.map((row, index) => ({
@@ -1830,6 +2045,7 @@ export default function HrScheduleDayPage() {
         columnIndex: index + 1,
       }));
     });
+  };
 
   const moveTeamColumn = (colIdx: number, direction: -1 | 1) => {
     const toIndex = colIdx + direction;
@@ -1984,6 +2200,70 @@ export default function HrScheduleDayPage() {
 
   const upd = (idx: number, patch: Partial<AsgDraft>) =>
     applyDrafts((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+
+  const persistJobDescription = useCallback(
+    async (jobId: string, description: string) => {
+      if (!canEditJob) return;
+      const normalized = description.trim();
+      const saved = String(getJob(jobId)?.description ?? '').trim();
+      if (normalized === saved) {
+        setJobDescriptionEdits((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, jobId)) return prev;
+          const next = { ...prev };
+          delete next[jobId];
+          return next;
+        });
+        return;
+      }
+
+      try {
+        const updated = await updateJob({
+          id: jobId,
+          data: { description: normalized },
+        }).unwrap();
+        mergeJobs([jobRecordToScheduleRow(updated)]);
+        setJobDescriptionEdits((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, jobId)) return prev;
+          if (prev[jobId] !== description) return prev;
+          const next = { ...prev };
+          delete next[jobId];
+          return next;
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not update work details on the job.');
+      }
+    },
+    [canEditJob, getJob, mergeJobs, updateJob],
+  );
+
+  const handleWorkDetailsChange = useCallback(
+    (jobId: string, value: string) => {
+      if (!canEditJob || !jobId) return;
+      setJobDescriptionEdits((prev) => ({ ...prev, [jobId]: value }));
+
+      const timers = jobDescriptionSaveTimersRef.current;
+      const existing = timers.get(jobId);
+      if (existing != null) window.clearTimeout(existing);
+      timers.set(
+        jobId,
+        window.setTimeout(() => {
+          timers.delete(jobId);
+          void persistJobDescription(jobId, value);
+        }, 800),
+      );
+    },
+    [canEditJob, persistJobDescription],
+  );
+
+  useEffect(() => {
+    const timers = jobDescriptionSaveTimersRef.current;
+    return () => {
+      for (const timerId of timers.values()) {
+        window.clearTimeout(timerId);
+      }
+      timers.clear();
+    };
+  }, []);
 
   const applyJobToColumn = useCallback(
     (colIdx: number, jid: string) => {
@@ -2712,7 +2992,7 @@ export default function HrScheduleDayPage() {
       },
       scheduleGroups: drafts.map((draft) => {
         const job = getJob(draft.jobId);
-        const resolvedWorkProcess = resolveWorkProcessDetails(draft.workProcessDetails, job);
+        const workDetails = getJobWorkDetails(draft.jobId);
         const flatWorkerNames = draft.splitMode
           ? draft.subTeams.flatMap((subTeam) => subTeam.members.map((member) => empName(member.employeeId))).filter(Boolean)
           : draft.members.map((member) => empName(member.employeeId)).filter(Boolean);
@@ -2752,7 +3032,7 @@ export default function HrScheduleDayPage() {
               : draft.locationType === 'FACTORY'
                 ? 'Factory'
                 : 'Other',
-          siteName: draft.locationType === 'SITE_JOB' ? String(job?.site ?? '').trim() : '',
+          siteName: String(job?.site ?? '').trim(),
           locationDisplay:
             draft.locationType === 'SITE_JOB'
               ? String(job?.site ?? '').trim() || 'Site'
@@ -2773,7 +3053,7 @@ export default function HrScheduleDayPage() {
           projectDetails: String(job?.projectDetails ?? '').trim(),
           projectType: String(job?.projectType ?? '').trim(),
           projectQtyArea: String(job?.projectQtyArea ?? '').trim(),
-          workProcessDetails: resolvedWorkProcess,
+          workProcessDetails: workDetails,
           targetQty: draft.targetQty,
           teamLeaderName: flatWorkerNames[0] ?? '',
           driverNames,
@@ -2951,8 +3231,7 @@ export default function HrScheduleDayPage() {
       }
       case 'siteName': {
         const job = getJob(d.jobId);
-        const siteName =
-          d.locationType === 'SITE_JOB' ? String(job?.site ?? '').trim() : '';
+        const siteName = String(job?.site ?? '').trim();
         return (
           <div className="flex min-h-4 items-center px-1 py-0.5">
             <span className="truncate text-xs text-foreground/90" title={siteName || undefined}>
@@ -2962,14 +3241,27 @@ export default function HrScheduleDayPage() {
         );
       }
       case 'workProcessDetails': {
+        const workDetails = getJobWorkDetails(d.jobId);
+        const canEditWorkDetails = canEditJob && !fieldDisabled && Boolean(d.jobId);
+        if (!canEditWorkDetails) {
+          return (
+            <div className="flex min-h-14 items-start px-1 py-0.5">
+              <span
+                className="whitespace-pre-wrap text-xs text-foreground/90"
+                title={workDetails || undefined}
+              >
+                {workDetails || '—'}
+              </span>
+            </div>
+          );
+        }
         return (
           <div className="space-y-0.5 px-1 py-0.5">
             <textarea
-              value={d.workProcessDetails}
-              onChange={(e) => upd(colIdx, { workProcessDetails: e.target.value })}
-              disabled={fieldDisabled}
+              value={workDetails}
+              onChange={(e) => handleWorkDetailsChange(d.jobId, e.target.value)}
               rows={1}
-              placeholder="Enter work process details..."
+              placeholder="Enter work details..."
               className={gridTextareaCls}
               {...getGridNavProps(NAV_ROW.workProcess, colIdx + 1)}
             />
@@ -3494,13 +3786,13 @@ export default function HrScheduleDayPage() {
 				<>
 					<div
 						className={cn(
-							'grid gap-3',
+							'grid min-h-0 gap-3',
 							showWorkerRail
 								? 'xl:grid-cols-[1fr_12rem] xl:items-stretch'
 								: 'grid-cols-1',
 						)}
 					>
-						<section className='overflow-hidden rounded-lg border border-border bg-card shadow-sm'>
+						<section className='flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm'>
 							<div className='flex flex-col gap-2 border-b border-border px-3 py-2 lg:flex-row lg:items-center lg:justify-between'>
 								<div className='min-w-0 space-y-0.5'>
 									<h2 className='text-base font-semibold text-foreground'>
@@ -3513,6 +3805,20 @@ export default function HrScheduleDayPage() {
 									</p>
 								</div>
 								<div className='flex flex-wrap items-center gap-2'>
+									{otherScheduleEditors.length > 0 ? (
+										<div className='flex max-w-full flex-wrap items-center gap-1.5'>
+											<span className='text-xs text-muted-foreground'>Editing:</span>
+											{otherScheduleEditors.map((editor) => (
+												<span
+													key={editor.sessionId}
+													className='inline-flex max-w-[10rem] truncate rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-950 dark:text-violet-100'
+													title={editor.displayName}
+												>
+													{editor.displayName}
+												</span>
+											))}
+										</div>
+									) : null}
 									{canEdit && !locked ? (
 										<Button
 											type='button'
@@ -3662,7 +3968,6 @@ export default function HrScheduleDayPage() {
 							</div>
 
 							<div
-								ref={teamBoardBodyRef}
 								className='isolate overflow-x-auto'
 								style={{ zoom: viewScale } as CSSProperties}
 							>
@@ -3815,14 +4120,7 @@ export default function HrScheduleDayPage() {
 						</section>
 
 						{showWorkerRail ? (
-							<Card
-								className='flex min-h-screen flex-col overflow-hidden xl:sticky xl:top-2'
-								style={
-									workerRailMaxHeight != null
-										? { maxHeight: workerRailMaxHeight }
-										: undefined
-								}
-							>
+							<Card className='flex max-h-[calc(100vh-1rem)] flex-col overflow-hidden xl:sticky xl:top-2 xl:self-start'>
 								<CardHeader className='shrink-0 space-y-0.5 px-3 py-2 pb-1'>
 									<CardTitle className='text-sm'>
 										Worker pool
@@ -3831,8 +4129,8 @@ export default function HrScheduleDayPage() {
 										{`${unassignedWorkers.length} unassigned${workerPool.length > 0 ? ` of ${workerPool.length} workers` : ''}`}
 									</CardDescription>
 								</CardHeader>
-								<CardContent className='flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0 pt-0'>
-									<div className='min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2'>
+								<CardContent className='flex min-h-0 flex-1 flex-col overflow-hidden p-0 pt-0'>
+									<div className='min-h-0 flex-1 overflow-y-auto px-3 pb-2'>
 										<div className='flex flex-col gap-1'>
 											{workerPool.length === 0 ? (
 												<p className='text-xs text-muted-foreground'>
