@@ -1,6 +1,10 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import {
+  checkJobDeleteEligibility,
+  type JobDeleteCheckResult,
+} from '@/lib/jobs/checkJobDeleteEligibility';
+import {
   serializeJobWithContacts,
   syncJobContacts,
 } from '@/lib/jobs/jobContacts';
@@ -33,6 +37,8 @@ const UpdateSchema = z.object({
   lpoValue:        z.number().finite().optional(),
   projectName:    z.string().max(200).optional(),
   projectDetails: z.string().max(2000).optional(),
+  projectType:    z.string().max(120).optional(),
+  projectQtyArea: z.string().max(120).optional(),
   contactPerson:  z.string().max(200).nullable().optional(),
   contactsJson:   z.array(z.any()).optional(),
   salesPerson:    z.string().max(200).optional(),
@@ -138,6 +144,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (parsed.data.lpoValue !== undefined) updateData.lpoValue = decimalToNumber(parsed.data.lpoValue);
     if (parsed.data.projectName !== undefined) updateData.projectName = parsed.data.projectName;
     if (parsed.data.projectDetails !== undefined) updateData.projectDetails = parsed.data.projectDetails;
+    if (parsed.data.projectType !== undefined) updateData.projectType = parsed.data.projectType?.trim() || null;
+    if (parsed.data.projectQtyArea !== undefined) updateData.projectQtyArea = parsed.data.projectQtyArea?.trim() || null;
     if (parsed.data.contactPerson !== undefined) updateData.contactPerson = parsed.data.contactPerson?.trim() || null;
     if (parsed.data.salesPerson !== undefined) updateData.salesPerson = parsed.data.salesPerson;
     if (parsed.data.jobWorkValue !== undefined) updateData.jobWorkValue = decimalToNumber(parsed.data.jobWorkValue);
@@ -271,7 +279,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
   if (!session.user.isSuperAdmin && !session.user.permissions.includes('job.delete')) {
@@ -282,50 +290,29 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const companyId = session.user.activeCompanyId;
 
   const { id } = await params;
-  const { hardDelete } = await req.json().catch(() => ({ hardDelete: false }));
 
   try {
-    // Check for linked transactions
-    const txnCount = await prisma.transaction.count({
-      where: {
-        jobId: id,
-        companyId: session.user.activeCompanyId,
-      },
+    const eligibility = await checkJobDeleteEligibility(prisma, companyId, id);
+
+    if (eligibility.deleteBlockedReason === 'external_api') {
+      return errorResponse('Synced jobs cannot be deleted. Put the job on hold or cancel it instead.', 400);
+    }
+
+    if (!eligibility.canDelete) {
+      const summary = formatDeleteBlockMessage(eligibility);
+      return errorResponse(summary, 400);
+    }
+
+    await prisma.job.delete({
+      where: { companyId_id: { companyId, id } },
     });
-
-    if (txnCount > 0 && !hardDelete) {
-      return errorResponse(
-        `Cannot delete: ${txnCount} transaction(s) linked to this job. Deactivate instead or use hard delete if you're certain.`,
-        400
-      );
-    }
-
-    if (hardDelete) {
-      // Permanently delete (only if no transactions OR user explicitly confirmed)
-      await prisma.job.delete({
-        where: { id },
-      });
-      publishLiveUpdate({
-        companyId,
-        channel: 'jobs',
-        entity: 'job',
-        action: 'deleted',
-      });
-      return successResponse({ deleted: true, permanent: true });
-    } else {
-      // Soft delete (deactivate)
-      const job = await prisma.job.update({
-        where: { id },
-        data: { status: 'CANCELLED' },
-      });
-      publishLiveUpdate({
-        companyId,
-        channel: 'jobs',
-        entity: 'job',
-        action: 'updated',
-      });
-      return successResponse({ deleted: true, permanent: false, message: 'Job marked as CANCELLED' });
-    }
+    publishLiveUpdate({
+      companyId,
+      channel: 'jobs',
+      entity: 'job',
+      action: 'deleted',
+    });
+    return successResponse({ deleted: true, permanent: true });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Failed to delete job';
     if (errorMsg.includes('not found')) {
@@ -333,4 +320,14 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     }
     return errorResponse(errorMsg, 500);
   }
+}
+
+function formatDeleteBlockMessage(eligibility: JobDeleteCheckResult) {
+  const parts = eligibility.links.map((link) => {
+    const noun = link.count === 1 ? link.label.toLowerCase() : `${link.label.toLowerCase()}s`;
+    return `${link.count} ${noun}`;
+  });
+  const detail = parts.length > 0 ? parts.join(', ') : `${eligibility.totalLinkedCount} linked record(s)`;
+  const subject = eligibility.isVariation ? 'variation' : 'job';
+  return `Cannot delete this ${subject}: ${detail}. Put it on hold or cancel it instead.`;
 }

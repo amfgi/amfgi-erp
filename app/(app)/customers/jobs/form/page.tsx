@@ -28,6 +28,8 @@ type JobRecord = Job & {
   lpoValue?: number | null;
   projectName?: string | null;
   projectDetails?: string | null;
+  projectType?: string | null;
+  projectQtyArea?: string | null;
   contactPerson?: string | null;
   contactsJson?: unknown;
   salesPerson?: string | null;
@@ -60,6 +62,8 @@ type JobFormState = {
   lpoValue: string;
   projectName: string;
   projectDetails: string;
+  projectType: string;
+  projectQtyArea: string;
   salesPerson: string;
   jobWorkValue: string;
 };
@@ -89,6 +93,8 @@ function emptyForm(): JobFormState {
     lpoValue: '',
     projectName: '',
     projectDetails: '',
+    projectType: '',
+    projectQtyArea: '',
     salesPerson: '',
     jobWorkValue: '',
   };
@@ -144,6 +150,8 @@ function buildFormFromJob(job: JobRecord): JobFormState {
     lpoValue: job.lpoValue?.toString() ?? '',
     projectName: job.projectName ?? '',
     projectDetails: job.projectDetails ?? '',
+    projectType: job.projectType ?? '',
+    projectQtyArea: job.projectQtyArea ?? '',
     salesPerson: job.salesPerson ?? '',
     jobWorkValue: job.jobWorkValue?.toString() ?? '',
   };
@@ -197,6 +205,7 @@ export default function CustomerJobFormPage() {
   const { data: customers = [] } = useGetCustomersQuery();
   const [createJob, { isLoading: isCreating }] = useCreateJobMutation();
   const [updateJob, { isLoading: isUpdating }] = useUpdateJobMutation();
+  const [isProvisional, setIsProvisional] = useState(false);
 
   const mode = getMode(searchParams.get('mode'));
   const jobId = searchParams.get('id');
@@ -337,6 +346,8 @@ export default function CustomerJobFormPage() {
       lpoValue: parseNumberInput(form.lpoValue),
       projectName: form.projectName.trim() || undefined,
       projectDetails: form.projectDetails.trim() || undefined,
+      projectType: form.projectType.trim() || undefined,
+      projectQtyArea: form.projectQtyArea.trim() || undefined,
       contactPerson,
       salesPerson: form.salesPerson.trim() || undefined,
       contactsJson: contactsPayload,
@@ -361,14 +372,23 @@ export default function CustomerJobFormPage() {
           ? `${parentJob.jobNumber}-${form.variationSuffix.trim()}`
           : form.jobNumber.trim();
 
-      const created = await createJob({
+      await createJob({
         ...buildPayload(),
         jobNumber: finalJobNumber,
         startDate: form.startDate || todayDate,
         ...(parentJobId ? { parentJobId } : {}),
+        ...(mode === 'create' && isProvisional ? { isProvisional: true } : {}),
       }).unwrap();
       toast.success(mode === 'variation' ? 'Job variation created' : 'Job created');
-      router.push(mode === 'variation' ? `/stock/job-budget/${created.id}` : '/customers/jobs');
+      if (mode === 'variation') {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+          router.back();
+        } else {
+          router.push('/customers/jobs');
+        }
+      } else {
+        router.push('/customers/jobs');
+      }
     } catch (error) {
       toast.error(extractApiErrorMessage(error, 'Failed to save job'));
     }
@@ -515,9 +535,26 @@ export default function CustomerJobFormPage() {
                 </div>
               </div>
             )}
+            {mode === 'create' ? (
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-muted/20 px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={isProvisional}
+                  onChange={(event) => setIsProvisional(event.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="text-sm font-medium text-foreground">Provisional parent job number</span>
+                  <span className="mt-1 block text-xs normal-case tracking-normal text-muted-foreground">
+                    Use a temporary parent number until the formal customer job is issued. Variations keep their
+                    suffix and are renumbered automatically when you confirm the parent from the jobs list.
+                  </span>
+                </span>
+              </label>
+            ) : null}
           </Section>
 
-          <Section eyebrow="Scope" title="Work process and site" description="Keep this focused on job scope. Material brand, quantities, and finished goods now belong to budget formulas.">
+          <Section eyebrow="Scope" title="Work process and site" description="Keep this focused on job scope, project type, quantity or area, and workforce skills. Material brand and finished goods belong to budget formulas.">
             <label className={LABEL_CLASS}>
               Work process details
               <textarea
@@ -527,6 +564,40 @@ export default function CustomerJobFormPage() {
                 className={`${INPUT_CLASS} resize-none`}
                 placeholder="Describe the work scope, site condition, and customer expectation..."
               />
+            </label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className={LABEL_CLASS}>
+                Job project type
+                <input
+                  value={form.projectType}
+                  onChange={(event) => updateField('projectType', event.target.value)}
+                  className={INPUT_CLASS}
+                  placeholder="Enter project type"
+                />
+              </label>
+              <label className={LABEL_CLASS}>
+                Project qty / area
+                <input
+                  value={form.projectQtyArea}
+                  onChange={(event) => updateField('projectQtyArea', event.target.value)}
+                  className={INPUT_CLASS}
+                  placeholder="e.g. 1,200 sqm or 50 nos"
+                />
+              </label>
+            </div>
+            <label className={LABEL_CLASS}>
+              Required project expertise
+              <div className="mt-1.5">
+                <MultiSelectDropdown
+                  options={(expertiseOptions.length ? expertiseOptions : [...WORKFORCE_EXPERTISE_OPTIONS]).map((expertise) => ({
+                    value: expertise,
+                    label: expertise,
+                  }))}
+                  value={requiredExpertises}
+                  onChange={setRequiredExpertisesDraft}
+                  placeholder="Select skills needed for this job..."
+                />
+              </div>
             </label>
             <label className={LABEL_CLASS}>
               Site
@@ -558,20 +629,6 @@ export default function CustomerJobFormPage() {
           </Section>
 
           <Section eyebrow="Budget readiness" title="Commercial and workforce inputs" description="These values help compare quotation, budget, manpower, and actual site consumption later.">
-            <label className={LABEL_CLASS}>
-              Required worker expertise
-              <div className="mt-1.5">
-                <MultiSelectDropdown
-                  options={(expertiseOptions.length ? expertiseOptions : [...WORKFORCE_EXPERTISE_OPTIONS]).map((expertise) => ({
-                    value: expertise,
-                    label: expertise,
-                  }))}
-                  value={requiredExpertises}
-                  onChange={setRequiredExpertisesDraft}
-                  placeholder="Select skills needed for budget schedule checks..."
-                />
-              </div>
-            </label>
             <div className="grid gap-4 md:grid-cols-2">
               <label className={LABEL_CLASS}>
                 Project name

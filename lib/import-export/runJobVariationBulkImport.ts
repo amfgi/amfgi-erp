@@ -1,9 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import { syncJobContacts } from '@/lib/jobs/jobContacts';
 import { normalizeRequiredExpertiseNames, syncJobRequiredExpertises } from '@/lib/jobs/jobRequiredExpertises';
+import {
+  buildVariationJobCreateData,
+  buildVariationJobUpdatePatch,
+} from '@/lib/import-export/jobImportPatch';
 import type { JobVariationImportRow } from '@/lib/import-export/jobVariationFields';
 import type { BulkImportResult } from '@/lib/import-export/types';
-import { decimalToNumber } from '@/lib/utils/decimal';
 
 type ParentJobRef = {
   id: string;
@@ -16,12 +19,9 @@ type ExistingVariation = {
   id: string;
   jobNumber: string;
   source: string;
+  customerId: string;
+  parentJobId: string | null;
 };
-
-function parseDateOrNull(value?: string) {
-  if (!value?.trim()) return null;
-  return new Date(`${value.trim()}T00:00:00Z`);
-}
 
 function resolveVariationJobNumber(
   parent: ParentJobRef,
@@ -65,26 +65,47 @@ export async function runJobVariationBulkImport(
 
   const variations = await prisma.job.findMany({
     where: { companyId, parentJobId: { not: null } },
-    select: { id: true, jobNumber: true, source: true },
+    select: { id: true, jobNumber: true, source: true, customerId: true, parentJobId: true },
   });
   const variationById = new Map(variations.map((j) => [j.id, j]));
   const variationByNumber = new Map(variations.map((j) => [j.jobNumber.trim().toLowerCase(), j]));
 
-  const resolveParent = (row: JobVariationImportRow): ParentJobRef | null => {
+  const resolveParent = (row: JobVariationImportRow, match?: ExistingVariation | null): ParentJobRef | null => {
     if (row.parentJobId && parentById.has(row.parentJobId)) return parentById.get(row.parentJobId)!;
     if (row.parentJobNumber) {
       return parentByNumber.get(row.parentJobNumber.trim().toLowerCase()) ?? null;
     }
+    if (match?.parentJobId && parentById.has(match.parentJobId)) {
+      return parentById.get(match.parentJobId)!;
+    }
+    const explicitJobNumber = row.jobNumber?.trim();
+    if (explicitJobNumber) {
+      const normalized = explicitJobNumber.toLowerCase();
+      let best: ParentJobRef | null = null;
+      let bestLen = 0;
+      for (const parent of parents) {
+        const key = parent.jobNumber.trim().toLowerCase();
+        if (normalized.startsWith(`${key}-`) && key.length > bestLen) {
+          best = parent;
+          bestLen = key.length;
+        }
+      }
+      if (best) return best;
+    }
     return null;
   };
 
-  const resolveCustomerId = (row: JobVariationImportRow, parent: ParentJobRef): string | null => {
+  const resolveCustomerId = (
+    row: JobVariationImportRow,
+    parent: ParentJobRef,
+    fallbackCustomerId?: string,
+  ): string | null => {
     if (row.customerId && customerById.has(row.customerId)) return row.customerId;
     if (row.customerName) {
       const match = customerByName.get(row.customerName.trim().toLowerCase());
       if (match) return match.id;
     }
-    return parent.customerId;
+    return fallbackCustomerId ?? parent.customerId;
   };
 
   const resolveExistingVariation = (row: JobVariationImportRow, jobNumber: string): ExistingVariation | null => {
@@ -92,51 +113,34 @@ export async function runJobVariationBulkImport(
     return variationByNumber.get(jobNumber.trim().toLowerCase()) ?? null;
   };
 
-  const buildJobData = (
-    row: JobVariationImportRow,
-    jobNumber: string,
-    customerId: string,
-    parentJobId: string
-  ) => ({
-    jobNumber,
-    customerId,
-    description: row.description?.trim() || null,
-    site: row.site?.trim() || null,
-    address: row.address?.trim() || null,
-    status: row.status ?? 'ACTIVE',
-    startDate: parseDateOrNull(row.startDate) ?? new Date(),
-    endDate: parseDateOrNull(row.endDate),
-    quotationNumber: row.quotationNumber?.trim() || null,
-    quotationDate: parseDateOrNull(row.quotationDate),
-    lpoNumber: row.lpoNumber?.trim() || null,
-    lpoDate: parseDateOrNull(row.lpoDate),
-    lpoValue: decimalToNumber(row.lpoValue) ?? null,
-    projectName: row.projectName?.trim() || null,
-    projectDetails: row.projectDetails?.trim() || null,
-    contactPerson: row.contactPerson?.trim() || null,
-    salesPerson: row.salesPerson?.trim() || null,
-    jobWorkValue: decimalToNumber(row.jobWorkValue) ?? null,
-    parentJobId,
-  });
-
   const applyRow = async (row: JobVariationImportRow, mode: 'create' | 'update') => {
-    const parent = resolveParent(row);
+    const existingMatch =
+      mode === 'update'
+        ? resolveExistingVariation(row, row.jobNumber?.trim() ?? '') ??
+          (row.id ? variationById.get(row.id) ?? null : null)
+        : null;
+
+    const parent = resolveParent(row, existingMatch);
     if (!parent) {
       skipped += 1;
       warnings.push(
-        `Parent job not found for variation (parent: ${row.parentJobNumber ?? row.parentJobId ?? '?'})`
+        `Parent job not found for variation (parent: ${row.parentJobNumber ?? row.parentJobId ?? row.jobNumber ?? '?'})`
       );
       return;
     }
 
-    const jobNumber = resolveVariationJobNumber(parent, row);
+    const jobNumber =
+      resolveVariationJobNumber(parent, row) ??
+      existingMatch?.jobNumber ??
+      row.jobNumber?.trim() ??
+      null;
     if (!jobNumber) {
       skipped += 1;
       warnings.push(`Could not build job number for parent "${parent.jobNumber}"`);
       return;
     }
 
-    const customerId = resolveCustomerId(row, parent);
+    const customerId = resolveCustomerId(row, parent, mode === 'update' ? existingMatch?.customerId : undefined);
     if (!customerId) {
       skipped += 1;
       warnings.push(`Customer not found for variation "${jobNumber}"`);
@@ -151,7 +155,6 @@ export async function runJobVariationBulkImport(
     }
 
     const requiredExpertises = normalizeRequiredExpertiseNames(row.requiredExpertises);
-    const jobData = buildJobData(row, jobNumber, customerId, parent.id);
 
     if (mode === 'create') {
       const dup = variationByNumber.get(jobNumber.trim().toLowerCase());
@@ -164,7 +167,7 @@ export async function runJobVariationBulkImport(
       const job = await prisma.$transaction(async (tx) => {
         const created = await tx.job.create({
           data: {
-            ...jobData,
+            ...buildVariationJobCreateData(row, jobNumber, customerId, parent.id),
             companyId,
             createdBy: userId,
             source: 'LOCAL',
@@ -185,11 +188,19 @@ export async function runJobVariationBulkImport(
         return created;
       });
 
-      variationById.set(job.id, { id: job.id, jobNumber: job.jobNumber, source: 'LOCAL' });
+      variationById.set(job.id, {
+        id: job.id,
+        jobNumber: job.jobNumber,
+        source: 'LOCAL',
+        customerId: job.customerId,
+        parentJobId: job.parentJobId ?? parent.id,
+      });
       variationByNumber.set(job.jobNumber.trim().toLowerCase(), {
         id: job.id,
         jobNumber: job.jobNumber,
         source: 'LOCAL',
+        customerId: job.customerId,
+        parentJobId: job.parentJobId ?? parent.id,
       });
       created += 1;
       return;
@@ -204,7 +215,7 @@ export async function runJobVariationBulkImport(
     await prisma.$transaction(async (tx) => {
       await tx.job.update({
         where: { id: match.id },
-        data: jobData,
+        data: buildVariationJobUpdatePatch(row, jobNumber, customerId, parent.id),
       });
       if (row.contactsJson !== undefined) {
         await syncJobContacts(tx, {

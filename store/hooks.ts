@@ -117,6 +117,7 @@ export {
   useGetDispatchBudgetWarningMutation,
   useCreateJobMutation,
   useUpdateJobMutation,
+  usePromoteProvisionalJobMutation,
   useDeleteJobMutation,
   useBulkImportParentJobsMutation,
   useBulkImportJobVariationsMutation,

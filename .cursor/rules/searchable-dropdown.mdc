@@ -1,0 +1,24 @@
+---
+description: Use SearchSelect for entity pickers instead of native select dropdowns
+alwaysApply: true
+---
+
+# Searchable dropdowns (SearchSelect)
+
+When the UI needs to pick one item from a list (customer, job, employee, supplier, warehouse, etc.), use the shared `SearchSelect` component from `@/components/ui/SearchSelect`.
+
+**Do not** use native `<select>` / shadcn `Select` for these pickers unless the list is tiny (2–3 fixed enum values like status filters).
+
+## Defaults
+
+- `openOnFocus` and `minCharactersToSearch={0}` for directory lists
+- `dropdownInPortal` inside modals or overflow containers
+- Map API rows to `{ id, label, searchText? }` with `useMemo`
+- Match surrounding input styling via `inputProps.className`
+
+## Examples in this codebase
+
+- Customer picker: `app/(app)/customers/jobs/form/page.tsx`
+- Job picker: `app/(app)/hr/schedule/[workDate]/ScheduleDayClient.tsx` (`ScheduleSearchSelect`)
+
+Plain `<select>` is still fine for **static enums** (job status, scope filter, yes/no).

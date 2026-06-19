@@ -23,6 +23,8 @@ export const PARENT_JOB_IMPORT_FIELDS: ImportFieldDef[] = [
   { key: 'lpo_value', label: 'LPO Value' },
   { key: 'project_name', label: 'Project Name' },
   { key: 'project_details', label: 'Project Details' },
+  { key: 'project_type', label: 'Project Type', aliases: ['job project type'] },
+  { key: 'project_qty_area', label: 'Project Qty/Area', aliases: ['project qty', 'project area', 'qty area'] },
   { key: 'contact_person', label: 'Contact Person' },
   { key: 'sales_person', label: 'Sales Person' },
   { key: 'job_work_value', label: 'Job Work Value' },
@@ -60,6 +62,8 @@ export type ParentJobImportRow = {
   lpoValue?: number;
   projectName?: string;
   projectDetails?: string;
+  projectType?: string;
+  projectQtyArea?: string;
   contactPerson?: string;
   salesPerson?: string;
   jobWorkValue?: number;
@@ -145,6 +149,8 @@ export function parentJobToExportRow(job: Job): Record<string, string | number> 
     'LPO Value': job.lpoValue ?? '',
     'Project Name': job.projectName ?? '',
     'Project Details': job.projectDetails ?? '',
+    'Project Type': job.projectType ?? '',
+    'Project Qty/Area': job.projectQtyArea ?? '',
     'Contact Person': job.contactPerson ?? '',
     'Sales Person': job.salesPerson ?? '',
     'Job Work Value': job.jobWorkValue ?? '',
@@ -176,7 +182,8 @@ export function mapParentJobImportRow(
 
   const customerId = cellToString(parsed.customer_id as string | undefined);
   const customerName = cellToString(parsed.customer_name as string | undefined);
-  if (!customerId && !customerName) {
+  const rowId = cellToString(parsed.id as string | undefined);
+  if (!customerId && !customerName && !rowId && !jobNumber) {
     parsed.__errors.push('Customer Name or Customer ID is required');
   }
 
@@ -185,8 +192,6 @@ export function mapParentJobImportRow(
     const status = parseJobStatus(statusRaw);
     if (!status) parsed.__errors.push(`Invalid status: ${statusRaw}`);
     else parsed.status = status;
-  } else {
-    parsed.status = 'ACTIVE';
   }
 
   for (const [key, label] of [
@@ -231,7 +236,7 @@ export function parentJobImportRowToPayload(row: MappedImportRow): ParentJobImpo
     jobNumber: cellToString(row.job_number as string),
     customerId: cellToString(row.customer_id as string | undefined) || undefined,
     customerName: cellToString(row.customer_name as string | undefined) || undefined,
-    status: (row.status as JobStatusImport) || 'ACTIVE',
+    status: row.status as JobStatusImport | undefined,
     description: cellToString(row.description as string | undefined) || undefined,
     site: cellToString(row.site as string | undefined) || undefined,
     address: cellToString(row.address as string | undefined) || undefined,
@@ -244,6 +249,8 @@ export function parentJobImportRowToPayload(row: MappedImportRow): ParentJobImpo
     lpoValue: typeof row.lpo_value === 'number' ? row.lpo_value : undefined,
     projectName: cellToString(row.project_name as string | undefined) || undefined,
     projectDetails: cellToString(row.project_details as string | undefined) || undefined,
+    projectType: cellToString(row.project_type as string | undefined) || undefined,
+    projectQtyArea: cellToString(row.project_qty_area as string | undefined) || undefined,
     contactPerson: cellToString(row.contact_person as string | undefined) || undefined,
     salesPerson: cellToString(row.sales_person as string | undefined) || undefined,
     jobWorkValue: typeof row.job_work_value === 'number' ? row.job_work_value : undefined,
@@ -280,6 +287,8 @@ export function downloadParentJobImportTemplate() {
       'LPO Value': '',
       'Project Name': 'Project Alpha',
       'Project Details': '',
+      'Project Type': 'Fit-out',
+      'Project Qty/Area': '1,200 sqm',
       'Contact Person': 'Site manager',
       'Sales Person': '',
       'Job Work Value': '',

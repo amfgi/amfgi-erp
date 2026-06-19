@@ -109,7 +109,7 @@ export async function proxy(req: NextRequest) {
   if (!session.user.isSuperAdmin) {
     const matched = SORTED_ROUTE_PERMISSIONS.find((r) => pathname.startsWith(r.prefix));
     if (matched) {
-      const perms = session.user.permissions;
+      const perms = session.user.permissions ?? [];
       const allowed = matched.anyPerms
         ? matched.anyPerms.some((p) => perms.includes(p))
         : perms.includes(matched.perm!) ||

@@ -126,6 +126,26 @@ function resolveParentJobIdForDeliveryNote(
   return job.parentJobId ?? job.id;
 }
 
+type LoadedJobParty = {
+  customerId?: string | null;
+  customer?: { id?: string; name?: string } | null;
+} | null | undefined;
+
+function customerIdFromLoadedJob(job: LoadedJobParty): string {
+  if (!job) return '';
+  return job.customerId?.trim() || job.customer?.id?.trim() || '';
+}
+
+function customerNameFromLoadedJob(job: LoadedJobParty): string {
+  if (!job) return '';
+  return job.customer?.name?.trim() || '';
+}
+
+const DELIVERY_TYPE_OPTIONS = [
+  { id: 'DISPATCH' as const, label: 'Customer Delivery Note' },
+  { id: 'SUBCONTRACT' as const, label: 'Send for Processing' },
+];
+
 export default function DeliveryNoteCreatePage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
@@ -168,6 +188,8 @@ export default function DeliveryNoteCreatePage() {
   const [customItemsLineNoAuto, setCustomItemsLineNoAuto] = useState(true);
   const [deliveryType, setDeliveryType] = useState<'DISPATCH' | 'SUBCONTRACT'>('DISPATCH');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [pinnedCustomer, setPinnedCustomer] = useState<{ id: string; name: string } | null>(null);
+  const [pinnedSupplier, setPinnedSupplier] = useState<{ id: string; name: string } | null>(null);
   const [supplierId, setSupplierId] = useState('');
   const [sourceWarehouseId, setSourceWarehouseId] = useState('');
   const [targetWarehouseId, setTargetWarehouseId] = useState('');
@@ -277,6 +299,51 @@ export default function DeliveryNoteCreatePage() {
       ),
     [jobs, selectedCustomerId],
   );
+
+  const customerSelectItems = useMemo(() => {
+    const items = customers.map((c) => ({
+      id: c.id,
+      label: c.name,
+      searchText: c.name,
+    }));
+    if (pinnedCustomer && !items.some((item) => item.id === pinnedCustomer.id)) {
+      items.unshift({
+        id: pinnedCustomer.id,
+        label: pinnedCustomer.name,
+        searchText: pinnedCustomer.name,
+      });
+    }
+    return items;
+  }, [customers, pinnedCustomer]);
+
+  const supplierSelectItems = useMemo(() => {
+    const items = suppliers
+      .filter((s) => s.isActive !== false)
+      .map((s) => ({
+        id: s.id,
+        label: s.name,
+        searchText: `${s.name} ${s.contactPerson ?? ''}`,
+      }));
+    if (pinnedSupplier && !items.some((item) => item.id === pinnedSupplier.id)) {
+      items.unshift({
+        id: pinnedSupplier.id,
+        label: pinnedSupplier.name,
+        searchText: pinnedSupplier.name,
+      });
+    }
+    return items;
+  }, [suppliers, pinnedSupplier]);
+
+  useEffect(() => {
+    if (!selectedJob || selectedCustomerId) return;
+    const job = jobs.find((entry) => entry.id === selectedJob);
+    if (!job?.customerId) return;
+    setSelectedCustomerId(job.customerId);
+    const customerName = customers.find((c) => c.id === job.customerId)?.name;
+    if (customerName) {
+      setPinnedCustomer({ id: job.customerId, name: customerName });
+    }
+  }, [selectedJob, selectedCustomerId, jobs, customers]);
   const budgetWarningLines = useMemo(
     () =>
       skipMaterialDispatch
@@ -574,6 +641,8 @@ export default function DeliveryNoteCreatePage() {
           contactPerson?: string | null;
           supplierId?: string | null;
           supplier?: {
+            id?: string;
+            name?: string;
             contactPerson?: string | null;
             phone?: string | null;
             email?: string | null;
@@ -596,7 +665,15 @@ export default function DeliveryNoteCreatePage() {
             targetWarehouseId?: string | null;
             quantityUomId?: string | null;
           }>;
-          job: { contactPerson?: string | null; customerId?: string } | null;
+          job: {
+            contactPerson?: string | null;
+            customerId?: string;
+            customer?: { id?: string; name?: string } | null;
+          } | null;
+          referenceJob?: {
+            customerId?: string;
+            customer?: { id?: string; name?: string } | null;
+          } | null;
           firstStockOutTransactionId: string | null;
           transactionIds?: string[];
         };
@@ -609,7 +686,21 @@ export default function DeliveryNoteCreatePage() {
         setReferenceJobId(d.referenceJobId ?? '');
         const canonicalJobId = resolveParentJobIdForDeliveryNote(d.jobId || '', jobs);
         setSelectedJob(canonicalJobId);
-        if (d.job?.customerId) setSelectedCustomerId(d.job.customerId);
+        const loadedCustomerId =
+          customerIdFromLoadedJob(d.job) || customerIdFromLoadedJob(d.referenceJob);
+        const loadedCustomerName =
+          customerNameFromLoadedJob(d.job) || customerNameFromLoadedJob(d.referenceJob);
+        if (loadedCustomerId) setSelectedCustomerId(loadedCustomerId);
+        if (loadedCustomerId && loadedCustomerName) {
+          setPinnedCustomer({ id: loadedCustomerId, name: loadedCustomerName });
+        } else {
+          setPinnedCustomer(null);
+        }
+        if (d.supplierId && d.supplier?.name) {
+          setPinnedSupplier({ id: d.supplierId, name: d.supplier.name });
+        } else {
+          setPinnedSupplier(null);
+        }
         contactJobRef.current = canonicalJobId;
         let loadedContactName = d.contactPerson?.trim() || '';
         setDate(
@@ -781,6 +872,12 @@ export default function DeliveryNoteCreatePage() {
             const txn = data.data;
             const canonicalJobId = resolveParentJobIdForDeliveryNote(txn.jobId || '', jobs);
             setSelectedJob(canonicalJobId);
+            const loadedCustomerId = customerIdFromLoadedJob(txn.job);
+            const loadedCustomerName = customerNameFromLoadedJob(txn.job);
+            if (loadedCustomerId) setSelectedCustomerId(loadedCustomerId);
+            if (loadedCustomerId && loadedCustomerName) {
+              setPinnedCustomer({ id: loadedCustomerId, name: loadedCustomerName });
+            }
             const contactName = parseDeliveryContactPerson(txn.notes || '');
             contactJobRef.current = canonicalJobId;
             setSelectedContactId(
@@ -1794,12 +1891,7 @@ export default function DeliveryNoteCreatePage() {
             Delivery type
           </p>
           <div className="flex flex-wrap gap-2">
-            {(
-              [
-                { id: 'DISPATCH', label: 'Dispatch to job' },
-                { id: 'SUBCONTRACT', label: 'Send to subcontractor' },
-              ] as const
-            ).map((option) => (
+            {DELIVERY_TYPE_OPTIONS.map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -1873,7 +1965,97 @@ export default function DeliveryNoteCreatePage() {
         {/* Job / subcontract header */}
         <div className="border-b border-border p-5 space-y-5">
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="lg:col-start-3">
+            {!isSubcontract ? (
+              <>
+                <div>
+                  <SearchSelect
+                    label="Customer name"
+                    required
+                    value={selectedCustomerId}
+                    onChange={(id) => {
+                      setSelectedCustomerId(id);
+                      const customer = customers.find((c) => c.id === id);
+                      setPinnedCustomer(customer ? { id: customer.id, name: customer.name } : null);
+                      if (selectedJob) {
+                        const job = jobs.find((j) => j.id === selectedJob);
+                        if (job && job.customerId !== id) {
+                          setSelectedJob('');
+                          setSelectedContactId('');
+                        }
+                      }
+                    }}
+                    placeholder="Search customer…"
+                    items={customerSelectItems}
+                  />
+                </div>
+                <div>
+                  <SearchSelect
+                    label="Job"
+                    required
+                    value={selectedJob}
+                    onChange={(id) => handleJobChange(id)}
+                    placeholder={selectedCustomerId ? 'Search by job number…' : 'Select customer first'}
+                    items={selectableJobs.map((j) => ({
+                      id: j.id,
+                      label: j.jobNumber,
+                      searchText: `${j.jobNumber} ${customers.find((c) => c.id === j.customerId)?.name || 'Unknown'}`,
+                    }))}
+                    renderItem={(item) => {
+                      const j = selectableJobs.find((x) => x.id === item.id);
+                      const customerName = j
+                        ? customers.find((c) => c.id === j.customerId)?.name || 'Unknown'
+                        : '';
+                      return (
+                        <div>
+                          <div className="font-medium text-foreground">{item.label}</div>
+                          <div className="text-xs text-muted-foreground">{customerName}</div>
+                        </div>
+                      );
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <SearchSelect
+                    label="Supplier name"
+                    required
+                    value={supplierId}
+                    onChange={(id) => {
+                      setSupplierId(id);
+                      const supplier = suppliers.find((s) => s.id === id);
+                      setPinnedSupplier(supplier ? { id: supplier.id, name: supplier.name } : null);
+                    }}
+                    placeholder="Search supplier…"
+                    items={supplierSelectItems}
+                  />
+                </div>
+                <div>
+                  <SearchSelect
+                    label="Reference job (optional)"
+                    value={referenceJobId}
+                    onChange={(id) => {
+                      setReferenceJobId(id);
+                      if (!id) return;
+                      const job = jobs.find((entry) => entry.id === id);
+                      if (!job?.customerId) return;
+                      const customerName = customers.find((c) => c.id === job.customerId)?.name;
+                      if (customerName) {
+                        setPinnedCustomer({ id: job.customerId, name: customerName });
+                      }
+                    }}
+                    placeholder="Planning reference only"
+                    items={selectableJobs.map((j) => ({
+                      id: j.id,
+                      label: j.jobNumber,
+                      searchText: j.jobNumber,
+                    }))}
+                  />
+                </div>
+              </>
+            )}
+            <div>
               <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Delivery date
               </label>
@@ -1885,7 +2067,7 @@ export default function DeliveryNoteCreatePage() {
                 className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-            <div className="lg:col-start-4">
+            <div>
               <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Delivery note number
               </label>
@@ -1939,77 +2121,9 @@ export default function DeliveryNoteCreatePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {!isSubcontract ? (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {isSubcontract ? (
               <>
-                <div>
-                  <SearchSelect
-                    label="Customer"
-                    required
-                    value={selectedCustomerId}
-                    onChange={(id) => {
-                      setSelectedCustomerId(id);
-                      if (selectedJob) {
-                        const job = jobs.find((j) => j.id === selectedJob);
-                        if (job && job.customerId !== id) {
-                          setSelectedJob('');
-                          setSelectedContactId('');
-                        }
-                      }
-                    }}
-                    placeholder="Search customer…"
-                    items={customers.map((c) => ({
-                      id: c.id,
-                      label: c.name,
-                      searchText: c.name,
-                    }))}
-                  />
-                </div>
-                <div>
-                  <SearchSelect
-                    label="Job"
-                    required
-                    value={selectedJob}
-                    onChange={(id) => handleJobChange(id)}
-                    placeholder={selectedCustomerId ? 'Search by job number…' : 'Select customer first'}
-                    items={selectableJobs.map((j) => ({
-                      id: j.id,
-                      label: j.jobNumber,
-                      searchText: `${j.jobNumber} ${customers.find((c) => c.id === j.customerId)?.name || 'Unknown'}`,
-                    }))}
-                    renderItem={(item) => {
-                      const j = selectableJobs.find((x) => x.id === item.id);
-                      const customerName = j
-                        ? customers.find((c) => c.id === j.customerId)?.name || 'Unknown'
-                        : '';
-                      return (
-                        <div>
-                          <div className="font-medium text-foreground">{item.label}</div>
-                          <div className="text-xs text-muted-foreground">{customerName}</div>
-                        </div>
-                      );
-                    }}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <SearchSelect
-                    label="Supplier"
-                    required
-                    value={supplierId}
-                    onChange={setSupplierId}
-                    placeholder="Search supplier…"
-                    items={suppliers
-                      .filter((s) => s.isActive !== false)
-                      .map((s) => ({
-                        id: s.id,
-                        label: s.name,
-                        searchText: `${s.name} ${s.contactPerson ?? ''}`,
-                      }))}
-                  />
-                </div>
                 <div>
                   <SearchSelect
                     label="Default source warehouse (optional)"
@@ -2026,19 +2140,6 @@ export default function DeliveryNoteCreatePage() {
                     onChange={setTargetWarehouseId}
                     placeholder="Auto-fill empty rows…"
                     items={warehouses.map((w) => ({ id: w.id, label: w.name, searchText: w.name }))}
-                  />
-                </div>
-                <div>
-                  <SearchSelect
-                    label="Reference job (optional)"
-                    value={referenceJobId}
-                    onChange={setReferenceJobId}
-                    placeholder="Planning reference only"
-                    items={selectableJobs.map((j) => ({
-                      id: j.id,
-                      label: j.jobNumber,
-                      searchText: j.jobNumber,
-                    }))}
                   />
                 </div>
                 <div className="sm:col-span-2 lg:col-span-4">
@@ -2118,9 +2219,8 @@ export default function DeliveryNoteCreatePage() {
                   </div>
                 </div>
               </>
-            )}
-            {!isSubcontract ? (
-              <div>
+            ) : (
+              <div className="sm:col-span-2 lg:col-span-4">
                 <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Contact Person
                 </label>
@@ -2197,7 +2297,7 @@ export default function DeliveryNoteCreatePage() {
                   ) : null}
                 </div>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
 

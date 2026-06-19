@@ -9,6 +9,15 @@ export const JOB_CACHE_INVALIDATES = [
   'JobDailyQuantityLog',
 ] as const;
 
-export function invalidateJobCaches(dispatch: AppDispatch) {
-  dispatch(appApi.util.invalidateTags([...JOB_CACHE_INVALIDATES]));
+export function jobListInvalidationTags(jobIds: string[] = []) {
+  const uniqueIds = [...new Set(jobIds.filter(Boolean))];
+  return [
+    { type: 'Job' as const, id: 'LIST' },
+    ...uniqueIds.map((id) => ({ type: 'Job' as const, id })),
+    ...JOB_CACHE_INVALIDATES.map((type) => ({ type })),
+  ];
+}
+
+export function invalidateJobCaches(dispatch: AppDispatch, jobIds: string[] = []) {
+  dispatch(appApi.util.invalidateTags(jobListInvalidationTags(jobIds)));
 }

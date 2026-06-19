@@ -52,6 +52,7 @@ model Company {
   mediaAssets              MediaAsset[]
   apiCredentials           ApiCredential[]
   lpoValueChanges          JobLpoValueHistory[]
+  jobNumberHistory         JobNumberHistory[]
     integrationLogs          IntegrationSyncLog[]
   formulaLibraries         FormulaLibrary[]
   formulaLibraryVersions   FormulaLibraryVersion[]
@@ -752,6 +753,10 @@ model Job {
   lpoValue               Decimal?               @db.Decimal(18, 2)
   projectName            String?
   projectDetails         String?                @db.Text
+  /// e.g. Fit-out, Maintenance, Civil works
+  projectType            String?                @db.VarChar(120)
+  /// Quantity or area scope for the job (e.g. 1200 sqm, 50 nos)
+  projectQtyArea         String?                @db.VarChar(120)
   /// Primary site/contact name (same idea as Customer.contactPerson)
   contactPerson          String?
   salesPerson            String?
@@ -770,6 +775,9 @@ model Job {
   executionActualEndDate    DateTime?             @db.Date
   executionProgressNote     String?               @db.Text
   executionProgressUpdatedAt DateTime?
+  /// Temporary job number until a formal customer job number is issued.
+  isProvisional            Boolean                @default(false)
+  confirmedAt              DateTime?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
   company                Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -778,6 +786,7 @@ model Job {
   variations             Job[]                  @relation("JobVariations")
   transactions           Transaction[]
   lpoValueHistory        JobLpoValueHistory[]
+  jobNumberHistory       JobNumberHistory[]
   contacts               JobContact[]
   jobItems               JobItem[]
   jobCostingSnapshots    JobCostingSnapshot[]
@@ -795,6 +804,7 @@ model Job {
   @@index([companyId, customerId])
   @@index([companyId, parentJobId])
   @@index([companyId, source])
+  @@index([companyId, isProvisional])
 }
 
 /// Marks that the daily quantity log was finalized for this calendar day — no new progress entries for this date.
@@ -941,6 +951,26 @@ model JobLpoValueHistory {
 
   @@index([companyId, createdAt])
   @@index([companyId, jobId, createdAt])
+}
+
+/// Audit trail when a provisional job number is confirmed or a job number is reassigned.
+model JobNumberHistory {
+  id                 String   @id @default(cuid())
+  companyId          String
+  jobId              String
+  previousJobNumber  String
+  newJobNumber       String
+  previousCustomerId String
+  newCustomerId      String
+  changedBy          String
+  note               String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [companyId, jobId], references: [companyId, id], onDelete: Cascade)
+
+  @@index([companyId, jobId, createdAt])
+  @@index([companyId, createdAt])
 }
 
 model IntegrationSyncLog {

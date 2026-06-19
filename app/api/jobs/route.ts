@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { attachJobListLineage } from '@/lib/jobs/jobListLineage';
 import {
   serializeJobWithContacts,
   syncJobContacts,
@@ -171,6 +172,8 @@ function buildJobListWhere(
       { customer: { name: { contains: opts.search, mode: 'insensitive' } } },
       { description: { contains: opts.search, mode: 'insensitive' } },
       { projectName: { contains: opts.search, mode: 'insensitive' } },
+      { projectType: { contains: opts.search, mode: 'insensitive' } },
+      { projectQtyArea: { contains: opts.search, mode: 'insensitive' } },
     ];
   }
 
@@ -196,12 +199,15 @@ const JobSchema = z.object({
   lpoValue:        z.number().finite().optional(),
   projectName:    z.string().max(200).optional(),
   projectDetails: z.string().max(2000).optional(),
+  projectType:    z.string().max(120).optional(),
+  projectQtyArea: z.string().max(120).optional(),
   contactPerson:  z.string().max(200).nullable().optional(),
   contactsJson:   z.array(z.any()).optional(),
   salesPerson:    z.string().max(200).optional(),
   jobWorkValue:   z.number().positive().finite().optional(),
   requiredExpertises: z.array(z.string().min(1).max(120)).optional(),
   parentJobId:    z.string().optional(),
+  isProvisional:  z.boolean().optional(),
   finishedGoods:  z.array(z.object({
     materialId:   z.string(),
     materialName: z.string(),
@@ -269,7 +275,11 @@ export async function GET(req: Request) {
       ]);
 
       return successResponse({
-        items: await attachBudgetSummaries(companyId, jobs.map(mapJob)),
+        items: await attachJobListLineage(
+          prisma,
+          companyId,
+          await attachBudgetSummaries(companyId, jobs.map(mapJob)),
+        ),
         total,
         activeTotal,
       });
@@ -340,10 +350,13 @@ export async function POST(req: Request) {
           lpoValue: decimalToNumber(parsed.data.lpoValue) ?? null,
           projectName: parsed.data.projectName || null,
           projectDetails: parsed.data.projectDetails || null,
+          projectType: parsed.data.projectType?.trim() || null,
+          projectQtyArea: parsed.data.projectQtyArea?.trim() || null,
           contactPerson: parsed.data.contactPerson?.trim() || null,
           salesPerson: parsed.data.salesPerson || null,
           jobWorkValue: decimalToNumber(parsed.data.jobWorkValue) ?? null,
           parentJobId: parsed.data.parentJobId || null,
+          isProvisional: parsed.data.isProvisional ?? false,
           finishedGoods: (parsed.data.finishedGoods && parsed.data.finishedGoods.length > 0) ? parsed.data.finishedGoods : [],
           companyId,
           createdBy: session.user.id,

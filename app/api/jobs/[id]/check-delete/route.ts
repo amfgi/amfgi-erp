@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { checkJobDeleteEligibility } from '@/lib/jobs/checkJobDeleteEligibility';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,34 +11,16 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   }
 
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
+  const companyId = session.user.activeCompanyId;
 
   const { id } = await params;
 
-  // Check for linked transactions
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      jobId: id,
-      companyId: session.user.activeCompanyId,
-    },
-    select: {
-      id: true,
-      type: true,
-      quantity: true,
-      materialId: true,
-    },
-    take: 10,
-  });
-
-  const txnCount = await prisma.transaction.count({
-    where: {
-      jobId: id,
-      companyId: session.user.activeCompanyId,
-    },
-  });
-
-  return successResponse({
-    canDelete: txnCount === 0,
-    linkedTransactions: transactions,
-    linkedTransactionsCount: txnCount,
-  });
+  try {
+    const result = await checkJobDeleteEligibility(prisma, companyId, id);
+    return successResponse(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to check job';
+    if (message.includes('not found')) return errorResponse('Job not found', 404);
+    return errorResponse(message, 500);
+  }
 }

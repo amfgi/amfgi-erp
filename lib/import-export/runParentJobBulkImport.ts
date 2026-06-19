@@ -1,20 +1,19 @@
 import type { PrismaClient } from '@prisma/client';
 import { syncJobContacts } from '@/lib/jobs/jobContacts';
 import { normalizeRequiredExpertiseNames, syncJobRequiredExpertises } from '@/lib/jobs/jobRequiredExpertises';
+import {
+  buildParentJobCreateData,
+  buildParentJobUpdatePatch,
+} from '@/lib/import-export/jobImportPatch';
 import type { ParentJobImportRow } from '@/lib/import-export/parentJobFields';
 import type { BulkImportResult } from '@/lib/import-export/types';
-import { decimalToNumber } from '@/lib/utils/decimal';
 
 type ExistingParentJob = {
   id: string;
   jobNumber: string;
   source: string;
+  customerId: string;
 };
-
-function parseDateOrNull(value?: string) {
-  if (!value?.trim()) return null;
-  return new Date(`${value.trim()}T00:00:00Z`);
-}
 
 export async function runParentJobBulkImport(
   prisma: PrismaClient,
@@ -41,18 +40,18 @@ export async function runParentJobBulkImport(
 
   const existing = await prisma.job.findMany({
     where: { companyId, parentJobId: null },
-    select: { id: true, jobNumber: true, source: true },
+    select: { id: true, jobNumber: true, source: true, customerId: true },
   });
   const byId = new Map(existing.map((j) => [j.id, j]));
   const byJobNumber = new Map(existing.map((j) => [j.jobNumber.trim().toLowerCase(), j]));
 
-  const resolveCustomerId = (row: ParentJobImportRow): string | null => {
+  const resolveCustomerId = (row: ParentJobImportRow, fallbackCustomerId?: string): string | null => {
     if (row.customerId && customerById.has(row.customerId)) return row.customerId;
     if (row.customerName) {
       const match = customerByName.get(row.customerName.trim().toLowerCase());
       return match?.id ?? null;
     }
-    return null;
+    return fallbackCustomerId ?? null;
   };
 
   const resolveExisting = (row: ParentJobImportRow): ExistingParentJob | null => {
@@ -61,27 +60,16 @@ export async function runParentJobBulkImport(
     return byNum ?? null;
   };
 
-  const buildJobData = (row: ParentJobImportRow, customerId: string) => ({
-    jobNumber: row.jobNumber.trim(),
-    customerId,
-    description: row.description?.trim() || null,
-    site: row.site?.trim() || null,
-    address: row.address?.trim() || null,
-    status: row.status ?? 'ACTIVE',
-    startDate: parseDateOrNull(row.startDate) ?? new Date(),
-    endDate: parseDateOrNull(row.endDate),
-    quotationNumber: row.quotationNumber?.trim() || null,
-    quotationDate: parseDateOrNull(row.quotationDate),
-    lpoNumber: row.lpoNumber?.trim() || null,
-    lpoDate: parseDateOrNull(row.lpoDate),
-    lpoValue: decimalToNumber(row.lpoValue) ?? null,
-    projectName: row.projectName?.trim() || null,
-    projectDetails: row.projectDetails?.trim() || null,
-    contactPerson: row.contactPerson?.trim() || null,
-    salesPerson: row.salesPerson?.trim() || null,
-    jobWorkValue: decimalToNumber(row.jobWorkValue) ?? null,
-    parentJobId: null as string | null,
-  });
+  const looksLikeVariationJobNumber = (jobNumber: string): boolean => {
+    const normalized = jobNumber.trim().toLowerCase();
+    for (const parent of existing) {
+      const parentKey = parent.jobNumber.trim().toLowerCase();
+      if (normalized.startsWith(`${parentKey}-`) && normalized.length > parentKey.length + 1) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   const applyRow = async (row: ParentJobImportRow, mode: 'create' | 'update', match: ExistingParentJob | null) => {
     if (mode === 'update' && match?.source === 'EXTERNAL_API') {
@@ -94,8 +82,15 @@ export async function runParentJobBulkImport(
       warnings.push(`Skipped create for "${row.jobNumber}" (company is external-only parent jobs).`);
       return;
     }
+    if (mode === 'create' && looksLikeVariationJobNumber(row.jobNumber)) {
+      skipped += 1;
+      warnings.push(
+        `"${row.jobNumber}" looks like a job variation. Use Import job variations (not Import parent jobs).`,
+      );
+      return;
+    }
 
-    const customerId = resolveCustomerId(row);
+    const customerId = resolveCustomerId(row, mode === 'update' ? match?.customerId : undefined);
     if (!customerId) {
       skipped += 1;
       warnings.push(`Customer not found for job "${row.jobNumber}".`);
@@ -103,7 +98,6 @@ export async function runParentJobBulkImport(
     }
 
     const requiredExpertises = normalizeRequiredExpertiseNames(row.requiredExpertises);
-    const jobData = buildJobData(row, customerId);
 
     if (mode === 'create') {
       const dup = byJobNumber.get(row.jobNumber.trim().toLowerCase());
@@ -114,9 +108,9 @@ export async function runParentJobBulkImport(
       }
 
       const job = await prisma.$transaction(async (tx) => {
-        const created = await tx.job.create({
+        const createdJob = await tx.job.create({
           data: {
-            ...jobData,
+            ...buildParentJobCreateData(row, customerId),
             companyId,
             createdBy: userId,
             source: 'LOCAL',
@@ -126,21 +120,22 @@ export async function runParentJobBulkImport(
         });
         await syncJobContacts(tx, {
           companyId,
-          jobId: created.id,
+          jobId: createdJob.id,
           contacts: row.contactsJson,
         });
         await syncJobRequiredExpertises(tx, {
           companyId,
-          jobId: created.id,
+          jobId: createdJob.id,
           names: requiredExpertises,
         });
-        return created;
+        return createdJob;
       });
-      byId.set(job.id, { id: job.id, jobNumber: job.jobNumber, source: 'LOCAL' });
+      byId.set(job.id, { id: job.id, jobNumber: job.jobNumber, source: 'LOCAL', customerId: job.customerId });
       byJobNumber.set(job.jobNumber.trim().toLowerCase(), {
         id: job.id,
         jobNumber: job.jobNumber,
         source: 'LOCAL',
+        customerId: job.customerId,
       });
       created += 1;
       return;
@@ -155,7 +150,7 @@ export async function runParentJobBulkImport(
     await prisma.$transaction(async (tx) => {
       await tx.job.update({
         where: { id: match.id },
-        data: jobData,
+        data: buildParentJobUpdatePatch(row, customerId),
       });
       if (row.contactsJson !== undefined) {
         await syncJobContacts(tx, {

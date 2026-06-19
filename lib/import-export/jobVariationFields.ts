@@ -31,6 +31,8 @@ export const JOB_VARIATION_IMPORT_FIELDS: ImportFieldDef[] = [
   { key: 'lpo_value', label: 'LPO Value' },
   { key: 'project_name', label: 'Project Name' },
   { key: 'project_details', label: 'Project Details' },
+  { key: 'project_type', label: 'Project Type', aliases: ['job project type'] },
+  { key: 'project_qty_area', label: 'Project Qty/Area', aliases: ['project qty', 'project area', 'qty area'] },
   { key: 'contact_person', label: 'Contact Person' },
   { key: 'sales_person', label: 'Sales Person' },
   { key: 'job_work_value', label: 'Job Work Value' },
@@ -62,6 +64,34 @@ export type VariationParentLookup = {
   byId: Map<string, string>;
   byNumber: Map<string, string>;
 };
+
+/** When the sheet only has a full variation job number, match the longest existing parent prefix. */
+export function inferVariationParentFromJobNumber(
+  variationJobNumber: string,
+  parents: VariationParentLookup,
+): { parentJobNumber: string; variationSuffix?: string } | null {
+  const normalized = variationJobNumber.trim().toLowerCase();
+  if (!normalized) return null;
+
+  let parentJobNumber: string | undefined;
+  let parentKeyLen = 0;
+
+  for (const [parentKey, canonicalNumber] of parents.byNumber) {
+    const prefix = `${parentKey}-`;
+    if (normalized.startsWith(prefix) && parentKey.length > parentKeyLen) {
+      parentJobNumber = canonicalNumber;
+      parentKeyLen = parentKey.length;
+    }
+  }
+
+  if (!parentJobNumber) return null;
+
+  const variationSuffix = normalized.slice(parentKeyLen + 1).trim();
+  return {
+    parentJobNumber,
+    variationSuffix: variationSuffix || undefined,
+  };
+}
 
 /** Unique key for variation import duplicate checks (parent + suffix or full job number). */
 export function resolveVariationImportRecordKey(
@@ -149,13 +179,16 @@ export function mapJobVariationImportRow(
 
   const parentJobNumber = cellToString(parsed.parent_job_number as string | undefined);
   const parentJobId = cellToString(parsed.parent_job_id as string | undefined);
-  if (!parentJobNumber && !parentJobId) {
+  const rowId = cellToString(parsed.id as string | undefined);
+  const variationSuffix = cellToString(parsed.variation_suffix as string | undefined);
+  const jobNumber = cellToString(parsed.job_number as string | undefined);
+  const hasIdentity = Boolean(rowId || jobNumber);
+
+  if (!parentJobNumber && !parentJobId && !hasIdentity) {
     parsed.__errors.push('Parent Job Number or Parent Job ID is required');
   }
 
-  const variationSuffix = cellToString(parsed.variation_suffix as string | undefined);
-  const jobNumber = cellToString(parsed.job_number as string | undefined);
-  if (!variationSuffix && !jobNumber) {
+  if (!variationSuffix && !jobNumber && !rowId) {
     parsed.__errors.push('Variation Suffix or Job Number is required');
   }
 
@@ -164,8 +197,6 @@ export function mapJobVariationImportRow(
     const status = parseJobStatus(statusRaw);
     if (!status) parsed.__errors.push(`Invalid status: ${statusRaw}`);
     else parsed.status = status;
-  } else {
-    parsed.status = 'ACTIVE';
   }
 
   for (const [key, label] of [
@@ -227,6 +258,8 @@ export function downloadJobVariationImportTemplate() {
       Status: 'ACTIVE',
       Description: 'Variation scope',
       Site: '',
+      'Project Type': '',
+      'Project Qty/Area': '',
     },
   ];
   downloadWorkbook('job-variations-import-template.xlsx', [

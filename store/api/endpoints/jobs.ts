@@ -1,4 +1,4 @@
-import { JOB_CACHE_INVALIDATES } from '@/lib/jobs/jobCacheInvalidation';
+import { JOB_CACHE_INVALIDATES, invalidateJobCaches, jobListInvalidationTags } from '@/lib/jobs/jobCacheInvalidation';
 import { notifyJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
@@ -21,6 +21,8 @@ export interface Job {
   locationLng?: number;
   status: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED';
   parentJobId?: string;
+  parentJobNumber?: string | null;
+  variationCount?: number;
   startDate?: string | Date;
   endDate?: string | Date;
   quotationNumber?: string;
@@ -30,6 +32,8 @@ export interface Job {
   lpoValue?: number;
   projectName?: string;
   projectDetails?: string;
+  projectType?: string;
+  projectQtyArea?: string;
   contactPerson?: string;
   contactsJson?: unknown[];
   salesPerson?: string;
@@ -47,6 +51,8 @@ export interface Job {
   executionActualEndDate?: string | Date | null;
   executionProgressNote?: string | null;
   executionProgressUpdatedAt?: string | Date | null;
+  isProvisional?: boolean;
+  confirmedAt?: string | Date | null;
   budgetSummary?: {
     budgetItemCount: number;
     trackableItemCount: number;
@@ -1034,12 +1040,36 @@ export const jobsApi = appApi.injectEndpoints({
       },
     }),
 
-    deleteJob: builder.mutation<{ deleted: boolean }, string>({
+    promoteProvisionalJob: builder.mutation<
+      { job: Job; assignmentsUpdated: number; variationsUpdated: number; affectedJobIds: string[] },
+      { id: string; jobNumber: string; customerId: string; note?: string | null }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/jobs/${id}/promote`,
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (r: {
+        data: { job: Job; assignmentsUpdated: number; variationsUpdated: number; affectedJobIds: string[] };
+      }) => r.data,
+      invalidatesTags: (result, _error, arg) => jobListInvalidationTags(result?.affectedJobIds ?? [arg.id]),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          invalidateJobCaches(dispatch, data.affectedJobIds);
+          notifyJobLiveUpdate({ action: 'promoted' });
+        } catch {
+          /* mutation failed — skip live notify */
+        }
+      },
+    }),
+
+    deleteJob: builder.mutation<{ deleted: boolean; permanent?: boolean }, string>({
       query: (id) => ({
         url: `/jobs/${id}`,
         method: 'DELETE',
       }),
-      transformResponse: (r: { deleted: boolean }) => r,
+      transformResponse: (r: { data: { deleted: boolean; permanent?: boolean } }) => r.data,
       invalidatesTags: (result, error, id) => [
         { type: 'Job', id },
         { type: 'Job', id: 'LIST' },
@@ -1134,6 +1164,7 @@ export const {
   useGetDispatchBudgetWarningMutation,
   useCreateJobMutation,
   useUpdateJobMutation,
+  usePromoteProvisionalJobMutation,
   useDeleteJobMutation,
   useBulkImportParentJobsMutation,
   useBulkImportJobVariationsMutation,

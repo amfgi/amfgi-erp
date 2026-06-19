@@ -1,10 +1,10 @@
 -- Company holidays (payroll), holiday pay-type links, and WPS transfer on compensation.
+-- Idempotent: safe when objects were already applied via db push or a partial run.
 
--- AlterTable
-ALTER TABLE "EmployeeCompensation" ADD COLUMN "wpsTransferAmount" DECIMAL(12,2);
+ALTER TABLE "EmployeeCompensation"
+  ADD COLUMN IF NOT EXISTS "wpsTransferAmount" DECIMAL(12,2);
 
--- CreateTable
-CREATE TABLE "CompanyHoliday" (
+CREATE TABLE IF NOT EXISTS "CompanyHoliday" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "holidayDate" DATE NOT NULL,
@@ -20,8 +20,7 @@ CREATE TABLE "CompanyHoliday" (
     CONSTRAINT "CompanyHoliday_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "CompanyHolidayPayType" (
+CREATE TABLE IF NOT EXISTS "CompanyHolidayPayType" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "companyHolidayId" TEXT NOT NULL,
@@ -32,32 +31,43 @@ CREATE TABLE "CompanyHolidayPayType" (
     CONSTRAINT "CompanyHolidayPayType_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "CompanyHoliday_companyId_holidayDate_idx" ON "CompanyHoliday"("companyId", "holidayDate");
+CREATE INDEX IF NOT EXISTS "CompanyHoliday_companyId_holidayDate_idx"
+  ON "CompanyHoliday"("companyId", "holidayDate");
 
--- CreateIndex
-CREATE UNIQUE INDEX "CompanyHoliday_companyId_id_key" ON "CompanyHoliday"("companyId", "id");
+CREATE UNIQUE INDEX IF NOT EXISTS "CompanyHoliday_companyId_id_key"
+  ON "CompanyHoliday"("companyId", "id");
 
--- CreateIndex
-CREATE UNIQUE INDEX "CompanyHoliday_companyId_holidayDate_key" ON "CompanyHoliday"("companyId", "holidayDate");
+CREATE UNIQUE INDEX IF NOT EXISTS "CompanyHoliday_companyId_holidayDate_key"
+  ON "CompanyHoliday"("companyId", "holidayDate");
 
--- CreateIndex
-CREATE INDEX "CompanyHolidayPayType_companyId_companyHolidayId_idx" ON "CompanyHolidayPayType"("companyId", "companyHolidayId");
+CREATE INDEX IF NOT EXISTS "CompanyHolidayPayType_companyId_companyHolidayId_idx"
+  ON "CompanyHolidayPayType"("companyId", "companyHolidayId");
 
--- CreateIndex
-CREATE INDEX "CompanyHolidayPayType_companyId_payTypeId_idx" ON "CompanyHolidayPayType"("companyId", "payTypeId");
+CREATE INDEX IF NOT EXISTS "CompanyHolidayPayType_companyId_payTypeId_idx"
+  ON "CompanyHolidayPayType"("companyId", "payTypeId");
 
--- CreateIndex
-CREATE UNIQUE INDEX "CompanyHolidayPayType_companyHolidayId_payTypeId_key" ON "CompanyHolidayPayType"("companyHolidayId", "payTypeId");
+CREATE UNIQUE INDEX IF NOT EXISTS "CompanyHolidayPayType_companyHolidayId_payTypeId_key"
+  ON "CompanyHolidayPayType"("companyHolidayId", "payTypeId");
 
--- AddForeignKey
-ALTER TABLE "CompanyHoliday" ADD CONSTRAINT "CompanyHoliday_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "CompanyHolidayPayType" ADD CONSTRAINT "CompanyHolidayPayType_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "CompanyHolidayPayType" ADD CONSTRAINT "CompanyHolidayPayType_companyId_companyHolidayId_fkey" FOREIGN KEY ("companyId", "companyHolidayId") REFERENCES "CompanyHoliday"("companyId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "CompanyHolidayPayType" ADD CONSTRAINT "CompanyHolidayPayType_companyId_payTypeId_fkey" FOREIGN KEY ("companyId", "payTypeId") REFERENCES "PayType"("companyId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $company_holiday_fk$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CompanyHoliday_companyId_fkey') THEN
+    ALTER TABLE "CompanyHoliday"
+      ADD CONSTRAINT "CompanyHoliday_companyId_fkey"
+      FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CompanyHolidayPayType_companyId_fkey') THEN
+    ALTER TABLE "CompanyHolidayPayType"
+      ADD CONSTRAINT "CompanyHolidayPayType_companyId_fkey"
+      FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CompanyHolidayPayType_companyId_companyHolidayId_fkey') THEN
+    ALTER TABLE "CompanyHolidayPayType"
+      ADD CONSTRAINT "CompanyHolidayPayType_companyId_companyHolidayId_fkey"
+      FOREIGN KEY ("companyId", "companyHolidayId") REFERENCES "CompanyHoliday"("companyId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CompanyHolidayPayType_companyId_payTypeId_fkey') THEN
+    ALTER TABLE "CompanyHolidayPayType"
+      ADD CONSTRAINT "CompanyHolidayPayType_companyId_payTypeId_fkey"
+      FOREIGN KEY ("companyId", "payTypeId") REFERENCES "PayType"("companyId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $company_holiday_fk$;

@@ -25,7 +25,7 @@ async function seed() {
   // await prisma.stockCountSession.deleteMany({});
   // await prisma.stockExceptionApproval.deleteMany({});
   // await prisma.transactionBatch.deleteMany({});
-  // await prisma.transaction.deleteMany({});
+  // await prisma.transaction.deleteMany({});await prisma.job.deleteMany({});
   // await prisma.deliveryNote.deleteMany({});
   // await prisma.priceLog.deleteMany({});
   // await prisma.materialLog.deleteMany({});
@@ -36,8 +36,7 @@ async function seed() {
   // await prisma.material.deleteMany({});
   // await prisma.category.deleteMany({});
   // await prisma.unit.deleteMany({});
-  await prisma.employee.deleteMany({});
-
+  // await prisma.employee.deleteMany({});
 }
 
 seed()

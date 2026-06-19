@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -15,10 +15,14 @@ import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { ContextMenuOption } from '@/components/ui/ContextMenu';
 import JobVariationImportModal from '@/components/jobs/JobVariationImportModal';
 import JobQuickEditModal from '@/components/jobs/JobQuickEditModal';
+import JobPromoteModal from '@/components/jobs/JobPromoteModal';
+import JobDeleteModal from '@/components/jobs/JobDeleteModal';
 import ParentJobImportModal from '@/components/jobs/ParentJobImportModal';
 import { exportJobVariationsToXlsx } from '@/lib/import-export/exportJobVariations';
 import { exportParentJobsToXlsx } from '@/lib/import-export/exportParentJobs';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
+import { invalidateJobCaches } from '@/lib/jobs/jobCacheInvalidation';
+import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import {
   DEFAULT_CUSTOMER_JOBS_LIST_PREFS,
   readCustomerJobsListPrefs,
@@ -27,7 +31,7 @@ import {
   type JobStatusFilter,
 } from '@/lib/jobs/customerJobsListPrefs';
 import {
-  useDeleteJobMutation,
+  useAppDispatch,
   useGetCustomersQuery,
   useGetJobsPageQuery,
   useLazyGetJobsForExportQuery,
@@ -49,6 +53,8 @@ interface Job {
   startDate?: string | Date;
   endDate?: string | Date;
   parentJobId?: string | null;
+  parentJobNumber?: string | null;
+  isProvisional?: boolean;
   createdBy: string;
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -61,20 +67,6 @@ interface Customer {
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
-}
-
-function extractApiErrorMessage(error: unknown, fallback: string) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'data' in error &&
-    typeof (error as { data?: unknown }).data === 'object' &&
-    (error as { data?: { error?: unknown } }).data?.error &&
-    typeof (error as { data?: { error?: unknown } }).data?.error === 'string'
-  ) {
-    return (error as { data: { error: string } }).data.error;
-  }
-  return fallback;
 }
 
 function formatDate(value?: string | Date) {
@@ -101,6 +93,7 @@ function statusBadgeVariant(status: Job['status']): 'default' | 'secondary' | 'o
 
 export default function CustomerJobsPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const { data: session } = useSession();
   const companyId = session?.user?.activeCompanyId;
   const [statusFilter, setStatusFilter] = useState<JobStatusFilter>(DEFAULT_CUSTOMER_JOBS_LIST_PREFS.statusFilter);
@@ -112,7 +105,7 @@ export default function CustomerJobsPage() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(searchQuery);
 
-  const { data: jobsPage, isFetching: jobsLoading } = useGetJobsPageQuery(
+  const { data: jobsPage, isFetching: jobsLoading, refetch: refetchJobsPage } = useGetJobsPageQuery(
     {
       limit: pageSize,
       offset: (page - 1) * pageSize,
@@ -121,6 +114,13 @@ export default function CustomerJobsPage() {
       scope: scopeFilter,
     },
     { refetchOnMountOrArgChange: 30 },
+  );
+
+  useJobLiveUpdate(
+    useCallback(() => {
+      invalidateJobCaches(dispatch);
+      void refetchJobsPage();
+    }, [dispatch, refetchJobsPage]),
   );
   const jobs = jobsPage?.items ?? [];
   const totalJobs = jobsPage?.total ?? 0;
@@ -131,7 +131,6 @@ export default function CustomerJobsPage() {
     refetchOnMountOrArgChange: 30,
   });
   const { openMenu: openContextMenu } = useGlobalContextMenu();
-  const [deleteJob, { isLoading: isDeleting }] = useDeleteJobMutation();
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -146,13 +145,8 @@ export default function CustomerJobsPage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [variationImportModalOpen, setVariationImportModalOpen] = useState(false);
   const [quickEditJob, setQuickEditJob] = useState<Job | null>(null);
-  const [deleteModal, setDeleteModal] = useState<{
-    open: boolean;
-    job: Job | null;
-    loading: boolean;
-    linkedCount: number;
-    canDelete: boolean;
-  }>({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true });
+  const [promoteJob, setPromoteJob] = useState<Job | null>(null);
+  const [deleteJobTarget, setDeleteJobTarget] = useState<Job | null>(null);
 
   useEffect(() => {
     if (!companyId) {
@@ -222,23 +216,14 @@ export default function CustomerJobsPage() {
     [customers],
   );
 
-  const jobById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
-  const rootJobs = useMemo(() => jobs.filter((job) => !job.parentJobId), [jobs]);
   const variationJobs = useMemo(() => jobs.filter((job) => Boolean(job.parentJobId)), [jobs]);
-  const variationsByParent = useMemo(() => {
-    const map = new Map<string, Job[]>();
-    for (const job of jobs) {
-      if (!job.parentJobId) continue;
-      const current = map.get(job.parentJobId) ?? [];
-      current.push(job);
-      map.set(job.parentJobId, current);
-    }
-    return map;
-  }, [jobs]);
   const displayJobs = jobs;
 
   const totalVariationsOnPage = useMemo(() => variationJobs.length, [variationJobs]);
-  const apiJobsOnPage = useMemo(() => rootJobs.filter((job) => job.source === 'EXTERNAL_API').length, [rootJobs]);
+  const apiJobsOnPage = useMemo(
+    () => jobs.filter((job) => !job.parentJobId && job.source === 'EXTERNAL_API').length,
+    [jobs],
+  );
 
   const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
   const pageStart = totalJobs === 0 ? 0 : (page - 1) * pageSize;
@@ -253,22 +238,6 @@ export default function CustomerJobsPage() {
 
   const handleCreateVariation = (job: Job) => {
     router.push(`/customers/jobs/form?mode=variation&parentJobId=${job.id}&customerId=${job.customerId}`);
-  };
-
-  const closeDeleteModal = () =>
-    setDeleteModal({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true });
-
-  const handleDelete = async () => {
-    if (!deleteModal.job) return;
-    setDeleteModal((prev) => ({ ...prev, loading: true }));
-    try {
-      await deleteJob(deleteModal.job.id).unwrap();
-      toast.success('Job deleted');
-      closeDeleteModal();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, 'Failed to delete job'));
-      setDeleteModal((prev) => ({ ...prev, loading: false }));
-    }
   };
 
   const handleJobContextMenu = (job: Job, e: React.MouseEvent) => {
@@ -290,6 +259,12 @@ export default function CustomerJobsPage() {
 
     if (canEdit) {
       options.push({ divider: true });
+      if (job.isProvisional && !job.parentJobId) {
+        options.push({
+          label: 'Confirm job number',
+          action: () => setPromoteJob(job),
+        });
+      }
       options.push({
         label: 'Quick edit',
         action: () => setQuickEditJob(job),
@@ -313,23 +288,7 @@ export default function CustomerJobsPage() {
       options.push({
         label: job.parentJobId ? 'Delete Variation' : 'Delete Job',
         danger: true,
-        action: async () => {
-          try {
-            const res = await fetch(`/api/jobs/${job.id}/check-delete`);
-            const data = await res.json();
-            if (data.data) {
-              setDeleteModal({
-                open: true,
-                job,
-                loading: false,
-                linkedCount: data.data.linkedTransactionsCount ?? 0,
-                canDelete: data.data.canDelete ?? false,
-              });
-            }
-          } catch {
-            toast.error('Failed to check job dependencies');
-          }
-        },
+        action: () => setDeleteJobTarget(job),
       });
     }
 
@@ -442,6 +401,13 @@ export default function CustomerJobsPage() {
         onClose={() => setQuickEditJob(null)}
         job={quickEditJob}
       />
+      <JobPromoteModal isOpen={Boolean(promoteJob)} onClose={() => setPromoteJob(null)} job={promoteJob} />
+      <JobDeleteModal
+        isOpen={Boolean(deleteJobTarget)}
+        onClose={() => setDeleteJobTarget(null)}
+        job={deleteJobTarget}
+        canEdit={canEdit}
+      />
 
       <div className="grid w-full min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
         {statTiles.map((item) => (
@@ -549,9 +515,9 @@ export default function CustomerJobsPage() {
               </div>
               <div className="divide-y divide-border">
                 {displayJobs.map((job) => {
-                  const variations = variationsByParent.get(job.id) ?? [];
-                  const parentJob = job.parentJobId ? jobById.get(job.parentJobId) : null;
                   const isVariation = Boolean(job.parentJobId);
+                  const parentJobNumber = job.parentJobNumber ?? null;
+                  const variationCount = job.variationCount ?? 0;
                   const customerName =
                     job.customerName ?? customerNameById.get(job.customerId) ?? 'Unknown customer';
 
@@ -598,8 +564,13 @@ export default function CustomerJobsPage() {
                             <Badge variant={lineageVariant} className="text-[10px] uppercase tracking-wide">
                               {typeLabel}
                             </Badge>
-                            {parentJob ? (
-                              <span className="truncate text-xs text-muted-foreground">Parent {parentJob.jobNumber}</span>
+                            {job.isProvisional && !job.parentJobId ? (
+                              <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                                Provisional
+                              </Badge>
+                            ) : null}
+                            {parentJobNumber ? (
+                              <span className="truncate text-xs text-muted-foreground">Parent {parentJobNumber}</span>
                             ) : null}
                           </div>
                         </div>
@@ -610,8 +581,8 @@ export default function CustomerJobsPage() {
                         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                           {job.description || 'No description'}
                         </p>
-                        {parentJob ? (
-                          <p className="mt-1 text-xs text-muted-foreground">Scope: {parentJob.jobNumber}</p>
+                        {parentJobNumber ? (
+                          <p className="mt-1 text-xs text-muted-foreground">Scope: {parentJobNumber}</p>
                         ) : null}
                       </div>
 
@@ -620,8 +591,8 @@ export default function CustomerJobsPage() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {isVariation
                             ? 'Budget & dispatch on this variation'
-                            : variations.length > 0
-                              ? `${compactNumber(variations.length)} variation${variations.length === 1 ? '' : 's'}`
+                            : variationCount > 0
+                              ? `${compactNumber(variationCount)} variation${variationCount === 1 ? '' : 's'}`
                               : 'No variations'}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">Start {formatDate(job.startDate)}</p>
@@ -662,54 +633,6 @@ export default function CustomerJobsPage() {
           }}
         />
       </section>
-
-      {deleteModal.open && deleteModal.job ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-40 bg-black/50"
-            aria-label="Close dialog"
-            onClick={() => !deleteModal.loading && closeDeleteModal()}
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-job-title"
-            className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-6 shadow-lg"
-          >
-            <p className="text-xs font-medium uppercase tracking-wide text-destructive">Remove job</p>
-            <h2 id="delete-job-title" className="mt-2 text-lg font-semibold text-foreground">
-              {deleteModal.job.jobNumber}
-            </h2>
-
-            {!deleteModal.canDelete ? (
-              <>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  Linked to {deleteModal.linkedCount} transaction{deleteModal.linkedCount === 1 ? '' : 's'} — cannot
-                  delete yet.
-                </p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={closeDeleteModal}>
-                    Close
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="mt-3 text-sm text-muted-foreground">Delete this job and remove it from the queue?</p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <Button type="button" variant="ghost" onClick={closeDeleteModal} disabled={deleteModal.loading}>
-                    Cancel
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={handleDelete} disabled={isDeleting || deleteModal.loading}>
-                    {deleteModal.loading ? 'Deleting…' : 'Delete'}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </>
-      ) : null}
     </div>
   );
 }

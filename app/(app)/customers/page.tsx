@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
 import CustomerImportModal from '@/components/customers/CustomerImportModal';
+import JobDeleteModal from '@/components/jobs/JobDeleteModal';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
 import { exportCustomersToXlsx } from '@/lib/import-export/exportCustomers';
@@ -21,7 +22,6 @@ import {
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useDeleteCustomerMutation,
-  useDeleteJobMutation,
   useLazyGetCustomersForExportQuery,
   CUSTOMER_PAGE_SIZE_OPTIONS,
   type Customer,
@@ -217,7 +217,6 @@ export default function CustomersPage() {
   const [createCustomer, { isLoading: isCreating }] = useCreateCustomerMutation();
   const [updateCustomer, { isLoading: isUpdating }] = useUpdateCustomerMutation();
   const [deleteCustomer, { isLoading: isDeleting }] = useDeleteCustomerMutation();
-  const [deleteJob, { isLoading: isDeletingJob }] = useDeleteJobMutation();
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -225,6 +224,8 @@ export default function CustomersPage() {
   const canEdit = isSA || perms.includes('customer.edit');
   const canDelete = isSA || perms.includes('customer.delete');
   const canView = isSA || perms.includes('customer.view');
+  const canEditJob = isSA || perms.includes('job.edit');
+  const canDeleteJob = isSA || perms.includes('job.delete');
   const canImport = canCreate || canEdit;
 
   const [customerSourceMode, setCustomerSourceMode] = useState<'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY'>('HYBRID');
@@ -293,13 +294,7 @@ export default function CustomersPage() {
     customer: Customer | null;
     loading: boolean;
   }>({ open: false, customer: null, loading: false });
-  const [deleteJobModal, setDeleteJobModal] = useState<{
-    open: boolean;
-    job: Job | null;
-    loading: boolean;
-    linkedCount: number;
-    canDelete: boolean;
-  }>({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true });
+  const [deleteJobTarget, setDeleteJobTarget] = useState<Job | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCustomers / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -560,26 +555,10 @@ export default function CustomersPage() {
                   router.push(`/customers/jobs/form?mode=variation&parentJobId=${job.id}&customerId=${job.customerId}`),
           }
         : null,
-      canDelete
+      canDeleteJob
         ? {
             label: 'Delete job',
-            action: async () => {
-              try {
-                const response = await fetch(`/api/jobs/${job.id}/check-delete`);
-                const json = await response.json();
-                if (json.data) {
-                  setDeleteJobModal({
-                    open: true,
-                    job,
-                    loading: false,
-                    linkedCount: json.data.linkedTransactionsCount ?? 0,
-                    canDelete: json.data.canDelete ?? false,
-                  });
-                }
-              } catch {
-                toast.error('Failed to check job dependencies');
-              }
-            },
+            action: () => setDeleteJobTarget(job),
             danger: true,
           }
         : null,
@@ -596,22 +575,14 @@ export default function CustomersPage() {
     );
   };
 
-  const handleDeleteJob = async () => {
-    if (!deleteJobModal.job) return;
-    setDeleteJobModal((prev) => ({ ...prev, loading: true }));
-
-    try {
-      await deleteJob(deleteJobModal.job.id).unwrap();
-      toast.success('Job deleted');
-      setDeleteJobModal({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true });
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, 'Failed to delete job'));
-      setDeleteJobModal((prev) => ({ ...prev, loading: false }));
-    }
-  };
-
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
+      <JobDeleteModal
+        isOpen={Boolean(deleteJobTarget)}
+        onClose={() => setDeleteJobTarget(null)}
+        job={deleteJobTarget}
+        canEdit={canEditJob}
+      />
       <header className="flex w-full min-w-0 flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Master data</p>
@@ -1311,60 +1282,6 @@ export default function CustomersPage() {
               <Button type="button" variant="destructive" onClick={handleDelete} disabled={deleteModal.loading || isDeleting}>
                 Delete customer
               </Button>
-            </div>
-          </div>
-        </>
-      ) : null}
-
-      {deleteJobModal.open && deleteJobModal.job ? (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/50"
-            onClick={() =>
-              setDeleteJobModal({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true })
-            }
-          />
-          <div
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-6 shadow-2xl"
-            style={{
-              backgroundColor: 'var(--surface-panel)',
-              borderColor: 'var(--border-strong)',
-            }}
-          >
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
-              Delete {deleteJobModal.job.parentJobId ? 'variation' : 'job'}
-            </h2>
-
-            {deleteJobModal.canDelete ? (
-              <p className="mt-2 text-sm leading-6" style={{ color: 'var(--foreground-soft)' }}>
-                Delete <strong>{deleteJobModal.job.jobNumber}</strong>? This action removes the selected record permanently.
-              </p>
-            ) : (
-              <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
-                This job cannot be deleted because {deleteJobModal.linkedCount} transaction{deleteJobModal.linkedCount === 1 ? '' : 's'} already reference it.
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  setDeleteJobModal({ open: false, job: null, loading: false, linkedCount: 0, canDelete: true })
-                }
-              >
-                {deleteJobModal.canDelete ? 'Cancel' : 'Close'}
-              </Button>
-              {deleteJobModal.canDelete ? (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={handleDeleteJob}
-                  disabled={deleteJobModal.loading || isDeletingJob}
-                >
-                  Delete job
-                </Button>
-              ) : null}
             </div>
           </div>
         </>

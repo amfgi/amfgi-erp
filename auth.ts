@@ -247,7 +247,9 @@ const config: NextAuthConfig = {
         token.activeCompanyId   = session.activeCompanyId;
         token.activeCompanySlug = session.activeCompanySlug;
         token.activeCompanyName = session.activeCompanyName;
-        token.permissions       = session.permissions;
+        if (session.permissions !== undefined) {
+          token.permissions = session.permissions;
+        }
       }
       if (trigger === 'update' && token.sub) {
         const prisma = await getPrisma();
@@ -266,6 +268,8 @@ const config: NextAuthConfig = {
         const prisma = await getPrisma();
         await refreshAuthJwtTokenFromDb(prisma, token);
       }
+      token.permissions = token.permissions ?? [];
+      token.allowedCompanyIds = token.allowedCompanyIds ?? [];
       return token;
     },
 

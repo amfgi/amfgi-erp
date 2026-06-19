@@ -1,5 +1,6 @@
 
 import {
+  inferVariationParentFromJobNumber,
   resolveVariationImportRecordKey,
   variationDuplicateInFileMessage,
 } from '@/lib/import-export/jobVariationFields';
@@ -44,6 +45,11 @@ describe('resolveVariationImportRecordKey', () => {
   it('uses full job number when provided', () => {
     const key = resolveVariationImportRecordKey(row({ job_number: 'JOB-1001-3' }), parents);
     expect(key).toBe('job-1001-3');
+  });
+
+  it('infers parent and suffix from a full variation job number', () => {
+    const inferred = inferVariationParentFromJobNumber('JOB-1001-3', parents);
+    expect(inferred).toEqual({ parentJobNumber: 'JOB-1001', variationSuffix: '3' });
   });
 
   it('formats duplicate message with parent and suffix', () => {

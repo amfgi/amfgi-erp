@@ -9,6 +9,7 @@ import { runChunkedBulkImport } from '@/lib/import-export/chunkedBulkImport';
 import {
   JOB_VARIATION_IMPORT_FIELDS,
   downloadJobVariationImportTemplate,
+  inferVariationParentFromJobNumber,
   jobVariationImportRowToPayload,
   mapJobVariationImportRow,
   resolveVariationImportRecordKey,
@@ -46,7 +47,7 @@ export default function JobVariationImportModal({ isOpen, onClose }: Props) {
       previewLabelKey="parent_job_number"
       previewColumn2Key="variation_suffix"
       previewColumn2Label="Suffix"
-      duplicateNote="Multiple variations can share the same parent job. Duplicates are matched by full job number (parent + suffix). External API variations cannot be updated via import."
+      duplicateNote="Map Parent Job Number + Variation Suffix, or provide the full Job Number when the parent already exists (e.g. JOB-1001-1). Do not use Import parent jobs for variation rows."
       duplicateInFileLabel="variation (same parent + suffix)"
       duplicateMatchLabel="job number"
       onDownloadTemplate={downloadJobVariationImportTemplate}
@@ -58,7 +59,30 @@ export default function JobVariationImportModal({ isOpen, onClose }: Props) {
       getRecordKey={(row) => resolveVariationImportRecordKey(row, parentLookup)}
       formatDuplicateInFileError={variationDuplicateInFileMessage}
       isSubmitting={isLoading}
-      mapRow={mapJobVariationImportRow}
+      mapRow={(row, headers, mapping, rowIndex) => {
+        const parsed = mapJobVariationImportRow(row, headers, mapping, rowIndex);
+        if (parsed.__errors.length > 0) return parsed;
+
+        const parentJobNumber = String(parsed.parent_job_number ?? '').trim();
+        const parentJobId = String(parsed.parent_job_id ?? '').trim();
+        const jobNumber = String(parsed.job_number ?? '').trim();
+
+        if (!parentJobNumber && !parentJobId && jobNumber) {
+          const inferred = inferVariationParentFromJobNumber(jobNumber, parentLookup);
+          if (inferred) {
+            parsed.parent_job_number = inferred.parentJobNumber;
+            if (!String(parsed.variation_suffix ?? '').trim() && inferred.variationSuffix) {
+              parsed.variation_suffix = inferred.variationSuffix;
+            }
+          } else {
+            parsed.__errors.push(
+              `No parent job matches "${jobNumber}". Create the parent first or add a Parent Job Number column.`,
+            );
+          }
+        }
+
+        return parsed;
+      }}
       toPayload={(row: ImportPreviewRow<MappedImportRow>) => jobVariationImportRowToPayload(row)}
       blockDuplicateUpdate={(match) =>
         match.source === 'EXTERNAL_API' ? 'Synced from external API — cannot update via import' : null
