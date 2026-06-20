@@ -65,7 +65,7 @@ export default function NewEmployeePage() {
         employeeType,
         visaHolding,
       });
-      invalidateEmployeeCaches(dispatch);
+      invalidateEmployeeCaches(dispatch, { entity: 'employee', action: 'created' });
       toast.success('Employee created');
       router.push(`/hr/employees/${employee.id}`);
     } catch (error) {

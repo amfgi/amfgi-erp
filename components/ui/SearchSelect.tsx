@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { attachBlockInputWheelChange, detachBlockInputWheelChange } from '@/lib/utils/blockInputWheelChange';
+import { isCoarsePointerDevice } from '@/lib/utils/coarsePointer';
 import { searchItems } from '@/lib/utils/fuzzyMatch';
 
 const DROPDOWN_Z_CLASS = 'z-[200]';
@@ -39,6 +40,8 @@ interface SearchSelectProps<T extends { id: string; label: string; searchText?: 
   clearOnEmptyInput?: boolean;
   /** When true, `items` are already filtered (e.g. server search); skip client fuzzy match. */
   serverFiltered?: boolean;
+  /** Override default fuzzy filtering (e.g. stricter employee picker search). */
+  searchFilter?: (items: T[], query: string) => T[];
   loading?: boolean;
   /** When true, ↑/↓ move grid focus while closed; while open, ↑/↓ navigate suggestions. */
   passThroughArrowKeys?: boolean;
@@ -75,6 +78,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     allowClearButton = true,
     clearOnEmptyInput = false,
     serverFiltered = false,
+    searchFilter,
     loading = false,
     passThroughArrowKeys = false,
     onAfterSelect,
@@ -104,7 +108,9 @@ export default function SearchSelect<T extends { id: string; label: string; sear
   const filteredItems = hasEnoughInput
     ? serverFiltered
       ? items
-      : searchItems(items, input, 0.2)
+      : searchFilter
+        ? searchFilter(items, input)
+        : searchItems(items, input, 0.2)
     : [];
   const selectedItem = items.find((item) => item.id === value);
 
@@ -192,6 +198,9 @@ export default function SearchSelect<T extends { id: string; label: string; sear
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const isVerticalArrow = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+    const isSubmitKey = e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey);
+    const activelySearching = input.trim().length >= minCharactersToSearch;
+    const highlightedItem = filteredItems[highlightedIdx];
 
     if (passThroughArrowKeys && !isOpen && isVerticalArrow) {
       return;
@@ -200,6 +209,24 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     if (!passThroughArrowKeys && !isOpen && filteredItems.length > 0 && isVerticalArrow) {
       e.preventDefault();
       setIsOpen(true);
+      return;
+    }
+
+    if (isSubmitKey && activelySearching && highlightedItem) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSelect(highlightedItem.id);
+      return;
+    }
+
+    if (
+      isSubmitKey &&
+      activelySearching &&
+      isCoarsePointerDevice() &&
+      (isOpen || loading || filteredItems.length === 0)
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
       return;
     }
 
@@ -220,14 +247,16 @@ export default function SearchSelect<T extends { id: string; label: string; sear
         break;
       case 'Enter':
         e.preventDefault();
-        if (filteredItems[highlightedIdx]) {
-          handleSelect(filteredItems[highlightedIdx].id);
+        e.stopPropagation();
+        if (highlightedItem) {
+          handleSelect(highlightedItem.id);
         }
         break;
       case 'Tab':
-        if (filteredItems[highlightedIdx]) {
+        if (highlightedItem) {
           e.preventDefault();
-          handleSelect(filteredItems[highlightedIdx].id);
+          e.stopPropagation();
+          handleSelect(highlightedItem.id);
         }
         break;
       case 'Escape':
@@ -307,6 +336,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
           {...inputProps}
           ref={inputRef}
           type="text"
+          enterKeyHint={inputProps?.enterKeyHint ?? 'search'}
           value={displayedValue}
           onChange={(e) => {
             handleInputChange(e);

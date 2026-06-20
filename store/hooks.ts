@@ -294,3 +294,19 @@ export {
   useCreateMaterialLogMutation,
   useCreatePriceLogMutation,
 } from './api/endpoints/materialLogs';
+
+export {
+  useGetHrEmployeesQuery,
+  useGetHrEmployeesPageQuery,
+  useGetHrEmployeesForExportQuery,
+  useLazyGetHrEmployeesForExportQuery,
+  useGetHrSchedulesQuery,
+  useGetHrSchedulesPageQuery,
+  useGetHrSchedulesForMonthQuery,
+  useGetHrAttendanceOverviewQuery,
+  useGetHrDocumentTypesQuery,
+  useGetHrEmployeeTypeSettingsQuery,
+  useGetHrExpertisesQuery,
+  type HrEmployee,
+  type HrEmployeesListParams,
+} from './api/endpoints/hr';

@@ -13,6 +13,7 @@ export const DEFAULT_SCHEDULE_TABLE_ROW_ORDER = [
   'projectQtyArea',
   'dutyRange',
   'breakRange',
+  'hourBreakRange',
   'workers',
   'workerCount',
   'suggestedWorkers',

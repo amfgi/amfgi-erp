@@ -31,21 +31,27 @@ import TimeEntryInput from '@/components/hr/TimeEntryInput';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { cn } from '@/lib/utils';
+import { startScheduleDragPreview } from '@/lib/hr/schedulePointerDragPreview';
+import { isCoarsePointerDevice } from '@/lib/utils/coarsePointer';
 import type { EmployeeTypeTimingSetting } from '@/lib/hr/employeeTypeSettings';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
 import {
-  fetchActiveEmployeesForSchedule,
   fetchEmployeesByIds,
   fetchJobsByIds,
+  employeeToSearchItem,
+  hrEmployeeToScheduleRow,
   normalizeScheduleJobRow,
+  searchEmployeePickerItems,
   toScheduleEmployee,
+  type EmployeeSearchItem,
   type ScheduleEmployeeRow,
   type ScheduleJobRow,
 } from '@/lib/hr/scheduleSearchApi';
 import {
+  SCHEDULE_EMPLOYEE_LIST_PARAMS,
   SCHEDULE_JOB_PICKER_LIST_PARAMS,
+  filterScheduleJobSearchItems,
   jobRecordToScheduleRow,
-  scheduleJobPickerParams,
   scheduleJobToSearchItem,
 } from '@/lib/hr/scheduleJobPicker';
 import {
@@ -55,10 +61,23 @@ import {
   readLegacyScheduleViewPrefsFromLocalStorage,
   type ScheduleRowSettings,
 } from '@/lib/hr/scheduleViewPrefs';
+import {
+  formatScheduleHourBreakSummary,
+  validateScheduleForPublish,
+  type SchedulePublishLowHourTeam,
+} from '@/lib/hr/schedulePublishValidation';
 import { useScheduleCollaboration } from '@/hooks/useScheduleCollaboration';
+import { useHrLiveUpdate } from '@/lib/hr/hrLiveUpdate';
 import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
+import { invalidateJobCaches } from '@/lib/jobs/jobCacheInvalidation';
 import { jobsApi } from '@/store/api/endpoints/jobs';
-import { useAppDispatch, useAppSelector, useGetJobsPageQuery, useUpdateJobMutation } from '@/store/hooks';
+import {
+  useAppDispatch,
+  useAppSelector,
+  useGetHrEmployeesPageQuery,
+  useGetJobsPageQuery,
+  useUpdateJobMutation,
+} from '@/store/hooks';
 import type { RootState } from '@/store/store';
 import type { WorkScheduleContext } from '@/lib/utils/templateData';
 import {
@@ -88,6 +107,23 @@ import {
 } from 'lucide-react';
 
 const GUEST_DRIVER_ROW_PREFIX = 'guest:';
+
+function renderWorkerSearchItem(item: EmployeeSearchItem, isHighlighted: boolean) {
+  const preferred = item.preferredName?.trim() || item.fullName;
+  const fullName = item.fullName.trim();
+  const showFullName = Boolean(fullName && fullName !== preferred);
+
+  return (
+    <div className="space-y-0.5">
+      <div className={cn('font-medium', isHighlighted ? 'text-primary' : 'text-foreground')}>
+        {preferred}
+      </div>
+      {showFullName ? (
+        <div className="text-[11px] text-muted-foreground">{fullName}</div>
+      ) : null}
+    </div>
+  );
+}
 
 function SlashedIcon({
   icon: Icon,
@@ -283,32 +319,76 @@ function ScheduleDragHandle({
   disabled,
   onDragStart,
   onDragEnd,
+  onPointerDrop,
   className,
 }: {
   label: string;
   disabled?: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
+  onPointerDrop: (clientX: number, clientY: number) => void;
   className?: string;
 }) {
   if (disabled) return null;
+
   return (
     <button
       type="button"
-      draggable
-      onDragStart={(e) => {
-        e.stopPropagation();
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
       className={cn(
-        'inline-flex h-7 w-6 shrink-0 cursor-grab items-center justify-center rounded border border-border bg-muted/50 text-muted-foreground transition hover:bg-muted active:cursor-grabbing',
+        'inline-flex h-7 w-6 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded border border-border bg-muted/50 text-muted-foreground transition hover:bg-muted active:cursor-grabbing',
         className,
       )}
       title={`Drag to reorder ${label}`}
       aria-label={`Drag to reorder ${label}`}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const handle = e.currentTarget;
+        const previewSource = handle.closest('[data-schedule-drag-preview]') as HTMLElement | null;
+        handle.setPointerCapture(e.pointerId);
+        onDragStart();
+
+        const previewSession = previewSource
+          ? startScheduleDragPreview(previewSource, e.clientX, e.clientY)
+          : null;
+
+        const clearDropHighlight = () => {
+          document
+            .querySelectorAll('[data-schedule-drop-active="true"]')
+            .forEach((node) => node.removeAttribute('data-schedule-drop-active'));
+        };
+
+        const onMove = (pe: PointerEvent) => {
+          if (pe.pointerId !== e.pointerId) return;
+          pe.preventDefault();
+          previewSession?.updateTarget(pe.clientX, pe.clientY);
+          clearDropHighlight();
+          const over = document
+            .elementFromPoint(pe.clientX, pe.clientY)
+            ?.closest('[data-schedule-drop]');
+          over?.setAttribute('data-schedule-drop-active', 'true');
+        };
+
+        const finish = (pe: PointerEvent) => {
+          if (pe.pointerId !== e.pointerId) return;
+          clearDropHighlight();
+          handle.releasePointerCapture(pe.pointerId);
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', finish);
+          document.removeEventListener('pointercancel', finish);
+          onPointerDrop(pe.clientX, pe.clientY);
+          previewSession?.destroy({ animate: true });
+          onDragEnd();
+        };
+
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', finish);
+        document.addEventListener('pointercancel', finish);
+      }}
     >
-      <GripVertical className="h-3.5 w-3.5" />
+      <GripVertical className="pointer-events-none h-3.5 w-3.5" />
     </button>
   );
 }
@@ -334,8 +414,22 @@ const SUB_TEAM_DELETE_BTN_CLS =
   'text-violet-600 hover:bg-violet-100 hover:text-destructive dark:text-violet-400 dark:hover:bg-violet-950/60 dark:hover:text-destructive';
 
 function scheduleSearchInputProps(navProps?: Record<string, unknown>) {
-  const nav = (navProps ?? {}) as { className?: string };
-  return { ...navProps, className: cn(SCHEDULE_GRID_SEARCH_INPUT, nav.className) };
+  const nav = (navProps ?? {}) as { className?: string; onKeyDown?: (e: ReactKeyboardEvent<HTMLElement>) => void };
+  return {
+    ...navProps,
+    enterKeyHint: 'search' as const,
+    className: cn(SCHEDULE_GRID_SEARCH_INPUT, nav.className),
+    onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => {
+      if (
+        isCoarsePointerDevice() &&
+        (e.key === 'Enter' || e.key === 'Tab') &&
+        e.defaultPrevented
+      ) {
+        return;
+      }
+      nav.onKeyDown?.(e);
+    },
+  };
 }
 
 function getNextTeamNumber(rows: AsgDraft[]): number {
@@ -734,6 +828,7 @@ const SCHEDULE_TABLE_ROW_DEFS: { key: string; label: string }[] = [
   { key: 'projectQtyArea', label: 'Qty / area' },
   { key: 'dutyRange', label: 'Duty in / out' },
   { key: 'breakRange', label: 'Break out / in' },
+  { key: 'hourBreakRange', label: 'Hour&Break' },
   { key: 'workers', label: 'Workers' },
   { key: 'workerCount', label: 'Assigned workers' },
   { key: 'suggestedWorkers', label: 'Suggested workers' },
@@ -780,6 +875,20 @@ function draftHasAssignedWorkers(draft: AsgDraft): boolean {
     );
   }
   return draft.members.some((member) => Boolean(member.employeeId));
+}
+
+function asgDraftToValidationDraft(draft: AsgDraft) {
+  return {
+    label: draft.label,
+    jobId: draft.jobId,
+    dutyStart: draft.dutyStart,
+    dutyEnd: draft.dutyEnd,
+    breakStart: draft.breakStart,
+    breakEnd: draft.breakEnd,
+    splitMode: draft.splitMode,
+    members: draft.members,
+    subTeams: draft.subTeams,
+  };
 }
 
 function resolveWorkerNavSubForColumn(
@@ -1007,6 +1116,11 @@ export default function HrScheduleDayPage() {
   const [pendingWorkerCreate, setPendingWorkerCreate] = useState<PendingWorkerCreate | null>(null);
   const [pendingInactiveJob, setPendingInactiveJob] = useState<PendingInactiveJob | null>(null);
   const [pendingStaleJob, setPendingStaleJob] = useState<PendingStaleJob | null>(null);
+  const [publishBlockMessages, setPublishBlockMessages] = useState<string[] | null>(null);
+  const [publishLowHourTeams, setPublishLowHourTeams] = useState<SchedulePublishLowHourTeam[] | null>(
+    null,
+  );
+  const [publishing, setPublishing] = useState(false);
   const [activatingJob, setActivatingJob] = useState(false);
   const dismissedStaleJobIdsRef = useRef<Set<string>>(new Set());
   const dispatch = useAppDispatch();
@@ -1015,6 +1129,9 @@ export default function HrScheduleDayPage() {
   const [draggingWorker, setDraggingWorker] = useState<WorkerDragTarget | null>(null);
   const [draggingSubTeam, setDraggingSubTeam] = useState<SubTeamDragTarget | null>(null);
   const [draggingTeamColumn, setDraggingTeamColumn] = useState<number | null>(null);
+  const draggingWorkerRef = useRef<WorkerDragTarget | null>(null);
+  const draggingSubTeamRef = useRef<SubTeamDragTarget | null>(null);
+  const draggingTeamColumnRef = useRef<number | null>(null);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -1022,7 +1139,14 @@ export default function HrScheduleDayPage() {
   const canEdit = isSA || perms.includes('hr.schedule.edit');
   const canEditJob = isSA || perms.includes('job.edit');
   const canCreateEmployee = isSA || perms.includes('hr.employee.edit');
-  const { data: scheduleJobsPage } = useGetJobsPageQuery(SCHEDULE_JOB_PICKER_LIST_PARAMS, { skip: !canView });
+  const { data: scheduleJobsPage, refetch: refetchScheduleJobs } = useGetJobsPageQuery(
+    SCHEDULE_JOB_PICKER_LIST_PARAMS,
+    { skip: !canView },
+  );
+  const { data: scheduleEmployeesPage, refetch: refetchScheduleEmployees } = useGetHrEmployeesPageQuery(
+    SCHEDULE_EMPLOYEE_LIST_PARAMS,
+    { skip: !canView },
+  );
   const canPub = isSA || perms.includes('hr.schedule.publish');
   const status = schedule && typeof schedule === 'object' ? String((schedule as { status?: string }).status ?? '') : '';
   const locked = status === 'LOCKED';
@@ -1281,7 +1405,7 @@ export default function HrScheduleDayPage() {
           cell: 'bg-sky-500/5 px-1.5 py-1',
         };
       }
-      if (rowKey === 'dutyRange' || rowKey === 'breakRange') {
+      if (rowKey === 'dutyRange' || rowKey === 'breakRange' || rowKey === 'hourBreakRange') {
         return {
           row: shared.row,
           label: themedLabel('!bg-emerald-100 text-emerald-900 dark:!bg-emerald-950 dark:text-emerald-100'),
@@ -1345,6 +1469,16 @@ export default function HrScheduleDayPage() {
     });
   }, []);
 
+  const reloadActiveEmployees = useCallback(() => {
+    void refetchScheduleEmployees();
+  }, [refetchScheduleEmployees]);
+
+  useHrLiveUpdate(
+    useCallback(() => {
+      reloadActiveEmployees();
+    }, [reloadActiveEmployees]),
+  );
+
   const mergeJobs = useCallback((rows: ScheduleJobRow[] | JobOpt[]) => {
     setJobById((prev) => {
       let changed = false;
@@ -1394,6 +1528,11 @@ export default function HrScheduleDayPage() {
     [scheduleJobsPage?.items]
   );
 
+  const scheduleEmployeesFingerprint = useMemo(
+    () => (scheduleEmployeesPage?.items ?? []).map((employee) => employee.id).join('|'),
+    [scheduleEmployeesPage?.items]
+  );
+
   const assignedJobsFingerprint = useAppSelector((state) =>
     assignedJobIds
       .map((id) => {
@@ -1409,6 +1548,22 @@ export default function HrScheduleDayPage() {
   }, [mergeJobs, scheduleJobsListFingerprint, scheduleJobsPage?.items]);
 
   useEffect(() => {
+    if (!scheduleEmployeesPage?.items?.length) return;
+    mergeEmployees(
+      scheduleEmployeesPage.items.map((employee) =>
+        toScheduleEmployee(
+          hrEmployeeToScheduleRow(
+            employee as ScheduleEmployeeRow & {
+              basicHoursPerDay?: number;
+              defaultTiming?: ScheduleEmployeeRow['defaultTiming'];
+            },
+          ),
+        ),
+      ),
+    );
+  }, [mergeEmployees, scheduleEmployeesFingerprint, scheduleEmployeesPage?.items]);
+
+  useEffect(() => {
     if (!assignedJobIds.length) return;
     const state = store.getState();
     const jobs = assignedJobIds
@@ -1421,29 +1576,28 @@ export default function HrScheduleDayPage() {
 
   const loadScheduleJobs = useCallback(
     async (query: string) => {
-      const result = await dispatch(
-        jobsApi.endpoints.getJobsPage.initiate(scheduleJobPickerParams(query), {
-          subscribe: false,
-          forceRefetch: false,
-        })
-      ).unwrap();
-      mergeJobs(result.items.map(jobRecordToScheduleRow));
-      return result.items.map((job) => scheduleJobToSearchItem(job));
+      const items = (scheduleJobsPage?.items ?? []).map((job) => scheduleJobToSearchItem(job));
+      return filterScheduleJobSearchItems(items, query);
     },
-    [dispatch, mergeJobs]
+    [scheduleJobsPage?.items],
   );
 
   const resolveScheduleJobById = useCallback(
     async (id: string) => {
       const cached = getJob(id);
       if (cached) return scheduleJobToSearchItem(cached);
+      const fromList = scheduleJobsPage?.items.find((job) => job.id === id);
+      if (fromList) {
+        mergeJobs([jobRecordToScheduleRow(fromList)]);
+        return scheduleJobToSearchItem(fromList);
+      }
       const row = await dispatch(
         jobsApi.endpoints.getJobById.initiate(id, { subscribe: false, forceRefetch: false })
       ).unwrap();
       mergeJobs([jobRecordToScheduleRow(row)]);
       return scheduleJobToSearchItem(row);
     },
-    [dispatch, getJob, mergeJobs]
+    [dispatch, getJob, mergeJobs, scheduleJobsPage?.items]
   );
 
   const loadSchedule = useCallback(async () => {
@@ -1474,14 +1628,12 @@ export default function HrScheduleDayPage() {
       setSchedule(null);
       if (!cancelled) setLoading(true);
       await loadSchedule();
-      const [timingRes, sr, activeEmployees] = await Promise.all([
+      const [timingRes, sr] = await Promise.all([
         fetch('/api/hr/employee-type-settings', { cache: 'no-store' }),
         fetch('/api/hr/schedule', { cache: 'no-store' }),
-        fetchActiveEmployeesForSchedule(),
       ]);
       const [timingJson, sj] = await Promise.all([timingRes.json(), sr.json()]);
       if (cancelled) return;
-      if (activeEmployees.length > 0) mergeEmployees(activeEmployees);
       if (timingRes.ok && timingJson?.success && timingJson.data?.LABOUR_WORKER) {
         setLabourTypeTiming(timingJson.data.LABOUR_WORKER as EmployeeTypeTimingSetting);
       }
@@ -1499,7 +1651,7 @@ export default function HrScheduleDayPage() {
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [canView, loadSchedule, mergeEmployees, workDate, activeCompanyId]);
+  }, [canView, loadSchedule, workDate, activeCompanyId]);
 
   const mapFromApi = useCallback((sch: Record<string, unknown>) => {
     const asg = (sch.assignments as Array<Record<string, unknown>>) ?? [];
@@ -1722,12 +1874,7 @@ export default function HrScheduleDayPage() {
   );
 
   const workerItems = useMemo(
-    () =>
-      workerPool.map((e) => ({
-        id: e.id,
-        label: e.preferredName || e.fullName,
-        searchText: `${e.fullName} ${e.preferredName ?? ''} ${e.employeeCode} ${e.workforce.expertises.join(' ')}`,
-      })),
+    () => workerPool.map((employee) => employeeToSearchItem(employee)),
     [workerPool]
   );
 
@@ -1736,7 +1883,7 @@ export default function HrScheduleDayPage() {
       driverPool.map((e) => ({
         id: e.id,
         label: e.preferredName || e.fullName,
-        searchText: `${e.fullName} ${e.preferredName ?? ''} ${e.employeeCode}`,
+        searchText: `${e.fullName} ${e.preferredName ?? ''}`.trim(),
       })),
     [driverPool]
   );
@@ -2346,14 +2493,86 @@ export default function HrScheduleDayPage() {
     scheduleInfo,
   ]);
 
-  const publish = async () => {
+  const runPublishValidation = useCallback(() => {
+    return validateScheduleForPublish(draftsRef.current.map(asgDraftToValidationDraft));
+  }, []);
+
+  const executePublish = useCallback(
+    async (options?: { acknowledgeLowHours?: boolean }) => {
+      if (!schedule || !('id' in schedule)) return;
+
+      if (hasUnsavedEditorChanges()) {
+        const saved = await persistEditorChanges({ silent: false });
+        if (!saved) return;
+      }
+
+      const validation = runPublishValidation();
+      if (validation.blockingIssues.length > 0) {
+        setPublishBlockMessages(validation.blockingIssues);
+        return;
+      }
+      if (!options?.acknowledgeLowHours && validation.lowHourTeams.length > 0) {
+        setPublishLowHourTeams(validation.lowHourTeams);
+        return;
+      }
+
+      setPublishing(true);
+      try {
+        const sid = String((schedule as { id: string }).id);
+        const res = await fetch(`/api/hr/schedule/${sid}/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ acknowledgeLowHours: options?.acknowledgeLowHours === true }),
+        });
+        const json = await readApiEnvelope<{
+          success?: boolean;
+          error?: string;
+          details?: {
+            code?: string;
+            blockingIssues?: string[];
+            lowHourTeams?: SchedulePublishLowHourTeam[];
+          };
+        }>(res);
+        if (!res.ok || !json?.success) {
+          const details = json?.details;
+          if (details?.blockingIssues?.length) {
+            setPublishBlockMessages(details.blockingIssues);
+            return;
+          }
+          if (details?.lowHourTeams?.length) {
+            setPublishLowHourTeams(details.lowHourTeams);
+            return;
+          }
+          toast.error(json?.error ?? 'Publish failed');
+          return;
+        }
+        toast.success('Published');
+        loadSchedule();
+      } finally {
+        setPublishing(false);
+      }
+    },
+    [hasUnsavedEditorChanges, loadSchedule, persistEditorChanges, runPublishValidation, schedule],
+  );
+
+  const publish = useCallback(() => {
     if (!schedule || !('id' in schedule)) return;
-    const sid = String((schedule as { id: string }).id);
-    const res = await fetch(`/api/hr/schedule/${sid}/publish`, { method: 'POST' });
-    const json = await readApiEnvelope<{ success?: boolean; error?: string }>(res);
-    if (!res.ok || !json?.success) toast.error(json?.error ?? 'Publish failed');
-    else { toast.success('Published'); loadSchedule(); }
-  };
+    const validation = runPublishValidation();
+    if (validation.blockingIssues.length > 0) {
+      setPublishBlockMessages(validation.blockingIssues);
+      return;
+    }
+    if (validation.lowHourTeams.length > 0) {
+      setPublishLowHourTeams(validation.lowHourTeams);
+      return;
+    }
+    void executePublish();
+  }, [executePublish, runPublishValidation, schedule]);
+
+  const confirmPublishWithLowHours = useCallback(() => {
+    setPublishLowHourTeams(null);
+    void executePublish({ acknowledgeLowHours: true });
+  }, [executePublish]);
 
   const applyPreviousScheduleTemplate = async () => {
     if (!selectedTemplateDate) return;
@@ -2434,10 +2653,12 @@ export default function HrScheduleDayPage() {
   };
 
   const handleTeamColumnDrop = (targetColIdx: number) => {
-    if (draggingTeamColumn == null || dis) return;
-    if (draggingTeamColumn !== targetColIdx) {
-      reorderTeamColumns(draggingTeamColumn, targetColIdx);
+    const sourceCol = draggingTeamColumnRef.current;
+    if (sourceCol == null || dis) return;
+    if (sourceCol !== targetColIdx) {
+      reorderTeamColumns(sourceCol, targetColIdx);
     }
+    draggingTeamColumnRef.current = null;
     setDraggingTeamColumn(null);
   };
 
@@ -2797,14 +3018,11 @@ export default function HrScheduleDayPage() {
 
   useJobLiveUpdate(
     useCallback(() => {
-      void Promise.allSettled(
-        assignedJobIds.map((id) =>
-          dispatch(jobsApi.endpoints.getJobById.initiate(id, { forceRefetch: true })).unwrap()
-        )
-      ).then(() => {
+      invalidateJobCaches(dispatch, assignedJobIds);
+      void refetchScheduleJobs().then(() => {
         syncStaleAssignedJobs();
       });
-    }, [assignedJobIds, dispatch, syncStaleAssignedJobs])
+    }, [assignedJobIds, dispatch, refetchScheduleJobs, syncStaleAssignedJobs])
   );
 
   const getDraftWorkerCount = useCallback(
@@ -3025,6 +3243,7 @@ export default function HrScheduleDayPage() {
     );
 
   const handleWorkerDrop = (target: WorkerDragTarget) => {
+    const draggingWorker = draggingWorkerRef.current;
     if (!draggingWorker || dis) return;
     if (
       draggingWorker.kind === 'flat' &&
@@ -3047,10 +3266,12 @@ export default function HrScheduleDayPage() {
         target.memberIndex
       );
     }
+    draggingWorkerRef.current = null;
     setDraggingWorker(null);
   };
 
   const handleSubTeamDrop = (target: SubTeamDragTarget) => {
+    const draggingSubTeam = draggingSubTeamRef.current;
     if (!draggingSubTeam || dis) return;
     if (
       draggingSubTeam.colIdx === target.colIdx &&
@@ -3058,8 +3279,77 @@ export default function HrScheduleDayPage() {
     ) {
       reorderSubTeams(target.colIdx, draggingSubTeam.subTeamIndex, target.subTeamIndex);
     }
+    draggingSubTeamRef.current = null;
     setDraggingSubTeam(null);
   };
+
+  const resolveSchedulePointerDrop = useCallback(
+    (clientX: number, clientY: number) => {
+      const dropEl = document
+        .elementFromPoint(clientX, clientY)
+        ?.closest('[data-schedule-drop]') as HTMLElement | null;
+      if (!dropEl) return;
+
+      const dropKind = dropEl.dataset.scheduleDrop;
+      if (dropKind === 'worker') {
+        const kind = dropEl.dataset.workerKind;
+        const colIdx = Number(dropEl.dataset.workerCol);
+        const memberIndex = Number(dropEl.dataset.workerMember);
+        if (!Number.isFinite(colIdx) || !Number.isFinite(memberIndex)) return;
+        if (kind === 'subTeam') {
+          const subTeamIndex = Number(dropEl.dataset.workerSubTeam);
+          if (!Number.isFinite(subTeamIndex)) return;
+          handleWorkerDrop({ kind: 'subTeam', colIdx, subTeamIndex, memberIndex });
+          return;
+        }
+        handleWorkerDrop({ kind: 'flat', colIdx, memberIndex });
+        return;
+      }
+      if (dropKind === 'subteam') {
+        const colIdx = Number(dropEl.dataset.subteamCol);
+        const subTeamIndex = Number(dropEl.dataset.subteamIndex);
+        if (!Number.isFinite(colIdx) || !Number.isFinite(subTeamIndex)) return;
+        handleSubTeamDrop({ colIdx, subTeamIndex });
+        return;
+      }
+      if (dropKind === 'team-column') {
+        const colIdx = Number(dropEl.dataset.teamCol);
+        if (!Number.isFinite(colIdx)) return;
+        handleTeamColumnDrop(colIdx);
+      }
+    },
+    [handleSubTeamDrop, handleTeamColumnDrop, handleWorkerDrop],
+  );
+
+  const startWorkerDrag = useCallback((target: WorkerDragTarget) => {
+    draggingWorkerRef.current = target;
+    setDraggingWorker(target);
+  }, []);
+
+  const endWorkerDrag = useCallback(() => {
+    draggingWorkerRef.current = null;
+    setDraggingWorker(null);
+  }, []);
+
+  const startSubTeamDrag = useCallback((target: SubTeamDragTarget) => {
+    draggingSubTeamRef.current = target;
+    setDraggingSubTeam(target);
+  }, []);
+
+  const endSubTeamDrag = useCallback(() => {
+    draggingSubTeamRef.current = null;
+    setDraggingSubTeam(null);
+  }, []);
+
+  const startTeamColumnDrag = useCallback((colIdx: number) => {
+    draggingTeamColumnRef.current = colIdx;
+    setDraggingTeamColumn(colIdx);
+  }, []);
+
+  const endTeamColumnDrag = useCallback(() => {
+    draggingTeamColumnRef.current = null;
+    setDraggingTeamColumn(null);
+  }, []);
 
   const isWorkerDragSource = (target: WorkerDragTarget) => {
     if (!draggingWorker) return false;
@@ -3872,6 +4162,16 @@ export default function HrScheduleDayPage() {
             </div>
           </div>
         );
+      case 'hourBreakRange': {
+        const summary = formatScheduleHourBreakSummary(d);
+        return (
+          <div className="flex min-h-4 items-center px-1 py-0.5">
+            <span className="text-xs text-foreground/90" title={summary === '—' ? undefined : summary}>
+              {summary}
+            </span>
+          </div>
+        );
+      }
       case 'remarks':
         return (
           <textarea
@@ -3917,20 +4217,24 @@ export default function HrScheduleDayPage() {
               return (
                 <div
                   key={`flat-worker-${memberIndex}`}
+                  data-schedule-drop="worker"
+                  data-schedule-drag-preview=""
+                  data-worker-kind="flat"
+                  data-worker-col={colIdx}
+                  data-worker-member={memberIndex}
                   className={cn(
-                    'rounded transition-colors',
+                    'rounded transition-all duration-150 data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40',
                     isMulti && 'ring-2 ring-amber-400/60',
                     isDragging && 'bg-primary/5 ring-2 ring-primary/30'
                   )}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => handleWorkerDrop(dragTarget)}
                 >
                   <div className="flex items-center gap-1">
                     <ScheduleDragHandle
                       label="worker"
                       disabled={fieldDisabled}
-                      onDragStart={() => setDraggingWorker(dragTarget)}
-                      onDragEnd={() => setDraggingWorker(null)}
+                      onDragStart={() => startWorkerDrag(dragTarget)}
+                      onDragEnd={endWorkerDrag}
+                      onPointerDrop={resolveSchedulePointerDrop}
                     />
                     <div className="min-w-0 flex-1">
                       <SearchSelect
@@ -3940,10 +4244,12 @@ export default function HrScheduleDayPage() {
                         placeholder={memberIndex === 0 ? 'Team Leader' : ``}
                         disabled={fieldDisabled}
                         minCharactersToSearch={1}
+                        searchFilter={searchEmployeePickerItems}
                         allowClearButton={false}
                         clearOnEmptyInput
                         dropdownInPortal
                         passThroughArrowKeys
+                        renderItem={renderWorkerSearchItem}
                         emptyAction={buildWorkerEmptyAction({ kind: 'flat', colIdx, memberIndex })}
                         onAfterSelect={() => focusNextWorkerField(colIdx, workerNavSub)}
                         inputProps={getWorkerSearchInputProps(colIdx, workerNavSub)}
@@ -3979,20 +4285,25 @@ export default function HrScheduleDayPage() {
               return (
               <div
                 key={subTeam.id}
+                data-schedule-drop="subteam"
+                data-schedule-drag-preview=""
+                data-subteam-col={colIdx}
+                data-subteam-index={subTeamIndex}
                 className={cn(
                   blockCls,
-                  isSubTeamDragging && 'ring-2 ring-primary/30'
+                  'transition-all duration-150',
+                  'data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40',
+                  isSubTeamDragging && 'ring-2 ring-primary/30',
                 )}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => handleSubTeamDrop(subTeamDragTarget)}
               >
                 <div className="flex items-center gap-1">
                   <ScheduleDragHandle
                     label="sub-team"
                     disabled={fieldDisabled}
                     className={SUB_TEAM_DRAG_HANDLE_CLS}
-                    onDragStart={() => setDraggingSubTeam(subTeamDragTarget)}
-                    onDragEnd={() => setDraggingSubTeam(null)}
+                    onDragStart={() => startSubTeamDrag(subTeamDragTarget)}
+                    onDragEnd={endSubTeamDrag}
+                    onPointerDrop={resolveSchedulePointerDrop}
                   />
                   <input
                     value={subTeam.label}
@@ -4028,20 +4339,25 @@ export default function HrScheduleDayPage() {
                     return (
                       <div
                         key={`${subTeam.id}-member-${memberIndex}`}
+                        data-schedule-drop="worker"
+                        data-schedule-drag-preview=""
+                        data-worker-kind="subTeam"
+                        data-worker-col={colIdx}
+                        data-worker-sub-team={subTeamIndex}
+                        data-worker-member={memberIndex}
                         className={cn(
-                          'rounded transition-colors',
+                          'rounded transition-all duration-150 data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40',
                           isMulti && 'ring-2 ring-amber-400/60',
                           isDragging && 'bg-primary/5 ring-2 ring-primary/30'
                         )}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => handleWorkerDrop(dragTarget)}
                       >
                         <div className="flex items-center gap-1">
                           <ScheduleDragHandle
                             label="worker"
                             disabled={fieldDisabled}
-                            onDragStart={() => setDraggingWorker(dragTarget)}
-                            onDragEnd={() => setDraggingWorker(null)}
+                            onDragStart={() => startWorkerDrag(dragTarget)}
+                            onDragEnd={endWorkerDrag}
+                            onPointerDrop={resolveSchedulePointerDrop}
                           />
                           <div className="min-w-0 flex-1">
                             <SearchSelect
@@ -4054,10 +4370,12 @@ export default function HrScheduleDayPage() {
                               placeholder={memberIndex === 0 ? 'Team Leader' : ``}
                               disabled={fieldDisabled}
                               minCharactersToSearch={1}
+                              searchFilter={searchEmployeePickerItems}
                               allowClearButton={false}
                               clearOnEmptyInput
                               dropdownInPortal
                               passThroughArrowKeys
+                              renderItem={renderWorkerSearchItem}
                               emptyAction={buildWorkerEmptyAction({
                                 kind: 'subTeam',
                                 colIdx,
@@ -4273,8 +4591,8 @@ export default function HrScheduleDayPage() {
 						</>
 					) : null}
 					{schedule && canPub && status === 'DRAFT' ? (
-						<Button type='button' size='sm' onClick={publish}>
-							Publish
+						<Button type='button' size='sm' onClick={publish} disabled={publishing}>
+							{publishing ? 'Publishing…' : 'Publish'}
 						</Button>
 					) : null}
 				</div>
@@ -4593,21 +4911,21 @@ export default function HrScheduleDayPage() {
 												<th
 													key={`team-header-${ci}-${d.columnIndex}`}
 													data-team-column={ci}
+													data-schedule-drop="team-column"
+													data-team-col={ci}
 													scope='col'
 													className={cn(
 														teamHeaderCls(),
+														'data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40 transition-all duration-150',
 														draggingTeamColumn ===
 															ci &&
 															'ring-2 ring-primary/30',
 													)}
-													onDragOver={(e) =>
-														e.preventDefault()
-													}
-													onDrop={() =>
-														handleTeamColumnDrop(ci)
-													}
 												>
-													<div className='flex items-center justify-between gap-2'>
+													<div
+														className='flex items-center justify-between gap-2'
+														data-schedule-drag-preview=''
+													>
 														<div className='flex min-w-0 items-center gap-1'>
 															{canEdit &&
 															!locked ? (
@@ -4615,14 +4933,15 @@ export default function HrScheduleDayPage() {
 																	<ScheduleDragHandle
 																		label='team column'
 																		onDragStart={() =>
-																			setDraggingTeamColumn(
+																			startTeamColumnDrag(
 																				ci,
 																			)
 																		}
-																		onDragEnd={() =>
-																			setDraggingTeamColumn(
-																				null,
-																			)
+																		onDragEnd={
+																			endTeamColumnDrag
+																		}
+																		onPointerDrop={
+																			resolveSchedulePointerDrop
 																		}
 																	/>
 																	<Button
@@ -5287,6 +5606,62 @@ export default function HrScheduleDayPage() {
 							before continuing.
 						</p>
 					</div>
+				) : null}
+			</Modal>
+
+			<Modal
+				isOpen={Boolean(publishBlockMessages?.length)}
+				onClose={() => setPublishBlockMessages(null)}
+				title='Cannot publish schedule'
+				description='Fix the issues below before publishing. Saving and auto-save are not affected.'
+				size='sm'
+				actions={
+					<Button type='button' onClick={() => setPublishBlockMessages(null)}>
+						OK
+					</Button>
+				}
+			>
+				{publishBlockMessages ? (
+					<ul className='list-disc space-y-1.5 pl-5 text-sm text-muted-foreground'>
+						{publishBlockMessages.map((message) => (
+							<li key={message}>{message}</li>
+						))}
+					</ul>
+				) : null}
+			</Modal>
+
+			<Modal
+				isOpen={Boolean(publishLowHourTeams?.length)}
+				onClose={() => setPublishLowHourTeams(null)}
+				title='Short work hours'
+				description='Some teams have 5 hours or less of net duty time. Do you want to publish anyway?'
+				size='sm'
+				actions={
+					<>
+						<Button
+							type='button'
+							variant='outline'
+							onClick={() => setPublishLowHourTeams(null)}
+							disabled={publishing}
+						>
+							Cancel
+						</Button>
+						<Button type='button' onClick={confirmPublishWithLowHours} disabled={publishing}>
+							{publishing ? 'Publishing…' : 'Publish anyway'}
+						</Button>
+					</>
+				}
+			>
+				{publishLowHourTeams ? (
+					<ul className='list-disc space-y-1.5 pl-5 text-sm text-muted-foreground'>
+						{publishLowHourTeams.map((team) => (
+							<li key={team.label}>
+								<span className='font-medium text-foreground'>{team.label}</span>:{' '}
+								{Number.isInteger(team.netHours) ? team.netHours : team.netHours.toFixed(1)} h net
+								duty
+							</li>
+						))}
+					</ul>
 				) : null}
 			</Modal>
 		</div>

@@ -11,6 +11,7 @@ import { switchActiveCompany } from '@/store/slices/companySlice';
 import type { RootState } from '@/store/store';
 import { isPermissionAffectingLiveUpdate } from '@/lib/live-updates/client';
 import { invalidateJobCaches } from '@/lib/jobs/jobCacheInvalidation';
+import { notifyHrLiveUpdate } from '@/lib/hr/hrLiveUpdate';
 import { notifyJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
 import type { Permission } from '@/lib/permissions';
 
@@ -605,6 +606,8 @@ export default function StockLiveUpdates() {
         upsertQueryData(appApi, 'getHrExpertises', arg, json.data);
       }),
     ]);
+
+    notifyHrLiveUpdate();
   }, [fetchJson, selectCachedArgs, store, upsertQueryData]);
 
   const refreshByChannel = useCallback(

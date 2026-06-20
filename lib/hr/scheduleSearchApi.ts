@@ -1,4 +1,5 @@
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
+import { fuzzyMatch, type SearchableItem } from '@/lib/utils/fuzzyMatch';
 
 export type ScheduleEmployeeRow = {
   id: string;
@@ -50,6 +51,11 @@ export type ScheduleSearchItem = {
   searchText?: string;
 };
 
+export type EmployeeSearchItem = ScheduleSearchItem & {
+  fullName: string;
+  preferredName: string | null;
+};
+
 const SEARCH_LIMIT = 25;
 const HYDRATE_IDS_LIMIT = 80;
 
@@ -68,12 +74,70 @@ export function toScheduleEmployee(row: ScheduleEmployeeRow) {
   };
 }
 
-export function employeeToSearchItem(employee: ReturnType<typeof toScheduleEmployee>): ScheduleSearchItem {
+export function hrEmployeeToScheduleRow(employee: ScheduleEmployeeRow & {
+  employeeType?: string | null;
+  basicHoursPerDay?: number;
+  defaultTiming?: ScheduleEmployeeRow['defaultTiming'];
+}): ScheduleEmployeeRow {
+  return {
+    id: employee.id,
+    fullName: employee.fullName,
+    preferredName: employee.preferredName,
+    employeeCode: employee.employeeCode,
+    status: employee.status ?? 'ACTIVE',
+    profileExtension: employee.profileExtension,
+    basicHoursPerDay: employee.basicHoursPerDay,
+    defaultTiming: employee.defaultTiming ?? null,
+  };
+}
+
+export function employeeToSearchItem(employee: ReturnType<typeof toScheduleEmployee>): EmployeeSearchItem {
   return {
     id: employee.id,
     label: employee.preferredName || employee.fullName,
-    searchText: `${employee.fullName} ${employee.preferredName ?? ''} ${employee.employeeCode} ${employee.workforce.expertises.join(' ')}`,
+    fullName: employee.fullName,
+    preferredName: employee.preferredName,
+    searchText: `${employee.fullName} ${employee.preferredName ?? ''} ${employee.workforce.expertises.join(' ')}`.trim(),
   };
+}
+
+function scoreEmployeePickerTerm(term: string, label: string, searchBlob: string): number {
+  const normalizedTerm = term.toLowerCase();
+  const normalizedLabel = label.toLowerCase();
+  const normalizedBlob = searchBlob.toLowerCase();
+
+  if (normalizedLabel === normalizedTerm) return 0.94;
+  if (normalizedLabel.startsWith(normalizedTerm)) return 0.9;
+  if (normalizedBlob.includes(normalizedTerm)) return 0.78;
+  return fuzzyMatch(normalizedTerm, normalizedBlob);
+}
+
+/** Stricter picker search for workers/drivers — name prefix matches rank higher. */
+export function searchEmployeePickerItems<T extends SearchableItem>(
+  items: T[],
+  searchTerm: string,
+): T[] {
+  const normalized = searchTerm.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!normalized) return items;
+  const terms = normalized.split(' ').filter(Boolean);
+
+  return items
+    .map((item) => {
+      const searchText = String(item.searchText ?? '');
+      const searchBlob = `${item.label} ${searchText}`.replace(/\s+/g, ' ').trim();
+
+      let total = 0;
+      for (const term of terms) {
+        const termScore = scoreEmployeePickerTerm(term, item.label, searchBlob);
+        if (termScore < 0.45) return { item, score: 0 };
+        total += termScore;
+      }
+
+      return { item, score: total / terms.length };
+    })
+    .filter(({ score }) => score >= 0.5)
+    .sort((a, b) => b.score - a.score)
+    .map(({ item }) => item);
 }
 
 export function jobToSearchItem(job: ScheduleJobRow): ScheduleSearchItem & {

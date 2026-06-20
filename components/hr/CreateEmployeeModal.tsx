@@ -89,7 +89,7 @@ export default function CreateEmployeeModal({
         employeeType,
         visaHolding,
       });
-      invalidateEmployeeCaches(dispatch);
+      invalidateEmployeeCaches(dispatch, { entity: 'employee', action: 'created' });
       toast.success('Employee created');
       onCreated?.(employee);
       onClose();
