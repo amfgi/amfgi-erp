@@ -43,53 +43,58 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id: scheduleId } = await params;
 
   const sch = await loadScheduleForPresence(scheduleId, companyId);
-  if (!sch) return errorResponse('Not found', 404);
+  if (!sch) return errorResponse('Schedule not found for active company', 404);
   if (sch.status === 'LOCKED') return errorResponse('Schedule is locked', 403);
 
   const body = await req.json();
   const parsed = HeartbeatSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const existing = await prisma.scheduleEditorPresence.findUnique({
-    where: {
-      workScheduleId_sessionId: {
+  try {
+    const existing = await prisma.scheduleEditorPresence.findUnique({
+      where: {
+        workScheduleId_sessionId: {
+          workScheduleId: scheduleId,
+          sessionId: parsed.data.sessionId,
+        },
+      },
+      select: { id: true, displayName: true },
+    });
+
+    await prisma.scheduleEditorPresence.upsert({
+      where: {
+        workScheduleId_sessionId: {
+          workScheduleId: scheduleId,
+          sessionId: parsed.data.sessionId,
+        },
+      },
+      update: {
+        displayName: parsed.data.displayName.trim(),
+        lastSeenAt: new Date(),
+      },
+      create: {
+        companyId,
         workScheduleId: scheduleId,
+        userId: session.user.id,
+        displayName: parsed.data.displayName.trim(),
         sessionId: parsed.data.sessionId,
       },
-    },
-    select: { id: true, displayName: true },
-  });
+    });
 
-  await prisma.scheduleEditorPresence.upsert({
-    where: {
-      workScheduleId_sessionId: {
-        workScheduleId: scheduleId,
-        sessionId: parsed.data.sessionId,
-      },
-    },
-    update: {
-      displayName: parsed.data.displayName.trim(),
-      lastSeenAt: new Date(),
-    },
-    create: {
-      companyId,
-      workScheduleId: scheduleId,
-      userId: session.user.id,
-      displayName: parsed.data.displayName.trim(),
-      sessionId: parsed.data.sessionId,
-    },
-  });
+    const pruned = await pruneStaleScheduleEditorPresence(scheduleId);
+    const isJoin = !existing;
+    const displayNameChanged =
+      existing != null && existing.displayName.trim() !== parsed.data.displayName.trim();
 
-  const pruned = await pruneStaleScheduleEditorPresence(scheduleId);
-  const isJoin = !existing;
-  const displayNameChanged =
-    existing != null && existing.displayName.trim() !== parsed.data.displayName.trim();
+    if (isJoin || displayNameChanged || pruned.count > 0) {
+      await publishSchedulePresenceChanged(companyId, scheduleId);
+    }
 
-  if (isJoin || displayNameChanged || pruned.count > 0) {
-    await publishSchedulePresenceChanged(companyId, scheduleId);
+    return successResponse({ ok: true, sessionId: parsed.data.sessionId });
+  } catch (error) {
+    console.error('[schedule-presence] POST failed', { scheduleId, companyId, error });
+    return errorResponse('Could not update schedule presence', 500);
   }
-
-  return successResponse({ ok: true, sessionId: parsed.data.sessionId });
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

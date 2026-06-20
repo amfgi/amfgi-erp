@@ -120,8 +120,8 @@
     "semantic_hash": "5f8d67cf851de49cd486712304f1fa27"
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\schedule\\[workDate]\\ScheduleDayClient.tsx": {
-    "mtime": 1781891239.3106353,
-    "ast_hash": "dda8d55b8ea8153f593d38dcee2a7540",
+    "mtime": 1781901148.7844114,
+    "ast_hash": "e292b6bafcaf931340c19108f002c646",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\(app)\\hr\\settings\\document-types\\page.tsx": {
@@ -625,14 +625,14 @@
     "semantic_hash": "62646f1987b57f2439124cdcd5741274"
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\assignments\\route.ts": {
-    "mtime": 1781887052.6708324,
-    "ast_hash": "de664abf55f6589268f615683e83d69b",
+    "mtime": 1781897553.9613323,
+    "ast_hash": "b74a7d60c2ee29d87a51cf4a7ec4d4a4",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\driver-logs\\route.ts": {
-    "mtime": 1780500788.6016293,
-    "ast_hash": "454e81b8cc1c93cd833b06c9b871e4d4",
-    "semantic_hash": "454e81b8cc1c93cd833b06c9b871e4d4"
+    "mtime": 1781897554.316869,
+    "ast_hash": "ded7629e76ea791d2359905376303e00",
+    "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\generate-attendance\\route.ts": {
     "mtime": 1781619800.7169213,
@@ -2395,7 +2395,7 @@
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\next-env.d.ts": {
-    "mtime": 1781892178.8640306,
+    "mtime": 1781903551.8165827,
     "ast_hash": "2a74d3909800ca5467fa83b0ab4a4890",
     "semantic_hash": ""
   },
@@ -4530,8 +4530,8 @@
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\components\\hr\\ScheduleWorkerPoolCard.tsx": {
-    "mtime": 1781888186.11684,
-    "ast_hash": "d3c3b916e26a6c6db4d67d1d2316d89c",
+    "mtime": 1781901138.468545,
+    "ast_hash": "d4014809d38bdcf732a9dad4232184f3",
     "semantic_hash": ""
   },
   "E:\\almuraqib-custom-application\\AMFGI\\components\\hr\\CreateEmployeeModal.tsx": {
@@ -4652,6 +4652,36 @@
   "E:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\scheduleViewPrefs.ts": {
     "mtime": 1781890423.4172573,
     "ast_hash": "64e85043ad4ef9863a0d41941821398e",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\app\\api\\hr\\schedule\\[id]\\presence\\route.ts": {
+    "mtime": 1781899033.3183508,
+    "ast_hash": "e52791e22327ac3958cdccec47d07d8b",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\hooks\\useScheduleCollaboration.ts": {
+    "mtime": 1781899050.962226,
+    "ast_hash": "17007f33d6c4c2ebff23bf9f01025ede",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\scheduleAssignmentPersistence.ts": {
+    "mtime": 1781897554.1900988,
+    "ast_hash": "c63aec4e58228d8ed9fc44fc0fe0bb27",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\scheduleCollaboration.ts": {
+    "mtime": 1781899014.4389453,
+    "ast_hash": "bc91b07806987c8c9cececcb1e635c3c",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\prisma\\migrations-postgres\\20260619120000_schedule_editor_presence\\migration.sql": {
+    "mtime": 1781897554.0820124,
+    "ast_hash": "37a18df3fb6920f114216a278189973e",
+    "semantic_hash": ""
+  },
+  "E:\\almuraqib-custom-application\\AMFGI\\lib\\hr\\schedulePresence.ts": {
+    "mtime": 1781899019.7861843,
+    "ast_hash": "d7072ed611c86cb517b7ebc480a5cd52",
     "semantic_hash": ""
   }
 }

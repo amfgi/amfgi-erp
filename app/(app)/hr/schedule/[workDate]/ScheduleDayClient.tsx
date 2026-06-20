@@ -832,6 +832,7 @@ export default function HrScheduleDayPage() {
   const params = useParams();
   const workDate = String(params.workDate ?? '');
   const { data: session, status: sessionStatus } = useSession();
+  const activeCompanyId = session?.user?.activeCompanyId ?? '';
   const [schedule, setSchedule] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1271,14 +1272,29 @@ export default function HrScheduleDayPage() {
   const loadSchedule = useCallback(async () => {
     const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' });
     const json = await res.json();
-    if (res.ok && json?.success) setSchedule(json.data);
-    else setSchedule(null);
-  }, [workDate]);
+    if (res.ok && json?.success) {
+      const data = json.data as Record<string, unknown> | null;
+      if (
+        data &&
+        typeof data === 'object' &&
+        'companyId' in data &&
+        activeCompanyId &&
+        String(data.companyId ?? '') !== activeCompanyId
+      ) {
+        setSchedule(null);
+        return;
+      }
+      setSchedule(data);
+    } else {
+      setSchedule(null);
+    }
+  }, [activeCompanyId, workDate]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!canView) return;
+      setSchedule(null);
       if (!cancelled) setLoading(true);
       await loadSchedule();
       const [timingRes, sr, activeEmployees] = await Promise.all([
@@ -1306,7 +1322,7 @@ export default function HrScheduleDayPage() {
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [canView, loadSchedule, mergeEmployees, workDate]);
+  }, [canView, loadSchedule, mergeEmployees, workDate, activeCompanyId]);
 
   const mapFromApi = useCallback((sch: Record<string, unknown>) => {
     const asg = (sch.assignments as Array<Record<string, unknown>>) ?? [];
@@ -1406,8 +1422,22 @@ export default function HrScheduleDayPage() {
     });
   }, [schedule]);
 
+  const scheduleCompanyId =
+    schedule && typeof schedule === 'object' && 'companyId' in schedule
+      ? String((schedule as { companyId?: string }).companyId ?? '')
+      : '';
+  const scheduleWorkDate =
+    schedule && typeof schedule === 'object' && 'workDate' in schedule
+      ? String((schedule as { workDate?: string | Date }).workDate ?? '').slice(0, 10)
+      : '';
   const scheduleId =
-    schedule && typeof schedule === 'object' && 'id' in schedule ? String((schedule as { id: string }).id) : '';
+    schedule &&
+    typeof schedule === 'object' &&
+    'id' in schedule &&
+    scheduleCompanyId === activeCompanyId &&
+    scheduleWorkDate === workDate
+      ? String((schedule as { id: string }).id)
+      : '';
 
   useEffect(() => {
     lastPersistedFingerprintRef.current = null;
@@ -1753,7 +1783,7 @@ export default function HrScheduleDayPage() {
     scheduleId: scheduleId || null,
     sessionId: collaborationSessionIdRef.current,
     displayName: collaborationDisplayName,
-    enabled: Boolean(scheduleId && canEdit && !locked),
+    enabled: Boolean(scheduleId && canEdit && !locked && !loading),
     onRemoteNotes: () => {
       if (scheduleInfo !== persistedNotesRef.current) return;
       void reloadScheduleFromServer();
