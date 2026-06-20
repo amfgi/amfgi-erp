@@ -11,6 +11,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/shadcn/input';
 import { Separator } from '@/components/ui/shadcn/separator';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/shadcn/tooltip';
+import {
   Table,
   TableBody,
   TableCell,
@@ -61,9 +67,46 @@ import {
   type WorkSchedulePrintPayload,
 } from '@/lib/utils/printTemplateSession';
 import toast from 'react-hot-toast';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, GripVertical, Redo2, Rows3, Trash2, Undo2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  GripVertical,
+  Palette,
+  Printer,
+  Redo2,
+  Settings2,
+  Slash,
+  Tag,
+  Trash2,
+  Undo2,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 
 const GUEST_DRIVER_ROW_PREFIX = 'guest:';
+
+function SlashedIcon({
+  icon: Icon,
+  slashed,
+  className,
+}: {
+  icon: LucideIcon;
+  slashed: boolean;
+  className?: string;
+}) {
+  return (
+    <span className={cn('relative inline-flex shrink-0', className)}>
+      <Icon className="h-4 w-4" aria-hidden />
+      {slashed ? (
+        <Slash className="absolute inset-0 h-4 w-4 rotate-90 stroke-[2.5]" aria-hidden />
+      ) : null}
+    </span>
+  );
+}
 
 function createClientId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -505,6 +548,48 @@ function cloneDrafts(drafts: AsgDraft[]): AsgDraft[] {
   return JSON.parse(JSON.stringify(drafts)) as AsgDraft[];
 }
 
+type ScheduleEditorSnapshot = {
+  drafts: AsgDraft[];
+  jobDescriptionEdits: Record<string, string>;
+};
+
+function cloneJobDescriptionEdits(edits: Record<string, string>): Record<string, string> {
+  return JSON.parse(JSON.stringify(edits)) as Record<string, string>;
+}
+
+function cloneEditorSnapshot(snapshot: ScheduleEditorSnapshot): ScheduleEditorSnapshot {
+  return {
+    drafts: cloneDrafts(snapshot.drafts),
+    jobDescriptionEdits: cloneJobDescriptionEdits(snapshot.jobDescriptionEdits),
+  };
+}
+
+function effectiveJobDescriptionEdits(
+  drafts: AsgDraft[],
+  jobDescriptionEdits: Record<string, string>,
+  getJob: (id: string) => JobOpt | undefined,
+): Record<string, string> {
+  const result = cloneJobDescriptionEdits(jobDescriptionEdits);
+  for (const draft of drafts) {
+    const jobId = draft.jobId;
+    if (!jobId) continue;
+    if (Object.prototype.hasOwnProperty.call(result, jobId)) continue;
+    result[jobId] = String(getJob(jobId)?.description ?? '');
+  }
+  return result;
+}
+
+function captureEditorSnapshot(
+  drafts: AsgDraft[],
+  jobDescriptionEdits: Record<string, string>,
+  getJob: (id: string) => JobOpt | undefined,
+): ScheduleEditorSnapshot {
+  return cloneEditorSnapshot({
+    drafts,
+    jobDescriptionEdits: effectiveJobDescriptionEdits(drafts, jobDescriptionEdits, getJob),
+  });
+}
+
 function draftsEqual(a: AsgDraft[], b: AsgDraft[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -663,16 +748,16 @@ const SCHEDULE_TABLE_ROW_LABELS = Object.fromEntries(
 ) as Record<string, string>;
 
 const NAV_ROW = {
-  locationType: 0,
-  job: 1,
-  workProcess: 2,
-  targetQty: 3,
-  driver1: 4,
-  driver2: 5,
-  duty: 6,
-  break: 7,
-  workers: 8,
-  remarks: 9,
+  locationType: 'locationType',
+  job: 'job',
+  workProcess: 'workProcessDetails',
+  targetQty: 'targetQty',
+  driver1: 'driver1EmployeeId',
+  driver2: 'driver2EmployeeId',
+  duty: 'dutyRange',
+  break: 'breakRange',
+  workers: 'workers',
+  remarks: 'remarks',
 } as const;
 
 function encodeWorkerNavSub(subTeamIndex: number, memberIndex: number): number {
@@ -686,6 +771,19 @@ function getWorkerFieldNavSubs(draft: AsgDraft): number[] {
   return draft.subTeams.flatMap((subTeam, subTeamIndex) =>
     subTeam.members.map((_, memberIndex) => encodeWorkerNavSub(subTeamIndex, memberIndex))
   );
+}
+
+function resolveWorkerNavSubForColumn(
+  targetDraft: AsgDraft | undefined,
+  sourceDraft: AsgDraft | undefined,
+  sourceSub: number,
+): number {
+  const targetSubs = targetDraft ? getWorkerFieldNavSubs(targetDraft) : [];
+  if (targetSubs.length === 0) return 0;
+  const sourceSubs = sourceDraft ? getWorkerFieldNavSubs(sourceDraft) : [];
+  const sourceIndex = sourceSubs.indexOf(sourceSub);
+  if (sourceIndex < 0) return targetSubs[targetSubs.length - 1];
+  return targetSubs[Math.min(sourceIndex, targetSubs.length - 1)];
 }
 
 type ScheduleDriverTripRow = {
@@ -876,13 +974,24 @@ export default function HrScheduleDayPage() {
   const persistedColumnFingerprintsRef = useRef<Map<number, string>>(new Map());
   const persistedDriverFingerprintRef = useRef('');
   const structureDirtyRef = useRef(false);
-  const jobDescriptionSaveTimersRef = useRef<Map<string, number>>(new Map());
   const [jobDescriptionEdits, setJobDescriptionEdits] = useState<Record<string, string>>({});
+  const jobDescriptionEditsRef = useRef<Record<string, string>>({});
+  const workDetailsHistorySessionRef = useRef<{ jobId: string | null; pushed: boolean }>({
+    jobId: null,
+    pushed: false,
+  });
+  const workDetailsHistoryResetTimerRef = useRef<number | null>(null);
   const autoSaveStatusTimerRef = useRef<number | null>(null);
-  const [undoStack, setUndoStack] = useState<AsgDraft[][]>([]);
-  const [redoStack, setRedoStack] = useState<AsgDraft[][]>([]);
+  const undoStackRef = useRef<ScheduleEditorSnapshot[]>([]);
+  const redoStackRef = useRef<ScheduleEditorSnapshot[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const suspendHistoryRef = useRef(false);
   const draftsRef = useRef<AsgDraft[]>([]);
+  const teamBoardScrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollTeamColumnRef = useRef<number | null>(null);
+  const remappedScheduleIdRef = useRef<string | null>(null);
+  const hasUnsavedScheduleChangesRef = useRef(false);
   const [pendingWorkerCreate, setPendingWorkerCreate] = useState<PendingWorkerCreate | null>(null);
   const [pendingInactiveJob, setPendingInactiveJob] = useState<PendingInactiveJob | null>(null);
   const [pendingStaleJob, setPendingStaleJob] = useState<PendingStaleJob | null>(null);
@@ -1055,6 +1164,29 @@ export default function HrScheduleDayPage() {
     () => rowSettings.order.filter((key) => !rowSettings.hidden.includes(key)),
     [rowSettings],
   );
+  const visibleScheduleRowKeysRef = useRef(visibleScheduleRowKeys);
+  useEffect(() => {
+    visibleScheduleRowKeysRef.current = visibleScheduleRowKeys;
+  }, [visibleScheduleRowKeys]);
+
+  const scrollToTeamColumn = useCallback((colIdx: number) => {
+    const container = teamBoardScrollRef.current;
+    if (!container) return;
+    const column = container.querySelector<HTMLElement>(`[data-team-column="${colIdx}"]`);
+    if (!column) return;
+    column.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+  }, []);
+
+  useEffect(() => {
+    const colIdx = pendingScrollTeamColumnRef.current;
+    if (colIdx == null) return;
+    pendingScrollTeamColumnRef.current = null;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        scrollToTeamColumn(colIdx);
+      });
+    });
+  }, [drafts, scrollToTeamColumn]);
 
   const toggleScheduleRowVisibility = useCallback((rowKey: string) => {
     setRowSettings((current) => {
@@ -1080,6 +1212,35 @@ export default function HrScheduleDayPage() {
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
+
+  useEffect(() => {
+    jobDescriptionEditsRef.current = jobDescriptionEdits;
+  }, [jobDescriptionEdits]);
+
+  const resetWorkDetailsHistorySession = useCallback(() => {
+    workDetailsHistorySessionRef.current = { jobId: null, pushed: false };
+  }, []);
+
+  const syncHistoryUi = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+
+  const clearHistoryStacks = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    syncHistoryUi();
+  }, [syncHistoryUi]);
+
+  const pushUndoSnapshot = useCallback(
+    (snapshot: ScheduleEditorSnapshot) => {
+      undoStackRef.current = [...undoStackRef.current.slice(-39), cloneEditorSnapshot(snapshot)];
+      redoStackRef.current = [];
+      resetWorkDetailsHistorySession();
+      syncHistoryUi();
+    },
+    [resetWorkDetailsHistorySession, syncHistoryUi],
+  );
 
   const getRowThemeClasses = useCallback((rowKey: string): { row: string; label: string; cell: string } => {
       if (!useLightGridTheme) {
@@ -1190,6 +1351,10 @@ export default function HrScheduleDayPage() {
 
   const getEmployee = useCallback((id: string) => (id ? employeeById.get(id) : undefined), [employeeById]);
   const getJob = useCallback((id: string) => (id ? jobById.get(id) : undefined), [jobById]);
+
+  const captureCurrentEditorSnapshot = useCallback((): ScheduleEditorSnapshot => {
+    return captureEditorSnapshot(draftsRef.current, jobDescriptionEditsRef.current, getJob);
+  }, [getJob]);
 
   const getJobWorkDetails = useCallback(
     (jobId: string | null | undefined) => {
@@ -1382,19 +1547,21 @@ export default function HrScheduleDayPage() {
         idx,
       ),
     );
+    draftsRef.current = normalizedDrafts;
     setDrafts(normalizedDrafts);
+    jobDescriptionEditsRef.current = {};
+    setJobDescriptionEdits({});
+    resetWorkDetailsHistorySession();
     persistedNotesRef.current = notesValue;
     persistedColumnFingerprintsRef.current = new Map(
       normalizedDrafts.map((draft) => [draft.columnIndex, assignmentPayloadFingerprint(draft, lookupJob)]),
     );
     structureDirtyRef.current = false;
-    lastPersistedFingerprintRef.current = null;
-    setUndoStack([]);
-    setRedoStack([]);
+    clearHistoryStacks();
     queueMicrotask(() => {
       suspendHistoryRef.current = false;
     });
-  }, [mergeJobs]);
+  }, [clearHistoryStacks, mergeJobs, resetWorkDetailsHistorySession]);
 
   const mapFromApiRef = useRef(mapFromApi);
   useEffect(() => {
@@ -1408,19 +1575,34 @@ export default function HrScheduleDayPage() {
         return;
       }
       if (schedule && typeof schedule === 'object' && 'id' in schedule) {
+        const sid = String((schedule as { id: string }).id);
+        const firstLoadForSchedule = remappedScheduleIdRef.current !== sid;
+        if (
+          !firstLoadForSchedule &&
+          (undoStackRef.current.length > 0 ||
+            redoStackRef.current.length > 0 ||
+            hasUnsavedScheduleChangesRef.current)
+        ) {
+          return;
+        }
+        remappedScheduleIdRef.current = sid;
         mapFromApiRef.current(schedule as Record<string, unknown>);
       } else {
+        remappedScheduleIdRef.current = null;
         suspendHistoryRef.current = true;
         setScheduleInfo('');
+        draftsRef.current = [];
         setDrafts([]);
-        setUndoStack([]);
-        setRedoStack([]);
+        jobDescriptionEditsRef.current = {};
+        setJobDescriptionEdits({});
+        resetWorkDetailsHistorySession();
+        clearHistoryStacks();
         queueMicrotask(() => {
           suspendHistoryRef.current = false;
         });
       }
     });
-  }, [schedule]);
+  }, [clearHistoryStacks, resetWorkDetailsHistorySession, schedule]);
 
   const scheduleCompanyId =
     schedule && typeof schedule === 'object' && 'companyId' in schedule
@@ -1440,7 +1622,6 @@ export default function HrScheduleDayPage() {
       : '';
 
   useEffect(() => {
-    lastPersistedFingerprintRef.current = null;
     setAutoSaveStatus('idle');
   }, [workDate, scheduleId]);
 
@@ -1691,6 +1872,13 @@ export default function HrScheduleDayPage() {
 
   const reloadScheduleFromServer = useCallback(async () => {
     if (!scheduleId) return;
+    if (
+      undoStackRef.current.length > 0 ||
+      redoStackRef.current.length > 0 ||
+      hasUnsavedScheduleChangesRef.current
+    ) {
+      return;
+    }
     const res = await fetch(`/api/hr/schedule/${scheduleId}`, { cache: 'no-store' });
     const json = await readApiEnvelope<{ success?: boolean; data?: Record<string, unknown> }>(res);
     if (res.ok && json?.success && json.data) {
@@ -1705,14 +1893,34 @@ export default function HrScheduleDayPage() {
     return draftsRef.current.some((draft) => columnHasUnsavedChanges(draft.columnIndex));
   }, [columnHasUnsavedChanges, driverTripRows, scheduleInfo]);
 
+  const hasUnsavedJobDescriptionChanges = useCallback(() => {
+    return Object.entries(jobDescriptionEditsRef.current).some(([jobId, value]) => {
+      const saved = String(getJob(jobId)?.description ?? '').trim();
+      return value.trim() !== saved;
+    });
+  }, [getJob]);
+
+  const hasUnsavedEditorChanges = useCallback(() => {
+    return hasUnsavedScheduleChanges() || hasUnsavedJobDescriptionChanges();
+  }, [hasUnsavedJobDescriptionChanges, hasUnsavedScheduleChanges]);
+
+  useEffect(() => {
+    hasUnsavedScheduleChangesRef.current = hasUnsavedEditorChanges();
+  }, [hasUnsavedEditorChanges]);
+
   const mergeRemoteColumn = useCallback(
     async (columnIndex: number, action: string) => {
       if (!scheduleId || persistInFlightRef.current) return;
+      if (undoStackRef.current.length > 0 || redoStackRef.current.length > 0) return;
       if (columnHasUnsavedChanges(columnIndex)) return;
 
       if (action === 'deleted') {
         suspendHistoryRef.current = true;
-        setDrafts((prev) => prev.filter((row) => row.columnIndex !== columnIndex));
+        setDrafts((prev) => {
+          const next = prev.filter((row) => row.columnIndex !== columnIndex);
+          draftsRef.current = next;
+          return next;
+        });
         persistedColumnFingerprintsRef.current.delete(columnIndex);
         queueMicrotask(() => {
           suspendHistoryRef.current = false;
@@ -1765,7 +1973,9 @@ export default function HrScheduleDayPage() {
           columnIndex,
           assignmentPayloadFingerprint(merged, getJob),
         );
-        return prev.map((row, rowIdx) => (rowIdx === idx ? merged : row));
+        const next = prev.map((row, rowIdx) => (rowIdx === idx ? merged : row));
+        draftsRef.current = next;
+        return next;
       });
       queueMicrotask(() => {
         suspendHistoryRef.current = false;
@@ -1786,17 +1996,20 @@ export default function HrScheduleDayPage() {
     enabled: Boolean(scheduleId && canEdit && !locked && !loading),
     onRemoteNotes: () => {
       if (scheduleInfo !== persistedNotesRef.current) return;
+      if (undoStackRef.current.length > 0 || redoStackRef.current.length > 0) return;
       void reloadScheduleFromServer();
     },
     onRemoteColumn: (columnIndex, action) => {
       void mergeRemoteColumn(columnIndex, action);
     },
     onRemoteStructure: () => {
-      if (hasUnsavedScheduleChanges()) return;
+      if (hasUnsavedEditorChanges()) return;
+      if (undoStackRef.current.length > 0 || redoStackRef.current.length > 0) return;
       void reloadScheduleFromServer();
     },
     onRemoteDrivers: () => {
       if (driverLogsFingerprint(driverTripRows) !== persistedDriverFingerprintRef.current) return;
+      if (undoStackRef.current.length > 0 || redoStackRef.current.length > 0) return;
       void reloadScheduleFromServer();
     },
   });
@@ -1818,7 +2031,7 @@ export default function HrScheduleDayPage() {
   };
 
   const persistScheduleToServer = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: { silent?: boolean; deferStatus?: boolean }) => {
       if (!schedule || !('id' in schedule) || dis) return false;
 
       const invalidSplitTeam = findInvalidSplitTeamDraft(drafts);
@@ -1845,14 +2058,16 @@ export default function HrScheduleDayPage() {
             return !persisted || persisted !== next;
           });
 
+      const saveFingerprint = schedulePersistenceFingerprint(drafts, scheduleInfo, driverTripRows);
+
       if (!structureDirty && dirtyColumns.length === 0 && !notesDirty && !driversDirty) {
+        lastPersistedFingerprintRef.current = saveFingerprint;
         return true;
       }
 
-      const saveFingerprint = schedulePersistenceFingerprint(drafts, scheduleInfo, driverTripRows);
       persistInFlightRef.current = true;
       if (!options?.silent) setSaving(true);
-      else setAutoSaveStatus('saving');
+      else if (!options?.deferStatus) setAutoSaveStatus('saving');
 
       const sid = String((schedule as { id: string }).id);
 
@@ -1885,7 +2100,7 @@ export default function HrScheduleDayPage() {
           }>(res);
           if (!res.ok || !json?.success) {
             if (!options?.silent) toast.error(json?.error ?? 'Save failed');
-            else setAutoSaveStatus('error');
+            else if (!options?.deferStatus) setAutoSaveStatus('error');
             return false;
           }
 
@@ -1926,7 +2141,7 @@ export default function HrScheduleDayPage() {
           const driverJson = await readApiEnvelope<{ success?: boolean; error?: string; data?: unknown }>(driverRes);
           if (!driverRes.ok || !driverJson?.success) {
             if (!options?.silent) toast.error(driverJson?.error ?? 'Driver trip save failed');
-            else setAutoSaveStatus('error');
+            else if (!options?.deferStatus) setAutoSaveStatus('error');
             return false;
           }
 
@@ -1945,7 +2160,7 @@ export default function HrScheduleDayPage() {
 
         if (!options?.silent) {
           toast.success('Saved');
-        } else {
+        } else if (!options?.deferStatus) {
           setAutoSaveStatus('saved');
           if (autoSaveStatusTimerRef.current != null) {
             window.clearTimeout(autoSaveStatusTimerRef.current);
@@ -1977,25 +2192,147 @@ export default function HrScheduleDayPage() {
     ],
   );
 
-  const saveAssignments = () => void persistScheduleToServer({ silent: false });
+  const persistJobDescription = useCallback(
+    async (jobId: string, description: string, options?: { silent?: boolean }) => {
+      if (!canEditJob) return true;
+      const normalized = description.trim();
+      const saved = String(getJob(jobId)?.description ?? '').trim();
+      if (normalized === saved) {
+        setJobDescriptionEdits((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, jobId)) return prev;
+          const next = { ...prev };
+          delete next[jobId];
+          return next;
+        });
+        return true;
+      }
+
+      try {
+        const updated = await updateJob({
+          id: jobId,
+          data: { description: normalized },
+        }).unwrap();
+        mergeJobs([jobRecordToScheduleRow(updated)]);
+        setJobDescriptionEdits((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, jobId)) return prev;
+          if (prev[jobId] !== description) return prev;
+          const next = { ...prev };
+          delete next[jobId];
+          return next;
+        });
+        return true;
+      } catch (error) {
+        if (!options?.silent) {
+          toast.error(error instanceof Error ? error.message : 'Could not update work details on the job.');
+        }
+        return false;
+      }
+    },
+    [canEditJob, getJob, mergeJobs, updateJob],
+  );
+
+  const persistPendingJobDescriptions = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!canEditJob) return true;
+      const pending = Object.entries(jobDescriptionEditsRef.current).filter(([jobId, value]) => {
+        const saved = String(getJob(jobId)?.description ?? '').trim();
+        return value.trim() !== saved;
+      });
+      if (pending.length === 0) return true;
+
+      let allOk = true;
+      for (const [jobId, value] of pending) {
+        const ok = await persistJobDescription(jobId, value, options);
+        if (!ok) allOk = false;
+      }
+      return allOk;
+    },
+    [canEditJob, getJob, persistJobDescription],
+  );
+
+  const persistEditorChanges = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!schedule || !('id' in schedule)) return true;
+
+      const jobsDirty = canEditJob && hasUnsavedJobDescriptionChanges();
+      const scheduleDirty = !dis && hasUnsavedScheduleChanges();
+      if (!jobsDirty && !scheduleDirty) return true;
+
+      if (!options?.silent) setSaving(true);
+      else setAutoSaveStatus('saving');
+
+      let jobsOk = true;
+      let scheduleOk = true;
+      try {
+        if (jobsDirty) {
+          jobsOk = await persistPendingJobDescriptions({ silent: true });
+        }
+        if (scheduleDirty) {
+          scheduleOk = await persistScheduleToServer({ silent: true, deferStatus: true });
+        }
+        if (!options?.silent) {
+          if (jobsOk && scheduleOk) toast.success('Saved');
+          else toast.error('Save failed');
+        } else if (jobsOk && scheduleOk) {
+          setAutoSaveStatus('saved');
+          if (autoSaveStatusTimerRef.current != null) {
+            window.clearTimeout(autoSaveStatusTimerRef.current);
+          }
+          autoSaveStatusTimerRef.current = window.setTimeout(() => {
+            setAutoSaveStatus('idle');
+            autoSaveStatusTimerRef.current = null;
+          }, 2500);
+        } else {
+          setAutoSaveStatus('error');
+        }
+        return jobsOk && scheduleOk;
+      } finally {
+        if (!options?.silent) setSaving(false);
+      }
+    },
+    [
+      canEditJob,
+      dis,
+      hasUnsavedJobDescriptionChanges,
+      hasUnsavedScheduleChanges,
+      persistPendingJobDescriptions,
+      persistScheduleToServer,
+      schedule,
+    ],
+  );
+
+  const saveAssignments = () => void persistEditorChanges({ silent: false });
 
   useEffect(() => {
-    if (!schedule || dis || loading) return;
+    if (!schedule || loading) return;
+    if (dis && !canEditJob) return;
 
-    const fingerprint = schedulePersistenceFingerprint(drafts, scheduleInfo, driverTripRows);
-    if (lastPersistedFingerprintRef.current === null) {
-      lastPersistedFingerprintRef.current = fingerprint;
-      persistedDriverFingerprintRef.current = driverLogsFingerprint(driverTripRows);
+    if (!hasUnsavedEditorChanges()) {
+      lastPersistedFingerprintRef.current = schedulePersistenceFingerprint(
+        drafts,
+        scheduleInfo,
+        driverTripRows,
+      );
       return;
     }
-    if (lastPersistedFingerprintRef.current === fingerprint) return;
 
     const timeoutId = window.setTimeout(() => {
-      void persistScheduleToServer({ silent: true });
+      void persistEditorChanges({ silent: true });
     }, 1200);
 
     return () => window.clearTimeout(timeoutId);
-  }, [dis, drafts, driverTripRows, loading, persistScheduleToServer, schedule, scheduleInfo]);
+  }, [
+    canEditJob,
+    dis,
+    drafts,
+    driverTripRows,
+    hasUnsavedEditorChanges,
+    jobDescriptionEdits,
+    loading,
+    persistEditorChanges,
+    schedule,
+    scheduleInfo,
+  ]);
 
   const publish = async () => {
     if (!schedule || !('id' in schedule)) return;
@@ -2016,13 +2353,13 @@ export default function HrScheduleDayPage() {
     }
     mapFromApi(json.data as Record<string, unknown>);
     markScheduleStructureDirty();
-    lastPersistedFingerprintRef.current = null;
     toast.success(`Template loaded from ${selectedTemplateDate}`);
   };
 
   const addColumn = () => {
     markScheduleStructureDirty();
     applyDrafts((prev) => {
+      pendingScrollTeamColumnRef.current = prev.length;
       const nextNumber = getNextTeamNumber(prev);
       const empty = createEmptyDraft(
         prev.length ? Math.max(...prev.map((x) => x.columnIndex)) + 1 : 1,
@@ -2043,6 +2380,7 @@ export default function HrScheduleDayPage() {
   const duplicateColumn = (idx: number) => {
     markScheduleStructureDirty();
     applyDrafts((prev) => {
+      pendingScrollTeamColumnRef.current = prev.length;
       const src = prev[idx];
       if (!src) return prev;
       const nextNumber = getNextTeamNumber(prev);
@@ -2165,38 +2503,59 @@ export default function HrScheduleDayPage() {
     });
   };
 
-  const applyDrafts = useCallback((updater: (current: AsgDraft[]) => AsgDraft[]) => {
-    setDrafts((current) => {
+  const applyDrafts = useCallback(
+    (updater: (current: AsgDraft[]) => AsgDraft[]) => {
+      const current = draftsRef.current;
       const next = updater(current);
-      if (suspendHistoryRef.current) return next;
-      if (draftsEqual(next, current)) return current;
-      setUndoStack((prev) => [...prev.slice(-39), cloneDrafts(current)]);
-      setRedoStack([]);
-      return next;
+      if (suspendHistoryRef.current) {
+        draftsRef.current = next;
+        setDrafts(next);
+        return;
+      }
+      if (draftsEqual(next, current)) return;
+      pushUndoSnapshot(captureEditorSnapshot(current, jobDescriptionEditsRef.current, getJob));
+      draftsRef.current = next;
+      setDrafts(next);
+    },
+    [getJob, pushUndoSnapshot],
+  );
+
+  const restoreEditorSnapshot = useCallback((snapshot: ScheduleEditorSnapshot) => {
+    suspendHistoryRef.current = true;
+    const restored = cloneEditorSnapshot(snapshot);
+    draftsRef.current = restored.drafts;
+    setDrafts(restored.drafts);
+    jobDescriptionEditsRef.current = restored.jobDescriptionEdits;
+    setJobDescriptionEdits(restored.jobDescriptionEdits);
+    resetWorkDetailsHistorySession();
+    if (workDetailsHistoryResetTimerRef.current != null) {
+      window.clearTimeout(workDetailsHistoryResetTimerRef.current);
+      workDetailsHistoryResetTimerRef.current = null;
+    }
+    queueMicrotask(() => {
+      suspendHistoryRef.current = false;
     });
-  }, []);
+  }, [resetWorkDetailsHistorySession]);
 
   const undo = useCallback(() => {
-    setUndoStack((prevUndo) => {
-      if (prevUndo.length === 0) return prevUndo;
-      const previous = prevUndo[prevUndo.length - 1];
-      const currentSnapshot = cloneDrafts(draftsRef.current);
-      setRedoStack((prevRedo) => [...prevRedo, currentSnapshot]);
-      setDrafts(cloneDrafts(previous));
-      return prevUndo.slice(0, -1);
-    });
-  }, []);
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const previous = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, captureCurrentEditorSnapshot()];
+    restoreEditorSnapshot(previous);
+    syncHistoryUi();
+  }, [captureCurrentEditorSnapshot, restoreEditorSnapshot, syncHistoryUi]);
 
   const redo = useCallback(() => {
-    setRedoStack((prevRedo) => {
-      if (prevRedo.length === 0) return prevRedo;
-      const next = prevRedo[prevRedo.length - 1];
-      const currentSnapshot = cloneDrafts(draftsRef.current);
-      setUndoStack((prevUndo) => [...prevUndo.slice(-39), currentSnapshot]);
-      setDrafts(cloneDrafts(next));
-      return prevRedo.slice(0, -1);
-    });
-  }, []);
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+    const next = stack[stack.length - 1];
+    redoStackRef.current = stack.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current.slice(-39), captureCurrentEditorSnapshot()];
+    restoreEditorSnapshot(next);
+    syncHistoryUi();
+  }, [captureCurrentEditorSnapshot, restoreEditorSnapshot, syncHistoryUi]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -2231,67 +2590,67 @@ export default function HrScheduleDayPage() {
   const upd = (idx: number, patch: Partial<AsgDraft>) =>
     applyDrafts((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
-  const persistJobDescription = useCallback(
-    async (jobId: string, description: string) => {
-      if (!canEditJob) return;
-      const normalized = description.trim();
-      const saved = String(getJob(jobId)?.description ?? '').trim();
-      if (normalized === saved) {
-        setJobDescriptionEdits((prev) => {
-          if (!Object.prototype.hasOwnProperty.call(prev, jobId)) return prev;
-          const next = { ...prev };
-          delete next[jobId];
-          return next;
-        });
-        return;
-      }
-
-      try {
-        const updated = await updateJob({
-          id: jobId,
-          data: { description: normalized },
-        }).unwrap();
-        mergeJobs([jobRecordToScheduleRow(updated)]);
-        setJobDescriptionEdits((prev) => {
-          if (!Object.prototype.hasOwnProperty.call(prev, jobId)) return prev;
-          if (prev[jobId] !== description) return prev;
-          const next = { ...prev };
-          delete next[jobId];
-          return next;
-        });
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Could not update work details on the job.');
-      }
-    },
-    [canEditJob, getJob, mergeJobs, updateJob],
-  );
-
   const handleWorkDetailsChange = useCallback(
     (jobId: string, value: string) => {
       if (!canEditJob || !jobId) return;
-      setJobDescriptionEdits((prev) => ({ ...prev, [jobId]: value }));
 
-      const timers = jobDescriptionSaveTimersRef.current;
-      const existing = timers.get(jobId);
-      if (existing != null) window.clearTimeout(existing);
-      timers.set(
-        jobId,
-        window.setTimeout(() => {
-          timers.delete(jobId);
-          void persistJobDescription(jobId, value);
-        }, 800),
-      );
+      if (!suspendHistoryRef.current) {
+        const session = workDetailsHistorySessionRef.current;
+        if (session.jobId !== jobId || !session.pushed) {
+          pushUndoSnapshot(
+            captureEditorSnapshot(draftsRef.current, jobDescriptionEditsRef.current, getJob),
+          );
+          workDetailsHistorySessionRef.current = { jobId, pushed: true };
+        }
+      }
+
+      const nextEdits = { ...jobDescriptionEditsRef.current, [jobId]: value };
+      jobDescriptionEditsRef.current = nextEdits;
+      setJobDescriptionEdits(nextEdits);
+
+      if (workDetailsHistoryResetTimerRef.current != null) {
+        window.clearTimeout(workDetailsHistoryResetTimerRef.current);
+      }
+      workDetailsHistoryResetTimerRef.current = window.setTimeout(() => {
+        workDetailsHistoryResetTimerRef.current = null;
+        resetWorkDetailsHistorySession();
+      }, 1200);
     },
-    [canEditJob, persistJobDescription],
+    [canEditJob, getJob, pushUndoSnapshot, resetWorkDetailsHistorySession],
+  );
+
+  const handleWorkDetailsKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (mod && e.shiftKey && key === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+        return;
+      }
+      if (mod && !e.shiftKey && key === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        undo();
+        return;
+      }
+      if (mod && !e.shiftKey && key === 'y') {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+      }
+    },
+    [redo, undo],
   );
 
   useEffect(() => {
-    const timers = jobDescriptionSaveTimersRef.current;
     return () => {
-      for (const timerId of timers.values()) {
-        window.clearTimeout(timerId);
+      if (workDetailsHistoryResetTimerRef.current != null) {
+        window.clearTimeout(workDetailsHistoryResetTimerRef.current);
+        workDetailsHistoryResetTimerRef.current = null;
       }
-      timers.clear();
     };
   }, []);
 
@@ -2861,19 +3220,73 @@ export default function HrScheduleDayPage() {
     [getEmployee]
   );
 
-  const focusScheduleCell = useCallback((row: number, col: number, sub = 0) => {
+  const focusScheduleCell = useCallback((rowKey: string, col: number, sub = 0): boolean => {
     const exact = document.querySelector<HTMLElement>(
-      `[data-schedule-nav="true"][data-nav-row="${row}"][data-nav-col="${col}"][data-nav-sub="${sub}"]`
+      `[data-schedule-nav="true"][data-nav-row-key="${rowKey}"][data-nav-col="${col}"][data-nav-sub="${sub}"]`
     );
     if (exact) {
       exact.focus();
-      return;
+      return true;
     }
-    const fallback = document.querySelector<HTMLElement>(
-      `[data-schedule-nav="true"][data-nav-row="${row}"][data-nav-col="${col}"]`
-    );
-    fallback?.focus();
+    if (rowKey !== NAV_ROW.workers) {
+      const fallback = document.querySelector<HTMLElement>(
+        `[data-schedule-nav="true"][data-nav-row-key="${rowKey}"][data-nav-col="${col}"]`
+      );
+      if (fallback) {
+        fallback.focus();
+        return true;
+      }
+    }
+    return false;
   }, []);
+
+  const tryFocusScheduleRowKey = useCallback(
+    (
+      rowKey: string,
+      col: number,
+      preferredSub: number,
+      enterDirection?: 'up' | 'down',
+    ): boolean => {
+      if (rowKey === NAV_ROW.workers) {
+        const colIdx = col - 1;
+        const draft = draftsRef.current[colIdx];
+        const subs = draft ? getWorkerFieldNavSubs(draft) : [];
+        if (subs.length === 0) return false;
+        if (enterDirection === 'up') {
+          return focusScheduleCell(rowKey, col, subs[subs.length - 1]);
+        }
+        if (enterDirection === 'down') {
+          return focusScheduleCell(rowKey, col, subs[0]);
+        }
+        if (subs.includes(preferredSub) && focusScheduleCell(rowKey, col, preferredSub)) return true;
+        for (const workerSub of subs) {
+          if (focusScheduleCell(rowKey, col, workerSub)) return true;
+        }
+        return false;
+      }
+      if (rowKey === NAV_ROW.duty || rowKey === NAV_ROW.break) {
+        if (focusScheduleCell(rowKey, col, preferredSub)) return true;
+        const alternateSub = preferredSub === 0 ? 1 : 0;
+        if (focusScheduleCell(rowKey, col, alternateSub)) return true;
+        return false;
+      }
+      return focusScheduleCell(rowKey, col, 0);
+    },
+    [focusScheduleCell],
+  );
+
+  const focusAdjacentScheduleRow = useCallback(
+    (direction: 'up' | 'down', currentRowKey: string, col: number, sub: number) => {
+      const visibleKeys = visibleScheduleRowKeysRef.current;
+      const currentIndex = visibleKeys.indexOf(currentRowKey);
+      if (currentIndex < 0) return;
+      const step = direction === 'down' ? 1 : -1;
+      for (let i = currentIndex + step; i >= 0 && i < visibleKeys.length; i += step) {
+        if (tryFocusScheduleRowKey(visibleKeys[i], col, sub, direction)) return;
+      }
+    },
+    [tryFocusScheduleRowKey],
+  );
 
   const focusNextWorkerField = useCallback(
     (colIdx: number, currentSub: number) => {
@@ -2895,42 +3308,87 @@ export default function HrScheduleDayPage() {
     (e: ReactKeyboardEvent<HTMLElement>) => {
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
       const target = e.currentTarget as HTMLElement;
-      if (target.getAttribute('aria-expanded') === 'true') return;
+      if (
+        target.getAttribute('aria-expanded') === 'true' &&
+        target.getAttribute('data-pass-through-arrows') !== 'true'
+      ) return;
 
-      const row = Number(target.dataset.navRow ?? '-1');
+      const rowKey = target.dataset.navRowKey ?? '';
       const col = Number(target.dataset.navCol ?? '-1');
       const sub = Number(target.dataset.navSub ?? '0');
-      if (row < 0 || col < 0) return;
+      if (!rowKey || col < 0) return;
 
       e.preventDefault();
 
-      if (row === NAV_ROW.workers && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (rowKey === NAV_ROW.workers && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const colIdx = col - 1;
         const draft = draftsRef.current[colIdx];
         const subs = draft ? getWorkerFieldNavSubs(draft) : [];
         const currentIndex = subs.indexOf(sub);
         if (e.key === 'ArrowDown' && currentIndex >= 0 && currentIndex < subs.length - 1) {
-          focusScheduleCell(row, col, subs[currentIndex + 1]);
+          focusScheduleCell(rowKey, col, subs[currentIndex + 1]);
           return;
         }
         if (e.key === 'ArrowUp' && currentIndex > 0) {
-          focusScheduleCell(row, col, subs[currentIndex - 1]);
+          focusScheduleCell(rowKey, col, subs[currentIndex - 1]);
           return;
         }
       }
 
-      if (e.key === 'ArrowUp') focusScheduleCell(Math.max(0, row - 1), col, sub);
-      if (e.key === 'ArrowDown') focusScheduleCell(row + 1, col, sub);
-      if (e.key === 'ArrowLeft') focusScheduleCell(row, Math.max(0, col - 1), sub);
-      if (e.key === 'ArrowRight') focusScheduleCell(row, col + 1, sub);
+      const isPairedTimeRow = rowKey === NAV_ROW.duty || rowKey === NAV_ROW.break;
+      if (isPairedTimeRow && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const maxCol = draftsRef.current.length;
+        if (e.key === 'ArrowRight') {
+          if (sub === 0) {
+            focusScheduleCell(rowKey, col, 1);
+            return;
+          }
+          if (col < maxCol) {
+            focusScheduleCell(rowKey, col + 1, 0);
+            return;
+          }
+          return;
+        }
+        if (sub === 1) {
+          focusScheduleCell(rowKey, col, 0);
+          return;
+        }
+        if (col > 1) {
+          focusScheduleCell(rowKey, col - 1, 1);
+          return;
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowUp') {
+        focusAdjacentScheduleRow('up', rowKey, col, sub);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        focusAdjacentScheduleRow('down', rowKey, col, sub);
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const nextCol = e.key === 'ArrowLeft' ? Math.max(1, col - 1) : col + 1;
+        if (rowKey === NAV_ROW.workers) {
+          const targetSub = resolveWorkerNavSubForColumn(
+            draftsRef.current[nextCol - 1],
+            draftsRef.current[col - 1],
+            sub,
+          );
+          focusScheduleCell(rowKey, nextCol, targetSub);
+          return;
+        }
+        focusScheduleCell(rowKey, nextCol, sub);
+      }
     },
-    [focusScheduleCell]
+    [focusAdjacentScheduleRow, focusScheduleCell],
   );
 
   const getGridNavProps = useCallback(
-    (row: number, col: number, sub = 0) => ({
+    (rowKey: string, col: number, sub = 0) => ({
       'data-schedule-nav': 'true',
-      'data-nav-row': String(row),
+      'data-nav-row-key': rowKey,
       'data-nav-col': String(col),
       'data-nav-sub': String(sub),
       onKeyDown: handleScheduleGridKeyDown,
@@ -3226,6 +3684,7 @@ export default function HrScheduleDayPage() {
             placeholder="Job no, company, LPO, quotation, site…"
             disabled={fieldDisabled}
             minCharactersToSearch={0}
+            passThroughArrowKeys
             inputProps={scheduleSearchInputProps(getGridNavProps(NAV_ROW.job, colIdx + 1))}
             renderItem={(item, isHighlighted) => (
               <div className="space-y-0.5">
@@ -3285,6 +3744,7 @@ export default function HrScheduleDayPage() {
             </div>
           );
         }
+        const workDetailsNavProps = getGridNavProps(NAV_ROW.workProcess, colIdx + 1);
         return (
           <div className="space-y-0.5 px-1 py-0.5">
             <textarea
@@ -3293,7 +3753,13 @@ export default function HrScheduleDayPage() {
               rows={1}
               placeholder="Enter work details..."
               className={gridTextareaCls}
-              {...getGridNavProps(NAV_ROW.workProcess, colIdx + 1)}
+              {...workDetailsNavProps}
+              onKeyDown={(e) => {
+                handleWorkDetailsKeyDown(e);
+                if (!e.defaultPrevented) {
+                  workDetailsNavProps.onKeyDown(e);
+                }
+              }}
             />
           </div>
         );
@@ -3337,6 +3803,7 @@ export default function HrScheduleDayPage() {
               placeholder="Search driver..."
               disabled={fieldDisabled}
               minCharactersToSearch={1}
+              passThroughArrowKeys
               inputProps={scheduleSearchInputProps(
                 getGridNavProps(fieldKey === 'driver1EmployeeId' ? NAV_ROW.driver1 : NAV_ROW.driver2, colIdx + 1),
               )}
@@ -3770,14 +4237,20 @@ export default function HrScheduleDayPage() {
 							/>
 						</>
 					) : null}
-					{schedule && canEdit && !locked ? (
+					{schedule && (canEdit || canEditJob) && !locked ? (
 						<>
 							{autoSaveStatus === 'saving' || saving ? (
-								<span className='text-xs text-muted-foreground'>Saving…</span>
+								<span className='text-xs text-muted-foreground'>
+									Saving…
+								</span>
 							) : autoSaveStatus === 'saved' ? (
-								<span className='text-xs text-emerald-600 dark:text-emerald-400'>All changes saved</span>
+								<span className='text-xs text-emerald-600 dark:text-emerald-400'>
+									All changes saved
+								</span>
 							) : autoSaveStatus === 'error' ? (
-								<span className='text-xs text-destructive'>Save failed — use Save now</span>
+								<span className='text-xs text-destructive'>
+									Save failed — use Save now
+								</span>
 							) : null}
 							<Button
 								type='button'
@@ -3824,106 +4297,160 @@ export default function HrScheduleDayPage() {
 					>
 						<section className='flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm'>
 							<div className='flex flex-col gap-2 border-b border-border px-3 py-2 lg:flex-row lg:items-center lg:justify-between'>
-								<div className='min-w-0 space-y-0.5'>
-									<h2 className='text-base font-semibold text-foreground'>
-										Team board
-									</h2>
-									<p className='text-xs text-muted-foreground'>
-										{drafts.length} team
-										{drafts.length === 1 ? '' : 's'} —
-										scroll horizontally to view all columns
-									</p>
-								</div>
 								<div className='flex flex-wrap items-center gap-2'>
-									{otherScheduleEditors.length > 0 ? (
-										<div className='flex max-w-full flex-wrap items-center gap-1.5'>
-											<span className='text-xs text-muted-foreground'>Editing:</span>
-											{otherScheduleEditors.map((editor) => (
-												<span
-													key={editor.sessionId}
-													className='inline-flex max-w-[10rem] truncate rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-950 dark:text-violet-100'
-													title={editor.displayName}
+									<TooltipProvider delayDuration={400}>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type='button'
+													variant='outline'
+													size='icon'
+													className='h-8 w-8'
+													onClick={() =>
+														setRowSettingsOpen(true)
+													}
+													aria-label='Row settings'
 												>
-													{editor.displayName}
-												</span>
-											))}
-										</div>
-									) : null}
-									{canEdit && !locked ? (
-										<Button
-											type='button'
-											size='sm'
-											onClick={addColumn}
-										>
-											Add team
-										</Button>
-									) : null}
-									<Button
-										type='button'
-										variant='outline'
-										size='sm'
-										onClick={() => setRowSettingsOpen(true)}
-									>
-										<Rows3 className='mr-1.5 h-3.5 w-3.5' />
-										Rows
-									</Button>
-									<Button
-										type='button'
-										variant='outline'
-										size='sm'
-										onClick={() =>
-											void openSchedulePrintOutput(
-												'print',
-											)
-										}
-									>
-										Print
-									</Button>
+													<Settings2 className='h-4 w-4' />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												Choose which rows to show and
+												their order
+											</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type='button'
+													variant='outline'
+													size='icon'
+													className='h-8 w-8'
+													onClick={() =>
+														void openSchedulePrintOutput(
+															'print',
+														)
+													}
+													aria-label='Print schedule'
+												>
+													<Printer className='h-4 w-4' />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												Print schedule
+											</TooltipContent>
+										</Tooltip>
+										<Separator
+											orientation='vertical'
+											className='hidden h-6 sm:block'
+										/>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type='button'
+													variant={
+														showWorkerRail
+															? 'secondary'
+															: 'outline'
+													}
+													size='icon'
+													className='h-8 w-8'
+													onClick={() =>
+														setShowWorkerRail(
+															(c) => !c,
+														)
+													}
+													aria-label={
+														showWorkerRail
+															? 'Hide worker pool'
+															: 'Show worker pool'
+													}
+												>
+													<SlashedIcon
+														icon={Users}
+														slashed={
+															!showWorkerRail
+														}
+													/>
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												{showWorkerRail
+													? 'Hide worker pool'
+													: 'Show worker pool'}
+											</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type='button'
+													variant={
+														showRowLabels
+															? 'secondary'
+															: 'outline'
+													}
+													size='icon'
+													className='h-8 w-8'
+													onClick={() =>
+														setShowRowLabels(
+															(c) => !c,
+														)
+													}
+													aria-label={
+														showRowLabels
+															? 'Hide row labels'
+															: 'Show row labels'
+													}
+												>
+													<SlashedIcon
+														icon={Tag}
+														slashed={!showRowLabels}
+													/>
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												{showRowLabels
+													? 'Hide row labels'
+													: 'Show row labels'}
+											</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type='button'
+													variant={
+														useLightGridTheme
+															? 'outline'
+															: 'secondary'
+													}
+													size='icon'
+													className='h-8 w-8'
+													onClick={() =>
+														setUseLightGridTheme(
+															(c) => !c,
+														)
+													}
+													aria-label={
+														useLightGridTheme
+															? 'Switch to color-coded rows'
+															: 'Switch to plain rows'
+													}
+												>
+													<Palette className='h-4 w-4' />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												{useLightGridTheme
+													? 'Switch to color-coded rows'
+													: 'Switch to plain rows'}
+											</TooltipContent>
+										</Tooltip>
+									</TooltipProvider>
 									<Separator
 										orientation='vertical'
 										className='hidden h-6 sm:block'
 									/>
-									<Button
-										type='button'
-										variant='outline'
-										size='sm'
-										onClick={() =>
-											setShowWorkerRail((c) => !c)
-										}
-									>
-										{showWorkerRail
-											? 'Hide workers'
-											: 'Workers'}
-									</Button>
-									<Button
-										type='button'
-										variant='outline'
-										size='sm'
-										onClick={() =>
-											setShowRowLabels((c) => !c)
-										}
-									>
-										{showRowLabels
-											? 'Hide labels'
-											: 'Labels'}
-									</Button>
-									<Button
-										type='button'
-										variant={
-											useLightGridTheme
-												? 'secondary'
-												: 'outline'
-										}
-										size='sm'
-										onClick={() =>
-											setUseLightGridTheme((c) => !c)
-										}
-									>
-										{useLightGridTheme
-											? 'Plain rows'
-											: 'Color rows'}
-									</Button>
-									{canEdit && !locked ? (
+									{(canEdit || canEditJob) && !locked ? (
 										<>
 											<Button
 												type='button'
@@ -3931,9 +4458,7 @@ export default function HrScheduleDayPage() {
 												size='icon'
 												className='h-8 w-8'
 												onClick={undo}
-												disabled={
-													undoStack.length === 0
-												}
+												disabled={!canUndo}
 												title='Undo'
 												aria-label='Undo'
 											>
@@ -3945,9 +4470,7 @@ export default function HrScheduleDayPage() {
 												size='icon'
 												className='h-8 w-8'
 												onClick={redo}
-												disabled={
-													redoStack.length === 0
-												}
+												disabled={!canRedo}
 												title='Redo'
 												aria-label='Redo'
 											>
@@ -3995,9 +4518,49 @@ export default function HrScheduleDayPage() {
 										+
 									</Button>
 								</div>
+								<div className='min-w-0 space-y-0.5 space-x-1.5'>
+									{/* <h2 className='text-base font-semibold text-foreground'>
+										Team board
+									</h2>
+									<p className='text-xs text-muted-foreground'>
+										{drafts.length} team
+										{drafts.length === 1 ? '' : 's'} —
+										scroll horizontally to view all columns
+									</p> */}
+									{otherScheduleEditors.length > 0 ? (
+										<span className='inline-flex max-w-full flex-wrap items-center gap-1.5'>
+											<span className='text-xs text-muted-foreground'>
+												Editing:
+											</span>
+											{otherScheduleEditors.map(
+												(editor) => (
+													<span
+														key={editor.sessionId}
+														className='inline-flex max-w-[10rem] truncate rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-950 dark:text-violet-100'
+														title={
+															editor.displayName
+														}
+													>
+														{editor.displayName}
+													</span>
+												),
+											)}
+										</span>
+									) : null}
+									{canEdit && !locked ? (
+										<Button
+											type='button'
+											size='sm'
+											onClick={addColumn}
+										>
+											<UserPlus className='h-3.5 w-3.5' />
+										</Button>
+									) : null}
+								</div>
 							</div>
 
 							<div
+								ref={teamBoardScrollRef}
 								className='isolate overflow-x-auto'
 								style={{ zoom: viewScale } as CSSProperties}
 							>
@@ -4020,30 +4583,54 @@ export default function HrScheduleDayPage() {
 											{drafts.map((d, ci) => (
 												<th
 													key={`team-header-${ci}-${d.columnIndex}`}
+													data-team-column={ci}
 													scope='col'
 													className={cn(
 														teamHeaderCls(),
-														draggingTeamColumn === ci && 'ring-2 ring-primary/30'
+														draggingTeamColumn ===
+															ci &&
+															'ring-2 ring-primary/30',
 													)}
-													onDragOver={(e) => e.preventDefault()}
-													onDrop={() => handleTeamColumnDrop(ci)}
+													onDragOver={(e) =>
+														e.preventDefault()
+													}
+													onDrop={() =>
+														handleTeamColumnDrop(ci)
+													}
 												>
 													<div className='flex items-center justify-between gap-2'>
 														<div className='flex min-w-0 items-center gap-1'>
-															{canEdit && !locked ? (
+															{canEdit &&
+															!locked ? (
 																<>
 																	<ScheduleDragHandle
 																		label='team column'
-																		onDragStart={() => setDraggingTeamColumn(ci)}
-																		onDragEnd={() => setDraggingTeamColumn(null)}
+																		onDragStart={() =>
+																			setDraggingTeamColumn(
+																				ci,
+																			)
+																		}
+																		onDragEnd={() =>
+																			setDraggingTeamColumn(
+																				null,
+																			)
+																		}
 																	/>
 																	<Button
 																		type='button'
 																		variant='ghost'
 																		size='icon'
 																		className='h-7 w-7'
-																		disabled={ci === 0}
-																		onClick={() => moveTeamColumn(ci, -1)}
+																		disabled={
+																			ci ===
+																			0
+																		}
+																		onClick={() =>
+																			moveTeamColumn(
+																				ci,
+																				-1,
+																			)
+																		}
 																		title='Move team left'
 																		aria-label='Move team left'
 																	>
@@ -4054,8 +4641,17 @@ export default function HrScheduleDayPage() {
 																		variant='ghost'
 																		size='icon'
 																		className='h-7 w-7'
-																		disabled={ci === drafts.length - 1}
-																		onClick={() => moveTeamColumn(ci, 1)}
+																		disabled={
+																			ci ===
+																			drafts.length -
+																				1
+																		}
+																		onClick={() =>
+																			moveTeamColumn(
+																				ci,
+																				1,
+																			)
+																		}
 																		title='Move team right'
 																		aria-label='Move team right'
 																	>
@@ -4067,7 +4663,8 @@ export default function HrScheduleDayPage() {
 																variant='secondary'
 																className='shrink-0'
 															>
-																Team {d.columnIndex}
+																Team{' '}
+																{d.columnIndex}
 															</Badge>
 														</div>
 														{canEdit && !locked ? (
@@ -4134,14 +4731,20 @@ export default function HrScheduleDayPage() {
 															className='mt-2'
 															onClick={addColumn}
 														>
-															+ Add first team
+															<UserPlus className='mr-1.5 h-3.5 w-3.5' />
+															Add first team
 														</Button>
 													) : null}
 												</td>
 											</tr>
 										) : (
 											<>
-												{visibleScheduleRowKeys.map((rowKey) => renderScheduleTableRow(rowKey))}
+												{visibleScheduleRowKeys.map(
+													(rowKey) =>
+														renderScheduleTableRow(
+															rowKey,
+														),
+												)}
 											</>
 										)}
 									</tbody>
@@ -4402,7 +5005,8 @@ export default function HrScheduleDayPage() {
 														)}
 													</TableCell>
 													<TableCell>
-														<Input
+                            <Input
+                              className="min-w-2xl"
 															value={
 																log.routeText
 															}
@@ -4475,21 +5079,28 @@ export default function HrScheduleDayPage() {
 			<Modal
 				isOpen={rowSettingsOpen}
 				onClose={() => setRowSettingsOpen(false)}
-				title="Schedule row settings"
-				description="Check rows to show them on the team board. Use arrows to reorder. Saved to your account for this company."
-				size="sm"
+				title='Schedule row settings'
+				description='Check rows to show them on the team board. Use arrows to reorder. Saved to your account for this company.'
+				size='sm'
 				actions={
 					<>
-						<Button type="button" variant="outline" onClick={resetScheduleRowSettings}>
+						<Button
+							type='button'
+							variant='outline'
+							onClick={resetScheduleRowSettings}
+						>
 							Reset defaults
 						</Button>
-						<Button type="button" onClick={() => setRowSettingsOpen(false)}>
+						<Button
+							type='button'
+							onClick={() => setRowSettingsOpen(false)}
+						>
 							Done
 						</Button>
 					</>
 				}
 			>
-				<div className="max-h-[min(60vh,28rem)] space-y-1 overflow-y-auto pr-1">
+				<div className='max-h-[min(60vh,28rem)] space-y-1 overflow-y-auto pr-1'>
 					{rowSettings.order.map((rowKey, index) => {
 						const visible = !rowSettings.hidden.includes(rowKey);
 						return (
@@ -4501,33 +5112,41 @@ export default function HrScheduleDayPage() {
 								)}
 							>
 								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									className="h-7 w-7 shrink-0"
+									type='button'
+									variant='ghost'
+									size='icon'
+									className='h-7 w-7 shrink-0'
 									disabled={index === 0}
-									onClick={() => moveScheduleRowSetting(index, -1)}
+									onClick={() =>
+										moveScheduleRowSetting(index, -1)
+									}
 									aria-label={`Move ${SCHEDULE_TABLE_ROW_LABELS[rowKey]} up`}
 								>
-									<ChevronUp className="h-4 w-4" />
+									<ChevronUp className='h-4 w-4' />
 								</Button>
 								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									className="h-7 w-7 shrink-0"
-									disabled={index === rowSettings.order.length - 1}
-									onClick={() => moveScheduleRowSetting(index, 1)}
+									type='button'
+									variant='ghost'
+									size='icon'
+									className='h-7 w-7 shrink-0'
+									disabled={
+										index === rowSettings.order.length - 1
+									}
+									onClick={() =>
+										moveScheduleRowSetting(index, 1)
+									}
 									aria-label={`Move ${SCHEDULE_TABLE_ROW_LABELS[rowKey]} down`}
 								>
-									<ChevronDown className="h-4 w-4" />
+									<ChevronDown className='h-4 w-4' />
 								</Button>
-								<label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+								<label className='flex min-w-0 flex-1 cursor-pointer items-center gap-2'>
 									<input
-										type="checkbox"
+										type='checkbox'
 										checked={visible}
-										onChange={() => toggleScheduleRowVisibility(rowKey)}
-										className="h-4 w-4 shrink-0 rounded border-border"
+										onChange={() =>
+											toggleScheduleRowVisibility(rowKey)
+										}
+										className='h-4 w-4 shrink-0 rounded border-border'
 									/>
 									<span
 										className={cn(
@@ -4535,7 +5154,8 @@ export default function HrScheduleDayPage() {
 											!visible && 'text-muted-foreground',
 										)}
 									>
-										{SCHEDULE_TABLE_ROW_LABELS[rowKey] ?? rowKey}
+										{SCHEDULE_TABLE_ROW_LABELS[rowKey] ??
+											rowKey}
 									</span>
 								</label>
 							</div>
@@ -4555,16 +5175,21 @@ export default function HrScheduleDayPage() {
 			<Modal
 				isOpen={Boolean(pendingInactiveJob)}
 				onClose={() => setPendingInactiveJob(null)}
-				title="Job is not active"
-				description="This job must be active before it can be used on the schedule."
-				size="sm"
+				title='Job is not active'
+				description='This job must be active before it can be used on the schedule.'
+				size='sm'
 				actions={
 					<>
-						<Button type="button" variant="outline" onClick={() => setPendingInactiveJob(null)} disabled={activatingJob}>
+						<Button
+							type='button'
+							variant='outline'
+							onClick={() => setPendingInactiveJob(null)}
+							disabled={activatingJob}
+						>
 							Cancel
 						</Button>
 						<Button
-							type="button"
+							type='button'
 							onClick={() => void handleActivatePendingJob()}
 							disabled={activatingJob || !canEditJob}
 						>
@@ -4574,14 +5199,26 @@ export default function HrScheduleDayPage() {
 				}
 			>
 				{pendingInactiveJob ? (
-					<div className="space-y-2 text-sm text-muted-foreground">
+					<div className='space-y-2 text-sm text-muted-foreground'>
 						<p>
-							<span className="font-medium text-foreground">{pendingInactiveJob.jobNumber}</span> is currently{' '}
-							<span className="font-medium text-foreground">{prettyJobStatus(pendingInactiveJob.status)}</span>.
+							<span className='font-medium text-foreground'>
+								{pendingInactiveJob.jobNumber}
+							</span>{' '}
+							is currently{' '}
+							<span className='font-medium text-foreground'>
+								{prettyJobStatus(pendingInactiveJob.status)}
+							</span>
+							.
 						</p>
-						<p>Activate this job to assign it to the team, or cancel to keep the current selection.</p>
+						<p>
+							Activate this job to assign it to the team, or
+							cancel to keep the current selection.
+						</p>
 						{!canEditJob ? (
-							<p className="text-destructive">You do not have permission to activate jobs. Ask someone with job edit access.</p>
+							<p className='text-destructive'>
+								You do not have permission to activate jobs. Ask
+								someone with job edit access.
+							</p>
 						) : null}
 					</div>
 				) : null}
@@ -4590,33 +5227,56 @@ export default function HrScheduleDayPage() {
 			<Modal
 				isOpen={Boolean(pendingStaleJob)}
 				onClose={handleDismissStaleJob}
-				title="Job changed outside schedule"
-				description="This team still has a job that is no longer active."
-				size="sm"
+				title='Job changed outside schedule'
+				description='This team still has a job that is no longer active.'
+				size='sm'
 				actions={
 					<>
-						<Button type="button" variant="outline" onClick={handleDismissStaleJob} disabled={activatingJob}>
+						<Button
+							type='button'
+							variant='outline'
+							onClick={handleDismissStaleJob}
+							disabled={activatingJob}
+						>
 							Keep for now
 						</Button>
 						{pendingStaleJob?.status === 'ON_HOLD' && canEditJob ? (
-							<Button type="button" variant="secondary" onClick={() => void handleActivateStaleJob()} disabled={activatingJob}>
+							<Button
+								type='button'
+								variant='secondary'
+								onClick={() => void handleActivateStaleJob()}
+								disabled={activatingJob}
+							>
 								{activatingJob ? 'Activating…' : 'Activate job'}
 							</Button>
 						) : null}
-						<Button type="button" variant="destructive" onClick={handleClearStaleJob} disabled={activatingJob}>
+						<Button
+							type='button'
+							variant='destructive'
+							onClick={handleClearStaleJob}
+							disabled={activatingJob}
+						>
 							Clear from team
 						</Button>
 					</>
 				}
 			>
 				{pendingStaleJob ? (
-					<div className="space-y-2 text-sm text-muted-foreground">
+					<div className='space-y-2 text-sm text-muted-foreground'>
 						<p>
-							<span className="font-medium text-foreground">{pendingStaleJob.jobNumber}</span> was marked{' '}
-							<span className="font-medium text-foreground">{prettyJobStatus(pendingStaleJob.status)}</span> elsewhere
-							(for example Jobs quick edit).
+							<span className='font-medium text-foreground'>
+								{pendingStaleJob.jobNumber}
+							</span>{' '}
+							was marked{' '}
+							<span className='font-medium text-foreground'>
+								{prettyJobStatus(pendingStaleJob.status)}
+							</span>{' '}
+							elsewhere (for example Jobs quick edit).
 						</p>
-						<p>Clear it from this team or re-activate the job before continuing.</p>
+						<p>
+							Clear it from this team or re-activate the job
+							before continuing.
+						</p>
 					</div>
 				) : null}
 			</Modal>

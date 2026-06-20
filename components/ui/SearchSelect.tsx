@@ -184,6 +184,11 @@ export default function SearchSelect<T extends { id: string; label: string; sear
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (passThroughArrowKeys && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (isOpen) setIsOpen(false);
+      return;
+    }
+
     if (!passThroughArrowKeys && !isOpen && filteredItems.length > 0) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -294,6 +299,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
           {...inputProps}
           ref={inputRef}
           type="text"
+          data-pass-through-arrows={passThroughArrowKeys ? 'true' : undefined}
           value={displayedValue}
           onChange={(e) => {
             handleInputChange(e);

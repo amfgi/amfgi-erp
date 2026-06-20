@@ -304,7 +304,13 @@ export default function HrScheduleListPage() {
                             variant="outline"
                             size="sm"
                             type="button"
-                            onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
+                            onClick={() =>
+                              window.open(
+                                `/hr/schedule/${workDateYmd}`,
+                                '_blank',
+                                'noopener,noreferrer',
+                              )
+                            }
                           >
                             Plan
                           </Button>
