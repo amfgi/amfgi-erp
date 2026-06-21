@@ -93,6 +93,7 @@ import {
   ChevronUp,
   Copy,
   GripVertical,
+  LayoutTemplate,
   Palette,
   Printer,
   Redo2,
@@ -1061,6 +1062,8 @@ export default function HrScheduleDayPage() {
   const [labourTypeTiming, setLabourTypeTiming] = useState<EmployeeTypeTimingSetting | null>(null);
   const [previousSchedules, setPreviousSchedules] = useState<ScheduleTemplateOption[]>([]);
   const [selectedTemplateDate, setSelectedTemplateDate] = useState('');
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [drafts, setDrafts] = useState<AsgDraft[]>([]);
   const [scheduleInfo, setScheduleInfo] = useState('');
   const [driverTripState, setDriverTripState] = useState<{
@@ -1181,6 +1184,14 @@ export default function HrScheduleDayPage() {
       return workDate;
     }
   }, [workDate]);
+
+  const recentTemplateSchedules = useMemo(
+    () =>
+      [...previousSchedules]
+        .sort((a, b) => b.workDate.localeCompare(a.workDate))
+        .slice(0, 5),
+    [previousSchedules],
+  );
 
   useEffect(() => {
     if (sessionStatus !== 'authenticated' || !session?.user?.activeCompanyId) {
@@ -1646,7 +1657,10 @@ export default function HrScheduleDayPage() {
           }))
           .filter((row) => row.id && row.workDate && row.workDate !== workDate);
         setPreviousSchedules(options);
-        setSelectedTemplateDate((current) => current || options[0]?.workDate || '');
+        const recent = [...options]
+          .sort((a, b) => b.workDate.localeCompare(a.workDate))
+          .slice(0, 5);
+        setSelectedTemplateDate((current) => current || recent[0]?.workDate || '');
       }
       if (!cancelled) setLoading(false);
     })();
@@ -2574,18 +2588,36 @@ export default function HrScheduleDayPage() {
     void executePublish({ acknowledgeLowHours: true });
   }, [executePublish]);
 
-  const applyPreviousScheduleTemplate = async () => {
+  const applyPreviousScheduleTemplate = useCallback(async () => {
     if (!selectedTemplateDate) return;
-    const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(selectedTemplateDate)}`, { cache: 'no-store' });
-    const json = await res.json();
-    if (!res.ok || !json?.success || !json.data) {
-      toast.error(json?.error ?? 'Failed to load template');
-      return;
+    setApplyingTemplate(true);
+    try {
+      const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(selectedTemplateDate)}`, {
+        cache: 'no-store',
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.success || !json.data) {
+        toast.error(json?.error ?? 'Failed to load template');
+        return;
+      }
+      mapFromApi(json.data as Record<string, unknown>);
+      markScheduleStructureDirty();
+      setTemplateModalOpen(false);
+      toast.success(`Template loaded from ${selectedTemplateDate}`);
+    } finally {
+      setApplyingTemplate(false);
     }
-    mapFromApi(json.data as Record<string, unknown>);
-    markScheduleStructureDirty();
-    toast.success(`Template loaded from ${selectedTemplateDate}`);
-  };
+  }, [mapFromApi, markScheduleStructureDirty, selectedTemplateDate]);
+
+  const openTemplateModal = useCallback(() => {
+    setSelectedTemplateDate((current) => {
+      if (current && recentTemplateSchedules.some((item) => item.workDate === current)) {
+        return current;
+      }
+      return recentTemplateSchedules[0]?.workDate ?? '';
+    });
+    setTemplateModalOpen(true);
+  }, [recentTemplateSchedules]);
 
   const addColumn = () => {
     markScheduleStructureDirty();
@@ -4514,6 +4546,19 @@ export default function HrScheduleDayPage() {
 					) : null}
 				</div>
 				<div className='flex shrink-0 flex-wrap items-center justify-end gap-2'>
+					{autoSaveStatus === 'saving' || saving ? (
+						<span className='text-xs text-muted-foreground'>
+							Saving…
+						</span>
+					) : autoSaveStatus === 'saved' ? (
+						<span className='text-xs text-emerald-600 dark:text-emerald-400'>
+							All saved
+						</span>
+					) : autoSaveStatus === 'error' ? (
+						<span className='text-xs text-destructive'>
+							Save failed
+						</span>
+					) : null}
 					{schedule ? (
 						<span
 							className={cn(
@@ -4524,39 +4569,22 @@ export default function HrScheduleDayPage() {
 							{scheduleStatusTag.label}
 						</span>
 					) : null}
-					{schedule ? (
+					{/* {schedule ? (
 						<Badge variant='outline' className='tabular-nums'>
 							{drafts.length} teams
 						</Badge>
-					) : null}
+					) : null} */}
 					{schedule && canEdit && !locked ? (
 						<>
-							<select
-								value={selectedTemplateDate}
-								onChange={(e) =>
-									setSelectedTemplateDate(e.target.value)
-								}
-								className={cn(
-									SCHEDULE_GRID_FLAT_INPUT,
-									'h-7 w-auto min-w-36',
-								)}
-								aria-label='Copy schedule from date'
-							>
-								<option value=''>Copy from date…</option>
-								{previousSchedules.map((item) => (
-									<option key={item.id} value={item.workDate}>
-										{item.workDate} ({item.status})
-									</option>
-								))}
-							</select>
 							<Button
 								type='button'
 								variant='outline'
 								size='sm'
-								onClick={applyPreviousScheduleTemplate}
-								disabled={!selectedTemplateDate}
+								onClick={openTemplateModal}
+								disabled={recentTemplateSchedules.length === 0}
 							>
-								Apply template
+								<LayoutTemplate className='size-4' />
+								Template
 							</Button>
 							<Separator
 								orientation='vertical'
@@ -4566,19 +4594,6 @@ export default function HrScheduleDayPage() {
 					) : null}
 					{schedule && (canEdit || canEditJob) && !locked ? (
 						<>
-							{autoSaveStatus === 'saving' || saving ? (
-								<span className='text-xs text-muted-foreground'>
-									Saving…
-								</span>
-							) : autoSaveStatus === 'saved' ? (
-								<span className='text-xs text-emerald-600 dark:text-emerald-400'>
-									All changes saved
-								</span>
-							) : autoSaveStatus === 'error' ? (
-								<span className='text-xs text-destructive'>
-									Save failed — use Save now
-								</span>
-							) : null}
 							<Button
 								type='button'
 								size='sm'
@@ -4591,7 +4606,12 @@ export default function HrScheduleDayPage() {
 						</>
 					) : null}
 					{schedule && canPub && status === 'DRAFT' ? (
-						<Button type='button' size='sm' onClick={publish} disabled={publishing}>
+						<Button
+							type='button'
+							size='sm'
+							onClick={publish}
+							disabled={publishing}
+						>
 							{publishing ? 'Publishing…' : 'Publish'}
 						</Button>
 					) : null}
@@ -4911,7 +4931,7 @@ export default function HrScheduleDayPage() {
 												<th
 													key={`team-header-${ci}-${d.columnIndex}`}
 													data-team-column={ci}
-													data-schedule-drop="team-column"
+													data-schedule-drop='team-column'
 													data-team-col={ci}
 													scope='col'
 													className={cn(
@@ -5333,8 +5353,8 @@ export default function HrScheduleDayPage() {
 														)}
 													</TableCell>
 													<TableCell>
-                            <Input
-                              className="min-w-2xl"
+														<Input
+															className='min-w-2xl'
 															value={
 																log.routeText
 															}
@@ -5610,13 +5630,74 @@ export default function HrScheduleDayPage() {
 			</Modal>
 
 			<Modal
+				isOpen={templateModalOpen}
+				onClose={() => setTemplateModalOpen(false)}
+				title='Load schedule template'
+				description='Copy teams and assignments from a recent schedule day into this draft.'
+				size='sm'
+				actions={
+					<>
+						<Button
+							type='button'
+							variant='outline'
+							onClick={() => setTemplateModalOpen(false)}
+							disabled={applyingTemplate}
+						>
+							Cancel
+						</Button>
+						<Button
+							type='button'
+							onClick={() => void applyPreviousScheduleTemplate()}
+							disabled={!selectedTemplateDate || applyingTemplate}
+						>
+							{applyingTemplate ? 'Applying…' : 'Apply template'}
+						</Button>
+					</>
+				}
+			>
+				<div className='space-y-2'>
+					<label
+						htmlFor='schedule-template-date'
+						className='text-sm font-medium text-foreground'
+					>
+						Template date
+					</label>
+					{recentTemplateSchedules.length === 0 ? (
+						<p className='text-sm text-muted-foreground'>
+							No other schedule days are available yet.
+						</p>
+					) : (
+						<select
+							id='schedule-template-date'
+							value={selectedTemplateDate}
+							onChange={(e) => setSelectedTemplateDate(e.target.value)}
+							className={cn(SCHEDULE_GRID_FLAT_INPUT, 'h-9 w-full')}
+						>
+							{recentTemplateSchedules.map((item) => (
+								<option key={item.id} value={item.workDate}>
+									{item.workDate}
+									{item.status ? ` (${item.status.toLowerCase()})` : ''}
+								</option>
+							))}
+						</select>
+					)}
+					<p className='text-xs text-muted-foreground'>
+						Showing the 5 most recent schedule dates (excluding today).
+					</p>
+				</div>
+			</Modal>
+
+			<Modal
 				isOpen={Boolean(publishBlockMessages?.length)}
 				onClose={() => setPublishBlockMessages(null)}
 				title='Cannot publish schedule'
 				description='Fix the issues below before publishing. Saving and auto-save are not affected.'
 				size='sm'
 				actions={
-					<Button type='button' onClick={() => setPublishBlockMessages(null)}>
+					<Button
+						type='button'
+						onClick={() => setPublishBlockMessages(null)}
+					>
 						OK
 					</Button>
 				}
@@ -5646,7 +5727,11 @@ export default function HrScheduleDayPage() {
 						>
 							Cancel
 						</Button>
-						<Button type='button' onClick={confirmPublishWithLowHours} disabled={publishing}>
+						<Button
+							type='button'
+							onClick={confirmPublishWithLowHours}
+							disabled={publishing}
+						>
 							{publishing ? 'Publishing…' : 'Publish anyway'}
 						</Button>
 					</>
@@ -5656,9 +5741,14 @@ export default function HrScheduleDayPage() {
 					<ul className='list-disc space-y-1.5 pl-5 text-sm text-muted-foreground'>
 						{publishLowHourTeams.map((team) => (
 							<li key={team.label}>
-								<span className='font-medium text-foreground'>{team.label}</span>:{' '}
-								{Number.isInteger(team.netHours) ? team.netHours : team.netHours.toFixed(1)} h net
-								duty
+								<span className='font-medium text-foreground'>
+									{team.label}
+								</span>
+								:{' '}
+								{Number.isInteger(team.netHours)
+									? team.netHours
+									: team.netHours.toFixed(1)}{' '}
+								h net duty
 							</li>
 						))}
 					</ul>

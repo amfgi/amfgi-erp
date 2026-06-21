@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, type InputHTMLAttributes, type KeyboardEvent } from 'react';
+import { useRef, useState, type InputHTMLAttributes, type KeyboardEvent } from 'react';
+import HalfHourTimePicker from '@/components/hr/HalfHourTimePicker';
+import { snapMinuteToHalfHour } from '@/lib/hr/halfHourTime';
 import { cn } from '@/lib/utils';
 
 export const TIME_ENTRY_FLAT_INPUT_CLASS =
@@ -51,16 +53,19 @@ export function parseFlexibleTimeInput(raw: string): string | null {
     if (hours < 1 || hours > 12) return null;
     let hours24 = hours % 12;
     if (meridiem === 'p') hours24 += 12;
+    minutes = snapMinuteToHalfHour(minutes);
     return `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
   if (numericPart.includes(':')) {
     if (hours < 0 || hours > 23) return null;
+    minutes = snapMinuteToHalfHour(minutes);
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
   if (numericPart.length >= 3) {
     if (hours < 0 || hours > 23) return null;
+    minutes = snapMinuteToHalfHour(minutes);
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
@@ -72,6 +77,7 @@ type TimeEntryInputProps = {
   onChange: (value: string) => void;
   disabled?: boolean;
   className?: string;
+  showHalfHourPicker?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'disabled' | 'className' | 'type'>;
 
 export default function TimeEntryInput({
@@ -79,6 +85,7 @@ export default function TimeEntryInput({
   onChange,
   disabled,
   className,
+  showHalfHourPicker = true,
   onKeyDown,
   ...inputProps
 }: TimeEntryInputProps) {
@@ -114,7 +121,9 @@ export default function TimeEntryInput({
     onKeyDown?.(e);
   };
 
-  return (
+  const anchorRef = useRef<HTMLDivElement>(null);
+
+  const inputEl = (
     <input
       type="text"
       value={displayValue}
@@ -134,10 +143,32 @@ export default function TimeEntryInput({
       className={cn(
         TIME_ENTRY_FLAT_INPUT_CLASS,
         'text-xs tabular-nums',
+        showHalfHourPicker && 'min-w-0 flex-1 rounded-none',
         isInvalid && 'bg-destructive/10 text-destructive placeholder:text-destructive/60',
-        className
+        !showHalfHourPicker && className,
       )}
       {...inputProps}
     />
+  );
+
+  if (!showHalfHourPicker) {
+    return inputEl;
+  }
+
+  return (
+    <div ref={anchorRef} className={cn('flex min-w-0 items-stretch overflow-visible', className)}>
+      {inputEl}
+      <HalfHourTimePicker
+        anchorRef={anchorRef}
+        value={value}
+        onChange={(next) => {
+          setIsInvalid(false);
+          setIsEditing(false);
+          onChange(next);
+          setRawValue(next ? formatTimeForDisplay(next) : '');
+        }}
+        disabled={disabled}
+      />
+    </div>
   );
 }
