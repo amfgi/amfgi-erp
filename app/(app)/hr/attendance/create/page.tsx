@@ -15,7 +15,6 @@ import {
   normalizeDraftStatusFromApi,
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
-import { isEmployeeOnLeaveForWorkDate } from '@/lib/hr/employeeLeavePeriod';
 import {
   fetchJobById,
   jobToSearchItem,
@@ -30,6 +29,7 @@ import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { cn } from '@/lib/utils';
+import { Redo2, Undo2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface EmployeeRow {
@@ -199,6 +199,10 @@ function cloneDraftRows(rows: AttendanceDraftRow[]): AttendanceDraftRow[] {
   return rows.map((row) => ({ ...row }));
 }
 
+function draftsEqual(a: AttendanceDraftRow[], b: AttendanceDraftRow[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 const TOOLBAR_TAG_CLASS =
   'inline-flex h-auto shrink-0 items-center rounded border px-1.5 py-0.5 text-[9px] font-medium leading-none tracking-wide transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -209,17 +213,27 @@ function applyAbsentToDraft(
   draft: AttendanceDraftRow,
   leaveTypes: LeaveTypeOption[]
 ): AttendanceDraftRow {
-  return {
+  return sanitizeAbsentDraft({
     ...draft,
     status: 'ABSENT',
     leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
     leaveRequestId: null,
     attendanceSource: null,
+    source: draft.source === 'existing' ? 'existing' : 'manual',
+  });
+}
+
+function sanitizeAbsentDraft(draft: AttendanceDraftRow): AttendanceDraftRow {
+  if (!isDraftNonWorking(draft)) return draft;
+  return {
+    ...draft,
+    workAssignmentId: '',
+    externalJobId: null,
+    jobNumber: '',
     checkInAt: '',
     checkOutAt: '',
     breakInAt: '',
     breakOutAt: '',
-    source: draft.source === 'existing' ? 'existing' : 'manual',
   };
 }
 
@@ -269,11 +283,106 @@ function calculateWorkedMinutes(draft: AttendanceDraftRow): number {
   return Math.max(0, dutyMinutes - breakMinutes);
 }
 
-// function formatHourValue(minutes: number): string {
-//   const hours = minutes / 60;
-//   const rounded = Math.round(hours * 100) / 100;
-//   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)} h`;
-// }
+function formatHourValue(minutes: number): string {
+  const hours = minutes / 60;
+  const rounded = Math.round(hours * 100) / 100;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)} h`;
+}
+
+function draftHasTimingFields(draft: AttendanceDraftRow): boolean {
+  return [draft.checkInAt, draft.checkOutAt, draft.breakInAt, draft.breakOutAt].some(
+    (value) => String(value ?? '').trim() !== ''
+  );
+}
+
+type HourIndicatorKind = 'under_6' | 'over_12' | 'over_14';
+
+function presentHourIndicatorWarning(
+  draft: AttendanceDraftRow
+): { kind: HourIndicatorKind; label: string; workedMinutes: number } | null {
+  if (isDraftNonWorking(draft)) return null;
+  const workedMinutes = calculateWorkedMinutes(draft);
+  const hasTiming = draftHasTimingFields(draft);
+  if (!hasTiming && workedMinutes === 0) return null;
+
+  const hours = workedMinutes / 60;
+  if (hours > 14) return { kind: 'over_14', label: 'More than 14 hours', workedMinutes };
+  if (hours > 12) return { kind: 'over_12', label: 'More than 12 hours', workedMinutes };
+  if (hours < 6) return { kind: 'under_6', label: 'Less than 6 hours', workedMinutes };
+  return null;
+}
+
+type SaveValidationIssueRow = {
+  employeeId: string;
+  name: string;
+  employeeCode: string;
+  workedLabel?: string;
+  indicatorLabel?: string;
+  indicatorKind?: HourIndicatorKind;
+};
+
+type SaveValidationIssues = {
+  absentWithTiming: SaveValidationIssueRow[];
+  presentHourWarnings: SaveValidationIssueRow[];
+  onLeaveMarkedPresent: SaveValidationIssueRow[];
+};
+
+function collectSaveValidationIssues(
+  drafts: AttendanceDraftRow[],
+  employeeById: Map<string, AttendanceGridEmployee>,
+  leaveSectionEmployeeIdSet: Set<string>,
+  leavePreviewByEmployeeId: Record<string, string>
+): SaveValidationIssues {
+  const absentWithTiming: SaveValidationIssueRow[] = [];
+  const presentHourWarnings: SaveValidationIssueRow[] = [];
+  const onLeaveMarkedPresent: SaveValidationIssueRow[] = [];
+
+  for (const draft of drafts) {
+    const employee = employeeById.get(draft.employeeId);
+    const row: SaveValidationIssueRow = {
+      employeeId: draft.employeeId,
+      name: employeeDisplayName(employee as EmployeeRow | undefined),
+      employeeCode: employee?.employeeCode ?? '',
+    };
+
+    if (draft.status === 'ABSENT' && draftHasTimingFields(draft)) {
+      absentWithTiming.push(row);
+    }
+
+    if (leaveSectionEmployeeIdSet.has(draft.employeeId) && draft.status === 'PRESENT') {
+      const approvedLeave = leavePreviewByEmployeeId[draft.employeeId];
+      onLeaveMarkedPresent.push({
+        ...row,
+        indicatorLabel: approvedLeave
+          ? `Approved leave · ${approvedLeave}`
+          : isEmployeeMarkedOnLeave(employee)
+            ? 'On leave status'
+            : 'Assigned leave',
+      });
+    }
+
+    const hourWarning = presentHourIndicatorWarning(draft);
+    if (hourWarning) {
+      presentHourWarnings.push({
+        ...row,
+        workedLabel: formatHourValue(hourWarning.workedMinutes),
+        indicatorLabel: hourWarning.label,
+        indicatorKind: hourWarning.kind,
+      });
+    }
+  }
+
+  absentWithTiming.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  presentHourWarnings.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  onLeaveMarkedPresent.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return { absentWithTiming, presentHourWarnings, onLeaveMarkedPresent };
+}
+
+function hourIndicatorDotClass(kind: HourIndicatorKind | undefined): string {
+  if (kind === 'over_14') return 'bg-destructive';
+  if (kind === 'over_12') return 'bg-amber-500';
+  return 'bg-sky-600 dark:bg-sky-400';
+}
 
 function employeeDisplayName(employee: EmployeeRow | undefined): string {
   return employee?.preferredName || employee?.fullName || '';
@@ -347,10 +456,10 @@ function buildInitialDraftForEmployee(
   assigned: AssignmentRow | undefined,
   absentEmployeeIds: Set<string>,
   leaveTypes: LeaveTypeOption[],
-  workDate: string
+  _workDate: string
 ): AttendanceDraftRow {
-  if (isEmployeeOnLeaveForWorkDate(employee, workDate) && !assigned) {
-    return buildDraftForOnLeavePeriodEmployee(employee, leaveTypes);
+  if (isEmployeeMarkedOnLeave(employee)) {
+    return buildDraftForOnLeavePeriodEmployee(employee, leaveTypes, assigned);
   }
   return buildDraftFromDefaults(employee, assigned, absentEmployeeIds, leaveTypes);
 }
@@ -373,10 +482,10 @@ function buildDraftFromDefaults(
   const basicHours = employee.basicHoursPerDay ?? 8;
 
   if (assigned && absentEmployeeIds.has(employee.id)) {
-    return {
+    return sanitizeAbsentDraft({
       employeeId: employee.id,
-      workAssignmentId: assigned?.id ?? '',
-      jobNumber: assigned?.jobNumberSnapshot ?? '',
+      workAssignmentId: '',
+      jobNumber: '',
       status: 'ABSENT',
       leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
       basicHours,
@@ -385,8 +494,8 @@ function buildDraftFromDefaults(
       breakInAt: '',
       breakOutAt: '',
       remarks: '',
-      source: assigned ? 'schedule' : 'manual',
-    };
+      source: 'schedule',
+    });
   }
 
   if (employeeType === 'OFFICE_STAFF' || employeeType === 'DRIVER') {
@@ -439,10 +548,11 @@ function buildDraftFromDefaults(
 
 function buildDraftForOnLeavePeriodEmployee(
   employee: EmployeeRow,
-  leaveTypes: LeaveTypeOption[]
+  leaveTypes: LeaveTypeOption[],
+  _assigned?: AssignmentRow
 ): AttendanceDraftRow {
   const basicHours = employee.basicHoursPerDay ?? 8;
-  return {
+  return sanitizeAbsentDraft({
     employeeId: employee.id,
     workAssignmentId: '',
     jobNumber: '',
@@ -455,14 +565,11 @@ function buildDraftForOnLeavePeriodEmployee(
     breakOutAt: '',
     remarks: '',
     source: 'manual',
-  };
+  });
 }
 
-function isOnLeaveSectionEmployee(
-  employee: EmployeeRow | AttendanceGridEmployee | undefined,
-  workDate: string
-): boolean {
-  return isEmployeeOnLeaveForWorkDate(employee, workDate);
+function isEmployeeMarkedOnLeave(employee: { status?: string } | null | undefined): boolean {
+  return employee?.status === 'ON_LEAVE';
 }
 
 function buildDraftFromExistingRow(
@@ -480,7 +587,7 @@ function buildDraftFromExistingRow(
   const snapBasic = Number(row.basicHours);
   const basicHours = Number.isFinite(snapBasic) && snapBasic > 0 ? snapBasic : employee.basicHoursPerDay ?? 8;
 
-  return {
+  return sanitizeAbsentDraft({
     employeeId: employee.id,
     workAssignmentId: String((existingAssignment?.id as string | undefined) ?? ''),
     jobNumber: String((existingAssignment?.jobNumberSnapshot as string | undefined) ?? ''),
@@ -513,7 +620,7 @@ function buildDraftFromExistingRow(
     source: 'existing',
     leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
     attendanceSource: (row.source as string | null | undefined) ?? null,
-  };
+  });
 }
 
 export default function AttendanceCreatePage() {
@@ -533,6 +640,7 @@ export default function AttendanceCreatePage() {
   const [insertEmployeeId, setInsertEmployeeId] = useState('');
   const [bulkAbsentSnapshot, setBulkAbsentSnapshot] = useState<AttendanceDraftRow[] | null>(null);
   const [bulkAbsentConfirm, setBulkAbsentConfirm] = useState<'mark' | 'undo' | null>(null);
+  const [saveValidationConfirm, setSaveValidationConfirm] = useState<SaveValidationIssues | null>(null);
   const [includeAllJobs, setIncludeAllJobs] = useState(false);
   const [allJobOptions, setAllJobOptions] = useState<AllJobOption[]>([]);
   const [allJobsLoading, setAllJobsLoading] = useState(false);
@@ -550,11 +658,159 @@ export default function AttendanceCreatePage() {
   const canEdit = isSA || perms.includes('hr.attendance.edit');
   const [reloadToken, setReloadToken] = useState(0);
   const [leavePreviewByEmployeeId, setLeavePreviewByEmployeeId] = useState<Record<string, string>>({});
+  const [leavePreviewEmployees, setLeavePreviewEmployees] = useState<
+    Record<string, { fullName: string; preferredName: string | null; employeeCode: string }>
+  >({});
+
+  const draftsRef = useRef<AttendanceDraftRow[]>([]);
+  const undoStackRef = useRef<AttendanceDraftRow[][]>([]);
+  const redoStackRef = useRef<AttendanceDraftRow[][]>([]);
+  const suspendHistoryRef = useRef(false);
+  const editHistorySessionRef = useRef<{ employeeId: string | null; pushed: boolean }>({
+    employeeId: null,
+    pushed: false,
+  });
+  const editHistoryResetTimerRef = useRef<number | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+
+  const syncHistoryUi = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+
+  const clearHistoryStacks = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    editHistorySessionRef.current = { employeeId: null, pushed: false };
+    if (editHistoryResetTimerRef.current != null) {
+      window.clearTimeout(editHistoryResetTimerRef.current);
+      editHistoryResetTimerRef.current = null;
+    }
+    syncHistoryUi();
+  }, [syncHistoryUi]);
+
+  const pushUndoSnapshot = useCallback(
+    (snapshot: AttendanceDraftRow[]) => {
+      undoStackRef.current = [...undoStackRef.current.slice(-39), cloneDraftRows(snapshot)];
+      redoStackRef.current = [];
+      editHistorySessionRef.current = { employeeId: null, pushed: false };
+      syncHistoryUi();
+    },
+    [syncHistoryUi]
+  );
+
+  const resetEditHistorySession = useCallback(() => {
+    editHistorySessionRef.current = { employeeId: null, pushed: false };
+  }, []);
+
+  const scheduleEditHistorySessionReset = useCallback(() => {
+    if (editHistoryResetTimerRef.current != null) {
+      window.clearTimeout(editHistoryResetTimerRef.current);
+    }
+    editHistoryResetTimerRef.current = window.setTimeout(() => {
+      editHistoryResetTimerRef.current = null;
+      resetEditHistorySession();
+    }, 1200);
+  }, [resetEditHistorySession]);
+
+  const runWithoutHistory = useCallback((fn: () => void) => {
+    suspendHistoryRef.current = true;
+    fn();
+    queueMicrotask(() => {
+      suspendHistoryRef.current = false;
+    });
+  }, []);
+
+  const restoreDraftRows = useCallback(
+    (snapshot: AttendanceDraftRow[]) => {
+      suspendHistoryRef.current = true;
+      const restored = cloneDraftRows(snapshot);
+      draftsRef.current = restored;
+      setDrafts(restored);
+      resetEditHistorySession();
+      queueMicrotask(() => {
+        suspendHistoryRef.current = false;
+      });
+    },
+    [resetEditHistorySession]
+  );
+
+  const applyDraftRows = useCallback(
+    (
+      updater: (current: AttendanceDraftRow[]) => AttendanceDraftRow[],
+      options?: { recordUndo?: boolean }
+    ) => {
+      const current = draftsRef.current;
+      const next = updater(current);
+      if (draftsEqual(next, current)) return;
+
+      if (!suspendHistoryRef.current && options?.recordUndo !== false) {
+        pushUndoSnapshot(current);
+        setBulkAbsentSnapshot(null);
+      }
+
+      draftsRef.current = next;
+      setDrafts(next);
+    },
+    [pushUndoSnapshot]
+  );
+
+  const undo = useCallback(() => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const previous = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, cloneDraftRows(draftsRef.current)];
+    restoreDraftRows(previous);
+    setBulkAbsentSnapshot(null);
+    syncHistoryUi();
+  }, [restoreDraftRows, syncHistoryUi]);
+
+  const redo = useCallback(() => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+    const next = stack[stack.length - 1];
+    redoStackRef.current = stack.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current.slice(-39), cloneDraftRows(draftsRef.current)];
+    restoreDraftRows(next);
+    syncHistoryUi();
+  }, [restoreDraftRows, syncHistoryUi]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (bulkAbsentConfirm !== null) return;
+
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isTypingContext =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+
       const key = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey;
+
+      if (mod && !isTypingContext) {
+        if (e.shiftKey && key === 'z') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (!e.shiftKey && key === 'z') {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if (!e.shiftKey && key === 'y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
+
       if (key !== 'f' || (!e.ctrlKey && !e.metaKey) || e.shiftKey || e.altKey) return;
 
       e.preventDefault();
@@ -566,7 +822,7 @@ export default function AttendanceCreatePage() {
 
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [bulkAbsentConfirm]);
+  }, [bulkAbsentConfirm, redo, undo]);
 
   useEffect(() => {
     let cancelled = false;
@@ -615,17 +871,27 @@ export default function AttendanceCreatePage() {
       setLeaveTypes(loadedLeaveTypes);
 
       const previewMap: Record<string, string> = {};
+      const previewEmployees: Record<
+        string,
+        { fullName: string; preferredName: string | null; employeeCode: string }
+      > = {};
       if (leavePreviewRes.ok && leavePreviewJson?.success && Array.isArray(leavePreviewJson.data)) {
         for (const req of leavePreviewJson.data as Array<{
-          employee?: { id?: string };
+          employee?: { id?: string; fullName?: string; preferredName?: string | null; employeeCode?: string };
           leaveTypeRef?: { name?: string } | null;
         }>) {
           const employeeId = req.employee?.id;
           if (!employeeId) continue;
           previewMap[employeeId] = req.leaveTypeRef?.name ?? 'Leave';
+          previewEmployees[employeeId] = {
+            fullName: String(req.employee?.fullName ?? ''),
+            preferredName: req.employee?.preferredName ?? null,
+            employeeCode: String(req.employee?.employeeCode ?? ''),
+          };
         }
       }
       setLeavePreviewByEmployeeId(previewMap);
+      setLeavePreviewEmployees(previewEmployees);
 
       const scheduleData: SchedulePayload | null = scheduleRes.ok && scheduleJson?.success ? scheduleJson.data : null;
       const asgs: AssignmentRow[] = Array.isArray(scheduleData?.assignments)
@@ -694,6 +960,7 @@ export default function AttendanceCreatePage() {
       const nextEmployees = new Map<string, EmployeeRow>();
       for (const employee of rosterEmployees) nextEmployees.set(employee.id, employee);
       for (const [employeeId, employee] of existingEmployees) nextEmployees.set(employeeId, employee);
+      for (const employee of loadedOnLeaveEmployees) nextEmployees.set(employee.id, employee);
 
       const nextDrafts = hasExistingAttendance
         ? [...existingByEmp.entries()].map(([employeeId, row]) => {
@@ -713,18 +980,25 @@ export default function AttendanceCreatePage() {
       if (hasExistingAttendance) {
         const draftEmployeeIds = new Set(nextDrafts.map((draft) => draft.employeeId));
         for (const employee of loadedOnLeaveEmployees) {
-          if (
-            !draftEmployeeIds.has(employee.id) &&
-            isEmployeeOnLeaveForWorkDate(employee, workDate)
-          ) {
-            nextDrafts.push(buildDraftForOnLeavePeriodEmployee(employee, loadedLeaveTypes));
+          if (!draftEmployeeIds.has(employee.id) && isEmployeeMarkedOnLeave(employee)) {
+            nextDrafts.push(
+              buildDraftForOnLeavePeriodEmployee(
+                employee,
+                loadedLeaveTypes,
+                assignedByEmp.get(employee.id)?.[0]
+              )
+            );
           }
         }
       }
 
       setEmployees([...nextEmployees.values()]);
       setOnLeaveEmployees(loadedOnLeaveEmployees);
-      setDrafts(nextDrafts);
+      runWithoutHistory(() => {
+        clearHistoryStacks();
+        draftsRef.current = nextDrafts;
+        setDrafts(nextDrafts);
+      });
       setLoading(false);
 
       if (hasExistingAttendance) {
@@ -758,6 +1032,11 @@ export default function AttendanceCreatePage() {
   const assignmentsById = useMemo(
     () => new Map(assignments.map((assignment) => [assignment.id, assignment])),
     [assignments]
+  );
+
+  const assignedByEmp = useMemo(
+    () => buildAssignedByEmp(schedule, assignments),
+    [schedule, assignments]
   );
 
   const assignmentMetaById = useMemo(
@@ -870,21 +1149,36 @@ export default function AttendanceCreatePage() {
     const map = new Map<string, AttendanceGridEmployee>();
     for (const employee of employees) map.set(employee.id, employee);
     for (const employee of onLeaveEmployees) map.set(employee.id, employee);
+    for (const [employeeId, employee] of Object.entries(leavePreviewEmployees)) {
+      if (map.has(employeeId)) continue;
+      map.set(employeeId, {
+        id: employeeId,
+        fullName: employee.fullName,
+        preferredName: employee.preferredName,
+        employeeCode: employee.employeeCode,
+        status: 'ACTIVE',
+      });
+    }
     return map;
-  }, [employees, onLeaveEmployees]);
+  }, [employees, leavePreviewEmployees, onLeaveEmployees]);
+
+  const leaveSectionEmployeeIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [employeeId, leaveLabel] of Object.entries(leavePreviewByEmployeeId)) {
+      if (leaveLabel) ids.add(employeeId);
+    }
+    for (const employee of employees) {
+      if (isEmployeeMarkedOnLeave(employee)) ids.add(employee.id);
+    }
+    for (const employee of onLeaveEmployees) {
+      ids.add(employee.id);
+    }
+    return ids;
+  }, [employees, leavePreviewByEmployeeId, onLeaveEmployees]);
 
   const mainSheetDrafts = useMemo(
-    () =>
-      drafts.filter(
-        (draft) => !isOnLeaveSectionEmployee(employeeById.get(draft.employeeId), workDate)
-      ),
-    [drafts, employeeById, workDate]
-  );
-
-  const onLeaveDrafts = useMemo(
-    () =>
-      drafts.filter((draft) => isOnLeaveSectionEmployee(employeeById.get(draft.employeeId), workDate)),
-    [drafts, employeeById, workDate]
+    () => drafts.filter((draft) => !leaveSectionEmployeeIdSet.has(draft.employeeId)),
+    [drafts, leaveSectionEmployeeIdSet]
   );
 
   const insertableEmployees = useMemo(
@@ -917,8 +1211,8 @@ export default function AttendanceCreatePage() {
   const visibleDrafts = useMemo(() => {
     return drafts
       .filter((draft) => {
+        if (leaveSectionEmployeeIdSet.has(draft.employeeId)) return false;
         const employee = employeeById.get(draft.employeeId);
-        if (isOnLeaveSectionEmployee(employee, workDate)) return false;
         const assignment = draft.workAssignmentId
           ? assignmentsById.get(draft.workAssignmentId)
           : undefined;
@@ -956,70 +1250,150 @@ export default function AttendanceCreatePage() {
           sensitivity: 'base',
         });
       });
-  }, [assignmentsById, deferredSearch, drafts, employeeById, externalJobMetaById, scopeFilter, workDate]);
+  }, [assignmentsById, deferredSearch, drafts, employeeById, externalJobMetaById, leaveSectionEmployeeIdSet, scopeFilter]);
 
-  const visibleOnLeaveEmployees = useMemo(() => {
-    const merged = new Map<string, { employee: EmployeeRow; draft: AttendanceDraftRow | null }>();
-    for (const draft of onLeaveDrafts) {
-      const employee = employeeById.get(draft.employeeId);
-      if (employee) merged.set(employee.id, { employee: employee as EmployeeRow, draft });
-    }
-    for (const employee of onLeaveEmployees) {
-      if (
-        !merged.has(employee.id) &&
-        isEmployeeOnLeaveForWorkDate(employee, workDate)
-      ) {
-        merged.set(employee.id, { employee, draft: null });
-      }
-    }
-
-    return [...merged.values()]
-      .filter(({ employee }) => {
+  const visibleLeaveSectionDrafts = useMemo(() => {
+    return drafts
+      .filter((draft) => leaveSectionEmployeeIdSet.has(draft.employeeId))
+      .filter((draft) => {
+        const employee = employeeById.get(draft.employeeId);
         if (!deferredSearch) return true;
-        return [employee.fullName, employee.preferredName ?? '', employee.employeeCode]
+        return [
+          employee?.fullName ?? '',
+          employee?.preferredName ?? '',
+          employee?.employeeCode ?? '',
+          leavePreviewByEmployeeId[draft.employeeId] ?? '',
+        ]
           .join(' ')
           .toLowerCase()
           .includes(deferredSearch);
       })
-      .sort((a, b) =>
-        employeeDisplayName(a.employee).localeCompare(employeeDisplayName(b.employee), undefined, {
+      .sort((a, b) => {
+        const employeeA = employeeById.get(a.employeeId);
+        const employeeB = employeeById.get(b.employeeId);
+        const typeDelta = employeeTypeSortValue(employeeA) - employeeTypeSortValue(employeeB);
+        if (typeDelta !== 0) return typeDelta;
+        return employeeDisplayName(employeeA).localeCompare(employeeDisplayName(employeeB), undefined, {
           sensitivity: 'base',
+        });
+      });
+  }, [deferredSearch, drafts, employeeById, leavePreviewByEmployeeId, leaveSectionEmployeeIdSet]);
+
+  useEffect(() => {
+    if (loading) return;
+    runWithoutHistory(() => {
+      setDrafts((prev) => {
+        const existingIds = new Set(prev.map((draft) => draft.employeeId));
+        const toAdd: AttendanceDraftRow[] = [];
+
+        for (const employeeId of leaveSectionEmployeeIdSet) {
+          if (existingIds.has(employeeId)) continue;
+
+          const rosterEmployee =
+            employees.find((employee) => employee.id === employeeId) ??
+            onLeaveEmployees.find((employee) => employee.id === employeeId);
+          const preview = leavePreviewEmployees[employeeId];
+
+          const employee: EmployeeRow | null =
+            rosterEmployee ??
+            (preview
+              ? {
+                  id: employeeId,
+                  fullName: preview.fullName,
+                  preferredName: preview.preferredName,
+                  employeeCode: preview.employeeCode,
+                  status: 'ACTIVE',
+                  employeeType: 'LABOUR_WORKER',
+                }
+              : null);
+
+          if (!employee) continue;
+
+          toAdd.push(
+            buildInitialDraftForEmployee(
+              employee,
+              assignedByEmp.get(employeeId)?.[0],
+              new Set<string>(),
+              leaveTypes,
+              workDate
+            )
+          );
+        }
+
+        if (toAdd.length === 0) return prev;
+        const next = [...prev, ...toAdd];
+        draftsRef.current = next;
+        return next;
+      });
+    });
+  }, [
+    assignedByEmp,
+    employees,
+    leavePreviewEmployees,
+    leaveSectionEmployeeIdSet,
+    leaveTypes,
+    loading,
+    onLeaveEmployees,
+    runWithoutHistory,
+    workDate,
+  ]);
+
+  const updateDraft = useCallback(
+    (employeeId: string, patch: Partial<AttendanceDraftRow>) => {
+      if (!suspendHistoryRef.current) {
+        const session = editHistorySessionRef.current;
+        if (session.employeeId !== employeeId || !session.pushed) {
+          pushUndoSnapshot(draftsRef.current);
+          editHistorySessionRef.current = { employeeId, pushed: true };
+          setBulkAbsentSnapshot(null);
+        }
+        scheduleEditHistorySessionReset();
+      }
+
+      applyDraftRows(
+        (prev) =>
+          prev.map((draft) =>
+            draft.employeeId === employeeId
+              ? (() => {
+                  const next: AttendanceDraftRow = {
+                    ...draft,
+                    ...patch,
+                    source: draft.source === 'existing' ? 'existing' : 'manual',
+                  };
+                  return sanitizeAbsentDraft(next);
+                })()
+              : draft
+          ),
+        { recordUndo: false }
+      );
+    },
+    [applyDraftRows, pushUndoSnapshot, scheduleEditHistorySessionReset]
+  );
+
+  const patchDraftRow = useCallback(
+    (employeeId: string, patch: Partial<AttendanceDraftRow>) => {
+      resetEditHistorySession();
+      applyDraftRows((prev) =>
+        prev.map((draft) => {
+          if (draft.employeeId !== employeeId) return draft;
+          const next: AttendanceDraftRow = {
+            ...draft,
+            ...patch,
+            source: draft.source === 'existing' ? 'existing' : 'manual',
+          };
+          return sanitizeAbsentDraft(next);
         })
       );
-  }, [deferredSearch, employeeById, onLeaveDrafts, onLeaveEmployees, workDate]);
-
-  const updateDraft = (employeeId: string, patch: Partial<AttendanceDraftRow>) => {
-    setDrafts((prev) =>
-      prev.map((draft) =>
-        draft.employeeId === employeeId
-          ? (() => {
-              const next: AttendanceDraftRow = {
-                ...draft,
-                ...patch,
-                source: draft.source === 'existing' ? 'existing' : 'manual',
-              };
-              if (isDraftNonWorking(next)) {
-                return {
-                  ...next,
-                  checkInAt: '',
-                  checkOutAt: '',
-                  breakInAt: '',
-                  breakOutAt: '',
-                };
-              }
-              return next;
-            })()
-          : draft
-      )
-    );
-  };
+    },
+    [applyDraftRows, resetEditHistorySession]
+  );
 
   const onAssignmentChange = (employeeId: string, assignmentId: string) => {
     const employee = employeeById.get(employeeId);
     const assignment = assignments.find((item) => item.id === assignmentId);
     if (!employee) return;
     if (!assignment) {
-      updateDraft(employeeId, {
+      patchDraftRow(employeeId, {
         workAssignmentId: '',
         externalJobId: null,
         jobNumber: '',
@@ -1033,15 +1407,17 @@ export default function AttendanceCreatePage() {
       });
       return;
     }
-    const next = buildDraftFromDefaults(employee, assignment, new Set<string>(), leaveTypes);
-    updateDraft(employeeId, { ...next, externalJobId: null });
+    const next = isEmployeeMarkedOnLeave(employee)
+      ? buildDraftForOnLeavePeriodEmployee(employee, leaveTypes, assignment)
+      : buildDraftFromDefaults(employee, assignment, new Set<string>(), leaveTypes);
+    patchDraftRow(employeeId, { ...next, externalJobId: null });
   };
 
   const onAllJobsChange = (employeeId: string, jobId: string) => {
     const employee = employeeById.get(employeeId);
     if (!employee) return;
     if (!jobId) {
-      updateDraft(employeeId, {
+      patchDraftRow(employeeId, {
         workAssignmentId: '',
         externalJobId: null,
         jobNumber: '',
@@ -1071,12 +1447,16 @@ export default function AttendanceCreatePage() {
           job = row;
         }
       }
-      updateDraft(employeeId, {
+      const onLeave = isEmployeeMarkedOnLeave(employee);
+      patchDraftRow(employeeId, {
         workAssignmentId: '',
         externalJobId: jobId,
         jobNumber: job?.jobNumber ?? '',
-        status: 'PRESENT',
-        leaveTypeId: null,
+        status: onLeave ? 'ABSENT' : 'PRESENT',
+        leaveTypeId: onLeave ? defaultUnpaidLeaveTypeId(leaveTypes) : null,
+        ...(onLeave
+          ? { checkInAt: '', checkOutAt: '', breakInAt: '', breakOutAt: '' }
+          : {}),
         source: 'manual',
       });
     })();
@@ -1086,7 +1466,10 @@ export default function AttendanceCreatePage() {
     if (!insertEmployeeId) return;
     const employee = employeeById.get(insertEmployeeId);
     if (!employee || drafts.some((draft) => draft.employeeId === insertEmployeeId)) return;
-    setDrafts((prev) => [...prev, buildDraftFromDefaults(employee, undefined, new Set<string>(), leaveTypes)]);
+    applyDraftRows((prev) => [
+      ...prev,
+      buildInitialDraftForEmployee(employee, undefined, new Set<string>(), leaveTypes, workDate),
+    ]);
     setInsertEmployeeId('');
   };
 
@@ -1099,13 +1482,17 @@ export default function AttendanceCreatePage() {
     if (!bulkAbsentConfirm) return;
 
     if (bulkAbsentConfirm === 'undo' && bulkAbsentSnapshot) {
-      setDrafts(cloneDraftRows(bulkAbsentSnapshot));
-      setBulkAbsentSnapshot(null);
+      runWithoutHistory(() => {
+        restoreDraftRows(bulkAbsentSnapshot);
+        setBulkAbsentSnapshot(null);
+      });
     } else if (bulkAbsentConfirm === 'mark') {
-      setBulkAbsentSnapshot(cloneDraftRows(drafts));
-      setDrafts((prev) =>
+      setBulkAbsentSnapshot(cloneDraftRows(draftsRef.current));
+      applyDraftRows((prev) =>
         prev.map((draft) => {
-          if (isOnLeaveSectionEmployee(employeeById.get(draft.employeeId), workDate)) return draft;
+          if (leaveSectionEmployeeIdSet.has(draft.employeeId)) {
+            return draft;
+          }
           return applyAbsentToDraft(draft, leaveTypes);
         })
       );
@@ -1123,24 +1510,27 @@ export default function AttendanceCreatePage() {
     setSaving(true);
     const payload = {
       workDate,
-      rows: drafts.map((draft) => ({
-        employeeId: draft.employeeId,
-        workAssignmentId: (() => {
-          if (draft.workAssignmentId) return draft.workAssignmentId;
-          if (draft.externalJobId) {
-            const match = assignments.find((assignment) => assignment.jobId === draft.externalJobId);
-            return match?.id ?? null;
-          }
-          return null;
-        })(),
-        status: draft.status,
-        leaveTypeId: draft.status === 'ABSENT' ? defaultUnpaidLeaveTypeId(leaveTypes) : null,
-        remarks: draft.remarks?.trim() || null,
-        checkInAt: combineDateAndTimeToIso(workDate, draft.checkInAt),
-        checkOutAt: combineDateAndTimeToIso(workDate, draft.checkOutAt),
-        breakInAt: combineDateAndTimeToIso(workDate, draft.breakInAt),
-        breakOutAt: combineDateAndTimeToIso(workDate, draft.breakOutAt),
-      })),
+      rows: drafts.map((draft) => {
+        const isAbsent = draft.status === 'ABSENT';
+        return {
+          employeeId: draft.employeeId,
+          workAssignmentId: (() => {
+            if (draft.workAssignmentId) return draft.workAssignmentId;
+            if (draft.externalJobId) {
+              const match = assignments.find((assignment) => assignment.jobId === draft.externalJobId);
+              return match?.id ?? null;
+            }
+            return null;
+          })(),
+          status: draft.status,
+          leaveTypeId: isAbsent ? defaultUnpaidLeaveTypeId(leaveTypes) : null,
+          remarks: draft.remarks?.trim() || null,
+          checkInAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.checkInAt),
+          checkOutAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.checkOutAt),
+          breakInAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.breakInAt),
+          breakOutAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.breakOutAt),
+        };
+      }),
     };
     const res = await fetch('/api/hr/attendance/bulk-upsert', {
       method: 'POST',
@@ -1159,7 +1549,38 @@ export default function AttendanceCreatePage() {
       return;
     }
     toast.success(`Saved ${affectedRows} attendance row${affectedRows === 1 ? '' : 's'}`);
+    setSaveValidationConfirm(null);
     setReloadToken((value) => value + 1);
+  };
+
+  const requestSave = () => {
+    if (!canEdit) return;
+    if (drafts.length === 0) {
+      toast.error('No attendance rows to save');
+      return;
+    }
+
+    const issues = collectSaveValidationIssues(
+      drafts,
+      employeeById,
+      leaveSectionEmployeeIdSet,
+      leavePreviewByEmployeeId
+    );
+    if (
+      issues.absentWithTiming.length === 0 &&
+      issues.presentHourWarnings.length === 0 &&
+      issues.onLeaveMarkedPresent.length === 0
+    ) {
+      void saveAll();
+      return;
+    }
+
+    setSaveValidationConfirm(issues);
+  };
+
+  const confirmSaveAnyway = () => {
+    setSaveValidationConfirm(null);
+    void saveAll();
   };
 
   if (!canView) {
@@ -1227,19 +1648,45 @@ export default function AttendanceCreatePage() {
             </Badge>
           ) : null}
           {canEdit ? (
-            <button
-              type="button"
-              disabled={drafts.length === 0}
-              onClick={openBulkAbsentConfirm}
-              className={cn(
-                TOOLBAR_TAG_CLASS,
-                bulkAbsentSnapshot
-                  ? 'border-border bg-primary text-primary-foreground'
-                  : 'border-destructive/45 bg-destructive/12 text-destructive dark:text-destructive-foreground'
-              )}
-            >
-              {bulkAbsentSnapshot ? 'Undo all absent' : 'Mark all absent'}
-            </button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canUndo}
+                onClick={undo}
+                title="Undo (Ctrl+Z)"
+                aria-label="Undo"
+                className="h-7 px-2"
+              >
+                <Undo2 className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canRedo}
+                onClick={redo}
+                title="Redo (Ctrl+Y)"
+                aria-label="Redo"
+                className="h-7 px-2"
+              >
+                <Redo2 className="h-4 w-4" />
+              </Button>
+              <button
+                type="button"
+                disabled={drafts.length === 0}
+                onClick={openBulkAbsentConfirm}
+                className={cn(
+                  TOOLBAR_TAG_CLASS,
+                  bulkAbsentSnapshot
+                    ? 'border-border bg-primary text-primary-foreground'
+                    : 'border-destructive/45 bg-destructive/12 text-destructive dark:text-destructive-foreground'
+                )}
+              >
+                {bulkAbsentSnapshot ? 'Undo all absent' : 'Mark all absent'}
+              </button>
+            </>
           ) : null}
           <Link
             href={`/hr/attendance?workDate=${encodeURIComponent(workDate)}`}
@@ -1259,7 +1706,7 @@ export default function AttendanceCreatePage() {
         id="attendance-create-form"
         onSubmit={(e) => {
           e.preventDefault();
-          void saveAll();
+          requestSave();
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
@@ -1352,46 +1799,13 @@ export default function AttendanceCreatePage() {
               </Badge>
               <span className="text-[9px] text-muted-foreground">
                 Showing {visibleDrafts.length} of {mainSheetDrafts.length}
-                {onLeaveDrafts.length > 0 ? ` · ${onLeaveDrafts.length} on leave` : ''}
+                {visibleLeaveSectionDrafts.length > 0
+                  ? ` · ${visibleLeaveSectionDrafts.length} on leave`
+                  : ''}
               </span>
             </>
           }
-          tableFooter={
-            visibleOnLeaveEmployees.length > 0 ? (
-              <div className="border-t border-border bg-muted/25">
-                <div className="border-b border-border/80 px-4 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Employees on leave
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    Saved as absent for this day. Official leave dates and balance are managed in Leave management.
-                  </p>
-                </div>
-                <div className="divide-y divide-border/80">
-                  {visibleOnLeaveEmployees.map(({ employee, draft }) => (
-                    <div
-                      key={employee.id}
-                      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm"
-                    >
-                      <span className="font-medium text-foreground">{employeeDisplayName(employee)}</span>
-                      <span className="font-mono text-xs text-muted-foreground">{employee.employeeCode}</span>
-                      {draft ? (
-                        <span className="text-xs text-muted-foreground capitalize">
-                          {draft.status === 'ABSENT' ? 'Absent' : draft.status.replace(/_/g, ' ').toLowerCase()}
-                        </span>
-                      ) : null}
-                      <Badge
-                        variant="outline"
-                        className="h-auto border-amber-500/40 bg-amber-500/10 px-1.5 py-0 text-[10px] font-medium text-amber-950 dark:text-amber-100"
-                      >
-                        On leave
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null
-          }
+          leaveSectionRows={visibleLeaveSectionDrafts}
         />
       </form>
 
@@ -1435,6 +1849,111 @@ export default function AttendanceCreatePage() {
             <strong className="text-foreground">{formatWorkDateLabel(workDate)}</strong> to how they were before
             marking all absent?
           </p>
+        ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={saveValidationConfirm !== null}
+        onClose={() => setSaveValidationConfirm(null)}
+        title="Review before saving"
+        size="md"
+        actions={
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSaveValidationConfirm(null)}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={confirmSaveAnyway} disabled={saving}>
+              {saving ? 'Saving…' : 'Save anyway'}
+            </Button>
+          </>
+        }
+      >
+        {saveValidationConfirm ? (
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              Fix the rows below or choose <strong className="text-foreground">Save anyway</strong> to continue for{' '}
+              <strong className="text-foreground">{formatWorkDateLabel(workDate)}</strong>.
+            </p>
+
+            {saveValidationConfirm.absentWithTiming.length > 0 ? (
+              <Alert variant="destructive">
+                <AlertDescription className="space-y-2">
+                  <p>
+                    <strong className="text-foreground">Absent rows must have 0 hours.</strong> Clear duty and break
+                    times on absent employees before saving.
+                  </p>
+                  <ul className="max-h-40 space-y-1 overflow-y-auto text-xs">
+                    {saveValidationConfirm.absentWithTiming.map((row) => (
+                      <li key={row.employeeId} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-foreground">
+                          {row.name}
+                          <span className="ml-1.5 text-muted-foreground">{row.employeeCode}</span>
+                        </span>
+                        <span className="shrink-0 font-medium text-destructive">Has times</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px]">
+                    Saving anyway will store these rows as absent with no times.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {saveValidationConfirm.presentHourWarnings.length > 0 ? (
+              <Alert>
+                <AlertDescription className="space-y-2">
+                  <p>
+                    <strong className="text-foreground">Hour indicator warnings</strong> for present employees (same
+                    rules as the total-hours column).
+                  </p>
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto text-xs">
+                    {saveValidationConfirm.presentHourWarnings.map((row) => (
+                      <li key={row.employeeId} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-foreground">
+                          {row.name}
+                          <span className="ml-1.5 text-muted-foreground">{row.employeeCode}</span>
+                        </span>
+                        <span className="inline-flex shrink-0 items-center gap-1.5">
+                          <span
+                            className={cn('size-2 rounded-sm', hourIndicatorDotClass(row.indicatorKind))}
+                            aria-hidden
+                          />
+                          <span className="font-mono tabular-nums text-foreground">{row.workedLabel}</span>
+                          <span className="text-muted-foreground">· {row.indicatorLabel}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {saveValidationConfirm.onLeaveMarkedPresent.length > 0 ? (
+              <Alert className="border-amber-500/40 bg-amber-500/10">
+                <AlertDescription className="space-y-2">
+                  <p>
+                    <strong className="text-foreground">On-leave employees marked present.</strong> Confirm they really
+                    came to work before saving.
+                  </p>
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto text-xs">
+                    {saveValidationConfirm.onLeaveMarkedPresent.map((row) => (
+                      <li key={row.employeeId} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-foreground">
+                          {row.name}
+                          <span className="ml-1.5 text-muted-foreground">{row.employeeCode}</span>
+                        </span>
+                        <span className="inline-flex shrink-0 items-center gap-1.5">
+                          <span className="font-medium text-amber-950 dark:text-amber-100">Present</span>
+                          <span className="text-muted-foreground">· {row.indicatorLabel}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+          </div>
         ) : null}
       </Modal>
     </div>

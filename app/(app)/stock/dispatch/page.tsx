@@ -234,21 +234,21 @@ export default function DispatchPage() {
   }
 
   function deliveryNoteEditHref(entry: Entry): string {
-    if (entry.transactionIds[0]) {
-      return `/stock/dispatch/delivery-note?transactionId=${entry.transactionIds[0]}`;
-    }
     if (entry.deliveryNoteId) {
       return `/stock/dispatch/delivery-note?deliveryNoteId=${entry.deliveryNoteId}`;
+    }
+    if (entry.transactionIds[0]) {
+      return `/stock/dispatch/delivery-note?transactionId=${entry.transactionIds[0]}`;
     }
     return '/stock/dispatch/delivery-note';
   }
 
   function deliveryNoteDuplicateHref(entry: Entry): string {
-    if (entry.transactionIds[0]) {
-      return `/stock/dispatch/delivery-note?duplicateFrom=${entry.transactionIds[0]}`;
-    }
     if (entry.deliveryNoteId) {
       return `/stock/dispatch/delivery-note?duplicateDeliveryNoteId=${entry.deliveryNoteId}`;
+    }
+    if (entry.transactionIds[0]) {
+      return `/stock/dispatch/delivery-note?duplicateFrom=${entry.transactionIds[0]}`;
     }
     return '/stock/dispatch/delivery-note';
   }

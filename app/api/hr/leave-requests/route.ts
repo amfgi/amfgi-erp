@@ -24,7 +24,18 @@ export async function GET(req: Request) {
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
   const { session, companyId } = ctx;
+
+  const { searchParams } = new URL(req.url);
+  const status = searchParams.get('status');
+  const employeeId = searchParams.get('employeeId');
+  const workDateRaw = searchParams.get('workDate');
+
+  const canPreviewForAttendance =
+    Boolean(workDateRaw) &&
+    (hasPerm(session.user, P.HR_ATTENDANCE_VIEW) || hasPerm(session.user, P.HR_ATTENDANCE_EDIT));
+
   if (
+    !canPreviewForAttendance &&
     !hasPerm(session.user, P.HR_LEAVE_VIEW) &&
     !hasPerm(session.user, P.HR_LEAVE_APPROVE) &&
     !hasPerm(session.user, P.HR_LEAVE_EDIT) &&
@@ -32,11 +43,6 @@ export async function GET(req: Request) {
   ) {
     return errorResponse('Forbidden', 403);
   }
-
-  const { searchParams } = new URL(req.url);
-  const status = searchParams.get('status');
-  const employeeId = searchParams.get('employeeId');
-  const workDateRaw = searchParams.get('workDate');
 
   let workDateFilter: { startDate?: { lte: Date }; endDate?: { gte: Date } } = {};
   if (workDateRaw) {

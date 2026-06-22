@@ -9,11 +9,17 @@ import { mergeProfileExtensionForStatusChange } from '@/lib/hr/employeeLeavePeri
 import { parseNationalityInput } from '@/lib/hr/countryNames';
 import { z } from 'zod';
 
+/** Empty string or explicit null clears email; valid strings must be emails. */
+const employeeEmailField = z
+  .union([z.string().email(), z.literal(''), z.null()])
+  .optional()
+  .transform((v) => (v === '' || v == null ? null : v));
+
 const PatchSchema = z.object({
   employeeCode: z.string().min(1).max(80).optional(),
   fullName: z.string().min(1).max(200).optional(),
   preferredName: z.string().max(200).optional().nullable(),
-  email: z.union([z.string().email(), z.literal('')]).optional().transform((v) => (v === '' ? null : v)),
+  email: employeeEmailField,
   phone: z.string().max(50).optional().nullable(),
   nationality: z.string().max(100).optional().nullable(),
   dateOfBirth: z.string().optional().nullable(),

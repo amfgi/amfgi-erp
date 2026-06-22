@@ -870,6 +870,15 @@ export default function DeliveryNoteCreatePage() {
 
           if (res.ok && data.data) {
             const txn = data.data;
+            const linkedDeliveryNoteId =
+              (txn.deliveryNoteId as string | null | undefined) ??
+              (txn.deliveryNote as { id?: string } | null | undefined)?.id ??
+              null;
+            if (linkedDeliveryNoteId) {
+              await loadFromDeliveryNoteRecord(linkedDeliveryNoteId, { duplicate: isDuplicating });
+              return;
+            }
+
             const canonicalJobId = resolveParentJobIdForDeliveryNote(txn.jobId || '', jobs);
             setSelectedJob(canonicalJobId);
             const loadedCustomerId = customerIdFromLoadedJob(txn.job);

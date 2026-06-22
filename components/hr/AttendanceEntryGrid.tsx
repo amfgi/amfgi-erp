@@ -1,11 +1,15 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 import { useSession } from 'next-auth/react';
 import SearchSelect from '@/components/ui/SearchSelect';
 import LineGridColumnSettings, {
   type LineGridColumnConfig,
 } from '@/components/stock/LineGridColumnSettings';
+import {
+  mergeLineGridInputProps,
+  useLineGridKeyboardNav,
+} from '@/lib/stock/lineGridKeyboardNav';
 import { Badge } from '@/components/ui/shadcn/badge';
 import {
   defaultUnpaidLeaveTypeId,
@@ -91,8 +95,10 @@ interface AttendanceEntryGridProps {
   filters?: ReactNode;
   /** Shown to the right of the “Day sheet” label (e.g. assigned / worked stats). */
   chromeStats?: ReactNode;
-  /** Optional block rendered below grid rows (e.g. employees on leave). */
+  /** Optional block rendered below grid rows. */
   tableFooter?: ReactNode;
+  /** Full editable rows shown below active employees, after a divider. */
+  leaveSectionRows?: AttendanceGridDraftRow[];
   onUpdateRow: (employeeId: string, patch: Partial<AttendanceGridDraftRow>) => void;
   onAssignmentChange: (employeeId: string, assignmentId: string) => void;
   onAllJobsChange: (employeeId: string, jobId: string) => void;
@@ -122,6 +128,16 @@ type AttendanceGridColumnKey =
   | 'status'
   | 'leave'
   | 'remarks';
+
+const ATTENDANCE_NAVIGABLE_COLUMN_KEYS: AttendanceGridColumnKey[] = [
+  'job',
+  'dutyIn',
+  'breakOut',
+  'breakIn',
+  'dutyOut',
+  'status',
+  'remarks',
+];
 
 const DEFAULT_GRID_COLUMNS: LineGridColumnConfig[] = [
   { key: 'line', label: '#', visible: true, width: 48, minWidth: 40, maxWidth: 72 },
@@ -157,6 +173,9 @@ const EMPLOYEE_TYPE_ROW_TONE: Record<NonNullable<AttendanceGridEmployee['employe
 const ABSENT_ROW_TONE =
   'border-l-[3px] border-l-destructive bg-destructive/20 hover:bg-destructive/28 dark:bg-destructive/30 dark:hover:bg-destructive/38';
 
+const LEAVE_SECTION_ROW_TONE =
+  'border-l-[3px] border-l-amber-500 bg-amber-100/70 dark:border-l-amber-400 dark:bg-amber-950/50';
+
 type EmployeeTypeKey = NonNullable<AttendanceGridEmployee['employeeType']>;
 
 const EMPLOYEE_TYPE_TAG: Record<EmployeeTypeKey, { label: string; className: string }> = {
@@ -179,6 +198,39 @@ const EMPLOYEE_TYPE_TAG: Record<EmployeeTypeKey, { label: string; className: str
     label: 'Worker',
     className:
       'border-emerald-600/50 bg-emerald-200/90 text-emerald-950 dark:border-emerald-400/50 dark:bg-emerald-900/80 dark:text-emerald-100',
+  },
+};
+
+const EMPLOYEE_TYPE_SECTION_ORDER: EmployeeTypeKey[] = [
+  'LABOUR_WORKER',
+  'DRIVER',
+  'HYBRID_STAFF',
+  'OFFICE_STAFF',
+];
+
+const EMPLOYEE_TYPE_SECTION_HEADER: Record<
+  EmployeeTypeKey,
+  { title: string; borderClass: string; bgClass: string }
+> = {
+  LABOUR_WORKER: {
+    title: 'Workers',
+    borderClass: 'border-emerald-500/50',
+    bgClass: 'bg-emerald-500/8',
+  },
+  DRIVER: {
+    title: 'Drivers',
+    borderClass: 'border-sky-500/50',
+    bgClass: 'bg-sky-500/8',
+  },
+  HYBRID_STAFF: {
+    title: 'Hybrid staff',
+    borderClass: 'border-violet-500/50',
+    bgClass: 'bg-violet-500/8',
+  },
+  OFFICE_STAFF: {
+    title: 'Office staff',
+    borderClass: 'border-amber-500/50',
+    bgClass: 'bg-amber-500/8',
   },
 };
 
@@ -313,6 +365,25 @@ function ReadOnlyMetaCell({ value }: { value: string | null | undefined }) {
   );
 }
 
+function renderGridSectionHeader(
+  gridTemplateColumns: string,
+  title: string,
+  description: string | undefined,
+  accent: { borderClass: string; bgClass: string }
+) {
+  return (
+    <div
+      className={cn('grid border-t-2 border-dashed bg-muted/30', accent.borderClass, accent.bgClass)}
+      style={{ gridTemplateColumns }}
+    >
+      <div className="col-span-full border-b border-border/80 px-4 py-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
+        {description ? <p className="mt-0.5 text-[10px] text-muted-foreground">{description}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 export default function AttendanceEntryGrid({
   rows,
   employeesById,
@@ -331,6 +402,7 @@ export default function AttendanceEntryGrid({
   filters,
   chromeStats,
   tableFooter,
+  leaveSectionRows = [],
   onUpdateRow,
   onAssignmentChange,
   onAllJobsChange,
@@ -354,6 +426,75 @@ export default function AttendanceEntryGrid({
   const gridTemplateColumns = useMemo(
     () => visibleGridColumns.map((column) => `${column.width}px`).join(' '),
     [visibleGridColumns]
+  );
+
+  const employeeTypeSections = useMemo(() => {
+    const buckets = new Map<EmployeeTypeKey, AttendanceGridDraftRow[]>();
+    for (const type of EMPLOYEE_TYPE_SECTION_ORDER) buckets.set(type, []);
+    for (const draft of rows) {
+      const type = employeesById.get(draft.employeeId)?.employeeType ?? 'LABOUR_WORKER';
+      buckets.get(type)!.push(draft);
+    }
+    return EMPLOYEE_TYPE_SECTION_ORDER.map((type) => ({
+      type,
+      rows: buckets.get(type) ?? [],
+    })).filter((section) => section.rows.length > 0);
+  }, [employeesById, rows]);
+
+  const navigableColumns = useMemo(
+    () =>
+      visibleGridColumns
+        .map((column) => column.key as AttendanceGridColumnKey)
+        .filter((key) => ATTENDANCE_NAVIGABLE_COLUMN_KEYS.includes(key)),
+    [visibleGridColumns]
+  );
+
+  const navigableRowCount = useMemo(() => {
+    const mainCount = employeeTypeSections.reduce((sum, section) => sum + section.rows.length, 0);
+    return mainCount + leaveSectionRows.length;
+  }, [employeeTypeSections, leaveSectionRows.length]);
+
+  const { getNavInputProps } = useLineGridKeyboardNav(navigableRowCount, navigableColumns.length);
+
+  const navColIndex = useCallback(
+    (key: AttendanceGridColumnKey) => navigableColumns.indexOf(key),
+    [navigableColumns]
+  );
+
+  const cellNavInputProps = useCallback(
+    (
+      rowIndex: number,
+      key: AttendanceGridColumnKey,
+      existing?: InputHTMLAttributes<HTMLInputElement>
+    ) => {
+      const col = navColIndex(key);
+      if (col < 0) return existing;
+      return mergeLineGridInputProps(getNavInputProps(rowIndex, col), existing);
+    },
+    [getNavInputProps, navColIndex]
+  );
+
+  const cellNavSelectProps = useCallback(
+    (
+      rowIndex: number,
+      key: AttendanceGridColumnKey
+    ): {
+      'data-line-grid-nav'?: 'true';
+      'data-nav-row'?: string;
+      'data-nav-col'?: string;
+      onKeyDown?: SelectHTMLAttributes<HTMLSelectElement>['onKeyDown'];
+    } => {
+      const col = navColIndex(key);
+      if (col < 0) return {};
+      const props = getNavInputProps(rowIndex, col);
+      return {
+        'data-line-grid-nav': props['data-line-grid-nav'],
+        'data-nav-row': props['data-nav-row'],
+        'data-nav-col': props['data-nav-col'],
+        onKeyDown: props.onKeyDown as SelectHTMLAttributes<HTMLSelectElement>['onKeyDown'],
+      };
+    },
+    [getNavInputProps, navColIndex]
   );
 
   useLayoutEffect(() => {
@@ -506,6 +647,7 @@ export default function AttendanceEntryGrid({
     ctx: {
       draft: AttendanceGridDraftRow;
       idx: number;
+      navRowIndex: number;
       employee: AttendanceGridEmployee | undefined;
       employeeType: EmployeeTypeKey;
       basicMinutes: number;
@@ -516,7 +658,7 @@ export default function AttendanceEntryGrid({
     }
   ) => {
     const cellClassName = 'min-w-0 border-r border-border/80 last:border-r-0';
-    const { draft, idx, employee, employeeType, basicMinutes, workedMinutes, overtimeMinutes, sourceBadgeVariant, assignmentMeta } =
+    const { draft, idx, navRowIndex, employee, employeeType, basicMinutes, workedMinutes, overtimeMinutes, sourceBadgeVariant, assignmentMeta } =
       ctx;
 
     switch (columnKey) {
@@ -584,10 +726,10 @@ export default function AttendanceEntryGrid({
                 }}
                 placeholder={allJobOptions.length === 0 ? 'No active jobs' : 'Job num'}
                 disabled={!canEdit || allJobOptions.length === 0}
-                openOnFocus
-                minCharactersToSearch={0}
+                minCharactersToSearch={1}
                 dropdownInPortal
                 allowClearButton={false}
+                passThroughArrowKeys
                 renderItem={(item) => {
                   if (!item.id) return <span className="text-muted-foreground">—</span>;
                   const option = allJobOptions.find((entry) => entry.value === item.id);
@@ -608,10 +750,10 @@ export default function AttendanceEntryGrid({
                     searchText: option.searchText,
                   })),
                 ]}
-                inputProps={{
+                inputProps={cellNavInputProps(navRowIndex, 'job', {
                   className:
                     '!rounded-none !border-0 !bg-transparent !px-2 !py-1.5 !text-sm focus:!ring-0 min-w-0',
-                }}
+                })}
               />
             </div>
           );
@@ -626,10 +768,10 @@ export default function AttendanceEntryGrid({
               }}
               placeholder="Job num"
               disabled={!canEdit}
-              openOnFocus
-              minCharactersToSearch={0}
+              minCharactersToSearch={1}
               dropdownInPortal
               allowClearButton={false}
+              passThroughArrowKeys
               renderItem={(item) => {
                 if (!item.id) return <span className="text-muted-foreground">—</span>;
                 const option = assignmentOptions.find((entry) => entry.value === item.id);
@@ -649,9 +791,9 @@ export default function AttendanceEntryGrid({
                   searchText: option.searchText,
                 })),
               ]}
-              inputProps={{
+              inputProps={cellNavInputProps(navRowIndex, 'job', {
                 className: '!rounded-none !border-0 !bg-transparent !px-2 !py-1.5 !text-sm focus:!ring-0 min-w-0',
-              }}
+              })}
             />
           </div>
         );
@@ -677,6 +819,7 @@ export default function AttendanceEntryGrid({
         return (
           <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
             <TimeEntryInput
+              {...cellNavInputProps(navRowIndex, 'dutyIn')}
               value={draft.checkInAt}
               onChange={(value) => onUpdateRow(draft.employeeId, { checkInAt: value })}
               disabled={!canEdit}
@@ -687,6 +830,7 @@ export default function AttendanceEntryGrid({
         return (
           <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
             <TimeEntryInput
+              {...cellNavInputProps(navRowIndex, 'breakOut')}
               value={draft.breakInAt}
               onChange={(value) => onUpdateRow(draft.employeeId, { breakInAt: value })}
               disabled={!canEdit}
@@ -697,6 +841,7 @@ export default function AttendanceEntryGrid({
         return (
           <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
             <TimeEntryInput
+              {...cellNavInputProps(navRowIndex, 'breakIn')}
               value={draft.breakOutAt}
               onChange={(value) => onUpdateRow(draft.employeeId, { breakOutAt: value })}
               disabled={!canEdit}
@@ -707,6 +852,7 @@ export default function AttendanceEntryGrid({
         return (
           <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
             <TimeEntryInput
+              {...cellNavInputProps(navRowIndex, 'dutyOut')}
               value={draft.checkOutAt}
               onChange={(value) => onUpdateRow(draft.employeeId, { checkOutAt: value })}
               disabled={!canEdit}
@@ -757,6 +903,7 @@ export default function AttendanceEntryGrid({
         return (
           <div key={columnKey} className={cn(cellClassName, 'py-1')}>
             <select
+              {...cellNavSelectProps(navRowIndex, 'status')}
               value={draft.status}
               onChange={(e) => {
                 const next = e.target.value as AttendanceGridDraftRow['status'];
@@ -770,6 +917,13 @@ export default function AttendanceEntryGrid({
                 onUpdateRow(draft.employeeId, {
                   status: 'ABSENT',
                   leaveTypeId: unpaidLeaveTypeId,
+                  workAssignmentId: '',
+                  externalJobId: null,
+                  jobNumber: '',
+                  checkInAt: '',
+                  checkOutAt: '',
+                  breakInAt: '',
+                  breakOutAt: '',
                 });
               }}
               disabled={!canEdit}
@@ -806,13 +960,59 @@ export default function AttendanceEntryGrid({
               onChange={(e) => onUpdateRow(draft.employeeId, { remarks: e.target.value })}
               disabled={!canEdit}
               placeholder="Notes…"
-              className={cn(FLAT_INPUT_CLASS, 'text-xs')}
+              {...cellNavInputProps(navRowIndex, 'remarks', {
+                className: cn(FLAT_INPUT_CLASS, 'text-xs'),
+              })}
             />
           </div>
         );
       default:
         return null;
     }
+  };
+
+  const renderDraftGridRow = (
+    draft: AttendanceGridDraftRow,
+    idx: number,
+    navRowIndex: number,
+    leaveAccent = false
+  ) => {
+    const employee = employeesById.get(draft.employeeId);
+    const basicMinutes = draftBasicMinutes(draft, employee);
+    const workedMinutes = calculateWorkedMinutes(draft);
+    const overtimeMinutes = isDraftNonWorking(draft) ? 0 : Math.max(0, workedMinutes - basicMinutes);
+    const employeeType = employee?.employeeType ?? 'LABOUR_WORKER';
+    const rowTone = isDraftNonWorking(draft) ? ABSENT_ROW_TONE : EMPLOYEE_TYPE_ROW_TONE[employeeType];
+    const sourceBadgeVariant: 'default' | 'secondary' | 'outline' =
+      draft.source === 'existing' ? 'default' : draft.source === 'schedule' ? 'secondary' : 'outline';
+    const assignmentMeta = draft.workAssignmentId
+      ? assignmentsById.get(draft.workAssignmentId)
+      : draft.externalJobId
+        ? externalJobMetaById.get(draft.externalJobId)
+        : undefined;
+
+    return (
+      <div
+        key={draft.employeeId}
+        className={cn('grid border-b border-border', rowTone, leaveAccent && LEAVE_SECTION_ROW_TONE)}
+        style={{ gridTemplateColumns }}
+      >
+        {visibleGridColumns.map((column) =>
+          renderGridCell(column.key as AttendanceGridColumnKey, {
+            draft,
+            idx,
+            navRowIndex,
+            employee,
+            employeeType,
+            basicMinutes,
+            workedMinutes,
+            overtimeMinutes,
+            sourceBadgeVariant,
+            assignmentMeta,
+          })
+        )}
+      </div>
+    );
   };
 
   return (
@@ -919,67 +1119,59 @@ export default function AttendanceEntryGrid({
 						))}
 					</div>
 
-					{rows.length === 0 ? (
+					{rows.length === 0 && leaveSectionRows.length === 0 ? (
 						<div className='px-4 py-8 text-center text-sm text-muted-foreground'>
 							{emptyMessage}
 						</div>
 					) : (
-						rows.map((draft, idx) => {
-							const employee = employeesById.get(
-								draft.employeeId,
-							);
-							const basicMinutes = draftBasicMinutes(draft, employee);
-							const workedMinutes = calculateWorkedMinutes(draft);
-							const overtimeMinutes = isDraftNonWorking(draft)
-								? 0
-								: Math.max(0, workedMinutes - basicMinutes);
-							const employeeType =
-								employee?.employeeType ?? 'LABOUR_WORKER';
-							const rowTone = isDraftNonWorking(draft)
-								? ABSENT_ROW_TONE
-								: EMPLOYEE_TYPE_ROW_TONE[employeeType];
-							const sourceBadgeVariant: 'default' | 'secondary' | 'outline' =
-								draft.source === 'existing'
-									? 'default'
-									: draft.source === 'schedule'
-										? 'secondary'
-										: 'outline';
-							const assignmentMeta = draft.workAssignmentId
-								? assignmentsById.get(draft.workAssignmentId)
-								: draft.externalJobId
-									? externalJobMetaById.get(draft.externalJobId)
-									: undefined;
-
-							const cellCtx = {
-								draft,
-								idx,
-								employee,
-								employeeType,
-								basicMinutes,
-								workedMinutes,
-								overtimeMinutes,
-								sourceBadgeVariant,
-								assignmentMeta,
-							};
-
-							return (
-								<div
-									key={draft.employeeId}
-									className={cn(
-										'grid border-b border-border',
-										rowTone,
+						<>
+							{(() => {
+								let lineIndex = 0;
+								let navRowIndex = 0;
+								return employeeTypeSections.map((section) => {
+									const header = EMPLOYEE_TYPE_SECTION_HEADER[section.type];
+									return (
+										<Fragment key={section.type}>
+											{renderGridSectionHeader(
+												gridTemplateColumns,
+												header.title,
+												`${section.rows.length} employee${section.rows.length === 1 ? '' : 's'}`,
+												header
+											)}
+											{section.rows.map((draft) => {
+												const row = renderDraftGridRow(draft, lineIndex, navRowIndex);
+												lineIndex += 1;
+												navRowIndex += 1;
+												return row;
+											})}
+										</Fragment>
+									);
+								});
+							})()}
+							{leaveSectionRows.length > 0 ? (
+								<>
+									{renderGridSectionHeader(
+										gridTemplateColumns,
+										'On leave / assigned leave',
+										'On-leave employees default to absent; set Present if they came to work.',
+										{ borderClass: 'border-amber-500/50', bgClass: 'bg-amber-500/8' }
 									)}
-									style={{ gridTemplateColumns }}
-								>
-									{visibleGridColumns.map((column) =>
-										renderGridCell(
-											column.key as AttendanceGridColumnKey,
-											cellCtx,
-										),
-									)}
-								</div>
-							);
-						})
+									{(() => {
+										let lineIndex = employeeTypeSections.reduce(
+											(sum, section) => sum + section.rows.length,
+											0
+										);
+										let navRowIndex = lineIndex;
+										return leaveSectionRows.map((draft) => {
+											const row = renderDraftGridRow(draft, lineIndex, navRowIndex, true);
+											lineIndex += 1;
+											navRowIndex += 1;
+											return row;
+										});
+									})()}
+								</>
+							) : null}
+						</>
 					)}
 					{tableFooter}
 				</div>
