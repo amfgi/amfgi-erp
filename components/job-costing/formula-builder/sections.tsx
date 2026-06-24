@@ -705,6 +705,7 @@ export function RuleRows({
   onMaterialsChange,
   onLaborChange,
   resolveMaterialPreview,
+  resolveWastePreview,
   resolveLaborPreview,
   onRequestFormulaEditor,
 }: {
@@ -716,6 +717,7 @@ export function RuleRows({
   onMaterialsChange: (rules: MaterialRule[]) => void;
   onLaborChange: (rules: LaborRule[]) => void;
   resolveMaterialPreview: (rule: MaterialRule) => string;
+  resolveWastePreview: (expression: string) => string;
   resolveLaborPreview: (rule: LaborRule) => string;
   onRequestFormulaEditor: (request: FormulaEditorRequest) => void;
 }) {
@@ -822,8 +824,8 @@ export function RuleRows({
                       </p>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{describeMaterialRule(rule)}</p>
                       <p className="mt-1 truncate font-mono text-xs text-teal-700 dark:text-teal-300">{rule.quantityExpression || '--'}</p>
+                      <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">Waste: {rule.wastePercent || '0'}</p>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Possible output: {resolveMaterialPreview(rule)}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Waste: {rule.wastePercent || '0'}%</p>
                     </div>
                     <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
                       {rule.materialSource === 'global' ? 'job material' : 'fixed'}
@@ -987,10 +989,24 @@ export function RuleRows({
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quantity formula</p>
                   <ExpressionInput value={materialEditor.draft.quantityExpression} onChange={(value) => setMaterialEditor((current) => current ? { ...current, draft: { ...current.draft, quantityExpression: value } } : current)} tokens={formulaTokens} placeholder="Quantity formula, e.g. area.area_sqm * specs.global.resin_kg_per_sqm" title={`${area.label || area.key || 'Area'} material quantity`} description="This formula controls the issued quantity for the selected material rule." resolvePreview={(value) => resolveMaterialPreview({ ...materialEditor.draft, quantityExpression: value })} previewLabel="Possible output with current playground" onRequestEditor={onRequestFormulaEditor} />
                 </div>
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Waste percent
-                  <input value={materialEditor.draft.wastePercent} onChange={(event) => setMaterialEditor((current) => current ? { ...current, draft: { ...current.draft, wastePercent: event.target.value } } : current)} placeholder="0" className="mt-1.5 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-teal-300 focus:bg-white focus:ring-2 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950" />
-                </label>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Waste percent formula</p>
+                  <ExpressionInput
+                    value={materialEditor.draft.wastePercent}
+                    onChange={(value) =>
+                      setMaterialEditor((current) =>
+                        current ? { ...current, draft: { ...current.draft, wastePercent: value } } : current
+                      )
+                    }
+                    tokens={formulaTokens}
+                    placeholder="Waste percent, e.g. 5 or specs.global.waste_allowance * 100"
+                    title={`${area.label || area.key || 'Area'} material waste percent`}
+                    description="Use a fixed percent or a formula that resolves to a percentage value."
+                    resolvePreview={resolveWastePreview}
+                    previewLabel="Possible waste percent with current playground"
+                    onRequestEditor={onRequestFormulaEditor}
+                  />
+                </div>
               </div>
               <div className="border-t border-slate-200 px-5 py-4 dark:border-slate-800">
                 <div className="flex items-center justify-end gap-2">

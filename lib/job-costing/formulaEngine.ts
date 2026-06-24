@@ -17,6 +17,7 @@ import {
   evaluateFormulaExpression,
   evaluateNumericFormulaExpression,
   normalizeFormulaValue,
+  resolveMaterialWastePercent,
 } from '@/lib/job-costing/expressionEvaluator';
 import { calculateTrackedProgress, type TrackableItem } from '@/lib/job-costing/progressTracking';
 
@@ -440,7 +441,7 @@ export function buildJobItemEstimate({
         }
 
         const baseQuantityRaw = evaluateNumericFormulaExpression(materialRule.quantityExpression, variables);
-        const wasteFactor = 1 + ((materialRule.wastePercent ?? 0) / 100);
+        const wasteFactor = 1 + (resolveMaterialWastePercent(materialRule.wastePercent, variables) / 100);
         const factorToBase = materialFactorToBase(materialId, materialRule.quantityUomId);
         const estimatedBaseQuantity = baseQuantityRaw * wasteFactor * factorToBase;
         const price = materialPricing.get(materialId);

@@ -7,7 +7,7 @@ export type FormulaMaterialRule = {
   materialSelectorKey?: string;
   quantityExpression: string;
   quantityUomId?: string | null;
-  wastePercent?: number;
+  wastePercent?: number | string;
 };
 
 export type FormulaLaborRule = {

@@ -57,6 +57,7 @@ import {
   migrateAreaPlaygroundValuesToDynamic,
   formatAreaExpressionOutputPreview,
   formatAreaMaterialRuleOutputPreview,
+  formatMaterialWastePercentPreview,
   formatAreaLaborRuleOutputPreview,
   formatPossibleFormulaOutput,
   evaluatePlaygroundExpression,
@@ -228,7 +229,12 @@ function parseFormula(row?: FormulaLibrary | null): BuilderState {
             materialId: typeof rule.materialId === 'string' ? rule.materialId : '',
             materialSelectorKey: typeof rule.materialSelectorKey === 'string' ? rule.materialSelectorKey : '',
             quantityExpression: typeof rule.quantityExpression === 'string' ? rule.quantityExpression : '',
-            wastePercent: typeof rule.wastePercent === 'number' ? String(rule.wastePercent) : '',
+            wastePercent:
+              typeof rule.wastePercent === 'number'
+                ? String(rule.wastePercent)
+                : typeof rule.wastePercent === 'string'
+                  ? rule.wastePercent
+                  : '',
           }];
         })
       : [];
@@ -527,7 +533,7 @@ function buildPayload(form: BuilderState, playgroundValues: PlaygroundValues) {
           .map((rule) => ({
             ...(rule.materialSelectorKey ? { materialSelectorKey: rule.materialSelectorKey } : { materialId: rule.materialId }),
             quantityExpression: rule.quantityExpression.trim(),
-            wastePercent: rule.wastePercent.trim() ? Number(rule.wastePercent) : undefined,
+            wastePercent: rule.wastePercent.trim() ? parseFormulaConstantValue(rule.wastePercent) : undefined,
           })),
         labor: area.labor
           .filter((rule) => rule.expertiseName.trim() && rule.productivityPerWorkerPerDay.trim())
@@ -945,6 +951,16 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
       const area = form.areas.find((item) => item.id === areaId);
       if (!area) return '--';
       return formatAreaExpressionOutputPreview(form, playgroundValues, area, expression);
+    } catch {
+      return 'Unable to resolve with current playground values';
+    }
+  };
+
+  const resolveAreaMaterialWastePreview = (areaId: string, expression: string) => {
+    try {
+      const area = form.areas.find((item) => item.id === areaId);
+      if (!area) return '--';
+      return formatMaterialWastePercentPreview(form, playgroundValues, area, expression);
     } catch {
       return 'Unable to resolve with current playground values';
     }
@@ -2199,6 +2215,7 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
                           onMaterialsChange={(materialsNext) => updateArea(area.id, { materials: materialsNext })}
                           onLaborChange={(laborNext) => updateArea(area.id, { labor: laborNext })}
                           resolveMaterialPreview={(rule) => resolveAreaMaterialRuleOutputPreview(area.id, rule)}
+                          resolveWastePreview={(expression) => resolveAreaMaterialWastePreview(area.id, expression)}
                           resolveLaborPreview={(rule) => resolveAreaLaborRuleOutputPreview(area.id, rule)}
                           onRequestFormulaEditor={openFormulaEditor}
                         />

@@ -142,3 +142,16 @@ export function evaluateFormulaExpression(expression: string, values: FormulaVar
 export function evaluateNumericFormulaExpression(expression: string, values: FormulaVariableMap) {
   return coerceFormulaNumber(evaluateFormulaExpression(expression, values));
 }
+
+export function resolveMaterialWastePercent(
+  wastePercent: number | string | undefined,
+  variables: FormulaVariableMap
+) {
+  if (wastePercent === undefined || wastePercent === null) return 0;
+  if (typeof wastePercent === 'number') {
+    return Number.isFinite(wastePercent) ? wastePercent : 0;
+  }
+  const trimmed = wastePercent.trim();
+  if (!trimmed) return 0;
+  return evaluateNumericFormulaExpression(trimmed, variables);
+}

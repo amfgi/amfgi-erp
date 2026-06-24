@@ -14,7 +14,7 @@ export const FormulaMaterialRuleSchema = z
     materialSelectorKey: z.string().min(1).max(80).optional(),
     quantityExpression: z.string().min(1),
     quantityUomId: z.string().optional(),
-    wastePercent: z.number().min(0).max(1000).optional(),
+    wastePercent: z.union([z.number().min(0).max(1000), z.string().min(1)]).optional(),
   })
   .refine((value) => value.materialId || value.materialSelectorKey, {
     message: 'Material rule must include a fixed material or a job material selector',

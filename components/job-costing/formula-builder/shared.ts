@@ -4,6 +4,7 @@ import {
   evaluateFormulaExpression,
   evaluateNumericFormulaExpression,
   normalizeFormulaValue,
+  resolveMaterialWastePercent,
   type FormulaVariableMap,
 } from '@/lib/job-costing/expressionEvaluator';
 
@@ -380,25 +381,52 @@ export function formatAreaMaterialRuleOutputPreview(
   rule: MaterialRule,
   materialUnit?: string
 ) {
-  const wastePercent = Number(parsePlaygroundValue(rule.wastePercent || '0', 'percent'));
   let quantityTotal = 0;
   let finalQuantityTotal = 0;
+  let wastePercentTotal = 0;
   let rowCount = 0;
 
   forEachAreaPlaygroundInstance(area, values, (instanceId) => {
     rowCount += 1;
     const resolved = buildAreaScopedPlaygroundValues(form, values, area, instanceId);
     const quantity = Number(evaluatePlaygroundExpression(rule.quantityExpression || '0', resolved));
+    const wastePercent = resolveMaterialWastePercent(rule.wastePercent, resolved);
     quantityTotal += quantity;
+    wastePercentTotal += wastePercent;
     finalQuantityTotal += quantity * (1 + wastePercent / 100);
   });
 
+  const averageWastePercent = rowCount > 0 ? wastePercentTotal / rowCount : 0;
   const unitSuffix = materialUnit?.trim() ? ` ${materialUnit.trim()}` : '';
   const rowNote = area.dynamic && rowCount > 1 ? ` • ${rowCount} rows` : '';
   const parts = [`Qty ${formatPreviewQty(quantityTotal)}${unitSuffix}${rowNote}`];
-  if (wastePercent) parts.push(`Final ${formatPreviewQty(finalQuantityTotal)}${unitSuffix}`);
-  if (wastePercent) parts.push(`Waste ${formatPreviewQty(wastePercent)}%`);
+  if (averageWastePercent) parts.push(`Final ${formatPreviewQty(finalQuantityTotal)}${unitSuffix}`);
+  if (averageWastePercent) parts.push(`Waste ${formatPreviewQty(averageWastePercent)}%`);
   return parts.join(' • ');
+}
+
+export function formatMaterialWastePercentPreview(
+  form: BuilderState,
+  values: PlaygroundValues,
+  area: AreaRule,
+  expression: string
+) {
+  const trimmed = expression.trim();
+  if (!trimmed) return '0%';
+
+  const results: number[] = [];
+  forEachAreaPlaygroundInstance(area, values, (instanceId) => {
+    const resolved = buildAreaScopedPlaygroundValues(form, values, area, instanceId);
+    results.push(resolveMaterialWastePercent(trimmed, resolved));
+  });
+
+  if (results.length === 0) return '0%';
+  if (results.every((value) => Object.is(value, results[0]))) {
+    return `${formatPreviewQty(results[0] ?? 0)}%`;
+  }
+
+  const average = results.reduce((sum, value) => sum + value, 0) / results.length;
+  return `${formatPreviewQty(average)}% avg (${results.length} rows)`;
 }
 
 export function formatAreaLaborRuleOutputPreview(
@@ -1140,7 +1168,7 @@ export function buildPlaygroundPreview(form: BuilderState, values: PlaygroundVal
         }
 
         const quantity = evaluateNumericFormulaExpression(rule.quantityExpression || '0', resolvedValues);
-        const wastePercent = coerceFormulaNumber(parsePlaygroundValue(rule.wastePercent, 'percent'));
+        const wastePercent = resolveMaterialWastePercent(rule.wastePercent, resolvedValues);
         const finalQuantity = quantity * (1 + wastePercent / 100);
         const unitCost = Number(material.unitCost ?? 0);
         lines.push({
