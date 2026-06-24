@@ -7,6 +7,8 @@ import SearchSelect from '@/components/ui/SearchSelect';
 import { DynamicAreaInstanceTable } from '@/components/job-costing/DynamicAreaInstanceTable';
 import { GlobalFormulaValuesTable } from '@/components/job-costing/GlobalFormulaValuesTable';
 import { JobLevelInputsTable } from '@/components/job-costing/JobLevelInputsTable';
+import { LaborScheduleRulesTable } from '@/components/job-costing/LaborScheduleRulesTable';
+import { MaterialCostingRulesTable } from '@/components/job-costing/MaterialCostingRulesTable';
 import type { Material } from '@/store/api/endpoints/materials';
 import {
   FIELD_TYPES,
@@ -23,7 +25,6 @@ import {
   buildAreaFormulaValueTokens,
   buildFormulaTokens,
   describeFieldType,
-  describeLaborRule,
   describeMaterialRule,
   duplicatePlaygroundAreaInstance,
   formatPreviewMoney,
@@ -791,8 +792,8 @@ export function RuleRows({
 
   return (
     <>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-2xl border border-teal-100 bg-teal-50/60 p-4 dark:border-teal-500/15 dark:bg-teal-500/5">
+      <div className="space-y-4">
+        <div className="w-full rounded-2xl border border-teal-100 bg-teal-50/60 p-4 dark:border-teal-500/15 dark:bg-teal-500/5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:text-teal-300">Material costing rules</p>
@@ -809,55 +810,66 @@ export function RuleRows({
               Add rule
             </Button>
           </div>
-          <div className="space-y-3">
+          <div>
             {area.materials.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-teal-300 bg-white/70 px-4 py-5 text-sm text-slate-500 dark:border-teal-500/30 dark:bg-slate-950/50">No material rules yet. Add resin, gelcoat, fiber, catalyst, solvent, or other consumable rules here.</p>
+              <p className="rounded-2xl border border-dashed border-teal-300 bg-white/70 px-4 py-5 text-sm text-slate-500 dark:border-teal-500/30 dark:bg-slate-950/50">
+                No material rules yet. Add resin, gelcoat, fiber, catalyst, solvent, or other consumable rules here.
+              </p>
             ) : (
-              area.materials.map((rule, index) => (
-                <div key={rule.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                        {rule.materialSource === 'global'
-                          ? globalMaterialFields.find((field) => field.key === rule.materialSelectorKey)?.label || rule.materialSelectorKey || 'Job material'
-                          : materials.find((material) => material.id === rule.materialId)?.name || 'Fixed material'}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{describeMaterialRule(rule)}</p>
-                      <p className="mt-1 truncate font-mono text-xs text-teal-700 dark:text-teal-300">{rule.quantityExpression || '--'}</p>
-                      <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">Waste: {rule.wastePercent || '0'}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Possible output: {resolveMaterialPreview(rule)}</p>
-                    </div>
-                    <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
-                      {rule.materialSource === 'global' ? 'job material' : 'fixed'}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        const initialDraft = { ...rule };
-                        setMaterialEditor({ mode: 'edit', draft: { ...rule }, initialDraft });
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onMaterialsChange([
+              <MaterialCostingRulesTable
+                rows={area.materials.map((rule) => ({
+                  id: rule.id,
+                  materialName:
+                    rule.materialSource === 'global'
+                      ? globalMaterialFields.find((field) => field.key === rule.materialSelectorKey)?.label ||
+                        rule.materialSelectorKey ||
+                        'Job material'
+                      : materials.find((material) => material.id === rule.materialId)?.name || 'Fixed material',
+                  sourceLabel: rule.materialSource === 'global' ? 'job material' : 'fixed',
+                  quantityExpression: rule.quantityExpression,
+                  wastePercent: rule.wastePercent,
+                  preview: resolveMaterialPreview(rule),
+                }))}
+                builderActions={{
+                  onEdit: (id) => {
+                    const rule = area.materials.find((item) => item.id === id);
+                    if (!rule) return;
+                    const initialDraft = { ...rule };
+                    setMaterialEditor({ mode: 'edit', draft: { ...rule }, initialDraft });
+                  },
+                  onDuplicate: (id) => {
+                    const index = area.materials.findIndex((item) => item.id === id);
+                    const rule = area.materials[index];
+                    if (!rule) return;
+                    onMaterialsChange([
                       ...area.materials.slice(0, index + 1),
                       duplicateMaterialRule(rule),
                       ...area.materials.slice(index + 1),
-                    ])}>Duplicate</Button>
-                    <Button size="sm" variant="ghost" disabled={index === 0} onClick={() => onMaterialsChange(reorderItemsById(area.materials, rule.id, area.materials[index - 1]?.id ?? rule.id))}>Up</Button>
-                    <Button size="sm" variant="ghost" disabled={index === area.materials.length - 1} onClick={() => onMaterialsChange(reorderItemsById(area.materials, rule.id, area.materials[index + 1]?.id ?? rule.id))}>Down</Button>
-                    <Button size="sm" variant="ghost" onClick={() => onMaterialsChange(area.materials.filter((item) => item.id !== rule.id))}>Remove</Button>
-                  </div>
-                </div>
-              ))
+                    ]);
+                  },
+                  onMoveUp: (id) => {
+                    const index = area.materials.findIndex((item) => item.id === id);
+                    if (index <= 0) return;
+                    onMaterialsChange(reorderItemsById(area.materials, id, area.materials[index - 1]?.id ?? id));
+                  },
+                  onMoveDown: (id) => {
+                    const index = area.materials.findIndex((item) => item.id === id);
+                    if (index < 0 || index >= area.materials.length - 1) return;
+                    onMaterialsChange(reorderItemsById(area.materials, id, area.materials[index + 1]?.id ?? id));
+                  },
+                  onRemove: (id) => onMaterialsChange(area.materials.filter((item) => item.id !== id)),
+                  canMoveUp: (id) => area.materials.findIndex((item) => item.id === id) > 0,
+                  canMoveDown: (id) => {
+                    const index = area.materials.findIndex((item) => item.id === id);
+                    return index >= 0 && index < area.materials.length - 1;
+                  },
+                }}
+              />
             )}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-amber-500/15 dark:bg-amber-500/5">
+        <div className="w-full rounded-2xl border border-amber-100 bg-amber-50/60 p-4 dark:border-amber-500/15 dark:bg-amber-500/5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">Labor and schedule rules</p>
@@ -874,43 +886,56 @@ export function RuleRows({
               Add labor
             </Button>
           </div>
-          <div className="space-y-3">
+          <div>
             {area.labor.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-amber-300 bg-white/70 px-4 py-5 text-sm text-slate-500 dark:border-amber-500/30 dark:bg-slate-950/50">No labor rules yet. Add lamination, gelcoat, finishing, welding, or MEP expertise here.</p>
+              <p className="rounded-2xl border border-dashed border-amber-300 bg-white/70 px-4 py-5 text-sm text-slate-500 dark:border-amber-500/30 dark:bg-slate-950/50">
+                No labor rules yet. Add lamination, gelcoat, finishing, welding, or MEP expertise here.
+              </p>
             ) : (
-              area.labor.map((rule, index) => (
-                <div key={rule.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-                  <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">
-                    {describeLaborRule(rule)}
-                  </div>
-                  <div className="mt-3">
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">{rule.expertiseName || 'Unnamed expertise'}</p>
-                    <p className="mt-1 truncate font-mono text-xs text-amber-700 dark:text-amber-300">{rule.quantityExpression || '--'}</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Possible output: {resolveLaborPreview(rule)}</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Crew: {rule.crewSizeExpression || '--'} • Productivity: {rule.productivityPerWorkerPerDay || '--'}</p>
-                  </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        const initialDraft = { ...rule };
-                        setLaborEditor({ mode: 'edit', draft: { ...rule }, initialDraft });
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onLaborChange([
+              <LaborScheduleRulesTable
+                rows={area.labor.map((rule) => ({
+                  id: rule.id,
+                  expertiseName: rule.expertiseName,
+                  quantityExpression: rule.quantityExpression,
+                  crewSizeExpression: rule.crewSizeExpression,
+                  productivityPerWorkerPerDay: rule.productivityPerWorkerPerDay,
+                  preview: resolveLaborPreview(rule),
+                }))}
+                builderActions={{
+                  onEdit: (id) => {
+                    const rule = area.labor.find((item) => item.id === id);
+                    if (!rule) return;
+                    const initialDraft = { ...rule };
+                    setLaborEditor({ mode: 'edit', draft: { ...rule }, initialDraft });
+                  },
+                  onDuplicate: (id) => {
+                    const index = area.labor.findIndex((item) => item.id === id);
+                    const rule = area.labor[index];
+                    if (!rule) return;
+                    onLaborChange([
                       ...area.labor.slice(0, index + 1),
                       duplicateLaborRule(rule),
                       ...area.labor.slice(index + 1),
-                    ])}>Duplicate</Button>
-                    <Button size="sm" variant="ghost" disabled={index === 0} onClick={() => onLaborChange(reorderItemsById(area.labor, rule.id, area.labor[index - 1]?.id ?? rule.id))}>Up</Button>
-                    <Button size="sm" variant="ghost" disabled={index === area.labor.length - 1} onClick={() => onLaborChange(reorderItemsById(area.labor, rule.id, area.labor[index + 1]?.id ?? rule.id))}>Down</Button>
-                    <Button size="sm" variant="ghost" onClick={() => onLaborChange(area.labor.filter((item) => item.id !== rule.id))}>Remove</Button>
-                  </div>
-                </div>
-              ))
+                    ]);
+                  },
+                  onMoveUp: (id) => {
+                    const index = area.labor.findIndex((item) => item.id === id);
+                    if (index <= 0) return;
+                    onLaborChange(reorderItemsById(area.labor, id, area.labor[index - 1]?.id ?? id));
+                  },
+                  onMoveDown: (id) => {
+                    const index = area.labor.findIndex((item) => item.id === id);
+                    if (index < 0 || index >= area.labor.length - 1) return;
+                    onLaborChange(reorderItemsById(area.labor, id, area.labor[index + 1]?.id ?? id));
+                  },
+                  onRemove: (id) => onLaborChange(area.labor.filter((item) => item.id !== id)),
+                  canMoveUp: (id) => area.labor.findIndex((item) => item.id === id) > 0,
+                  canMoveDown: (id) => {
+                    const index = area.labor.findIndex((item) => item.id === id);
+                    return index >= 0 && index < area.labor.length - 1;
+                  },
+                }}
+              />
             )}
           </div>
         </div>
