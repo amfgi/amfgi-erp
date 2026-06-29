@@ -31,6 +31,10 @@ export interface AttendanceGridEmployee {
 
 export interface AttendanceGridDraftRow {
   employeeId: string;
+  /** Set when editing one employee across multiple dates (employee-month sheet). */
+  workDate?: string;
+  /** Persisted attendance row id — used for delete on employee-month sheet. */
+  entryId?: string | null;
   workAssignmentId: string;
   /** Job picked from the full jobs list when it is not on today's schedule. */
   externalJobId?: string | null;
@@ -82,13 +86,23 @@ interface AttendanceEntryGridProps {
   assignmentJobIdByAssignmentId: Map<string, string>;
   externalJobMetaById: Map<string, AttendanceGridAssignmentMeta>;
   assignmentOptions: AssignmentOption[];
+  /** Per-row schedule jobs when sheetMode is dates (keyed by workDate). */
+  assignmentOptionsForRow?: (draft: AttendanceGridDraftRow) => AssignmentOption[];
   allJobOptions: AllJobOption[];
   allJobsLoading: boolean;
   includeAllJobs: boolean;
   onIncludeAllJobsChange: (value: boolean) => void;
   leaveTypes: LeaveTypeOption[];
-  /** Approved leave from leave management for this date (preview only). */
+  /** Approved leave preview — keyed by employeeId (day sheet) or workDate (employee-month). */
   leavePreviewByEmployeeId?: Record<string, string>;
+  leavePreviewByRowKey?: Record<string, string>;
+  /** Day sheet = one date, many employees. Employee-month = one employee, many dates. */
+  sheetMode?: 'employees' | 'dates';
+  resolveRowKey?: (draft: AttendanceGridDraftRow) => string;
+  monthDateBounds?: { min: string; max: string };
+  onWorkDateChange?: (rowKey: string, workDate: string) => void;
+  onRemoveRow?: (rowKey: string) => void;
+  gridPreferenceKeySuffix?: string;
   canEdit: boolean;
   emptyMessage: string;
   /** Left side of the day-sheet chrome row (search, scope, add employee). */
@@ -105,6 +119,26 @@ interface AttendanceEntryGridProps {
 }
 
 const ATTENDANCE_GRID_PREFERENCE_KEY = 'hr-attendance-create-line-grid';
+
+function formatDateCellLabel(ymd: string): string {
+  try {
+    return new Date(`${ymd}T12:00:00`).toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+    });
+  } catch {
+    return ymd;
+  }
+}
+
+function resolveDraftRowKey(
+  draft: AttendanceGridDraftRow,
+  resolveRowKey?: (draft: AttendanceGridDraftRow) => string
+): string {
+  if (resolveRowKey) return resolveRowKey(draft);
+  return draft.workDate?.trim() || draft.employeeId;
+}
 
 const STATUS_OPTIONS: Array<{ value: AttendanceGridDraftRow['status']; label: string }> = [
   { value: 'PRESENT', label: 'Present' },
@@ -277,8 +311,9 @@ function gridColumnsToPreferencePayload(columns: LineGridColumnConfig[]): LineGr
   };
 }
 
-function getAttendanceGridLocalStorageKey(companyId: string) {
-  return `attendance-line-grid:${ATTENDANCE_GRID_PREFERENCE_KEY}:${companyId}`;
+function getAttendanceGridLocalStorageKey(companyId: string, suffix?: string) {
+  const base = `attendance-line-grid:${ATTENDANCE_GRID_PREFERENCE_KEY}${suffix ? `:${suffix}` : ''}:${companyId}`;
+  return base;
 }
 
 function readAttendanceGridLocalPref(storageKey: string): Partial<LineGridPreferencePayload> | null {
@@ -391,12 +426,20 @@ export default function AttendanceEntryGrid({
   assignmentJobIdByAssignmentId,
   externalJobMetaById,
   assignmentOptions,
+  assignmentOptionsForRow,
   allJobOptions,
   allJobsLoading,
   includeAllJobs,
   onIncludeAllJobsChange,
   leaveTypes,
   leavePreviewByEmployeeId = {},
+  leavePreviewByRowKey = {},
+  sheetMode = 'employees',
+  resolveRowKey,
+  monthDateBounds,
+  onWorkDateChange,
+  onRemoveRow,
+  gridPreferenceKeySuffix,
   canEdit,
   emptyMessage,
   filters,
@@ -410,11 +453,22 @@ export default function AttendanceEntryGrid({
   const { data: session, status: sessionStatus } = useSession();
   const companyId = session?.user?.activeCompanyId;
   const storageKey = useMemo(
-    () => (companyId ? getAttendanceGridLocalStorageKey(companyId) : null),
-    [companyId]
+    () => (companyId ? getAttendanceGridLocalStorageKey(companyId, gridPreferenceKeySuffix) : null),
+    [companyId, gridPreferenceKeySuffix]
   );
 
-  const [gridColumns, setGridColumns] = useState<LineGridColumnConfig[]>(DEFAULT_GRID_COLUMNS);
+  const isDatesMode = sheetMode === 'dates';
+
+  const defaultGridColumns = useMemo((): LineGridColumnConfig[] => {
+    if (!isDatesMode) return DEFAULT_GRID_COLUMNS;
+    return DEFAULT_GRID_COLUMNS.map((column) =>
+      column.key === 'employee'
+        ? { ...column, key: 'employee', label: 'Work date', width: 168, minWidth: 140, maxWidth: 220 }
+        : column
+    );
+  }, [isDatesMode]);
+
+  const [gridColumns, setGridColumns] = useState<LineGridColumnConfig[]>(defaultGridColumns);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const loadedPreferenceKeyRef = useRef<string | null>(null);
 
@@ -429,6 +483,14 @@ export default function AttendanceEntryGrid({
   );
 
   const employeeTypeSections = useMemo(() => {
+    if (isDatesMode) {
+      const sorted = [...rows].sort((a, b) =>
+        String(a.workDate ?? '').localeCompare(String(b.workDate ?? ''))
+      );
+      return sorted.length
+        ? [{ type: 'LABOUR_WORKER' as EmployeeTypeKey, rows: sorted }]
+        : [];
+    }
     const buckets = new Map<EmployeeTypeKey, AttendanceGridDraftRow[]>();
     for (const type of EMPLOYEE_TYPE_SECTION_ORDER) buckets.set(type, []);
     for (const draft of rows) {
@@ -439,7 +501,7 @@ export default function AttendanceEntryGrid({
       type,
       rows: buckets.get(type) ?? [],
     })).filter((section) => section.rows.length > 0);
-  }, [employeesById, rows]);
+  }, [employeesById, isDatesMode, rows]);
 
   const navigableColumns = useMemo(
     () =>
@@ -501,8 +563,8 @@ export default function AttendanceEntryGrid({
     if (!storageKey) return;
     const stashed = readAttendanceGridLocalPref(storageKey);
     if (!stashed) return;
-    setGridColumns(mergeStoredGridColumns(DEFAULT_GRID_COLUMNS, stashed));
-  }, [storageKey]);
+    setGridColumns(mergeStoredGridColumns(defaultGridColumns, stashed));
+  }, [defaultGridColumns, storageKey]);
 
   useEffect(() => {
     if (sessionStatus === 'loading') return;
@@ -518,8 +580,11 @@ export default function AttendanceEntryGrid({
 
     void (async () => {
       try {
+        const prefKey = gridPreferenceKeySuffix
+          ? `${ATTENDANCE_GRID_PREFERENCE_KEY}:${gridPreferenceKeySuffix}`
+          : ATTENDANCE_GRID_PREFERENCE_KEY;
         const response = await fetch(
-          `/api/me/table-preferences/${encodeURIComponent(ATTENDANCE_GRID_PREFERENCE_KEY)}`,
+          `/api/me/table-preferences/${encodeURIComponent(prefKey)}`,
           { cache: 'no-store', signal: controller.signal }
         );
         if (!response.ok) throw new Error('Failed to load table preferences');
@@ -528,7 +593,7 @@ export default function AttendanceEntryGrid({
 
         const remote = json.data;
         const mergedFromServer =
-          remote != null ? mergeStoredGridColumns(DEFAULT_GRID_COLUMNS, remote) : null;
+          remote != null ? mergeStoredGridColumns(defaultGridColumns, remote) : null;
 
         if (mergedFromServer) {
           setGridColumns(mergedFromServer);
@@ -542,14 +607,14 @@ export default function AttendanceEntryGrid({
       } catch {
         if (controller.signal.aborted) return;
         const fallback = storageKey ? readAttendanceGridLocalPref(storageKey) : null;
-        setGridColumns(mergeStoredGridColumns(DEFAULT_GRID_COLUMNS, fallback));
+        setGridColumns(mergeStoredGridColumns(defaultGridColumns, fallback));
         loadedPreferenceKeyRef.current = `${ATTENDANCE_GRID_PREFERENCE_KEY}:${companyId}`;
         setPreferencesLoaded(true);
       }
     })();
 
     return () => controller.abort();
-  }, [companyId, sessionStatus, storageKey]);
+  }, [companyId, defaultGridColumns, gridPreferenceKeySuffix, sessionStatus, storageKey]);
 
   useEffect(() => {
     if (!preferencesLoaded || loadedPreferenceKeyRef.current !== `${ATTENDANCE_GRID_PREFERENCE_KEY}:${companyId ?? ''}`) {
@@ -660,6 +725,8 @@ export default function AttendanceEntryGrid({
     const cellClassName = 'min-w-0 border-r border-border/80 last:border-r-0';
     const { draft, idx, navRowIndex, employee, employeeType, basicMinutes, workedMinutes, overtimeMinutes, sourceBadgeVariant, assignmentMeta } =
       ctx;
+    const rowKey = resolveDraftRowKey(draft, resolveRowKey);
+    const rowAssignmentOptions = assignmentOptionsForRow?.(draft) ?? assignmentOptions;
 
     switch (columnKey) {
       case 'line':
@@ -675,6 +742,47 @@ export default function AttendanceEntryGrid({
           </div>
         );
       case 'employee':
+        if (isDatesMode) {
+          return (
+            <div key={columnKey} className={cn(cellClassName, 'px-2 py-1.5')}>
+              <div className="flex min-w-0 items-center gap-2">
+                <input
+                  type="date"
+                  value={draft.workDate ?? ''}
+                  min={monthDateBounds?.min}
+                  max={monthDateBounds?.max}
+                  disabled={!canEdit || draft.source === 'existing' || !onWorkDateChange}
+                  onChange={(e) => onWorkDateChange?.(rowKey, e.target.value)}
+                  className={cn(FLAT_INPUT_CLASS, 'text-xs font-semibold')}
+                />
+                {draft.workDate ? (
+                  <span className="truncate text-[10px] text-muted-foreground">
+                    {formatDateCellLabel(draft.workDate)}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                <Badge variant={sourceBadgeVariant} className={cn(COMPACT_TAG_BASE, 'uppercase')}>
+                  {draft.source}
+                </Badge>
+                {onRemoveRow && canEdit ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      COMPACT_TAG_BASE,
+                      'border-destructive/40 text-destructive hover:bg-destructive/10 disabled:opacity-50'
+                    )}
+                    disabled={Boolean(draft.leaveRequestId)}
+                    title={draft.leaveRequestId ? 'Linked to leave management' : 'Remove row'}
+                    onClick={() => onRemoveRow(rowKey)}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        }
         return (
           <div key={columnKey} className={cn(cellClassName, 'px-2 py-1.5')}>
             <div className="flex min-w-0 items-center gap-2">
@@ -720,9 +828,9 @@ export default function AttendanceEntryGrid({
             <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
               <SearchSelect
                 value={selectedJobId}
-                onChange={(jobId) => onAllJobsChange(draft.employeeId, jobId)}
+                onChange={(jobId) => onAllJobsChange(rowKey, jobId)}
                 onBlurInputValue={(value) => {
-                  if (value.trim() === '') onAllJobsChange(draft.employeeId, '');
+                  if (value.trim() === '') onAllJobsChange(rowKey, '');
                 }}
                 placeholder={allJobOptions.length === 0 ? 'No active jobs' : 'Job num'}
                 disabled={!canEdit || allJobOptions.length === 0}
@@ -762,9 +870,9 @@ export default function AttendanceEntryGrid({
           <div key={columnKey} className={cn(cellClassName, 'bg-background/60 dark:bg-background/40')}>
             <SearchSelect
               value={draft.workAssignmentId}
-              onChange={(value) => onAssignmentChange(draft.employeeId, value)}
+              onChange={(value) => onAssignmentChange(rowKey, value)}
               onBlurInputValue={(value) => {
-                if (value.trim() === '') onAssignmentChange(draft.employeeId, '');
+                if (value.trim() === '') onAssignmentChange(rowKey, '');
               }}
               placeholder="Job num"
               disabled={!canEdit}
@@ -774,7 +882,7 @@ export default function AttendanceEntryGrid({
               passThroughArrowKeys
               renderItem={(item) => {
                 if (!item.id) return <span className="text-muted-foreground">—</span>;
-                const option = assignmentOptions.find((entry) => entry.value === item.id);
+                const option = rowAssignmentOptions.find((entry) => entry.value === item.id);
                 const teamLabel = option?.teamLabel?.trim() ?? '';
                 const jobNumber = option?.label?.trim() ?? '';
                 const text =
@@ -785,7 +893,7 @@ export default function AttendanceEntryGrid({
               }}
               items={[
                 { id: '', label: '', searchText: '' },
-                ...assignmentOptions.map((option) => ({
+                ...rowAssignmentOptions.map((option) => ({
                   id: option.value,
                   label: option.label,
                   searchText: option.searchText,
@@ -821,7 +929,7 @@ export default function AttendanceEntryGrid({
             <TimeEntryInput
               {...cellNavInputProps(navRowIndex, 'dutyIn')}
               value={draft.checkInAt}
-              onChange={(value) => onUpdateRow(draft.employeeId, { checkInAt: value })}
+              onChange={(value) => onUpdateRow(rowKey, { checkInAt: value })}
               disabled={!canEdit}
             />
           </div>
@@ -832,7 +940,7 @@ export default function AttendanceEntryGrid({
             <TimeEntryInput
               {...cellNavInputProps(navRowIndex, 'breakOut')}
               value={draft.breakInAt}
-              onChange={(value) => onUpdateRow(draft.employeeId, { breakInAt: value })}
+              onChange={(value) => onUpdateRow(rowKey, { breakInAt: value })}
               disabled={!canEdit}
             />
           </div>
@@ -843,7 +951,7 @@ export default function AttendanceEntryGrid({
             <TimeEntryInput
               {...cellNavInputProps(navRowIndex, 'breakIn')}
               value={draft.breakOutAt}
-              onChange={(value) => onUpdateRow(draft.employeeId, { breakOutAt: value })}
+              onChange={(value) => onUpdateRow(rowKey, { breakOutAt: value })}
               disabled={!canEdit}
             />
           </div>
@@ -854,7 +962,7 @@ export default function AttendanceEntryGrid({
             <TimeEntryInput
               {...cellNavInputProps(navRowIndex, 'dutyOut')}
               value={draft.checkOutAt}
-              onChange={(value) => onUpdateRow(draft.employeeId, { checkOutAt: value })}
+              onChange={(value) => onUpdateRow(rowKey, { checkOutAt: value })}
               disabled={!canEdit}
             />
           </div>
@@ -908,13 +1016,13 @@ export default function AttendanceEntryGrid({
               onChange={(e) => {
                 const next = e.target.value as AttendanceGridDraftRow['status'];
                 if (next === 'PRESENT') {
-                  onUpdateRow(draft.employeeId, {
+                  onUpdateRow(rowKey, {
                     status: 'PRESENT',
                     leaveTypeId: null,
                   });
                   return;
                 }
-                onUpdateRow(draft.employeeId, {
+                onUpdateRow(rowKey, {
                   status: 'ABSENT',
                   leaveTypeId: unpaidLeaveTypeId,
                   workAssignmentId: '',
@@ -939,7 +1047,9 @@ export default function AttendanceEntryGrid({
         );
       }
       case 'leave': {
-        const previewLabel = leavePreviewByEmployeeId[draft.employeeId];
+        const previewLabel = isDatesMode
+          ? leavePreviewByRowKey[rowKey]
+          : leavePreviewByEmployeeId[draft.employeeId];
 
         return (
           <div key={columnKey} className={cn(cellClassName, 'py-1.5 text-xs text-muted-foreground')}>
@@ -957,7 +1067,7 @@ export default function AttendanceEntryGrid({
             <input
               type="text"
               value={draft.remarks ?? ''}
-              onChange={(e) => onUpdateRow(draft.employeeId, { remarks: e.target.value })}
+              onChange={(e) => onUpdateRow(rowKey, { remarks: e.target.value })}
               disabled={!canEdit}
               placeholder="Notes…"
               {...cellNavInputProps(navRowIndex, 'remarks', {
@@ -977,6 +1087,7 @@ export default function AttendanceEntryGrid({
     navRowIndex: number,
     leaveAccent = false
   ) => {
+    const rowKey = resolveDraftRowKey(draft, resolveRowKey);
     const employee = employeesById.get(draft.employeeId);
     const basicMinutes = draftBasicMinutes(draft, employee);
     const workedMinutes = calculateWorkedMinutes(draft);
@@ -993,7 +1104,7 @@ export default function AttendanceEntryGrid({
 
     return (
       <div
-        key={draft.employeeId}
+        key={rowKey}
         className={cn('grid border-b border-border', rowTone, leaveAccent && LEAVE_SECTION_ROW_TONE)}
         style={{ gridTemplateColumns }}
       >
@@ -1025,7 +1136,7 @@ export default function AttendanceEntryGrid({
 					<div className='flex shrink-0 items-center gap-1.5'>
 						<div className='mt-1 flex flex-wrap items-center gap-1.5 text-[9px] font-medium leading-none text-muted-foreground'>
 							<span className='font-semibold uppercase tracking-[0.14em] text-foreground'>
-								Indicator
+								{isDatesMode ? 'Day sheet' : 'Indicator'}
 							</span>
 							<span className='inline-flex items-center gap-1'>
 								<span
@@ -1132,12 +1243,14 @@ export default function AttendanceEntryGrid({
 									const header = EMPLOYEE_TYPE_SECTION_HEADER[section.type];
 									return (
 										<Fragment key={section.type}>
-											{renderGridSectionHeader(
-												gridTemplateColumns,
-												header.title,
-												`${section.rows.length} employee${section.rows.length === 1 ? '' : 's'}`,
-												header
-											)}
+											{!isDatesMode
+												? renderGridSectionHeader(
+														gridTemplateColumns,
+														header.title,
+														`${section.rows.length} employee${section.rows.length === 1 ? '' : 's'}`,
+														header
+													)
+												: null}
 											{section.rows.map((draft) => {
 												const row = renderDraftGridRow(draft, lineIndex, navRowIndex);
 												lineIndex += 1;

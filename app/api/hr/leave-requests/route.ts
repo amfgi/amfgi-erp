@@ -29,9 +29,11 @@ export async function GET(req: Request) {
   const status = searchParams.get('status');
   const employeeId = searchParams.get('employeeId');
   const workDateRaw = searchParams.get('workDate');
+  const fromRaw = searchParams.get('from');
+  const toRaw = searchParams.get('to');
 
   const canPreviewForAttendance =
-    Boolean(workDateRaw) &&
+    (Boolean(workDateRaw) || (Boolean(fromRaw) && Boolean(toRaw))) &&
     (hasPerm(session.user, P.HR_ATTENDANCE_VIEW) || hasPerm(session.user, P.HR_ATTENDANCE_EDIT));
 
   if (
@@ -51,6 +53,14 @@ export async function GET(req: Request) {
       workDateFilter = { startDate: { lte: d }, endDate: { gte: d } };
     } catch {
       return errorResponse('Invalid workDate', 400);
+    }
+  } else if (fromRaw && toRaw) {
+    try {
+      const from = dateFromYmd(ymdFromInput(fromRaw));
+      const to = dateFromYmd(ymdFromInput(toRaw));
+      workDateFilter = { startDate: { lte: to }, endDate: { gte: from } };
+    } catch {
+      return errorResponse('Invalid from/to date', 400);
     }
   }
 

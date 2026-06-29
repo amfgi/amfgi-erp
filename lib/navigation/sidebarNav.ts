@@ -139,6 +139,11 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				label: 'Attendance management',
 				perm: 'hr.attendance.view',
 			},
+			{
+				href: '/hr/attendance/employee',
+				label: 'Employee attendance',
+				perm: 'hr.attendance.view',
+			},
 			{ href: '/hr/leave', label: 'Leave management', perm: 'hr.leave.view' },
 			{
 				href: '/hr/employees',

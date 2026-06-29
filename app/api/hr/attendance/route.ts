@@ -99,6 +99,15 @@ function serializeAttendanceRow(
   };
 }
 
+function monthBoundsYmd(monthYmd: string): { start: Date; end: Date } {
+  if (!/^\d{4}-\d{2}$/.test(monthYmd)) throw new Error('Invalid month YYYY-MM');
+  const [y, m] = monthYmd.split('-').map(Number);
+  const start = dateFromYmd(`${monthYmd}-01`);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const end = dateFromYmd(`${monthYmd}-${String(lastDay).padStart(2, '0')}`);
+  return { start, end };
+}
+
 export async function GET(req: Request) {
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
@@ -106,18 +115,9 @@ export async function GET(req: Request) {
   if (!requirePerm(session.user, P.HR_ATTENDANCE_VIEW)) return errorResponse('Forbidden', 403);
 
   const { searchParams } = new URL(req.url);
+  const employeeId = searchParams.get('employeeId')?.trim() ?? '';
+  const monthRaw = searchParams.get('month')?.trim().slice(0, 7) ?? '';
   const workDateRaw = searchParams.get('workDate');
-  if (!workDateRaw) return errorResponse('workDate query required (YYYY-MM-DD)', 400);
-
-  let workDateYmd: string;
-  try {
-    workDateYmd = ymdFromInput(workDateRaw);
-  } catch {
-    return errorResponse('Invalid workDate', 400);
-  }
-  const workDate = dateFromYmd(workDateYmd);
-  const limitParam = searchParams.get('limit');
-  const where = { companyId, workDate };
 
   try {
     const company = await prisma.company.findUnique({
@@ -125,6 +125,49 @@ export async function GET(req: Request) {
       select: { hrEmployeeTypeSettings: true, printTemplates: true },
     });
     const typeSettings = readEmployeeTypeSettingsFromCompanyData(company);
+
+    if (employeeId && monthRaw) {
+      if (!/^\d{4}-\d{2}$/.test(monthRaw)) return errorResponse('Invalid month (YYYY-MM)', 400);
+      let start: Date;
+      let end: Date;
+      try {
+        ({ start, end } = monthBoundsYmd(monthRaw));
+      } catch {
+        return errorResponse('Invalid month (YYYY-MM)', 400);
+      }
+
+      const employee = await prisma.employee.findFirst({
+        where: { companyId, id: employeeId },
+        select: { id: true },
+      });
+      if (!employee) return errorResponse('Employee not found', 404);
+
+      const rows = await prisma.attendanceEntry.findMany({
+        where: { companyId, employeeId, workDate: { gte: start, lte: end } },
+        include: attendanceEntryInclude,
+        orderBy: [{ workDate: 'asc' }],
+      });
+
+      return successResponse({
+        month: monthRaw,
+        employeeId,
+        items: rows.map((row) => serializeAttendanceRow(row, typeSettings)),
+      });
+    }
+
+    if (!workDateRaw) {
+      return errorResponse('workDate (YYYY-MM-DD) or employeeId+month (YYYY-MM) query required', 400);
+    }
+
+    let workDateYmd: string;
+    try {
+      workDateYmd = ymdFromInput(workDateRaw);
+    } catch {
+      return errorResponse('Invalid workDate', 400);
+    }
+    const workDate = dateFromYmd(workDateYmd);
+    const limitParam = searchParams.get('limit');
+    const where = { companyId, workDate };
 
     if (limitParam !== null) {
       const limit = parseListLimit(limitParam);

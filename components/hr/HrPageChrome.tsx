@@ -23,6 +23,7 @@ function labelForSegment(segment: string, previous?: string) {
     new: 'New Employee',
     schedule: 'Schedule',
     attendance: 'Attendance',
+    employee: 'Employee attendance',
     create: 'Day sheet',
     boilerplate: 'Attendance Boilerplate',
     reports: 'Reports',
@@ -76,6 +77,7 @@ const CLICKABLE_HR_ROUTES = new Set([
   '/hr/employees',
   '/hr/schedule',
   '/hr/attendance',
+  '/hr/attendance/employee',
   '/hr/reports/attendance',
 ]);
 

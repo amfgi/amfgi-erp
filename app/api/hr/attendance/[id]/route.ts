@@ -54,7 +54,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     },
   });
   if (!existing) return errorResponse('Not found', 404);
-  if (existing.workflowStatus === 'APPROVED') return errorResponse('Attendance row is approved', 403);
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
@@ -143,4 +142,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     action: 'updated',
   });
   return successResponse(row);
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await requireCompanySession();
+  if (!ctx.ok) return ctx.response;
+  const { session, companyId } = ctx;
+  if (!requirePerm(session.user, P.HR_ATTENDANCE_EDIT)) return errorResponse('Forbidden', 403);
+  const { id } = await params;
+
+  const existing = await prisma.attendanceEntry.findFirst({
+    where: { id, companyId },
+    select: { id: true, leaveRequestId: true },
+  });
+  if (!existing) return errorResponse('Not found', 404);
+  if (existing.leaveRequestId) {
+    return errorResponse('This row is linked to a leave request. Remove it from leave management instead.', 403);
+  }
+
+  await prisma.attendanceEntry.delete({ where: { id } });
+  publishLiveUpdate({
+    companyId,
+    channel: 'hr',
+    entity: 'attendance',
+    action: 'deleted',
+  });
+  return successResponse({ ok: true });
 }

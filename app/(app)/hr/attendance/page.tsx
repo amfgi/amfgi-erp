@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -183,7 +184,11 @@ export default function HrAttendancePage() {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">HR attendance</p>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Attendance overview</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Pending published schedules and saved day sheets for the selected month.
+            Pending published schedules and saved day sheets for the selected month. For one employee at a time, use{' '}
+            <Link href="/hr/attendance/employee" className="font-medium text-foreground underline-offset-2 hover:underline">
+              employee attendance
+            </Link>
+            .
           </p>
           {monthStats ? (
             <p className="text-xs text-muted-foreground">

@@ -48,6 +48,14 @@ const HUB_SECTIONS: Array<{
         perms: ['hr.attendance.view'],
       },
       {
+        href: '/hr/attendance/employee',
+        title: 'Employee attendance',
+        description: 'Add, edit, or delete individual attendance rows for one employee and month at a time.',
+        badge: 'Individual',
+        tone: 'amber',
+        perms: ['hr.attendance.view'],
+      },
+      {
         href: '/hr/reports/attendance',
         title: 'Monthly attendance reports',
         description: 'Review employee-wise monthly attendance and export Excel files for one employee or the full month.',
