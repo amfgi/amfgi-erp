@@ -64,28 +64,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return errorResponse('Custom title is only allowed for custom documents', 422);
   }
 
-  const data: Prisma.EmployeeDocumentUpdateInput = {};
+  const data: Prisma.EmployeeDocumentUncheckedUpdateInput = {};
   if (d.documentTypeId !== undefined) {
-    data.documentType = {
-      connect: {
-        companyId_id: {
-          companyId,
-          id: d.documentTypeId,
-        },
-      },
-    };
+    data.documentTypeId = d.documentTypeId;
   }
   if (d.visaPeriodId !== undefined) {
-    data.visaPeriod = d.visaPeriodId
-      ? {
-          connect: {
-            companyId_id: {
-              companyId,
-              id: d.visaPeriodId,
-            },
-          },
-        }
-      : { disconnect: true };
+    data.visaPeriodId = d.visaPeriodId;
   }
   if (d.documentNumber !== undefined) data.documentNumber = d.documentNumber?.trim() || null;
   if (d.issueDate !== undefined) data.issueDate = d.issueDate ? new Date(d.issueDate) : null;
@@ -98,7 +82,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const trimmed = d.customTitle?.trim() || null;
     if (trimmed) {
       data.customFields = { customTitle: trimmed };
-    } else if (d.documentTypeId !== undefined && nextTypeSlug !== EMPLOYEE_DOC_OTHER_SLUG) {
+    } else if (
+      nextTypeSlug !== EMPLOYEE_DOC_OTHER_SLUG &&
+      existing.documentType.slug === EMPLOYEE_DOC_OTHER_SLUG
+    ) {
       data.customFields = Prisma.DbNull;
     }
   }
