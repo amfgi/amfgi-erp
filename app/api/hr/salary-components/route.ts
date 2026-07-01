@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { ensureDefaultAllowanceTypes } from '@/lib/hr/payroll/seedAllowanceTypes';
+import { canHrPayrollCatalogRead } from '@/lib/hr/compensationPermissions';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
@@ -21,8 +22,10 @@ const CreateSchema = z.object({
 export async function GET() {
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+  const { companyId, session } = ctx;
+  if (!canHrPayrollCatalogRead(session.user)) {
+    return errorResponse('Forbidden', 403);
+  }
 
   await ensureDefaultAllowanceTypes(prisma, companyId);
 

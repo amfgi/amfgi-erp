@@ -261,11 +261,13 @@ function CompensationDetailBody({ pkg }: { pkg: CompensationPackage }) {
 
 export default function EmployeeCompensationPanel({
   employeeId,
-  canRecord,
+  canCreate,
+  canEdit,
   canDelete,
 }: {
   employeeId: string;
-  canRecord: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
   canDelete: boolean;
 }) {
   const [packages, setPackages] = useState<CompensationPackage[]>([]);
@@ -312,6 +314,8 @@ export default function EmployeeCompensationPanel({
     () => sortedPackages.find((p) => !p.effectiveTo) ?? sortedPackages[0] ?? null,
     [sortedPackages]
   );
+
+  const canOpenCompensationForm = currentPackage ? canEdit : canCreate;
 
   const selectedPayType = useMemo(
     () => payTypes.find((pt) => pt.id === payTypeId),
@@ -393,11 +397,13 @@ export default function EmployeeCompensationPanel({
   };
 
   const openForm = () => {
+    if (!canOpenCompensationForm) return;
     resetForm();
     setFormOpen(true);
   };
 
   const save = async () => {
+    if (!canOpenCompensationForm) return;
     if (!payTypeId) {
       toast.error('Select a salary structure');
       return;
@@ -524,7 +530,7 @@ export default function EmployeeCompensationPanel({
         </div>
       ) : null}
 
-      {canRecord ? (
+      {canOpenCompensationForm ? (
         <Button size="sm" variant="outline" onClick={openForm}>
           {currentPackage ? 'Record change' : 'Add compensation'}
         </Button>

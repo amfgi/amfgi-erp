@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
 import { parsePayTypeConfig } from '@/lib/hr/payroll/parsePayTypeConfig';
 import { ensureDefaultPayTypes } from '@/lib/hr/payroll/seedPayTypes';
+import { canHrPayrollCatalogRead } from '@/lib/hr/compensationPermissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
@@ -17,8 +18,10 @@ const CreateSchema = z.object({
 export async function GET() {
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+  const { companyId, session } = ctx;
+  if (!canHrPayrollCatalogRead(session.user)) {
+    return errorResponse('Forbidden', 403);
+  }
 
   await ensureDefaultPayTypes(prisma, companyId);
 

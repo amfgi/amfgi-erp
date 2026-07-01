@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db/prisma';
+import { canHrCompensationReadVisaPeriods } from '@/lib/hr/compensationPermissions';
 import { canHrVisaCreate, canHrVisaView } from '@/lib/hr/visaPermissions';
 import { requireCompanySession } from '@/lib/hr/requireCompanySession';
 import { resolveRouteEmployeeId } from '@/lib/hr/resolveRouteEmployeeId';
@@ -19,7 +20,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
   const { session, companyId } = ctx;
-  if (!canHrVisaView(session.user)) return errorResponse('Forbidden', 403);
+  if (!canHrVisaView(session.user) && !canHrCompensationReadVisaPeriods(session.user)) {
+    return errorResponse('Forbidden', 403);
+  }
   const employeeId = await resolveRouteEmployeeId(req, params);
   if (!employeeId) return errorResponse('Employee id required', 400);
 

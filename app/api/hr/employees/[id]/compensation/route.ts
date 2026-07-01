@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import {
-  canHrCompensationRecordPackage,
+  canHrCompensationPostPackage,
   canHrCompensationView,
 } from '@/lib/hr/compensationPermissions';
 import { requireCompanySession } from '@/lib/hr/requireCompanySession';
@@ -57,12 +57,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
   const { companyId, session } = ctx;
-  if (!canHrCompensationRecordPackage(session.user)) return errorResponse('Forbidden', 403);
   const employeeId = await resolveRouteEmployeeId(req, params);
   if (!employeeId) return errorResponse('Employee id required', 400);
 
   const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
   if (!emp) return errorResponse('Employee not found', 404);
+
+  const existingCount = await prisma.employeeCompensation.count({
+    where: { companyId, employeeId },
+  });
+  if (!canHrCompensationPostPackage(session.user, existingCount > 0)) {
+    return errorResponse('Forbidden', 403);
+  }
 
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);

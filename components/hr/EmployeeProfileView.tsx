@@ -38,8 +38,9 @@ import {
   canHrAccountAccessView,
 } from '@/lib/hr/accountAccessPermissions';
 import {
+  canHrCompensationAddPackage,
   canHrCompensationDelete,
-  canHrCompensationRecordPackage,
+  canHrCompensationRecordChange,
   canHrCompensationView,
 } from '@/lib/hr/compensationPermissions';
 import {
@@ -340,7 +341,8 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   const canView = isSA || perms.includes('hr.employee.view');
   const canEdit = isSA || perms.includes('hr.employee.edit');
   const canCompensation = session?.user ? canHrCompensationView(session.user) : false;
-  const canCompensationRecord = session?.user ? canHrCompensationRecordPackage(session.user) : false;
+  const canCompensationAdd = session?.user ? canHrCompensationAddPackage(session.user) : false;
+  const canCompensationEdit = session?.user ? canHrCompensationRecordChange(session.user) : false;
   const canCompensationDelete = session?.user ? canHrCompensationDelete(session.user) : false;
   const canVisa = session?.user ? canHrVisaView(session.user) : false;
   const canVisaCreate = session?.user ? canHrVisaCreate(session.user) : false;
@@ -1970,7 +1972,8 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             <div className="rounded-2xl border border-white/10 bg-slate-900/35 p-6">
               <EmployeeCompensationPanel
                 employeeId={employeeId}
-                canRecord={canCompensationRecord}
+                canCreate={canCompensationAdd}
+                canEdit={canCompensationEdit}
                 canDelete={canCompensationDelete}
               />
             </div>

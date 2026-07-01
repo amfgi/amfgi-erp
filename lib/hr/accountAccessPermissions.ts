@@ -5,42 +5,24 @@ function userPerms(user: AppSessionUser): string[] {
   return user.permissions ?? [];
 }
 
-function hasGranularHrAccountAccessPermissions(permissions: string[]): boolean {
-  return (
-    permissions.includes(P.HR_ACCOUNT_ACCESS_VIEW) ||
-    permissions.includes(P.HR_ACCOUNT_ACCESS_CREATE) ||
-    permissions.includes(P.HR_ACCOUNT_ACCESS_EDIT) ||
-    permissions.includes(P.HR_ACCOUNT_ACCESS_DELETE)
-  );
-}
-
-/** Legacy roles with only `hr.employee.edit` retain full account-access management. */
-export function hasLegacyHrAccountAccessFullAccess(permissions: string[]): boolean {
-  return permissions.includes(P.HR_EMPLOYEE_EDIT) && !hasGranularHrAccountAccessPermissions(permissions);
-}
-
 export function canHrAccountAccessView(user: AppSessionUser): boolean {
   if (user.isSuperAdmin) return true;
-  const perms = userPerms(user);
-  return perms.includes(P.HR_ACCOUNT_ACCESS_VIEW) || perms.includes(P.HR_EMPLOYEE_VIEW);
+  return userPerms(user).includes(P.HR_ACCOUNT_ACCESS_VIEW);
 }
 
 export function canHrAccountAccessCreate(user: AppSessionUser): boolean {
   if (user.isSuperAdmin) return true;
-  const perms = userPerms(user);
-  return perms.includes(P.HR_ACCOUNT_ACCESS_CREATE) || hasLegacyHrAccountAccessFullAccess(perms);
+  return userPerms(user).includes(P.HR_ACCOUNT_ACCESS_CREATE);
 }
 
 export function canHrAccountAccessEdit(user: AppSessionUser): boolean {
   if (user.isSuperAdmin) return true;
-  const perms = userPerms(user);
-  return perms.includes(P.HR_ACCOUNT_ACCESS_EDIT) || hasLegacyHrAccountAccessFullAccess(perms);
+  return userPerms(user).includes(P.HR_ACCOUNT_ACCESS_EDIT);
 }
 
 export function canHrAccountAccessDelete(user: AppSessionUser): boolean {
   if (user.isSuperAdmin) return true;
-  const perms = userPerms(user);
-  return perms.includes(P.HR_ACCOUNT_ACCESS_DELETE) || hasLegacyHrAccountAccessFullAccess(perms);
+  return userPerms(user).includes(P.HR_ACCOUNT_ACCESS_DELETE);
 }
 
 type AccountPatchFields = {

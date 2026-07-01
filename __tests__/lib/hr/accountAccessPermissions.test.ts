@@ -5,7 +5,6 @@ import {
   canHrAccountAccessDelete,
   canHrAccountAccessEdit,
   canHrAccountAccessView,
-  hasLegacyHrAccountAccessFullAccess,
 } from '@/lib/hr/accountAccessPermissions';
 
 describe('accountAccessPermissions', () => {
@@ -14,16 +13,15 @@ describe('accountAccessPermissions', () => {
     permissions,
   });
 
-  it('grants full access to legacy hr.employee.edit without granular account perms', () => {
-    const perms = [P.HR_EMPLOYEE_EDIT];
-    expect(hasLegacyHrAccountAccessFullAccess(perms)).toBe(true);
-    expect(canHrAccountAccessCreate(user(perms))).toBe(true);
-    expect(canHrAccountAccessDelete(user(perms))).toBe(true);
+  it('does not grant account access from hr.employee.view or hr.employee.edit alone', () => {
+    expect(canHrAccountAccessView(user([P.HR_EMPLOYEE_VIEW]))).toBe(false);
+    expect(canHrAccountAccessCreate(user([P.HR_EMPLOYEE_EDIT]))).toBe(false);
+    expect(canHrAccountAccessEdit(user([P.HR_EMPLOYEE_EDIT]))).toBe(false);
+    expect(canHrAccountAccessDelete(user([P.HR_EMPLOYEE_EDIT]))).toBe(false);
   });
 
   it('does not elevate employee.edit when granular account view is assigned', () => {
     const perms = [P.HR_EMPLOYEE_EDIT, P.HR_ACCOUNT_ACCESS_VIEW];
-    expect(hasLegacyHrAccountAccessFullAccess(perms)).toBe(false);
     expect(canHrAccountAccessView(user(perms))).toBe(true);
     expect(canHrAccountAccessEdit(user(perms))).toBe(false);
     expect(canHrAccountAccessCreate(user(perms))).toBe(false);
