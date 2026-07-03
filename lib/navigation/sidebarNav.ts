@@ -123,7 +123,7 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 		id: 'hr',
 		label: 'Schedule & Attendance',
 		icon: CalendarClock,
-		href: '/hr',
+		href: '/hr/schedule',
 		anyPerms: ['hr.schedule.view', 'hr.attendance.view'],
 		children: [
 			{
