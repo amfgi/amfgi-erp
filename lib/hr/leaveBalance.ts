@@ -16,7 +16,7 @@ import {
   type LeaveTypeBalanceRow,
 } from '@/lib/hr/leaveTypeBalances';
 import { filterLeaveTypesForEmployeePortal } from '@/lib/hr/leaveTypeRules';
-import { countLeaveDaysInclusive, usesLeaveBalance } from '@/lib/hr/leaveTypes';
+import { countLeaveDaysInclusive } from '@/lib/hr/leaveTypes';
 
 type PrismaLike = PrismaClient | Prisma.TransactionClient;
 
@@ -266,12 +266,14 @@ export async function getEmployeePortalLeaveBalance(
 }
 
 export function leaveDaysForRequest(
-  leaveType: LeaveRequestType,
+  // Kept for call-site compatibility; balance deduction is driven by the
+  // configured `deductFromBalance` rule, not the legacy leave-type enum.
+  _leaveType: LeaveRequestType,
   startDate: Date,
   endDate: Date,
   deductFromBalance: boolean
 ): number {
-  if (!deductFromBalance || !usesLeaveBalance(leaveType)) return 0;
+  if (!deductFromBalance) return 0;
   return countLeaveDaysInclusive(startDate, endDate);
 }
 

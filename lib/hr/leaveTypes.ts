@@ -42,3 +42,16 @@ export function datesInRangeInclusive(start: Date, end: Date): Date[] {
 export function usesLeaveBalance(type: LeaveRequestType): boolean {
   return type === 'ANNUAL' || type === 'ONE_DAY';
 }
+
+/**
+ * True when two inclusive date ranges share at least one day.
+ * Both ranges are treated as [start, end] inclusive (leave is booked per whole day).
+ */
+export function leaveRangesOverlapInclusive(
+  startA: Date,
+  endA: Date,
+  startB: Date,
+  endB: Date
+): boolean {
+  return startA.getTime() <= endB.getTime() && endA.getTime() >= startB.getTime();
+}
