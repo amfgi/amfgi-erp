@@ -24,6 +24,7 @@ import {
   useSidebar,
 } from '@/components/ui/shadcn/sidebar';
 import {
+  collectSidebarHrefs,
   filterSidebarNavEntries,
   isSidebarGroupActive,
   isSidebarPathActive,
@@ -63,14 +64,16 @@ function SidebarNavGroupItem({
   group,
   pathname,
   onNavigate,
+  siblingHrefs,
 }: {
   group: SidebarNavGroup;
   pathname: string;
   onNavigate: () => void;
+  siblingHrefs: string[];
 }) {
   const { state, isMobile } = useSidebar();
   const isIconCollapsed = state === 'collapsed' && !isMobile;
-  const groupActive = isSidebarGroupActive(pathname, group);
+  const groupActive = isSidebarGroupActive(pathname, group, siblingHrefs);
   const [open, setOpen] = useState(groupActive);
   const Icon = group.icon;
   const childHrefs = group.children.map((c) => c.href);
@@ -170,15 +173,24 @@ function SidebarNavEntryItem({
   entry,
   pathname,
   onNavigate,
+  siblingHrefs,
 }: {
   entry: SidebarNavEntry;
   pathname: string;
   onNavigate: () => void;
+  siblingHrefs: string[];
 }) {
   if (entry.type === 'link') {
     return <SidebarNavLinkItem item={entry} pathname={pathname} onNavigate={onNavigate} />;
   }
-  return <SidebarNavGroupItem group={entry} pathname={pathname} onNavigate={onNavigate} />;
+  return (
+    <SidebarNavGroupItem
+      group={entry}
+      pathname={pathname}
+      onNavigate={onNavigate}
+      siblingHrefs={siblingHrefs}
+    />
+  );
 }
 
 export function SidebarNavMenu({ visibility }: { visibility: SidebarNavVisibility }) {
@@ -186,6 +198,7 @@ export function SidebarNavMenu({ visibility }: { visibility: SidebarNavVisibilit
   const { isMobile, setOpenMobile } = useSidebar();
   const source = visibility.selfServiceOnly ? SIDEBAR_SELF_SERVICE_ENTRIES : SIDEBAR_NAV_ENTRIES;
   const entries = filterSidebarNavEntries(source, visibility);
+  const allHrefs = collectSidebarHrefs(source);
 
   const onNavigate = () => {
     if (isMobile) setOpenMobile(false);
@@ -199,6 +212,7 @@ export function SidebarNavMenu({ visibility }: { visibility: SidebarNavVisibilit
           entry={entry}
           pathname={pathname}
           onNavigate={onNavigate}
+          siblingHrefs={allHrefs}
         />
       ))}
     </SidebarMenu>

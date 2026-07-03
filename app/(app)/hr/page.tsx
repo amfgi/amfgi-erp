@@ -113,18 +113,10 @@ const HUB_SECTIONS: Array<{
     ],
   },
   {
-    id: 'payroll-leave-holidays',
-    title: 'Payroll, leave & holidays',
-    description: 'Leave requests, pay preview and runs, holiday calendar, and payroll rules.',
+    id: 'payroll-holidays',
+    title: 'Payroll & holidays',
+    description: 'Pay preview and runs, holiday calendar, and payroll rules. Leave now lives under Leave Management.',
     cards: [
-      {
-        href: '/hr/leave',
-        title: 'Leave management',
-        description: 'Review pending leave, record official leave for employees, and track balances from leave types setup.',
-        badge: 'Leave',
-        tone: 'amber',
-        perms: ['hr.leave.view', 'hr.leave.approve', 'hr.leave.edit', 'hr.leave.delete'],
-      },
       {
         href: '/hr/payroll/preview',
         title: 'Payroll preview',
@@ -140,14 +132,6 @@ const HUB_SECTIONS: Array<{
         badge: 'History',
         tone: 'sky',
         perms: ['hr.payroll.compensation'],
-      },
-      {
-        href: '/hr/settings/leave-types',
-        title: 'Leave types',
-        description: 'Configure leave categories, allocation rules, portal visibility, and tiered pay rules.',
-        badge: 'Leave',
-        tone: 'amber',
-        perms: ['hr.payroll.settings'],
       },
       {
         href: '/hr/settings/company-holidays',
@@ -204,7 +188,7 @@ export default function HrHubPage() {
       <WorkspaceHubHeader
         eyebrow="People"
         title="HR operations hub"
-        description="Schedule and attendance, employee records, payroll, leave, and holidays — grouped in three columns."
+        description="Schedule and attendance, employee records, payroll, and holidays. Leave is managed in the Leave Management section."
         trailing={`${totalVisibleLinks} link${totalVisibleLinks === 1 ? '' : 's'}`}
       />
 

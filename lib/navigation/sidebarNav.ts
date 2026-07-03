@@ -5,6 +5,7 @@ import {
   Building,
   Building2,
   Calendar,
+  CalendarCheck,
   LayoutDashboard,
   Package,
   Settings,
@@ -146,12 +147,6 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				label: 'Employee attendance',
 				perm: 'hr.attendance.view',
 			},
-			{ href: '/hr/leave', label: 'Leave management', perm: 'hr.leave.view' },
-			{
-				href: '/hr/leave/balances',
-				label: 'Leave balances',
-				perm: 'hr.leave.view',
-			},
 			{
 				href: '/hr/employees',
 				label: 'Employees',
@@ -171,6 +166,33 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				href: '/hr/payroll/runs',
 				label: 'Pay runs',
 				perm: 'hr.payroll.compensation',
+			},
+		],
+	},
+	{
+		type: 'group',
+		id: 'leave',
+		label: 'Leave Management',
+		icon: CalendarCheck,
+		href: '/hr/leave',
+		anyPerms: [
+			'hr.leave.view',
+			'hr.leave.approve',
+			'hr.leave.edit',
+			'hr.leave.delete',
+			'hr.payroll.settings',
+		],
+		children: [
+			{ href: '/hr/leave', label: 'Leave management', perm: 'hr.leave.view' },
+			{
+				href: '/hr/leave/balances',
+				label: 'Leave balances',
+				perm: 'hr.leave.view',
+			},
+			{
+				href: '/hr/settings/leave-types',
+				label: 'Leave types',
+				perm: 'hr.payroll.settings',
 			},
 		],
 	},
@@ -324,13 +346,30 @@ export function isSidebarPathActive(
   return !longerSibling;
 }
 
+/** Collect every navigable href across entries (group hubs, group children, links). */
+export function collectSidebarHrefs(entries: SidebarNavEntry[]): string[] {
+  const hrefs: string[] = [];
+  for (const entry of entries) {
+    if (entry.type === 'link') {
+      hrefs.push(entry.href);
+    } else {
+      if (entry.href) hrefs.push(entry.href);
+      for (const child of entry.children) hrefs.push(child.href);
+    }
+  }
+  return hrefs;
+}
+
 export function isSidebarGroupActive(
   pathname: string,
   group: SidebarNavGroup,
+  siblingHrefs: string[] = [],
 ): boolean {
-  if (group.href && isSidebarPathActive(pathname, group.href)) return true;
-  const childHrefs = group.children.map((c) => c.href);
+  // Include sibling hrefs so a group whose hub is a path prefix of another
+  // section (e.g. /hr vs /hr/leave) does not steal the active state.
+  const scopedSiblings = [...group.children.map((c) => c.href), ...siblingHrefs];
+  if (group.href && isSidebarPathActive(pathname, group.href, scopedSiblings)) return true;
   return group.children.some((child) =>
-    isSidebarPathActive(pathname, child.href, childHrefs),
+    isSidebarPathActive(pathname, child.href, scopedSiblings),
   );
 }
