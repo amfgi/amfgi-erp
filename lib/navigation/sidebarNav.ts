@@ -6,13 +6,13 @@ import {
   Building2,
   Calendar,
   CalendarCheck,
+  CalendarClock,
   Contact,
   LayoutDashboard,
   Package,
   Settings,
   ShieldCheck,
   User,
-  UserCircle,
   UserCog,
   Users,
   Wallet,
@@ -121,18 +121,10 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 	{
 		type: 'group',
 		id: 'hr',
-		label: 'HR',
-		icon: UserCircle,
+		label: 'Schedule & Attendance',
+		icon: CalendarClock,
 		href: '/hr',
-		anyPerms: [
-			'hr.employee.view',
-			'hr.schedule.view',
-			'hr.attendance.view',
-			'hr.leave.view',
-			'hr.payroll.compensation',
-			P.HR_DOCUMENT_TYPE_VIEW,
-			P.HR_SETTINGS_DOC_TYPES,
-		],
+		anyPerms: ['hr.schedule.view', 'hr.attendance.view'],
 		children: [
 			{
 				href: '/hr/schedule',
@@ -147,6 +139,11 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			{
 				href: '/hr/attendance/employee',
 				label: 'Employee attendance',
+				perm: 'hr.attendance.view',
+			},
+			{
+				href: '/hr/reports/attendance',
+				label: 'Monthly attendance reports',
 				perm: 'hr.attendance.view',
 			},
 		],

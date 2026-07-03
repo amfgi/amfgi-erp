@@ -65,44 +65,6 @@ const HUB_SECTIONS: Array<{
       },
     ],
   },
-  {
-    id: 'hr-areas',
-    title: 'People, leave & payroll',
-    description: 'Jump to the dedicated Employees, Leave Management, and Payroll sections.',
-    cards: [
-      {
-        href: '/hr/employees',
-        title: 'Employees',
-        description: 'Employee records, employment options, type timings, expertise catalog, and document types.',
-        badge: 'People',
-        tone: 'emerald',
-        perms: [
-          'hr.employee.view',
-          'hr.employee.edit',
-          'hr.settings.employee_types',
-          'hr.settings.expertise_catalog',
-          'hr.document_type.view',
-          'hr.settings.document_types',
-        ],
-      },
-      {
-        href: '/hr/leave',
-        title: 'Leave management',
-        description: 'Review and record leave, track balances, and configure leave types.',
-        badge: 'Leave',
-        tone: 'amber',
-        perms: ['hr.leave.view', 'hr.leave.approve', 'hr.leave.edit', 'hr.leave.delete', 'hr.payroll.settings'],
-      },
-      {
-        href: '/hr/payroll/preview',
-        title: 'Payroll',
-        description: 'Payroll preview and runs, salary structure and components, and company holidays.',
-        badge: 'Payroll',
-        tone: 'sky',
-        perms: ['hr.payroll.compensation', 'hr.payroll.settings'],
-      },
-    ],
-  },
 ];
 
 function canSeeItem(isSuperAdmin: boolean, permissions: string[], item: HubItem) {
@@ -131,15 +93,15 @@ export default function HrHubPage() {
     <div className="flex w-full min-w-0 flex-col gap-5">
       <WorkspaceHubHeader
         eyebrow="People"
-        title="HR operations hub"
-        description="Your HR home — schedule and attendance actions, plus quick links to the Employees, Leave Management, and Payroll sections."
+        title="Schedule & attendance"
+        description="Plan daily schedules, manage attendance sheets, and export monthly records. Employees, leave, and payroll each have their own sidebar section."
         trailing={`${totalVisibleLinks} link${totalVisibleLinks === 1 ? '' : 's'}`}
       />
 
       {visibleSections.length === 0 ? (
         <Alert>
-          <AlertTitle>No HR sections available</AlertTitle>
-          <AlertDescription>Your account does not currently have HR permissions for this company.</AlertDescription>
+          <AlertTitle>No schedule or attendance sections available</AlertTitle>
+          <AlertDescription>Your account does not currently have schedule or attendance permissions for this company.</AlertDescription>
         </Alert>
       ) : (
         <WorkspaceHubSectionsGrid columns={3}>
