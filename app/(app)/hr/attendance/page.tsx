@@ -10,6 +10,12 @@ import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/shadcn/context-menu';
 import Modal from '@/components/ui/Modal';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
 import { cn } from '@/lib/utils';
@@ -98,7 +104,6 @@ export default function HrAttendancePage() {
   useEffect(() => {
     if (linkedMonth) setMonth(linkedMonth);
   }, [linkedMonth]);
-  const [deletingDate, setDeletingDate] = useState<string | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [pickerDate, setPickerDate] = useState(todayYmd());
   const [noScheduleDate, setNoScheduleDate] = useState<string | null>(null);
@@ -152,7 +157,6 @@ export default function HrAttendancePage() {
 
   const deleteAttendanceByDate = async (dateYmd: string) => {
     if (!window.confirm(`Delete all attendance entries for ${dateYmd}?`)) return;
-    setDeletingDate(dateYmd);
     const res = await fetch(`/api/hr/attendance?workDate=${encodeURIComponent(dateYmd)}`, { method: 'DELETE' });
     const json = await res.json();
     if (!res.ok || !json?.success) {
@@ -161,7 +165,6 @@ export default function HrAttendancePage() {
       toast.success(`Deleted ${json.data?.deletedRows ?? 0} rows`);
       await refreshOverview();
     }
-    setDeletingDate(null);
   };
 
   if (!canView) {
@@ -239,11 +242,10 @@ export default function HrAttendancePage() {
                   <th className={thClass}>Assignment groups</th>
                   <th className={thClass}>Attendance rows</th>
                   <th className={thClass}>Status</th>
-                  <th className={cn(thClass, 'text-right')}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <TableSkeleton rows={6} columns={6} />
+                <TableSkeleton rows={6} columns={5} />
               </tbody>
             </table>
           </div>
@@ -261,19 +263,20 @@ export default function HrAttendancePage() {
                   <th className={thClass}>Assignment groups</th>
                   <th className={thClass}>Attendance rows</th>
                   <th className={thClass}>Status</th>
-                  <th className={cn(thClass, 'text-right')}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {days.map((day) => {
                   const dateYmd = toDateYmd(day.workDate);
                   const isPending = day.kind === 'pending';
+                  // Open sheet: pending days need edit rights (creating a sheet);
+                  // saved day sheets can be opened by anyone who can view.
+                  const canOpenSheet = isPending ? canEdit : true;
+                  const canDeleteSheet = !isPending && canEdit;
+                  const hasRowActions = canOpenSheet || canDeleteSheet;
 
-                  return (
-                    <tr
-                      key={`${day.kind}-${dateYmd}`}
-                      className="border-b border-border transition-colors hover:bg-muted/40"
-                    >
+                  const rowCells = (
+                    <>
                       <td className={cn(tdClass, 'font-medium')}>{formatDateLabel(dateYmd)}</td>
                       <td className={cn(tdClass, 'text-muted-foreground')}>
                         {isPending ? 'Schedule' : 'Day sheet'}
@@ -287,56 +290,47 @@ export default function HrAttendancePage() {
                       <td className={tdClass}>
                         <AttendanceStatusBadge variant={isPending ? 'pending' : 'saved'} />
                       </td>
-                      <td className={cn(tdClass, 'text-right')}>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          {isPending ? (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => router.push(scheduleListHref(dateYmd))}
-                              >
-                                Schedule
-                              </Button>
-                              {canEdit ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={checkingSchedule}
-                                  onClick={() => void openAttendanceSheetWithScheduleCheck(dateYmd)}
-                                >
-                                  Open sheet
-                                </Button>
-                              ) : null}
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                disabled={checkingSchedule}
-                                onClick={() => void openAttendanceSheetWithScheduleCheck(dateYmd)}
-                              >
-                                Open sheet
-                              </Button>
-                              {canEdit ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={deletingDate === dateYmd}
-                                  onClick={() => void deleteAttendanceByDate(dateYmd)}
-                                >
-                                  {deletingDate === dateYmd ? 'Deleting…' : 'Delete'}
-                                </Button>
-                              ) : null}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                    </>
+                  );
+
+                  const rowClassName = cn(
+                    'border-b border-border transition-colors hover:bg-muted/40',
+                    hasRowActions && 'cursor-context-menu',
+                  );
+
+                  if (!hasRowActions) {
+                    return (
+                      <tr key={`${day.kind}-${dateYmd}`} className={rowClassName}>
+                        {rowCells}
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <ContextMenu key={`${day.kind}-${dateYmd}`}>
+                      <ContextMenuTrigger asChild>
+                        <tr className={rowClassName} title="Right-click for actions">
+                          {rowCells}
+                        </tr>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        {canOpenSheet ? (
+                          <ContextMenuItem
+                            onSelect={() => void openAttendanceSheetWithScheduleCheck(dateYmd)}
+                          >
+                            Open sheet
+                          </ContextMenuItem>
+                        ) : null}
+                        {canDeleteSheet ? (
+                          <ContextMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => void deleteAttendanceByDate(dateYmd)}
+                          >
+                            Delete
+                          </ContextMenuItem>
+                        ) : null}
+                      </ContextMenuContent>
+                    </ContextMenu>
                   );
                 })}
               </tbody>

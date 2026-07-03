@@ -179,8 +179,8 @@ export default function HrScheduleListPage() {
       {linkedWorkDate ? (
         <Alert className="border-cyan-500/30 bg-cyan-500/10">
           <AlertDescription className="text-cyan-950 dark:text-cyan-100">
-            Linked to <strong>{formatDateLabel(linkedWorkDate)}</strong>. Open <strong>Plan</strong> on that row, or
-            create a new draft for the date.
+            Linked to <strong>{formatDateLabel(linkedWorkDate)}</strong>. <strong>Double-click</strong> that row to open
+            it, or create a new draft for the date.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -213,7 +213,7 @@ export default function HrScheduleListPage() {
             <table className="min-w-[980px] w-full text-left text-sm">
               <thead className="border-b border-border bg-muted/50">
                 <tr>
-                  {['Date', 'Workflow', 'Teams', 'Absences', 'Attendance', 'Actions'].map((h) => (
+                  {['Date', 'Workflow', 'Teams', 'Absences', 'Attendance'].map((h) => (
                     <th
                       key={h}
                       className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:pl-5 last:pr-5"
@@ -224,7 +224,7 @@ export default function HrScheduleListPage() {
                 </tr>
               </thead>
               <tbody>
-                <TableSkeleton rows={6} columns={6} />
+                <TableSkeleton rows={6} columns={5} />
               </tbody>
             </table>
           </div>
@@ -242,9 +242,6 @@ export default function HrScheduleListPage() {
                   <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Teams</th>
                   <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Absences</th>
                   <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Attendance</th>
-                  <th className="px-5 py-3 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Actions
-                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border text-muted-foreground">
@@ -264,17 +261,16 @@ export default function HrScheduleListPage() {
                   return (
                     <tr
                       key={row.id}
-                      className={cn('transition-colors hover:bg-muted/40', isLinkedRow && 'bg-muted/25')}
+                      onDoubleClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
+                      title="Double-click to open"
+                      className={cn(
+                        'cursor-pointer select-none transition-colors hover:bg-muted/40',
+                        isLinkedRow && 'bg-muted/25',
+                      )}
                     >
                       <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
-                          className="text-left"
-                        >
-                          <p className="font-medium text-foreground">{formatDateLabel(workDateYmd)}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{workDateYmd}</p>
-                        </button>
+                        <p className="font-medium text-foreground">{formatDateLabel(workDateYmd)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{workDateYmd}</p>
                       </td>
                       <td className="px-5 py-4">
                         <Badge variant="outline" className={cn('font-medium', workflowBadgeClasses(row))}>
@@ -297,24 +293,6 @@ export default function HrScheduleListPage() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {attendanceReady ? 'Rows available' : 'Not generated yet'}
                         </p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            type="button"
-                            onClick={() =>
-                              window.open(
-                                `/hr/schedule/${workDateYmd}`,
-                                '_blank',
-                                'noopener,noreferrer',
-                              )
-                            }
-                          >
-                            Build Plan
-                          </Button>
-                        </div>
                       </td>
                     </tr>
                   );
