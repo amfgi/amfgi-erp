@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import {
-  canHrCompensationPostPackage,
+  canHrCompensationAddPackage,
+  canHrCompensationRecordChange,
   canHrCompensationView,
 } from '@/lib/hr/compensationPermissions';
 import { requireCompanySession } from '@/lib/hr/requireCompanySession';
@@ -66,7 +67,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const existingCount = await prisma.employeeCompensation.count({
     where: { companyId, employeeId },
   });
-  if (!canHrCompensationPostPackage(session.user, existingCount > 0)) {
+  if (existingCount === 0) {
+    if (!canHrCompensationAddPackage(session.user)) {
+      return errorResponse('Forbidden', 403);
+    }
+  } else if (!canHrCompensationRecordChange(session.user)) {
     return errorResponse('Forbidden', 403);
   }
 
