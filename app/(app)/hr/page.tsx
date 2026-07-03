@@ -65,53 +65,6 @@ const HUB_SECTIONS: Array<{
       },
     ],
   },
-  {
-    id: 'employees',
-    title: 'Employees',
-    description: 'Employee records, workforce attributes, documents, and profile setup.',
-    cards: [
-      {
-        href: '/hr/employees',
-        title: 'Employees',
-        description: 'Manage employee records, profile details, default timing, documents, and portal access.',
-        badge: 'People',
-        tone: 'emerald',
-        perms: ['hr.employee.view'],
-      },
-      {
-        href: '/hr/settings/employment-options',
-        title: 'Employment options',
-        description: 'Manage designation, department, and employment type lists used on employee profiles.',
-        badge: 'Catalog',
-        tone: 'amber',
-        perms: ['hr.employee.edit'],
-      },
-      {
-        href: '/hr/settings/employee-types',
-        title: 'Employee type timings',
-        description: 'Set baseline timing and hours logic for office staff, drivers, hybrid roles, and labour teams.',
-        badge: 'Timing',
-        tone: 'emerald',
-        perms: ['hr.settings.employee_types', 'hr.employee.view'],
-      },
-      {
-        href: '/hr/settings/expertises',
-        title: 'Expertise catalog',
-        description: 'Maintain the workforce skill catalog used when matching employees to jobs and teams.',
-        badge: 'Skills',
-        tone: 'sky',
-        perms: ['hr.settings.expertise_catalog', 'hr.employee.view'],
-      },
-      {
-        href: '/hr/settings/document-types',
-        title: 'Document types',
-        description: 'Define passport, visa, licence, and other tracked document categories with compliance rules.',
-        badge: 'Compliance',
-        tone: 'amber',
-        perms: ['hr.document_type.view', 'hr.settings.document_types'],
-      },
-    ],
-  },
 ];
 
 function canSeeItem(isSuperAdmin: boolean, permissions: string[], item: HubItem) {
@@ -141,7 +94,7 @@ export default function HrHubPage() {
       <WorkspaceHubHeader
         eyebrow="People"
         title="HR operations hub"
-        description="Schedule and attendance, plus employee records. Leave and payroll now have their own sidebar sections."
+        description="Plan daily schedules and manage attendance. Employees, leave, and payroll now have their own sidebar sections."
         trailing={`${totalVisibleLinks} link${totalVisibleLinks === 1 ? '' : 's'}`}
       />
 
