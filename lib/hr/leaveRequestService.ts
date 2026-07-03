@@ -23,6 +23,48 @@ export function parseLeaveDateRange(startDate: string, endDate: string) {
   return { start, end };
 }
 
+function ymd(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Returns an existing PENDING/APPROVED leave request for the same employee whose
+ * date range overlaps [start, end], or null. Overlap is inclusive (per whole day).
+ * CANCELLED/REJECTED requests are ignored so employees can re-request freed dates.
+ */
+export async function findOverlappingLeaveRequest(
+  prisma: PrismaLike,
+  params: {
+    companyId: string;
+    employeeId: string;
+    startDate: Date;
+    endDate: Date;
+    excludeRequestId?: string;
+  }
+) {
+  return prisma.leaveRequest.findFirst({
+    where: {
+      companyId: params.companyId,
+      employeeId: params.employeeId,
+      status: { in: ['PENDING', 'APPROVED'] },
+      startDate: { lte: params.endDate },
+      endDate: { gte: params.startDate },
+      ...(params.excludeRequestId ? { id: { not: params.excludeRequestId } } : {}),
+    },
+    select: { id: true, startDate: true, endDate: true, status: true },
+  });
+}
+
+export function overlappingLeaveMessage(overlap: {
+  status: string;
+  startDate: Date;
+  endDate: Date;
+}): string {
+  return `This leave overlaps an existing ${overlap.status.toLowerCase()} request (${ymd(
+    overlap.startDate
+  )} to ${ymd(overlap.endDate)})`;
+}
+
 export async function createLeaveRequest(
   prisma: PrismaClient,
   params: {
@@ -43,6 +85,14 @@ export async function createLeaveRequest(
   if (!employee) throw new Error('Employee not found');
 
   const { start, end } = parseLeaveDateRange(params.startDate, params.endDate);
+
+  const overlap = await findOverlappingLeaveRequest(prisma, {
+    companyId: params.companyId,
+    employeeId: params.employeeId,
+    startDate: start,
+    endDate: end,
+  });
+  if (overlap) throw new Error(overlappingLeaveMessage(overlap));
 
   await ensureLeaveTypesReady(prisma, params.companyId);
   const leaveType = await loadLeaveTypeForRequest(prisma, params.companyId, params.leaveTypeId);
@@ -278,6 +328,15 @@ export async function updateLeaveRequest(
       ? startYmd
       : existing.endDate.toISOString().slice(0, 10);
   const { start, end } = parseLeaveDateRange(startYmd, endYmd);
+
+  const overlap = await findOverlappingLeaveRequest(prisma, {
+    companyId: params.companyId,
+    employeeId: existing.employeeId,
+    startDate: start,
+    endDate: end,
+    excludeRequestId: params.requestId,
+  });
+  if (overlap) throw new Error(overlappingLeaveMessage(overlap));
 
   const nextReason =
     params.reason !== undefined ? params.reason?.trim() || null : existing.reason;

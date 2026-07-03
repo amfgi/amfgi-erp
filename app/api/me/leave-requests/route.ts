@@ -6,6 +6,7 @@ import { isLeaveTypeHiddenFromEmployeePortal, parseLeaveTypeRules } from '@/lib/
 import { ensureLeaveTypesReady } from '@/lib/hr/seedLeaveTypes';
 import { getPortalEmployeeForSession } from '@/lib/hr/linkedEmployee';
 import { assertSufficientLeaveBalance, leaveDaysForRequest } from '@/lib/hr/leaveBalance';
+import { findOverlappingLeaveRequest, overlappingLeaveMessage } from '@/lib/hr/leaveRequestService';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -62,6 +63,14 @@ export async function POST(req: Request) {
   if (isLeaveTypeHiddenFromEmployeePortal(parseLeaveTypeRules(leaveType.rules))) {
     return errorResponse('This leave type is not available for employee requests', 403);
   }
+
+  const overlap = await findOverlappingLeaveRequest(prisma, {
+    companyId: emp.companyId,
+    employeeId: emp.id,
+    startDate,
+    endDate,
+  });
+  if (overlap) return errorResponse(overlappingLeaveMessage(overlap), 409);
 
   const resolved = resolveLeaveRequestFields(leaveType);
   const daysNeeded = leaveDaysForRequest(
