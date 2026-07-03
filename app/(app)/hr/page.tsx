@@ -112,53 +112,6 @@ const HUB_SECTIONS: Array<{
       },
     ],
   },
-  {
-    id: 'payroll-holidays',
-    title: 'Payroll & holidays',
-    description: 'Pay preview and runs, holiday calendar, and payroll rules. Leave now lives under Leave Management.',
-    cards: [
-      {
-        href: '/hr/payroll/preview',
-        title: 'Payroll preview',
-        description: 'Estimate gross pay per employee for a month using compensation and approved attendance.',
-        badge: 'Preview',
-        tone: 'emerald',
-        perms: ['hr.payroll.compensation'],
-      },
-      {
-        href: '/hr/payroll/runs',
-        title: 'Pay runs',
-        description: 'View finalized runs and print payslips (PDF).',
-        badge: 'History',
-        tone: 'sky',
-        perms: ['hr.payroll.compensation'],
-      },
-      {
-        href: '/hr/settings/company-holidays',
-        title: 'Company holidays',
-        description: 'Maintain the public holiday calendar used by payroll — separate from attendance and leave.',
-        badge: 'Holidays',
-        tone: 'sky',
-        perms: ['hr.payroll.settings'],
-      },
-      {
-        href: '/hr/settings/salary-structure',
-        title: 'Salary structure',
-        description: 'Configure payroll calculation templates, OT %, and working-day rules.',
-        badge: 'Payroll',
-        tone: 'sky',
-        perms: ['hr.payroll.settings'],
-      },
-      {
-        href: '/hr/settings/salary-component',
-        title: 'Salary components',
-        description: 'Define earnings and deductions (housing, transport, loans) and how they apply to pay.',
-        badge: 'Payroll',
-        tone: 'sky',
-        perms: ['hr.payroll.settings'],
-      },
-    ],
-  },
 ];
 
 function canSeeItem(isSuperAdmin: boolean, permissions: string[], item: HubItem) {
@@ -188,7 +141,7 @@ export default function HrHubPage() {
       <WorkspaceHubHeader
         eyebrow="People"
         title="HR operations hub"
-        description="Schedule and attendance, employee records, payroll, and holidays. Leave is managed in the Leave Management section."
+        description="Schedule and attendance, plus employee records. Leave and payroll now have their own sidebar sections."
         trailing={`${totalVisibleLinks} link${totalVisibleLinks === 1 ? '' : 's'}`}
       />
 

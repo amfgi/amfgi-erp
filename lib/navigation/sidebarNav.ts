@@ -14,6 +14,7 @@ import {
   UserCircle,
   UserCog,
   Users,
+  Wallet,
 } from 'lucide-react';
 
 export type SidebarNavPermission = {
@@ -157,16 +158,6 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				label: 'Document types',
 				anyPerms: [P.HR_DOCUMENT_TYPE_VIEW, P.HR_SETTINGS_DOC_TYPES],
 			},
-			{
-				href: '/hr/payroll/preview',
-				label: 'Payroll preview',
-				perm: 'hr.payroll.compensation',
-			},
-			{
-				href: '/hr/payroll/runs',
-				label: 'Pay runs',
-				perm: 'hr.payroll.compensation',
-			},
 		],
 	},
 	{
@@ -192,6 +183,41 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			{
 				href: '/hr/settings/leave-types',
 				label: 'Leave types',
+				perm: 'hr.payroll.settings',
+			},
+		],
+	},
+	{
+		type: 'group',
+		id: 'payroll',
+		label: 'Payroll',
+		icon: Wallet,
+		href: '/hr/payroll/preview',
+		anyPerms: ['hr.payroll.compensation', 'hr.payroll.settings'],
+		children: [
+			{
+				href: '/hr/payroll/preview',
+				label: 'Payroll preview',
+				perm: 'hr.payroll.compensation',
+			},
+			{
+				href: '/hr/payroll/runs',
+				label: 'Pay runs',
+				perm: 'hr.payroll.compensation',
+			},
+			{
+				href: '/hr/settings/salary-structure',
+				label: 'Salary structure',
+				perm: 'hr.payroll.settings',
+			},
+			{
+				href: '/hr/settings/salary-component',
+				label: 'Salary components',
+				perm: 'hr.payroll.settings',
+			},
+			{
+				href: '/hr/settings/company-holidays',
+				label: 'Company holidays',
 				perm: 'hr.payroll.settings',
 			},
 		],
