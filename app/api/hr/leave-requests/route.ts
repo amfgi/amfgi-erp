@@ -87,18 +87,16 @@ export async function GET(req: Request) {
   const balanceCache = new Map<string, Awaited<ReturnType<typeof getOrCreateLeaveBalance>>>();
   const enriched = await Promise.all(
     rows.map(async (row) => {
-      const year = row.startDate.getUTCFullYear();
-      const cacheKey = `${row.employeeId}:${year}`;
+      const cacheKey = row.employeeId;
       let balance = balanceCache.get(cacheKey);
       if (!balance) {
-        balance = await getOrCreateLeaveBalance(prisma, companyId, row.employeeId, year);
+        balance = await getOrCreateLeaveBalance(prisma, companyId, row.employeeId);
         balanceCache.set(cacheKey, balance);
       }
       return {
         ...row,
         dayCount: countLeaveDaysInclusive(row.startDate, row.endDate),
         balance: {
-          year,
           entitlementDays: Number(balance.entitlementDays),
           usedDays: Number(balance.usedDays),
           adjustedDays: Number(balance.adjustedDays),

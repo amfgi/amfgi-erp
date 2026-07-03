@@ -528,6 +528,7 @@ export function buildDeliveryNoteTemplateDataFromEntity(
     referenceJob?: Record<string, unknown> | null;
     materialLines?: unknown;
     job?: Record<string, unknown> | null;
+    signedCopyUrl?: string | null;
   },
   company: any
 ): TemplateDataContext {
@@ -596,7 +597,7 @@ export function buildDeliveryNoteTemplateDataFromEntity(
       notes: (dn.documentNotes ?? '').trim(),
       totalCost: 0,
       quantity: totalQty,
-      signedCopyUrl: '',
+      signedCopyUrl: dn.signedCopyUrl ?? '',
       deliveryType: dn.deliveryType ?? 'DISPATCH',
       transitStatus: dn.transitStatus ?? undefined,
       contactPerson: selectedContactPerson || undefined,

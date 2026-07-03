@@ -52,7 +52,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         },
         transactions: {
           where: { type: 'STOCK_OUT' },
-          select: { id: true },
+          select: { id: true, signedCopyUrl: true },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -64,6 +64,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const serializedReferenceJob = dn.referenceJob ? serializeJobWithContacts(dn.referenceJob) : null;
 
     const stockOutIds = dn.transactions.map((txn) => txn.id);
+    const signedCopyFromTxn = dn.transactions.find((txn) => txn.signedCopyUrl)?.signedCopyUrl ?? null;
     const allTxnIds =
       dn.deliveryType === 'SUBCONTRACT'
         ? await prisma.transaction.findMany({
@@ -113,6 +114,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         };
       }),
       firstStockOutTransactionId: stockOutIds[0] ?? null,
+      signedCopyUrl: dn.signedCopyUrl ?? signedCopyFromTxn,
       transactionIds: allTxnIds.map((txn) => txn.id),
     });
   } catch (err: unknown) {

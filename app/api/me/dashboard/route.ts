@@ -2,7 +2,7 @@ import { auth } from '@/auth';
 import { employeeDocumentDisplayName } from '@/lib/hr/employeeDocumentDisplay';
 import { readOnLeaveFrom } from '@/lib/hr/employeeLeavePeriod';
 import { getPortalEmployeeForSession } from '@/lib/hr/linkedEmployee';
-import { getOrCreateLeaveBalance, remainingLeaveDays } from '@/lib/hr/leaveBalance';
+import { getEmployeePortalLeaveBalance } from '@/lib/hr/leaveBalance';
 import { countLeaveDaysInclusive } from '@/lib/hr/leaveTypes';
 import { dateFromYmd } from '@/lib/hr/workDate';
 import { prisma } from '@/lib/db/prisma';
@@ -41,7 +41,7 @@ export async function GET() {
         profileExtension: true,
       },
     }),
-    getOrCreateLeaveBalance(prisma, emp.companyId, emp.id, year),
+    getEmployeePortalLeaveBalance(prisma, emp.companyId, emp.id),
     prisma.leaveRequest.findMany({
       where: { companyId: emp.companyId, employeeId: emp.id },
       include: {
@@ -68,7 +68,7 @@ export async function GET() {
     }),
   ]);
 
-  if (!employee) return errorResponse('Employee not found', 404);
+  if (!employee || !balance) return errorResponse('Employee not found', 404);
 
   const attendanceSummary = monthAttendance.reduce(
     (acc, row) => {
@@ -129,11 +129,11 @@ export async function GET() {
       onLeaveFrom: readOnLeaveFrom(employee.profileExtension),
     },
     leaveBalance: {
-      year,
-      entitlementDays: Number(balance.entitlementDays),
-      usedDays: Number(balance.usedDays),
-      adjustedDays: Number(balance.adjustedDays),
-      remainingDays: remainingLeaveDays(balance),
+      entitlementDays: balance.entitlementDays,
+      usedDays: balance.usedDays,
+      adjustedDays: balance.adjustedDays,
+      remainingDays: balance.remainingDays,
+      rolloverEnabled: balance.rolloverEnabled,
     },
     leaveSummary: {
       pendingCount: pendingRequests.length,

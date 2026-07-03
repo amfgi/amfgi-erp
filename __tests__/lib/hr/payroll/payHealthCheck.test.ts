@@ -1,6 +1,11 @@
 import { splitBasicOtSalary } from '@/lib/hr/payroll/payDayBreakdown';
+import { calculatePayLine } from '@/lib/hr/payroll/calculatePayLine';
+import { roundMoney } from '@/lib/hr/payroll/calendar';
 import { evaluatePayHealthCheck } from '@/lib/hr/payroll/payHealthCheck';
-import { buildSalaryComponentTotals } from '@/lib/hr/payroll/salaryComponent';
+import {
+  buildAttendanceComponentSplitMap,
+  buildSalaryComponentTotals,
+} from '@/lib/hr/payroll/salaryComponent';
 
 describe('splitBasicOtSalary', () => {
   it('puts full amount in basic when OT hours are zero', () => {
@@ -168,11 +173,13 @@ describe('evaluatePayHealthCheck', () => {
       },
     });
 
+    const periodAttendanceEarning = roundMoney(260 / 26);
+    const periodAttendanceDeduction = roundMoney(52 / 26);
     expect(result.ok).toBe(true);
-    expect(result.componentEarningsPaid).toBeCloseTo(300 + 260 / 26, 2);
-    expect(result.componentEarningsCap).toBeCloseTo(300 + 260 / 26, 2);
-    expect(result.componentDeductionsPaid).toBeCloseTo(50 + 52 / 26, 2);
-    expect(result.componentDeductionsCap).toBeCloseTo(50 + 52 / 26, 2);
+    expect(result.componentEarningsPaid).toBeCloseTo(300 + periodAttendanceEarning, 2);
+    expect(result.componentEarningsCap).toBeCloseTo(300 + periodAttendanceEarning, 2);
+    expect(result.componentDeductionsPaid).toBeCloseTo(50 + periodAttendanceDeduction, 2);
+    expect(result.componentDeductionsCap).toBeCloseTo(50 + periodAttendanceDeduction, 2);
   });
 
   it('does not flag earnings when cap uses the same per-day rounding as pay', () => {
@@ -192,8 +199,185 @@ describe('evaluatePayHealthCheck', () => {
       workedMinutes: 540,
       isSunday: false,
     }));
-    const dayEarning = salaryComponents.attendanceEarningPerDay;
-    const roundedDayEarning = Math.round(dayEarning * 100) / 100;
+    const compensation = {
+      monthlyBasic: 3000,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents,
+    };
+    const splitMap = buildAttendanceComponentSplitMap({
+      compensation,
+      lines,
+      month: '2026-06',
+      excludedWeekdays: [0],
+    });
+    const result = evaluatePayHealthCheck({
+      month: '2026-06',
+      config: { mode: 'MONTHLY_CALENDAR_DEDUCT', deductDenominator: 'WORKING_DAYS', excludedWeekdays: [0] },
+      compensation,
+      lines,
+      result: {
+        gross: 3000,
+        breakdown: { monthlyBasic: 3000, salaryComponentsFixed: 250 },
+        days: lines.map((line) => {
+          const split = splitMap.get(line.workDate) ?? { earning: 0, deduction: 0 };
+          return {
+            date: line.workDate,
+            status: 'Present',
+            totalHours: 9,
+            basicHours: 9,
+            otHours: 0,
+            basicHourRate: 0,
+            basicHourSalary: 0,
+            otHourRate: 0,
+            otHourSalary: 0,
+            allowance: split.earning,
+            componentEarning: split.earning,
+            componentDeduction: split.deduction,
+            totalSalary: split.earning,
+            amount: split.earning,
+          };
+        }),
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.componentEarningsPaid).toBe(result.componentEarningsCap);
+  });
+
+  it('passes health check for calculatePayLine output with fractional attendance allowance', () => {
+    const salaryComponents = buildSalaryComponentTotals(
+      [
+        { amount: 250, componentKind: 'EARNING', applicationMode: 'FIXED_MONTHLY' },
+        { amount: 211.54, componentKind: 'EARNING', applicationMode: 'ATTENDANCE_PRESENT' },
+      ],
+      '2026-06',
+      [0]
+    );
+    const compensation = {
+      monthlyBasic: 3000,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents,
+    };
+    const config = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT' as const,
+      deductDenominator: 'WORKING_DAYS' as const,
+      excludedWeekdays: [0],
+    };
+    const lines = Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      const workDate = `2026-06-${String(day).padStart(2, '0')}`;
+      const isSunday = day === 7 || day === 14 || day === 21 || day === 28;
+      return {
+        workDate,
+        status: isSunday ? ('ABSENT' as const) : ('PRESENT' as const),
+        leaveType: null,
+        basicHours: 9,
+        workedMinutes: isSunday ? 0 : 540,
+        isSunday,
+      };
+    });
+    const payResult = calculatePayLine({ month: '2026-06', config, compensation, lines });
+    const health = evaluatePayHealthCheck({
+      month: '2026-06',
+      config,
+      compensation,
+      lines,
+      result: payResult,
+    });
+
+    expect(health.componentEarningsPaid).toBe(health.componentEarningsCap);
+    expect(health.ok).toBe(true);
+  });
+
+  it('passes health check for hourly split with fractional attendance allowance', () => {
+    const salaryComponents = buildSalaryComponentTotals(
+      [
+        { amount: 250, componentKind: 'EARNING', applicationMode: 'FIXED_MONTHLY' },
+        { amount: 211.54, componentKind: 'EARNING', applicationMode: 'ATTENDANCE_PRESENT' },
+      ],
+      '2026-06',
+      [0]
+    );
+    const compensation = {
+      monthlyBasic: 900,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents,
+    };
+    const config = { mode: 'HOURLY_SPLIT' as const, excludedWeekdays: [0] };
+    const lines = Array.from({ length: 26 }, (_, index) => ({
+      workDate: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      status: 'PRESENT' as const,
+      leaveType: null,
+      basicHours: 9,
+      workedMinutes: 540,
+      isSunday: false,
+    }));
+    const payResult = calculatePayLine({ month: '2026-06', config, compensation, lines });
+    const health = evaluatePayHealthCheck({
+      month: '2026-06',
+      config,
+      compensation,
+      lines,
+      result: payResult,
+    });
+
+    expect(health.componentEarningsPaid).toBe(health.componentEarningsCap);
+    expect(health.ok).toBe(true);
+  });
+
+  it('flags when basic paid exceeds the monthly basic cap', () => {
+    const result = evaluatePayHealthCheck({
+      month: '2026-06',
+      config: { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] },
+      compensation: { monthlyBasic: 900, monthlyAllowance: 0, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-06-02',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 9,
+          workedMinutes: 540,
+          isSunday: false,
+        },
+      ],
+      result: {
+        gross: 950,
+        breakdown: { hourlyTotal: 950 },
+        days: [
+          {
+            date: '2026-06-02',
+            status: 'Present',
+            totalHours: 9,
+            basicHours: 9,
+            otHours: 0,
+            basicHourRate: 950 / 9,
+            basicHourSalary: 950,
+            otHourRate: 0,
+            otHourSalary: 0,
+            allowance: 0,
+            totalSalary: 950,
+            amount: 950,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((issue) => issue.includes('Basic pay'))).toBe(true);
+  });
+
+  it('flags when allowance paid materially exceeds the monthly allowance cap', () => {
+    const lines = Array.from({ length: 26 }, (_, index) => ({
+      workDate: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      status: 'PRESENT' as const,
+      leaveType: null,
+      basicHours: 9,
+      workedMinutes: 540,
+      isSunday: false,
+    }));
     const result = evaluatePayHealthCheck({
       month: '2026-06',
       config: { mode: 'MONTHLY_CALENDAR_DEDUCT', deductDenominator: 'WORKING_DAYS', excludedWeekdays: [0] },
@@ -201,11 +385,18 @@ describe('evaluatePayHealthCheck', () => {
         monthlyBasic: 3000,
         monthlyAllowance: 0,
         dailyRate: 0,
-        salaryComponents,
+        salaryComponents: buildSalaryComponentTotals(
+          [
+            { amount: 250, componentKind: 'EARNING', applicationMode: 'FIXED_MONTHLY' },
+            { amount: 211.54, componentKind: 'EARNING', applicationMode: 'ATTENDANCE_PRESENT' },
+          ],
+          '2026-06',
+          [0]
+        ),
       },
       lines,
       result: {
-        gross: 3000,
+        gross: 3500,
         breakdown: { monthlyBasic: 3000, salaryComponentsFixed: 250 },
         days: lines.map((line) => ({
           date: line.workDate,
@@ -217,17 +408,17 @@ describe('evaluatePayHealthCheck', () => {
           basicHourSalary: 0,
           otHourRate: 0,
           otHourSalary: 0,
-          allowance: roundedDayEarning,
-          componentEarning: roundedDayEarning,
+          allowance: 50,
+          componentEarning: 50,
           componentDeduction: 0,
-          totalSalary: roundedDayEarning,
-          amount: roundedDayEarning,
+          totalSalary: 50,
+          amount: 50,
         })),
       },
     });
 
-    expect(result.ok).toBe(true);
-    expect(result.componentEarningsPaid).toBe(result.componentEarningsCap);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((issue) => issue.includes('Allowance'))).toBe(true);
   });
 
   it('flags OT salary when OT hours are zero', () => {

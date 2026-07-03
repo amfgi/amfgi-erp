@@ -4,9 +4,9 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import toast from 'react-hot-toast';
 
 import EmployeeImportModal from '@/components/hr/EmployeeImportModal';
+import EmployeeExportModal from '@/components/hr/EmployeeExportModal';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
@@ -15,13 +15,11 @@ import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
-import { exportEmployeesToXlsx } from '@/lib/import-export/exportEmployees';
 import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
 import { cn } from '@/lib/utils';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import {
   useGetHrEmployeesPageQuery,
-  useLazyGetHrEmployeesForExportQuery,
   HR_EMPLOYEE_PAGE_SIZE_OPTIONS,
 } from '@/store/api/endpoints/hr';
 
@@ -94,7 +92,7 @@ export default function HrEmployeesPage() {
   const canView = isSA || perms.includes('hr.employee.view');
   const canEdit = isSA || perms.includes('hr.employee.edit');
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [fetchEmployeesForExport] = useLazyGetHrEmployeesForExportQuery();
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   const {
     data: employeesPage,
@@ -228,34 +226,7 @@ export default function HrEmployeesPage() {
               </p>
             </div>
             {canView ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    const all = await fetchEmployeesForExport({
-                      q: deferredQuery,
-                      status,
-                      employeeType,
-                      portal,
-                    }).unwrap();
-                    if (all.length === 0) {
-                      toast.error('No employees to export for current filters');
-                      return;
-                    }
-                    const hasFilters =
-                      deferredQuery.trim() ||
-                      status !== 'ALL' ||
-                      employeeType !== 'ALL' ||
-                      portal !== 'ALL';
-                    exportEmployeesToXlsx(all, hasFilters ? 'employees-filtered' : 'employees');
-                    toast.success(`Exported ${all.length} employee(s)`);
-                  } catch {
-                    toast.error('Failed to export employees');
-                  }
-                }}
-              >
+              <Button type="button" size="sm" variant="outline" onClick={() => setExportModalOpen(true)}>
                 Export
               </Button>
             ) : null}
@@ -274,6 +245,17 @@ export default function HrEmployeesPage() {
       </section>
 
       <EmployeeImportModal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} />
+      <EmployeeExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        directoryFilters={{
+          q: deferredQuery,
+          status,
+          employeeType,
+          portal,
+        }}
+        employeeTypeChoices={employeeTypeChoices}
+      />
 
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">

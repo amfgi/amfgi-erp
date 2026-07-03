@@ -12,7 +12,7 @@ import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { cn } from '@/lib/utils';
-import { daysInMonth } from '@/lib/hr/payroll/calendar';
+import { daysInMonth, sumMoney } from '@/lib/hr/payroll/calendar';
 import { downloadPayPreviewXlsx } from '@/lib/hr/payroll/exportPayPreviewXlsx';
 import { isPayPreviewPendingCompensationRow } from '@/lib/hr/payroll/payPreviewRowStatus';
 import { readApiJson } from '@/lib/utils/readApiResponse';
@@ -142,8 +142,8 @@ function summarizeEmployeeRow(row: PreviewEmployee): EmployeeSummary {
   return {
     totalHours: days.reduce((sum, day) => sum + (day.totalHours ?? 0), 0),
     totalOt: days.reduce((sum, day) => sum + (day.otHours ?? 0), 0),
-    basicSalary: days.reduce((sum, day) => sum + (day.basicHourSalary ?? 0), 0),
-    otSalary: days.reduce((sum, day) => sum + (day.otHourSalary ?? 0), 0),
+    basicSalary: sumMoney(days.map((day) => day.basicHourSalary ?? 0)),
+    otSalary: sumMoney(days.map((day) => day.otHourSalary ?? 0)),
     allowance: resolveAllowanceTotal(row),
     deduction: resolveDeductionTotal(row),
     activeDays,
@@ -198,21 +198,34 @@ function summarizeDayComponentTotals(rows: PreviewDayDetail[]) {
   );
 }
 
+function healthCheckShowsOk(health: NonNullable<PreviewEmployee['healthCheck']>): boolean {
+  if (!health.ok) return false;
+  if (health.basicCap > 0 && health.basicPaid > health.basicCap + 0.05) return false;
+  return true;
+}
+
 function HealthBadge({ health }: { health: PreviewEmployee['healthCheck'] }) {
   if (!health) {
     return <span className="text-muted-foreground">—</span>;
   }
+  const passed = healthCheckShowsOk(health);
+  const titleIssues = [
+    ...health.issues,
+    ...(health.basicCap > 0 && health.basicPaid > health.basicCap + 0.05
+      ? [`Basic pay ${health.basicPaid.toFixed(2)} exceeds cap ${health.basicCap.toFixed(2)}`]
+      : []),
+  ];
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        health.ok
+        passed
           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
           : 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200'
       )}
-      title={health.ok ? 'Payroll health check passed' : health.issues.join('; ')}
+      title={passed ? 'Payroll health check passed' : titleIssues.join('; ')}
     >
-      {health.ok ? 'OK' : 'Check'}
+      {passed ? 'OK' : 'Check'}
     </span>
   );
 }
@@ -222,11 +235,19 @@ function PayHealthCheckPanel({
 }: {
   health: NonNullable<PreviewEmployee['healthCheck']>;
 }) {
+  const passed = healthCheckShowsOk(health);
+  const displayIssues = [
+    ...health.issues,
+    ...(health.basicCap > 0 && health.basicPaid > health.basicCap + 0.05
+      ? [`Basic pay ${formatMoney(health.basicPaid)} exceeds cap ${formatMoney(health.basicCap)}`]
+      : []),
+  ];
+
   return (
     <div
       className={cn(
         'rounded-md border px-3 py-2.5 text-sm',
-        health.ok
+        passed
           ? 'border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/30'
           : 'border-amber-200/80 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30'
       )}
@@ -257,9 +278,9 @@ function PayHealthCheckPanel({
           </dd>
         </div>
       </dl>
-      {!health.ok ? (
+      {!passed ? (
         <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-amber-900 dark:text-amber-200">
-          {health.issues.map((issue) => (
+          {[...new Set(displayIssues)].map((issue) => (
             <li key={issue}>{issue}</li>
           ))}
         </ul>

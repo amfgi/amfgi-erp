@@ -508,6 +508,7 @@ function computeEmployeePayPreviewRow(
         month,
         excludedWeekdays,
         dayRows: pkgDayRows,
+        config: pkgConfig,
       });
       salaryComponentEarnings += totals.earnings;
       salaryComponentDeductions += totals.deductions;
@@ -521,6 +522,7 @@ function computeEmployeePayPreviewRow(
       month,
       excludedWeekdays: resolveExcludedWeekdays(config),
       dayRows: result.days,
+      config,
     });
     salaryComponentEarnings = totals.earnings;
     salaryComponentDeductions = totals.deductions;

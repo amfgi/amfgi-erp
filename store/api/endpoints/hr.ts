@@ -1,4 +1,5 @@
 import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
+import { appendEmployeeDirectorySearchParams, type EmployeeDirectoryFilterParams } from '@/lib/hr/employeeListQuery';
 import { appApi } from '../appApi';
 
 export const HR_EMPLOYEE_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
@@ -52,6 +53,15 @@ export interface HrEmployeeExportRecord {
   portalEnabled: boolean;
   adminNotes: string | null;
   profileExtension: unknown;
+  currentCompensation?: {
+    payTypeName: string;
+    payTypeCode: string;
+    monthlyBasic: number | null;
+    dailyRate: number | null;
+    components: Array<{ name: string; amount: number; componentKind: string }>;
+    totalMonthly: number | null;
+    effectiveFrom: string | null;
+  } | null;
 }
 
 export interface HrScheduleRow {
@@ -126,16 +136,14 @@ type HrEmployeesArg = {
   status?: 'ALL' | HrEmployeeStatus;
 };
 
-export type HrEmployeesListParams = {
+export type HrEmployeesListParams = EmployeeDirectoryFilterParams & {
   limit: number;
   offset: number;
-  q?: string;
-  status?: 'ALL' | HrEmployeeStatus;
-  employeeType?: 'ALL' | '__none__' | string;
-  portal?: 'ALL' | 'enabled' | 'disabled';
 };
 
-export type HrEmployeesExportParams = Omit<HrEmployeesListParams, 'limit' | 'offset'>;
+export type HrEmployeesExportParams = Omit<HrEmployeesListParams, 'limit' | 'offset'> & {
+  ids?: string[];
+};
 
 export type HrEmployeesListResponse = {
   items: HrEmployee[];
@@ -164,12 +172,8 @@ export const hrApi = appApi.injectEndpoints({
       query: (params) => {
         const search = new URLSearchParams();
         search.set('forExport', '1');
-        if (params?.q?.trim()) search.set('q', params.q.trim());
-        if (params?.status && params.status !== 'ALL') search.set('status', params.status);
-        if (params?.employeeType && params.employeeType !== 'ALL') {
-          search.set('employeeType', params.employeeType);
-        }
-        if (params?.portal && params.portal !== 'ALL') search.set('portal', params.portal);
+        appendEmployeeDirectorySearchParams(search, params ?? undefined);
+        if (params?.ids?.length) search.set('ids', params.ids.join(','));
         return `/hr/employees?${search.toString()}`;
       },
       transformResponse: (r: { data: HrEmployeeExportRecord[] }) => r.data,
@@ -195,14 +199,11 @@ export const hrApi = appApi.injectEndpoints({
     }),
 
     getHrEmployeesPage: builder.query<HrEmployeesListResponse, HrEmployeesListParams>({
-      query: ({ limit, offset, q, status, employeeType, portal }) => {
+      query: ({ limit, offset, ...filters }) => {
         const params = new URLSearchParams();
         params.set('limit', String(limit));
         params.set('offset', String(offset));
-        if (q?.trim()) params.set('q', q.trim());
-        if (status && status !== 'ALL') params.set('status', status);
-        if (employeeType && employeeType !== 'ALL') params.set('employeeType', employeeType);
-        if (portal && portal !== 'ALL') params.set('portal', portal);
+        appendEmployeeDirectorySearchParams(params, filters);
         return `/hr/employees?${params.toString()}`;
       },
       transformResponse: (r: { data: HrEmployeesListResponse }) => r.data,

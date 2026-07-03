@@ -6,17 +6,25 @@ export type ScheduleDragPreviewSession = {
   destroy: (options?: { animate?: boolean }) => void;
 };
 
+export type ScheduleDragPreviewOptions = {
+  sourceOpacityClass?: string;
+  previewOverflow?: 'hidden' | 'visible';
+};
+
 export function startScheduleDragPreview(
   sourceEl: HTMLElement,
   clientX: number,
   clientY: number,
+  options?: ScheduleDragPreviewOptions,
 ): ScheduleDragPreviewSession {
   const rect = sourceEl.getBoundingClientRect();
   const offsetX = clientX - rect.left;
   const offsetY = clientY - rect.top;
+  const sourceOpacityClass = options?.sourceOpacityClass ?? 'opacity-40';
+  const previewOverflow = options?.previewOverflow ?? 'hidden';
 
   sourceEl.setAttribute(SOURCE_ATTR, 'true');
-  sourceEl.classList.add('opacity-40', 'transition-opacity', 'duration-150');
+  sourceEl.classList.add(sourceOpacityClass, 'transition-opacity', 'duration-150');
 
   const preview = sourceEl.cloneNode(true) as HTMLElement;
   preview.removeAttribute(SOURCE_ATTR);
@@ -24,13 +32,15 @@ export function startScheduleDragPreview(
   preview.setAttribute('aria-hidden', 'true');
   preview.className = [
     PREVIEW_CLASS,
-    'pointer-events-none fixed left-0 top-0 z-[9999] overflow-hidden rounded-lg',
+    'pointer-events-none fixed left-0 top-0 z-[9999] rounded-lg',
+    previewOverflow === 'visible' ? 'overflow-visible' : 'overflow-hidden',
     'border border-primary/30 bg-card/95 shadow-2xl ring-2 ring-primary/35',
     'backdrop-blur-sm will-change-transform',
   ].join(' ');
 
   preview.style.width = `${rect.width}px`;
-  preview.style.height = `${rect.height}px`;
+  preview.style.minHeight = `${rect.height}px`;
+  preview.style.height = previewOverflow === 'visible' ? 'auto' : `${rect.height}px`;
   preview.style.margin = '0';
   preview.style.boxSizing = 'border-box';
 
@@ -65,7 +75,7 @@ export function startScheduleDragPreview(
 
   const restoreSource = () => {
     sourceEl.removeAttribute(SOURCE_ATTR);
-    sourceEl.classList.remove('opacity-40', 'transition-opacity', 'duration-150');
+    sourceEl.classList.remove(sourceOpacityClass, 'transition-opacity', 'duration-150');
   };
 
   return {

@@ -1,15 +1,22 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
-import { getOrCreateLeaveBalance, remainingLeaveDays } from '@/lib/hr/leaveBalance';
+import {
+  applyLeaveBalanceAdjustment,
+  getOrCreateLeaveBalance,
+  listLeaveBalances,
+  recalculateLeaveBalanceEntitlement,
+  remainingLeaveDays,
+} from '@/lib/hr/leaveBalance';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
 const UpsertSchema = z.object({
   employeeId: z.string().min(1),
-  year: z.number().int().min(2000).max(2100),
-  entitlementDays: z.number().min(0).max(365),
+  entitlementDays: z.number().min(0).max(3650).optional(),
   adjustedDays: z.number().min(-365).max(365).optional(),
+  adjustmentDelta: z.number().min(-365).max(365).optional(),
+  recalculateEntitlement: z.boolean().optional(),
 });
 
 export async function GET(req: Request) {
@@ -19,29 +26,15 @@ export async function GET(req: Request) {
   if (!requirePerm(ctx.session.user, P.HR_LEAVE_VIEW)) return errorResponse('Forbidden', 403);
 
   const { searchParams } = new URL(req.url);
-  const year = Number(searchParams.get('year') ?? new Date().getFullYear());
-  const employeeId = searchParams.get('employeeId');
+  const employeeId = searchParams.get('employeeId') ?? undefined;
+  const includeAllEmployees = searchParams.get('includeAllEmployees') === '1';
 
-  const rows = await prisma.leaveBalance.findMany({
-    where: {
-      companyId,
-      year,
-      ...(employeeId ? { employeeId } : {}),
-    },
-    include: {
-      employee: {
-        select: { id: true, fullName: true, preferredName: true, employeeCode: true },
-      },
-    },
-    orderBy: { employee: { fullName: 'asc' } },
+  const rows = await listLeaveBalances(prisma, companyId, {
+    employeeId,
+    includeAllEmployees,
   });
 
-  return successResponse(
-    rows.map((row) => ({
-      ...row,
-      remainingDays: remainingLeaveDays(row),
-    }))
-  );
+  return successResponse(rows);
 }
 
 export async function POST(req: Request) {
@@ -54,25 +47,55 @@ export async function POST(req: Request) {
   const parsed = UpsertSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const balance = await getOrCreateLeaveBalance(
-    prisma,
-    companyId,
-    parsed.data.employeeId,
-    parsed.data.year
-  );
+  const { employeeId, entitlementDays, adjustedDays, adjustmentDelta, recalculateEntitlement } =
+    parsed.data;
 
-  const row = await prisma.leaveBalance.update({
-    where: { id: balance.id },
-    data: {
-      entitlementDays: parsed.data.entitlementDays,
-      ...(parsed.data.adjustedDays !== undefined ? { adjustedDays: parsed.data.adjustedDays } : {}),
-    },
-    include: {
-      employee: {
-        select: { id: true, fullName: true, preferredName: true, employeeCode: true },
-      },
-    },
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, companyId },
+    select: { id: true },
   });
+  if (!employee) return errorResponse('Employee not found', 404);
 
-  return successResponse({ ...row, remainingDays: remainingLeaveDays(row) });
+  let balance;
+  if (recalculateEntitlement) {
+    balance = await recalculateLeaveBalanceEntitlement(prisma, companyId, employeeId);
+  } else if (adjustmentDelta != null) {
+    balance = await applyLeaveBalanceAdjustment(prisma, companyId, employeeId, adjustmentDelta);
+  } else if (entitlementDays != null) {
+    const existing = await getOrCreateLeaveBalance(prisma, companyId, employeeId);
+    balance = await prisma.leaveBalance.update({
+      where: { id: existing.id },
+      data: {
+        entitlementDays,
+        ...(adjustedDays !== undefined ? { adjustedDays } : {}),
+      },
+    });
+  } else if (adjustedDays !== undefined) {
+    const existing = await getOrCreateLeaveBalance(prisma, companyId, employeeId);
+    balance = await prisma.leaveBalance.update({
+      where: { id: existing.id },
+      data: { adjustedDays },
+    });
+  } else {
+    return errorResponse(
+      'Provide entitlementDays, adjustedDays, adjustmentDelta, or recalculateEntitlement',
+      422,
+    );
+  }
+
+  const [row] = await listLeaveBalances(prisma, companyId, {
+    employeeId,
+    includeAllEmployees: true,
+  });
+  if (row) {
+    return successResponse({
+      ...row,
+      remainingDays: remainingLeaveDays(balance),
+    });
+  }
+
+  return successResponse({
+    ...balance,
+    remainingDays: remainingLeaveDays(balance),
+  });
 }

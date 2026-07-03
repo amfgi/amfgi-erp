@@ -45,10 +45,10 @@ export default function HrAttendanceSignaturePrintPage() {
   }, [autoPrint, loading, error, payload]);
 
   const nameColumnWidthCh = useMemo(() => {
-    if (!payload?.entries.length) return 'Worker Name'.length + 2;
+    if (!payload?.entries.length) return 'Name'.length + 2;
     const longestName = payload.entries.reduce(
       (max, entry) => Math.max(max, entry.employeeName.length),
-      'Worker Name'.length,
+      'Name'.length,
     );
     return longestName + 2;
   }, [payload?.entries]);
@@ -100,6 +100,12 @@ export default function HrAttendanceSignaturePrintPage() {
           text-align: left;
           white-space: nowrap;
         }
+        .signature-table tbody td.col-time:not(.col-sign) {
+          border-bottom: none !important;
+        }
+        .signature-table tbody td.col-sign.col-time {
+          border-top: none !important;
+        }
         .signature-table .col-name {
           white-space: nowrap;
           width: 1%;
@@ -132,6 +138,15 @@ export default function HrAttendanceSignaturePrintPage() {
         .signature-table tr.row-absent .col-break-out-cell {
           color: #000 !important;
           background: transparent !important;
+        }
+        .signature-table tr.row-gap td {
+          height: 5px;
+          padding: 0;
+          border: none !important;
+          background: #e2e2e2;
+          line-height: 0;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         @media screen {
           body { background: #e2e8f0; }
@@ -201,7 +216,7 @@ export default function HrAttendanceSignaturePrintPage() {
 										minWidth: `${nameColumnWidthCh}ch`,
 									}}
 								>
-									Worker Name
+									Name
 								</th>
 								<th className='col-time w-16 border border-slate-300'>
 									Duty In
@@ -221,71 +236,86 @@ export default function HrAttendanceSignaturePrintPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{payload.entries.map((entry) => {
-								const isAbsent = entry.locationLabel === 'ABSENT';
-								const rowClass = isAbsent ? 'row-absent' : undefined;
+							{payload.entries.map((entry, index) => {
+								const isAbsent =
+									entry.locationLabel === 'ABSENT';
+								const rowClass = isAbsent
+									? 'row-absent'
+									: undefined;
+								const isLast =
+									index === payload.entries.length - 1;
 								return (
-								<Fragment key={entry.employeeId}>
-									<tr
-										key={`${entry.employeeId}-data`}
-										className={rowClass}
-										style={{ pageBreakInside: 'avoid' }}
-									>
-										<td
-											rowSpan={2}
-											className='col-serial border border-slate-300 align-middle text-center'
+									<Fragment key={entry.employeeId}>
+										<tr
+											key={`${entry.employeeId}-data`}
+											className={rowClass}
+											style={{ pageBreakInside: 'avoid' }}
 										>
-											{entry.serial}
-										</td>
-										<td
-											rowSpan={2}
-											className='col-name border border-slate-300 align-middle'
-											style={{
-												minWidth: `${nameColumnWidthCh}ch`,
-											}}
+											<td
+												rowSpan={2}
+												className='col-serial border border-slate-300 align-middle text-center'
+											>
+												{entry.serial}
+											</td>
+											<td
+												rowSpan={2}
+												className='col-name border border-slate-300 align-middle'
+												style={{
+													minWidth: `${nameColumnWidthCh}ch`,
+												}}
+											>
+												{entry.employeeName}
+											</td>
+											<td className='col-time border border-slate-300'>
+												{entry.dutyIn}
+											</td>
+											<td
+												className={`col-time col-break-out-cell border border-slate-300${isAbsent ? '' : ' col-break-out'}`}
+											>
+												{entry.breakOut}
+											</td>
+											<td className='col-time border border-slate-300'>
+												{entry.breakIn}
+											</td>
+											<td className='col-time border border-slate-300'>
+												{entry.dutyOut}
+											</td>
+											<td
+												rowSpan={2}
+												className='col-note border border-slate-300 align-middle text-center font-semibold uppercase tracking-wide text-[8px]!'
+											>
+												{entry.locationLabel}
+											</td>
+										</tr>
+										<tr
+											key={`${entry.employeeId}-sign`}
+											className={rowClass}
+											style={{ pageBreakInside: 'avoid' }}
 										>
-											{entry.employeeName}
-										</td>
-										<td className='col-time border border-slate-300'>
-											{entry.dutyIn}
-										</td>
-										<td
-											className={`col-time col-break-out-cell border border-slate-300${isAbsent ? '' : ' col-break-out'}`}
-										>
-											{entry.breakOut}
-										</td>
-										<td className='col-time border border-slate-300'>
-											{entry.breakIn}
-										</td>
-										<td className='col-time border border-slate-300'>
-											{entry.dutyOut}
-										</td>
-										<td className='col-note border border-slate-300 font-semibold uppercase tracking-wide text-[8px]!'>
-											{entry.locationLabel}
-										</td>
-									</tr>
-									<tr
-										key={`${entry.employeeId}-sign`}
-										className={rowClass}
-										style={{ pageBreakInside: 'avoid' }}
-									>
-										<td className='col-sign col-time border border-slate-300' />
-										<td
-											className={`col-sign col-time col-break-out-cell border border-slate-300${isAbsent ? '' : ' col-break-out'}`}
-										/>
-										<td
-											className={`col-sign col-time border border-slate-300${entry.noSignRequired ? ' col-inverted' : ''}`}
-										>
-											{entry.noSignRequired ? (
-												<span className='text-[8px] font-semibold uppercase tracking-wide'>
-													No Sign
-												</span>
-											) : null}
-										</td>
-										<td className='col-sign col-time border border-slate-300' />
-										<td className='col-sign border border-slate-300' />
-									</tr>
-								</Fragment>
+											<td className='col-sign col-time border border-slate-300' />
+											<td
+												className={`col-sign col-time col-break-out-cell border border-slate-300${isAbsent ? '' : ' col-break-out'}`}
+											/>
+											<td
+												className={`col-sign col-time border border-slate-300${entry.noSignRequired ? ' col-inverted' : ''}`}
+											>
+												{entry.noSignRequired ? (
+													<span className='text-[8px] font-semibold uppercase tracking-wide'>
+														No Sign
+													</span>
+												) : null}
+											</td>
+											<td className='col-sign col-time border border-slate-300' />
+										</tr>
+										{!isLast ? (
+											<tr
+												className='row-gap'
+												aria-hidden='true'
+											>
+												<td colSpan={7} />
+											</tr>
+										) : null}
+									</Fragment>
 								);
 							})}
 						</tbody>

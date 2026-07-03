@@ -59,6 +59,7 @@ export default function LeaveTypesSettingsPage() {
   const [requiresProbation, setRequiresProbation] = useState(false);
   const [countsAsPaidLeave, setCountsAsPaidLeave] = useState(false);
   const [deductFromBalance, setDeductFromBalance] = useState(false);
+  const [rolloverUnusedLeave, setRolloverUnusedLeave] = useState(true);
   const [hideFromEmployeePortal, setHideFromEmployeePortal] = useState(false);
   const [payTiers, setPayTiers] = useState<LeavePayTier[]>([]);
 
@@ -85,6 +86,7 @@ export default function LeaveTypesSettingsPage() {
     setRequiresProbation(Boolean(rules.requiresProbationComplete));
     setCountsAsPaidLeave(Boolean(rules.countsAsPaidLeave));
     setDeductFromBalance(Boolean(rules.deductFromBalance));
+    setRolloverUnusedLeave(rules.rolloverUnusedLeave !== false);
     setHideFromEmployeePortal(Boolean(rules.hideFromEmployeePortal));
     setPayTiers(rules.payTiers?.length ? rules.payTiers : []);
   };
@@ -95,6 +97,7 @@ export default function LeaveTypesSettingsPage() {
     requiresProbationComplete: requiresProbation || undefined,
     countsAsPaidLeave: countsAsPaidLeave || undefined,
     deductFromBalance: deductFromBalance || undefined,
+    ...(deductFromBalance ? { rolloverUnusedLeave } : {}),
     hideFromEmployeePortal: hideFromEmployeePortal || undefined,
     ...(payTiers.length > 0 ? { payTiers } : {}),
   });
@@ -329,8 +332,9 @@ export default function LeaveTypesSettingsPage() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              For balance-deducting types, entitlement is prorated for the first calendar year from this
-              date. Company-provided visa uses the oldest visa period start; otherwise hire date is used.
+              For balance-deducting types, entitlement is prorated from the allocation anchor (hire date or
+              oldest company visa start). Enable rollover to carry unused days forward; otherwise the balance
+              resets each calendar year.
             </p>
             <div className="flex flex-col gap-2 text-sm">
               <label className="flex items-center gap-2">
@@ -360,6 +364,17 @@ export default function LeaveTypesSettingsPage() {
                 />
                 Deduct from leave balance
               </label>
+              {deductFromBalance ? (
+                <label className="flex items-center gap-2 pl-6">
+                  <input
+                    type="checkbox"
+                    checked={rolloverUnusedLeave}
+                    onChange={(e) => setRolloverUnusedLeave(e.target.checked)}
+                    className="size-4 rounded border-border"
+                  />
+                  Rollover unused leave to next year
+                </label>
+              ) : null}
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"

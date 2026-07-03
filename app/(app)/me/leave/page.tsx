@@ -28,16 +28,39 @@ type LeaveRow = {
   reviewedBy?: { id: string; name: string | null } | null;
 };
 
+type LeaveTypeBalance = {
+  leaveTypeId: string;
+  code: string;
+  name: string;
+  balanceMode: string;
+  periodLabel: string;
+  entitlementDays: number | null;
+  usedDays: number;
+  adjustedDays: number;
+  remainingDays: number | null;
+  rulesSummary: string;
+};
+
 type BalanceData = {
-  year: number;
   entitlementDays: number;
   usedDays: number;
   adjustedDays: number;
   remainingDays: number;
+  rolloverEnabled: boolean;
+  allocation: {
+    allocationStart: string | null;
+    allocationLabel: string;
+    visaHoldingLabel: string;
+    fullYearEntitlementDays: number;
+    daysPerMonth: number;
+    accruedMonths: number;
+    computedEntitlementDays: number;
+  };
+  leaveTypeBalances: LeaveTypeBalance[];
 };
 
 type DashboardLeaveSummary = {
-  leaveBalance: BalanceData;
+  leaveBalance: Pick<BalanceData, 'remainingDays' | 'usedDays' | 'rolloverEnabled'>;
   leaveSummary: {
     pendingCount: number;
     approvedLeaveDaysYtd: number;
@@ -51,11 +74,14 @@ function statusTone(status: string) {
   return 'bg-slate-500/10 text-slate-600 dark:text-slate-300';
 }
 
+function formatDays(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
 export default function MeLeavePage() {
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
   const [balance, setBalance] = useState<BalanceData | null>(null);
-  const [balanceYear, setBalanceYear] = useState(new Date().getFullYear());
   const [leaveTypeId, setLeaveTypeId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -66,7 +92,7 @@ export default function MeLeavePage() {
   const load = useCallback(async () => {
     const [reqRes, balRes, typesRes, dashRes] = await Promise.all([
       fetch('/api/me/leave-requests', { cache: 'no-store' }),
-      fetch(`/api/me/leave-balance?year=${balanceYear}`, { cache: 'no-store' }),
+      fetch('/api/me/leave-balance', { cache: 'no-store' }),
       fetch('/api/me/leave-types', { cache: 'no-store' }),
       fetch('/api/me/dashboard', { cache: 'no-store' }),
     ]);
@@ -87,7 +113,7 @@ export default function MeLeavePage() {
       setLeaveTypes(active);
       setLeaveTypeId((prev) => prev || active[0]?.id || '');
     }
-  }, [balanceYear]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -143,6 +169,7 @@ export default function MeLeavePage() {
     row.leaveType.replace(/_/g, ' ');
 
   const pendingCount = rows.filter((row) => row.status === 'PENDING').length;
+  const rolloverEnabled = balance?.rolloverEnabled ?? dashboardLeave?.leaveBalance.rolloverEnabled ?? true;
 
   return (
     <div className="space-y-6">
@@ -161,11 +188,11 @@ export default function MeLeavePage() {
       {dashboardLeave ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
-            label={`Leave remaining (${dashboardLeave.leaveBalance.year})`}
+            label={rolloverEnabled ? 'Annual leave remaining' : 'Annual leave remaining (this year)'}
             value={String(dashboardLeave.leaveBalance.remainingDays)}
             tone="emerald"
           />
-          <MetricCard label="Leave used" value={String(dashboardLeave.leaveBalance.usedDays)} />
+          <MetricCard label="Annual leave used" value={String(dashboardLeave.leaveBalance.usedDays)} />
           <MetricCard
             label="Pending requests"
             value={String(dashboardLeave.leaveSummary.pendingCount)}
@@ -180,23 +207,103 @@ export default function MeLeavePage() {
       ) : null}
 
       {balance ? (
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-medium text-emerald-800 dark:text-emerald-300">Annual leave balance</p>
-            <Input
-              type="number"
-              className="h-8 w-24"
-              value={balanceYear}
-              onChange={(e) => setBalanceYear(Number(e.target.value))}
-            />
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Leave allocation</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Accrues at{' '}
+                <span className="font-medium text-foreground">
+                  {formatDays(balance.allocation.daysPerMonth)} days per month
+                </span>{' '}
+                ({balance.allocation.fullYearEntitlementDays} days/year)
+                {rolloverEnabled ? ' with rollover' : ', resetting each calendar year'}.
+              </p>
+            </div>
+            <Badge variant="outline" className="font-normal">
+              {balance.allocation.visaHoldingLabel}
+            </Badge>
           </div>
-          <p className="mt-1 tabular-nums">
-            {balance.remainingDays} remaining · {balance.usedDays} used (approved) · {balance.entitlementDays} entitled
-            {balance.adjustedDays ? ` · ${balance.adjustedDays} adjusted` : ''}
-          </p>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Allocation basis</p>
+              <p className="mt-0.5 font-medium">{balance.allocation.allocationLabel}</p>
+              <p className="text-xs text-muted-foreground">
+                {balance.allocation.allocationStart
+                  ? `from ${balance.allocation.allocationStart}`
+                  : 'No anchor date on file'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Months accrued</p>
+              <p className="mt-0.5 font-medium tabular-nums">{balance.allocation.accruedMonths}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Annual accrued</p>
+              <p className="mt-0.5 font-medium tabular-nums">
+                {formatDays(balance.entitlementDays)} days
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-emerald-500/5 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Remaining</p>
+              <p className="mt-0.5 font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
+                {formatDays(balance.remainingDays)} days
+              </p>
+              {balance.adjustedDays ? (
+                <p className="text-xs text-muted-foreground">
+                  includes {balance.adjustedDays > 0 ? '+' : ''}
+                  {formatDays(balance.adjustedDays)} manual adjustment
+                </p>
+              ) : null}
+            </div>
+          </div>
+
           {pendingCount > 0 ? (
-            <p className="mt-2 text-amber-700 dark:text-amber-300">{pendingCount} request(s) awaiting HR review</p>
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              {pendingCount} request(s) awaiting HR review
+            </p>
           ) : null}
+
+          <div className="overflow-x-auto rounded-lg border border-border/70">
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Leave type</th>
+                  <th className="px-3 py-2 font-medium">Period</th>
+                  <th className="px-3 py-2 font-medium text-right">Entitlement</th>
+                  <th className="px-3 py-2 font-medium text-right">Used</th>
+                  <th className="px-3 py-2 font-medium text-right">Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {balance.leaveTypeBalances.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                      No leave types configured.
+                    </td>
+                  </tr>
+                ) : (
+                  balance.leaveTypeBalances.map((typeRow) => (
+                    <tr key={typeRow.leaveTypeId} className="border-t border-border/60">
+                      <td className="px-3 py-2">
+                        <div className="font-medium">{typeRow.name}</div>
+                        <div className="text-xs text-muted-foreground">{typeRow.rulesSummary || typeRow.code}</div>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{typeRow.periodLabel}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {typeRow.entitlementDays != null ? formatDays(typeRow.entitlementDays) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatDays(typeRow.usedDays)}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">
+                        {typeRow.remainingDays != null ? formatDays(typeRow.remainingDays) : '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 

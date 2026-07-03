@@ -32,7 +32,6 @@ type LeaveRow = {
   employee: { id: string; fullName: string; preferredName: string | null; employeeCode: string };
   reviewedBy?: { id: string; name: string | null } | null;
   balance?: {
-    year: number;
     entitlementDays: number;
     usedDays: number;
     adjustedDays: number;
@@ -191,8 +190,7 @@ export default function HrLeavePage() {
       setRecordBalance(null);
       return;
     }
-    const year = Number(recordStart.slice(0, 4)) || new Date().getFullYear();
-    void fetch(`/api/hr/leave-balances?employeeId=${encodeURIComponent(recordEmployeeId)}&year=${year}`, {
+    void fetch(`/api/hr/leave-balances?employeeId=${encodeURIComponent(recordEmployeeId)}`, {
       cache: 'no-store',
     })
       .then((r) => r.json())
@@ -200,7 +198,6 @@ export default function HrLeavePage() {
         const row = Array.isArray(json?.data) ? json.data[0] : null;
         if (json?.success && row) {
           setRecordBalance({
-            year: row.year,
             entitlementDays: Number(row.entitlementDays),
             usedDays: Number(row.usedDays),
             adjustedDays: Number(row.adjustedDays),
@@ -218,17 +215,14 @@ export default function HrLeavePage() {
       setEditBalance(null);
       return;
     }
-    const year = Number(editStart.slice(0, 4)) || new Date().getFullYear();
-    void fetch(
-      `/api/hr/leave-balances?employeeId=${encodeURIComponent(editModal.employee.id)}&year=${year}`,
-      { cache: 'no-store' }
-    )
+    void fetch(`/api/hr/leave-balances?employeeId=${encodeURIComponent(editModal.employee.id)}`, {
+      cache: 'no-store',
+    })
       .then((r) => r.json())
       .then((json) => {
         const row = Array.isArray(json?.data) ? json.data[0] : null;
         if (json?.success && row) {
           setEditBalance({
-            year: row.year,
             entitlementDays: Number(row.entitlementDays),
             usedDays: Number(row.usedDays),
             adjustedDays: Number(row.adjustedDays),
@@ -424,9 +418,14 @@ export default function HrLeavePage() {
             setup — daily attendance stays on the day sheet.
           </p>
         </div>
-        {canApprove ? (
-          <Button onClick={openRecordModal}>Record leave</Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/hr/leave/balances">
+            <Button variant="outline">Leave balances</Button>
+          </Link>
+          {canApprove ? (
+            <Button onClick={openRecordModal}>Record leave</Button>
+          ) : null}
+        </div>
       </div>
 
       {showGuide ? (
@@ -664,7 +663,7 @@ export default function HrLeavePage() {
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
               {recordBalance ? (
                 <>
-                  <p className="font-medium">Leave balance ({recordBalance.year})</p>
+                  <p className="font-medium">Leave balance ({recordStart.slice(0, 4)})</p>
                   <p className="mt-1 tabular-nums text-muted-foreground">
                     {recordBalance.remainingDays} remaining · {recordBalance.usedDays} used · entitlement{' '}
                     {recordBalance.entitlementDays}
@@ -756,7 +755,7 @@ export default function HrLeavePage() {
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
               {editBalance ? (
                 <>
-                  <p className="font-medium">Leave balance ({editBalance.year})</p>
+                  <p className="font-medium">Leave balance ({editStart.slice(0, 4)})</p>
                   <p className="mt-1 tabular-nums text-muted-foreground">
                     {editBalance.remainingDays} remaining · {editBalance.usedDays} used
                   </p>

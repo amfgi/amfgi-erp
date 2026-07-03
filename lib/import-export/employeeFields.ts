@@ -15,6 +15,7 @@ import {
   GENDER_OPTIONS,
   parseGenderInput,
 } from '@/lib/hr/employeeFieldOptions';
+import { compensationFieldsToExportColumns } from '@/lib/import-export/employeeCompensationFields';
 import type { HrEmployeeExportRecord } from '@/store/api/endpoints/hr';
 
 export const EMPLOYEE_IMPORT_FIELDS: ImportFieldDef[] = [
@@ -117,6 +118,7 @@ export function employeeToExportRow(employee: HrEmployeeExportRecord): Record<st
     'Workforce Role Short': WORKFORCE_EMPLOYEE_TYPE_SHORT_LABELS[profile.employeeType] ?? profile.employeeType,
     'Visa Holding': visaHoldingLabel(profile.visaHolding),
     Expertises: profile.expertises.join(', '),
+    ...compensationFieldsToExportColumns(employee.currentCompensation),
   };
 }
 

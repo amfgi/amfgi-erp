@@ -55,8 +55,8 @@ export async function createLeaveRequest(
     const check = await assertSufficientLeaveBalance(prisma, {
       companyId: params.companyId,
       employeeId: params.employeeId,
-      year: start.getUTCFullYear(),
       daysNeeded,
+      leaveCalendarYear: start.getUTCFullYear(),
     });
     if (!check.ok) throw new Error(check.message);
   }
@@ -109,9 +109,9 @@ export async function approveLeaveRequest(
     const check = await assertSufficientLeaveBalance(prisma, {
       companyId: params.companyId,
       employeeId: existing.employeeId,
-      year: existing.startDate.getUTCFullYear(),
       daysNeeded,
       allowOverride: params.allowInsufficientBalance,
+      leaveCalendarYear: existing.startDate.getUTCFullYear(),
     });
     if (!check.ok) throw new Error(check.message);
   }
@@ -128,11 +128,8 @@ export async function approveLeaveRequest(
     });
 
     if (daysNeeded > 0) {
-      const year = existing.startDate.getUTCFullYear();
-      const balance = await getOrCreateLeaveBalance(tx, params.companyId, existing.employeeId, year);
-      await tx.leaveBalance.update({
-        where: { id: balance.id },
-        data: { usedDays: Number(balance.usedDays) + daysNeeded },
+      await getOrCreateLeaveBalance(tx, params.companyId, existing.employeeId, {
+        calendarYear: existing.startDate.getUTCFullYear(),
       });
     }
 
@@ -189,11 +186,8 @@ export async function cancelLeaveRequest(prisma: PrismaClient, companyId: string
       existing.deductFromBalance
     );
     if (daysUsed > 0) {
-      const year = existing.startDate.getUTCFullYear();
-      const balance = await getOrCreateLeaveBalance(prisma, companyId, existing.employeeId, year);
-      await prisma.leaveBalance.update({
-        where: { id: balance.id },
-        data: { usedDays: Math.max(0, Number(balance.usedDays) - daysUsed) },
+      await getOrCreateLeaveBalance(prisma, companyId, existing.employeeId, {
+        calendarYear: existing.startDate.getUTCFullYear(),
       });
     }
   }
@@ -231,16 +225,8 @@ async function restoreApprovedLeaveSideEffects(
     existing.deductFromBalance
   );
   if (daysUsed > 0) {
-    const year = existing.startDate.getUTCFullYear();
-    const balance = await getOrCreateLeaveBalance(
-      prisma,
-      existing.companyId,
-      existing.employeeId,
-      year
-    );
-    await prisma.leaveBalance.update({
-      where: { id: balance.id },
-      data: { usedDays: Math.max(0, Number(balance.usedDays) - daysUsed) },
+    await getOrCreateLeaveBalance(prisma, existing.companyId, existing.employeeId, {
+      calendarYear: existing.startDate.getUTCFullYear(),
     });
   }
 }
@@ -307,9 +293,9 @@ export async function updateLeaveRequest(
     const check = await assertSufficientLeaveBalance(prisma, {
       companyId: params.companyId,
       employeeId: existing.employeeId,
-      year: start.getUTCFullYear(),
       daysNeeded,
       allowOverride: params.allowInsufficientBalance,
+      leaveCalendarYear: start.getUTCFullYear(),
     });
     if (!check.ok) throw new Error(check.message);
   }
@@ -341,11 +327,8 @@ export async function updateLeaveRequest(
     });
 
     if (wasApproved && daysNeeded > 0) {
-      const year = start.getUTCFullYear();
-      const balance = await getOrCreateLeaveBalance(tx, params.companyId, existing.employeeId, year);
-      await tx.leaveBalance.update({
-        where: { id: balance.id },
-        data: { usedDays: Number(balance.usedDays) + daysNeeded },
+      await getOrCreateLeaveBalance(tx, params.companyId, existing.employeeId, {
+        calendarYear: start.getUTCFullYear(),
       });
     }
 

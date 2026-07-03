@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from 'react-redux';
@@ -33,6 +33,23 @@ import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { cn } from '@/lib/utils';
 import { startScheduleDragPreview } from '@/lib/hr/schedulePointerDragPreview';
+import {
+  computeTeamColumnShift,
+  measureTeamColumnDragSlots,
+  resolveTeamColumnDropIndex,
+  startTeamColumnDragPreview,
+} from '@/lib/hr/scheduleTeamColumnDrag';
+import {
+  collectVerticalDragSiblings,
+  computeVerticalInsertionLineOffset,
+  computeVerticalItemShift,
+  measureVerticalDragLayout,
+  resolveVerticalDropIndex,
+  startVerticalListDrag,
+  VERTICAL_DRAG_ITEM_ATTR,
+  VERTICAL_DRAG_LIST_ATTR,
+  type VerticalDragLayout,
+} from '@/lib/hr/scheduleVerticalListDrag';
 import { isCoarsePointerDevice } from '@/lib/utils/coarsePointer';
 import type { EmployeeTypeTimingSetting } from '@/lib/hr/employeeTypeSettings';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
@@ -405,7 +422,204 @@ function ScheduleDragHandle({
   );
 }
 
+function TeamColumnDragHandle({
+  columnIndex,
+  tableContainerRef,
+  columnWidthRef,
+  disabled,
+  onDragStart,
+  onDragEnd,
+  onDragOverColumn,
+  onDropColumn,
+  className,
+}: {
+  columnIndex: number;
+  tableContainerRef: RefObject<HTMLDivElement | null>;
+  columnWidthRef: RefObject<number>;
+  disabled?: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOverColumn: (columnIndex: number | null) => void;
+  onDropColumn: (targetIndex: number) => void;
+  className?: string;
+}) {
+  if (disabled) return null;
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex h-7 w-6 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded border border-border bg-muted/50 text-muted-foreground transition hover:bg-muted active:cursor-grabbing',
+        className,
+      )}
+      title="Drag to reorder team column"
+      aria-label="Drag to reorder team column"
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const handle = e.currentTarget;
+        const table = tableContainerRef.current?.querySelector('table');
+        if (!(table instanceof HTMLTableElement)) return;
+
+        handle.setPointerCapture(e.pointerId);
+        onDragStart();
+
+        const headerCell = table.querySelector<HTMLElement>(`[data-team-column="${columnIndex}"]`);
+        const measuredWidth = headerCell?.getBoundingClientRect().width ?? 0;
+        if (measuredWidth > 0) {
+          columnWidthRef.current = measuredWidth;
+        }
+
+        const previewSession = startTeamColumnDragPreview(table, columnIndex, e.clientX, e.clientY);
+        const dragSlots = measureTeamColumnDragSlots(table);
+        let dragOverIndex = columnIndex;
+
+        const onMove = (pe: PointerEvent) => {
+          if (pe.pointerId !== e.pointerId) return;
+          pe.preventDefault();
+          previewSession.updateTarget(pe.clientX, pe.clientY);
+          const nextOver = resolveTeamColumnDropIndex(
+            pe.clientX,
+            dragSlots,
+            columnIndex,
+            dragOverIndex,
+          );
+          if (nextOver !== dragOverIndex) {
+            dragOverIndex = nextOver;
+            onDragOverColumn(nextOver);
+          }
+        };
+
+        const finish = (pe: PointerEvent) => {
+          if (pe.pointerId !== e.pointerId) return;
+          onDragOverColumn(null);
+          handle.releasePointerCapture(pe.pointerId);
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', finish);
+          document.removeEventListener('pointercancel', finish);
+          onDropColumn(dragOverIndex);
+          previewSession.destroy({ animate: true });
+          onDragEnd();
+        };
+
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', finish);
+        document.addEventListener('pointercancel', finish);
+      }}
+    >
+      <GripVertical className="pointer-events-none h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+function VerticalDragInsertionLine({ top }: { top: number | null }) {
+  if (top == null) return null;
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 z-30 h-1 rounded-full bg-primary shadow-[0_0_0_2px_hsl(var(--background))]"
+      style={{ top: `${top}px`, transform: 'translateY(-50%)' }}
+    />
+  );
+}
+
+function VerticalListDragHandle({
+  itemIndex,
+  layoutRef,
+  disabled,
+  onDragStart,
+  onDragEnd,
+  onDragOverIndex,
+  onDropIndex,
+  className,
+  label,
+}: {
+  itemIndex: number;
+  layoutRef?: RefObject<VerticalDragLayout | null>;
+  disabled?: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOverIndex: (index: number | null) => void;
+  onDropIndex: (index: number) => void;
+  className?: string;
+  label: string;
+}) {
+  if (disabled) return null;
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex h-7 w-6 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded border border-border bg-muted/50 text-muted-foreground transition hover:bg-muted active:cursor-grabbing',
+        className,
+      )}
+      title={`Drag to reorder ${label}`}
+      aria-label={`Drag to reorder ${label}`}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const handle = e.currentTarget;
+        const itemElement = handle.closest(`[${VERTICAL_DRAG_ITEM_ATTR}]`) as HTMLElement | null;
+        if (!itemElement) return;
+
+        handle.setPointerCapture(e.pointerId);
+        onDragStart();
+
+        const layout = measureVerticalDragLayout(itemElement);
+        if (layoutRef) {
+          layoutRef.current = layout;
+        }
+        const dragSlots = layout.slots;
+        const siblings = collectVerticalDragSiblings(itemElement);
+        const fromIndex = siblings.indexOf(itemElement);
+        const resolvedFrom = fromIndex >= 0 ? fromIndex : itemIndex;
+        const previewSession = startVerticalListDrag(itemElement, e.clientX, e.clientY);
+        let dragOverIndex = resolvedFrom;
+
+        const onMove = (pe: PointerEvent) => {
+          if (pe.pointerId !== e.pointerId) return;
+          pe.preventDefault();
+          previewSession.updateTarget(pe.clientX, pe.clientY);
+          const nextOver = resolveVerticalDropIndex(
+            pe.clientY,
+            dragSlots,
+            resolvedFrom,
+            dragOverIndex,
+          );
+          if (nextOver !== dragOverIndex) {
+            dragOverIndex = nextOver;
+            onDragOverIndex(nextOver);
+          }
+        };
+
+        const finish = (pe: PointerEvent) => {
+          if (pe.pointerId !== e.pointerId) return;
+          handle.releasePointerCapture(pe.pointerId);
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', finish);
+          document.removeEventListener('pointercancel', finish);
+          onDropIndex(dragOverIndex);
+          previewSession.destroy({ animate: true });
+          onDragOverIndex(null);
+          onDragEnd();
+        };
+
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', finish);
+        document.addEventListener('pointercancel', finish);
+      }}
+    >
+      <GripVertical className="pointer-events-none h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 const TEAM_COLUMN_CLASS = 'min-w-[18rem] w-[18rem] max-w-[18rem] align-top overflow-hidden';
+const WORKERS_COLUMN_CLASS = 'min-w-[18rem] w-[18rem] max-w-[18rem] align-top overflow-visible';
 const STICKY_ROW_LABEL_CLASS =
   'sticky left-0 z-20 min-w-[7rem] w-[7rem] border-r border-border bg-muted px-2 py-1 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground shadow-[4px_0_6px_-4px_rgba(0,0,0,0.12)]';
 
@@ -1147,9 +1361,15 @@ export default function HrScheduleDayPage() {
   const [draggingWorker, setDraggingWorker] = useState<WorkerDragTarget | null>(null);
   const [draggingSubTeam, setDraggingSubTeam] = useState<SubTeamDragTarget | null>(null);
   const [draggingTeamColumn, setDraggingTeamColumn] = useState<number | null>(null);
+  const [teamColumnDragOverIndex, setTeamColumnDragOverIndex] = useState<number | null>(null);
+  const [workerDragOverIndex, setWorkerDragOverIndex] = useState<number | null>(null);
+  const [subTeamDragOverIndex, setSubTeamDragOverIndex] = useState<number | null>(null);
   const draggingWorkerRef = useRef<WorkerDragTarget | null>(null);
   const draggingSubTeamRef = useRef<SubTeamDragTarget | null>(null);
   const draggingTeamColumnRef = useRef<number | null>(null);
+  const teamColumnWidthRef = useRef(288);
+  const workerDragLayoutRef = useRef<VerticalDragLayout | null>(null);
+  const subTeamDragLayoutRef = useRef<VerticalDragLayout | null>(null);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -1509,7 +1729,8 @@ export default function HrScheduleDayPage() {
   const plannerCellCls = useCallback(
     (rowKey: string) => {
       const { cell } = getRowThemeClasses(rowKey);
-      return cn(TEAM_COLUMN_CLASS, 'border-l border-border', cell);
+      const columnCls = rowKey === 'workers' ? WORKERS_COLUMN_CLASS : TEAM_COLUMN_CLASS;
+      return cn(columnCls, 'border-l border-border', cell);
     },
     [getRowThemeClasses],
   );
@@ -1519,6 +1740,109 @@ export default function HrScheduleDayPage() {
       TEAM_COLUMN_CLASS,
       'sticky top-0 z-20 border-b border-border bg-muted px-2 py-1.5 text-left align-top',
     );
+
+  const teamColumnDragCellStyle = useCallback(
+    (columnIndex: number): CSSProperties | undefined => {
+      if (draggingTeamColumn == null) return undefined;
+      const overIndex = teamColumnDragOverIndex ?? draggingTeamColumn;
+      const shift = computeTeamColumnShift(
+        columnIndex,
+        draggingTeamColumn,
+        overIndex,
+        teamColumnWidthRef.current,
+      );
+      return {
+        transform: shift !== 0 ? `translateX(${shift}px)` : undefined,
+        transition: 'none',
+      };
+    },
+    [draggingTeamColumn, teamColumnDragOverIndex],
+  );
+
+  const teamColumnDragCellCls = useCallback(
+    (columnIndex: number) =>
+      cn(
+        draggingTeamColumn !== null && 'relative z-0',
+        draggingTeamColumn === columnIndex && 'opacity-25',
+      ),
+    [draggingTeamColumn],
+  );
+
+  const getWorkerRowDragStyle = useCallback(
+    (colIdx: number, memberIndex: number, subTeamIndex?: number): CSSProperties | undefined => {
+      const drag = draggingWorker;
+      if (!drag || drag.colIdx !== colIdx) return undefined;
+      if (drag.kind === 'flat' && subTeamIndex !== undefined) return undefined;
+      if (
+        drag.kind === 'subTeam' &&
+        (subTeamIndex === undefined || drag.subTeamIndex !== subTeamIndex)
+      ) {
+        return undefined;
+      }
+      const overIndex = workerDragOverIndex ?? drag.memberIndex;
+      const shift = computeVerticalItemShift(
+        memberIndex,
+        drag.memberIndex,
+        overIndex,
+        workerDragLayoutRef.current?.slots ?? [],
+      );
+      return {
+        transform: shift !== 0 ? `translateY(${shift}px)` : undefined,
+        transition: 'none',
+      };
+    },
+    [draggingWorker, workerDragOverIndex],
+  );
+
+  const getWorkerRowDragCls = useCallback(
+    (colIdx: number, memberIndex: number, subTeamIndex?: number) => {
+      const drag = draggingWorker;
+      if (!drag || drag.colIdx !== colIdx) return '';
+      if (drag.kind === 'flat' && subTeamIndex !== undefined) return '';
+      if (
+        drag.kind === 'subTeam' &&
+        (subTeamIndex === undefined || drag.subTeamIndex !== subTeamIndex)
+      ) {
+        return '';
+      }
+      return cn(
+        'relative z-0',
+        drag.memberIndex === memberIndex && 'opacity-25',
+      );
+    },
+    [draggingWorker, workerDragOverIndex],
+  );
+
+  const getSubTeamDragStyle = useCallback(
+    (colIdx: number, subTeamIndex: number): CSSProperties | undefined => {
+      const drag = draggingSubTeam;
+      if (!drag || drag.colIdx !== colIdx) return undefined;
+      const overIndex = subTeamDragOverIndex ?? drag.subTeamIndex;
+      const shift = computeVerticalItemShift(
+        subTeamIndex,
+        drag.subTeamIndex,
+        overIndex,
+        subTeamDragLayoutRef.current?.slots ?? [],
+      );
+      return {
+        transform: shift !== 0 ? `translateY(${shift}px)` : undefined,
+        transition: 'none',
+      };
+    },
+    [draggingSubTeam, subTeamDragOverIndex],
+  );
+
+  const getSubTeamDragCls = useCallback(
+    (colIdx: number, subTeamIndex: number) => {
+      const drag = draggingSubTeam;
+      if (!drag || drag.colIdx !== colIdx) return '';
+      return cn(
+        'relative z-0',
+        drag.subTeamIndex === subTeamIndex && 'opacity-25',
+      );
+    },
+    [draggingSubTeam, subTeamDragOverIndex],
+  );
 
   const mergeEmployees = useCallback((rows: ScheduleEmployeeRow[] | EmployeeProfile[]) => {
     setEmployeeById((prev) => {
@@ -2663,14 +2987,32 @@ export default function HrScheduleDayPage() {
         toast.error(json?.error ?? 'Failed to load template');
         return;
       }
-      mapFromApi(json.data as Record<string, unknown>);
+      const templateData = json.data as Record<string, unknown>;
+      mapFromApi(templateData);
+      const templateDriverLogs = (
+        (templateData.driverLogs as ScheduleDriverLogRecord[] | undefined) ?? []
+      ).map((log) => ({
+        id: log.id,
+        driverEmployeeId: log.driverEmployeeId,
+        guestDriverName: log.guestDriverName,
+        routeText: log.routeText,
+        sequence: log.sequence,
+        driver: log.driver,
+      }));
+      syncDriverTripStateFromLogs(templateDriverLogs, driverLogVersion, false);
       markScheduleStructureDirty();
       setTemplateModalOpen(false);
       toast.success(`Template loaded from ${selectedTemplateDate}`);
     } finally {
       setApplyingTemplate(false);
     }
-  }, [mapFromApi, markScheduleStructureDirty, selectedTemplateDate]);
+  }, [
+    driverLogVersion,
+    mapFromApi,
+    markScheduleStructureDirty,
+    selectedTemplateDate,
+    syncDriverTripStateFromLogs,
+  ]);
 
   const openTemplateModal = useCallback(() => {
     setSelectedTemplateDate((current) => {
@@ -3421,31 +3763,39 @@ export default function HrScheduleDayPage() {
   const startWorkerDrag = useCallback((target: WorkerDragTarget) => {
     draggingWorkerRef.current = target;
     setDraggingWorker(target);
+    setWorkerDragOverIndex(target.memberIndex);
   }, []);
 
   const endWorkerDrag = useCallback(() => {
     draggingWorkerRef.current = null;
     setDraggingWorker(null);
+    setWorkerDragOverIndex(null);
+    workerDragLayoutRef.current = null;
   }, []);
 
   const startSubTeamDrag = useCallback((target: SubTeamDragTarget) => {
     draggingSubTeamRef.current = target;
     setDraggingSubTeam(target);
+    setSubTeamDragOverIndex(target.subTeamIndex);
   }, []);
 
   const endSubTeamDrag = useCallback(() => {
     draggingSubTeamRef.current = null;
     setDraggingSubTeam(null);
+    setSubTeamDragOverIndex(null);
+    subTeamDragLayoutRef.current = null;
   }, []);
 
   const startTeamColumnDrag = useCallback((colIdx: number) => {
     draggingTeamColumnRef.current = colIdx;
     setDraggingTeamColumn(colIdx);
+    setTeamColumnDragOverIndex(colIdx);
   }, []);
 
   const endTeamColumnDrag = useCallback(() => {
     draggingTeamColumnRef.current = null;
     setDraggingTeamColumn(null);
+    setTeamColumnDragOverIndex(null);
   }, []);
 
   const isWorkerDragSource = (target: WorkerDragTarget) => {
@@ -4375,9 +4725,27 @@ export default function HrScheduleDayPage() {
   const renderWorkersCell = (draft: AsgDraft, colIdx: number) => {
     const blockCls = 'rounded border border-border bg-muted/30 p-1';
     const fieldDisabled = dis;
+    const flatWorkerDragActive =
+      draggingWorker?.kind === 'flat' && draggingWorker.colIdx === colIdx;
+    const flatInsertionTop = flatWorkerDragActive
+      ? computeVerticalInsertionLineOffset(
+          workerDragLayoutRef.current,
+          draggingWorker.memberIndex,
+          workerDragOverIndex ?? draggingWorker.memberIndex,
+        )
+      : null;
+    const subTeamDragActive = draggingSubTeam?.colIdx === colIdx;
+    const subTeamInsertionTop = subTeamDragActive
+      ? computeVerticalInsertionLineOffset(
+          subTeamDragLayoutRef.current,
+          draggingSubTeam!.subTeamIndex,
+          subTeamDragOverIndex ?? draggingSubTeam!.subTeamIndex,
+        )
+      : null;
+    const columnDragActive = flatWorkerDragActive || subTeamDragActive;
 
     return (
-      <div className="min-w-0 space-y-1">
+      <div className={cn('min-w-0 space-y-1', columnDragActive && 'relative z-20')}>
         {!dis && (
           <div className="flex flex-wrap items-center gap-1">
             <Button type="button" variant="outline" size="sm" onClick={() => toggleSplitMode(colIdx)}>
@@ -4392,7 +4760,11 @@ export default function HrScheduleDayPage() {
         )}
 
         {!draft.splitMode ? (
-          <div className="space-y-1">
+          <div
+            {...{ [VERTICAL_DRAG_LIST_ATTR]: '' }}
+            className={cn('relative space-y-1', flatWorkerDragActive && 'z-10')}
+          >
+            <VerticalDragInsertionLine top={flatInsertionTop} />
             {draft.members.map((member, memberIndex) => {
               const isMulti = member.employeeId ? multiAssigned.has(member.employeeId) : false;
               const workerNavSub = memberIndex;
@@ -4401,24 +4773,27 @@ export default function HrScheduleDayPage() {
               return (
                 <div
                   key={`flat-worker-${memberIndex}`}
-                  data-schedule-drop="worker"
-                  data-schedule-drag-preview=""
-                  data-worker-kind="flat"
-                  data-worker-col={colIdx}
-                  data-worker-member={memberIndex}
+                  {...{ [VERTICAL_DRAG_ITEM_ATTR]: '' }}
+                  style={getWorkerRowDragStyle(colIdx, memberIndex)}
                   className={cn(
-                    'rounded transition-all duration-150 data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40',
+                    'rounded',
                     isMulti && 'ring-2 ring-amber-400/60',
-                    isDragging && 'bg-primary/5 ring-2 ring-primary/30'
+                    isDragging && 'ring-2 ring-primary/30',
+                    getWorkerRowDragCls(colIdx, memberIndex),
                   )}
                 >
                   <div className="flex items-center gap-1">
-                    <ScheduleDragHandle
+                    <VerticalListDragHandle
+                      itemIndex={memberIndex}
+                      layoutRef={workerDragLayoutRef}
                       label="worker"
                       disabled={fieldDisabled}
                       onDragStart={() => startWorkerDrag(dragTarget)}
                       onDragEnd={endWorkerDrag}
-                      onPointerDrop={resolveSchedulePointerDrop}
+                      onDragOverIndex={setWorkerDragOverIndex}
+                      onDropIndex={(dropIndex) => {
+                        handleWorkerDrop({ kind: 'flat', colIdx, memberIndex: dropIndex });
+                      }}
                     />
                     <div className="min-w-0 flex-1">
                       <SearchSelect
@@ -4459,35 +4834,52 @@ export default function HrScheduleDayPage() {
             })}
           </div>
         ) : (
-          <div className="space-y-1">
+          <div
+            {...{ [VERTICAL_DRAG_LIST_ATTR]: '' }}
+            className={cn('relative space-y-1', subTeamDragActive && 'z-10')}
+          >
+            <VerticalDragInsertionLine top={subTeamInsertionTop} />
             {draft.subTeams.length === 0 && (
               <p className="text-[11px] text-muted-foreground">Add a sub-team to start splitting this team.</p>
             )}
             {draft.subTeams.map((subTeam, subTeamIndex) => {
               const subTeamDragTarget: SubTeamDragTarget = { colIdx, subTeamIndex };
               const isSubTeamDragging = isSubTeamDragSource(subTeamDragTarget);
+              const subTeamWorkerDragActive =
+                draggingWorker?.kind === 'subTeam' &&
+                draggingWorker.colIdx === colIdx &&
+                draggingWorker.subTeamIndex === subTeamIndex;
+              const subTeamWorkerInsertionTop = subTeamWorkerDragActive
+                ? computeVerticalInsertionLineOffset(
+                    workerDragLayoutRef.current,
+                    draggingWorker.memberIndex,
+                    workerDragOverIndex ?? draggingWorker.memberIndex,
+                  )
+                : null;
               return (
               <div
                 key={subTeam.id}
-                data-schedule-drop="subteam"
-                data-schedule-drag-preview=""
-                data-subteam-col={colIdx}
-                data-subteam-index={subTeamIndex}
+                {...{ [VERTICAL_DRAG_ITEM_ATTR]: '' }}
+                style={getSubTeamDragStyle(colIdx, subTeamIndex)}
                 className={cn(
                   blockCls,
-                  'transition-all duration-150',
-                  'data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40',
                   isSubTeamDragging && 'ring-2 ring-primary/30',
+                  getSubTeamDragCls(colIdx, subTeamIndex),
                 )}
               >
                 <div className="flex items-center gap-1">
-                  <ScheduleDragHandle
+                  <VerticalListDragHandle
+                    itemIndex={subTeamIndex}
+                    layoutRef={subTeamDragLayoutRef}
                     label="sub-team"
                     disabled={fieldDisabled}
                     className={SUB_TEAM_DRAG_HANDLE_CLS}
                     onDragStart={() => startSubTeamDrag(subTeamDragTarget)}
                     onDragEnd={endSubTeamDrag}
-                    onPointerDrop={resolveSchedulePointerDrop}
+                    onDragOverIndex={setSubTeamDragOverIndex}
+                    onDropIndex={(dropIndex) => {
+                      handleSubTeamDrop({ colIdx, subTeamIndex: dropIndex });
+                    }}
                   />
                   <input
                     value={subTeam.label}
@@ -4509,7 +4901,11 @@ export default function HrScheduleDayPage() {
                     </Button>
                   )}
                 </div>
-                <div className="mt-1 space-y-0.5">
+                <div
+                  {...{ [VERTICAL_DRAG_LIST_ATTR]: '' }}
+                  className={cn('relative mt-1 space-y-0.5', subTeamWorkerDragActive && 'z-10')}
+                >
+                  <VerticalDragInsertionLine top={subTeamWorkerInsertionTop} />
                   {subTeam.members.map((member, memberIndex) => {
                     const isMulti = member.employeeId ? multiAssigned.has(member.employeeId) : false;
                     const workerNavSub = encodeWorkerNavSub(subTeamIndex, memberIndex);
@@ -4523,25 +4919,32 @@ export default function HrScheduleDayPage() {
                     return (
                       <div
                         key={`${subTeam.id}-member-${memberIndex}`}
-                        data-schedule-drop="worker"
-                        data-schedule-drag-preview=""
-                        data-worker-kind="subTeam"
-                        data-worker-col={colIdx}
-                        data-worker-sub-team={subTeamIndex}
-                        data-worker-member={memberIndex}
+                        {...{ [VERTICAL_DRAG_ITEM_ATTR]: '' }}
+                        style={getWorkerRowDragStyle(colIdx, memberIndex, subTeamIndex)}
                         className={cn(
-                          'rounded transition-all duration-150 data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40',
+                          'rounded',
                           isMulti && 'ring-2 ring-amber-400/60',
-                          isDragging && 'bg-primary/5 ring-2 ring-primary/30'
+                          isDragging && 'ring-2 ring-primary/30',
+                          getWorkerRowDragCls(colIdx, memberIndex, subTeamIndex),
                         )}
                       >
                         <div className="flex items-center gap-1">
-                          <ScheduleDragHandle
+                          <VerticalListDragHandle
+                            itemIndex={memberIndex}
+                            layoutRef={workerDragLayoutRef}
                             label="worker"
                             disabled={fieldDisabled}
                             onDragStart={() => startWorkerDrag(dragTarget)}
                             onDragEnd={endWorkerDrag}
-                            onPointerDrop={resolveSchedulePointerDrop}
+                            onDragOverIndex={setWorkerDragOverIndex}
+                            onDropIndex={(dropIndex) => {
+                              handleWorkerDrop({
+                                kind: 'subTeam',
+                                colIdx,
+                                subTeamIndex,
+                                memberIndex: dropIndex,
+                              });
+                            }}
                           />
                           <div className="min-w-0 flex-1">
                             <SearchSelect
@@ -4607,8 +5010,15 @@ export default function HrScheduleDayPage() {
           <tr key={rowKey} className={theme.row}>
             {showRowLabels ? <th className={theme.label}>{label}</th> : null}
             {drafts.map((d, ci) => (
-              <td key={ci} className={plannerCellCls(rowKey)}>
-                <div className='relative min-h-14 min-w-0'>{renderWorkersCell(d, ci)}</div>
+              <td
+                key={ci}
+                data-team-column={ci}
+                className={cn(plannerCellCls(rowKey), teamColumnDragCellCls(ci))}
+                style={teamColumnDragCellStyle(ci)}
+              >
+                <div className={cn('relative min-h-14 min-w-0', (draggingWorker?.colIdx === ci || draggingSubTeam?.colIdx === ci) && 'z-20')}>
+                  {renderWorkersCell(d, ci)}
+                </div>
               </td>
             ))}
           </tr>
@@ -4620,7 +5030,12 @@ export default function HrScheduleDayPage() {
           <tr key={rowKey} className={theme.row}>
             {showRowLabels ? <th className={theme.label}>{label}</th> : null}
             {drafts.map((d, ci) => (
-              <td key={ci} className={plannerCellCls(rowKey)}>
+              <td
+                key={ci}
+                data-team-column={ci}
+                className={cn(plannerCellCls(rowKey), teamColumnDragCellCls(ci))}
+                style={teamColumnDragCellStyle(ci)}
+              >
                 <div className='inline-flex min-w-12 items-center justify-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground'>
                   {getDraftWorkerCount(d)}
                 </div>
@@ -4639,7 +5054,12 @@ export default function HrScheduleDayPage() {
               const required = parseJobExpertise(job);
               const suggestions = suggestedWorkersByColumn.get(ci) ?? [];
               return (
-                <td key={ci} className={plannerCellCls(rowKey)}>
+                <td
+                  key={ci}
+                  data-team-column={ci}
+                  className={cn(plannerCellCls(rowKey), teamColumnDragCellCls(ci))}
+                  style={teamColumnDragCellStyle(ci)}
+                >
                   {required.length === 0 ? (
                     <p className='text-[11px] text-muted-foreground'>No job expertise configured yet.</p>
                   ) : suggestions.length === 0 ? (
@@ -4671,7 +5091,12 @@ export default function HrScheduleDayPage() {
         <tr key={rowKey} className={theme.row}>
           {showRowLabels ? <th className={theme.label}>{label}</th> : null}
           {drafts.map((d, ci) => (
-            <td key={ci} className={plannerCellCls(rowKey)}>
+            <td
+              key={ci}
+              data-team-column={ci}
+              className={cn(plannerCellCls(rowKey), teamColumnDragCellCls(ci))}
+              style={teamColumnDragCellStyle(ci)}
+            >
               <div className='min-w-0'>{renderCell(d, ci, rowKey)}</div>
             </td>
           ))}
@@ -5139,32 +5564,32 @@ export default function HrScheduleDayPage() {
 													scope='col'
 													className={cn(
 														teamHeaderCls(),
-														'data-[schedule-drop-active=true]:scale-[1.01] data-[schedule-drop-active=true]:ring-2 data-[schedule-drop-active=true]:ring-primary/40 transition-all duration-150',
-														draggingTeamColumn ===
-															ci &&
-															'ring-2 ring-primary/30',
+														teamColumnDragCellCls(ci),
+														draggingTeamColumn === ci &&
+															'z-10 ring-2 ring-primary/30',
+														teamColumnDragOverIndex === ci &&
+															draggingTeamColumn !== null &&
+															draggingTeamColumn !== ci &&
+															'bg-primary/10 ring-2 ring-inset ring-primary/45',
 													)}
+													style={teamColumnDragCellStyle(ci)}
 												>
-													<div
-														className='flex items-center justify-between gap-2'
-														data-schedule-drag-preview=''
-													>
+													<div className='flex items-center justify-between gap-2'>
 														<div className='flex min-w-0 items-center gap-1'>
 															{canEdit && !dis ? (
 																<>
-																	<ScheduleDragHandle
-																		label='team column'
+																	<TeamColumnDragHandle
+																		columnIndex={ci}
+																		tableContainerRef={teamBoardScrollRef}
+																		columnWidthRef={teamColumnWidthRef}
 																		onDragStart={() =>
-																			startTeamColumnDrag(
-																				ci,
-																			)
+																			startTeamColumnDrag(ci)
 																		}
-																		onDragEnd={
-																			endTeamColumnDrag
+																		onDragEnd={endTeamColumnDrag}
+																		onDragOverColumn={
+																			setTeamColumnDragOverIndex
 																		}
-																		onPointerDrop={
-																			resolveSchedulePointerDrop
-																		}
+																		onDropColumn={handleTeamColumnDrop}
 																	/>
 																	<Button
 																		type='button'

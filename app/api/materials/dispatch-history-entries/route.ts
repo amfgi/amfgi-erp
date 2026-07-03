@@ -96,6 +96,7 @@ export async function GET(req: Request) {
           supplierId: true,
           createdByUserId: true,
           createdByName: true,
+          signedCopyUrl: true,
           supplier: { select: { id: true, name: true } },
         },
       },
@@ -274,7 +275,8 @@ export async function GET(req: Request) {
         deliveryNoteContactPerson,
         documentNotes: firstTxn.deliveryNote?.documentNotes ?? undefined,
         customItemsJson: firstTxn.deliveryNote?.customItemsJson ?? undefined,
-        signedCopyUrl: firstTxn.signedCopyUrl ?? undefined,
+        signedCopyUrl:
+          firstTxn.deliveryNote?.signedCopyUrl ?? firstTxn.signedCopyUrl ?? undefined,
         ...createdBy,
         deliveryType: firstTxn.deliveryNote?.deliveryType ?? 'DISPATCH',
         transitStatus: firstTxn.deliveryNote?.transitStatus ?? undefined,
@@ -307,6 +309,7 @@ export async function GET(req: Request) {
       supplierId: true,
       createdByUserId: true,
       createdByName: true,
+      signedCopyUrl: true,
       supplier: { select: { id: true, name: true } },
       job: {
         select: {
@@ -446,6 +449,7 @@ export async function GET(req: Request) {
       deliveryNoteContactPerson: dn.contactPerson?.trim() || undefined,
       documentNotes: dn.documentNotes ?? undefined,
       customItemsJson: dn.customItemsJson ?? undefined,
+      signedCopyUrl: dn.signedCopyUrl ?? undefined,
       ...createdBy,
       deliveryType: dn.deliveryType,
       transitStatus: dn.transitStatus ?? undefined,

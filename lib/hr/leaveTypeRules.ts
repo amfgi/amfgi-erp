@@ -20,6 +20,7 @@ export const LEAVE_ALLOCATION_BASIS_OPTIONS: Array<{ value: LeaveAllocationBasis
 export const LeaveTypeRulesSchema = z.object({
   /** Rolling entitlement window in days (e.g. 90 for UAE sick leave). */
   entitlementDays: z.number().int().min(1).optional(),
+  /** Monthly accrual rate is derived as entitlementDays / 12 (e.g. 30 → 2.5 days/month). */
   /** Calendar-year entitlement proration anchor (annual leave). */
   allocationBasis: LeaveAllocationBasisSchema.optional(),
   /** Paid tiers apply only after probation is complete. */
@@ -28,6 +29,8 @@ export const LeaveTypeRulesSchema = z.object({
   countsAsPaidLeave: z.boolean().optional(),
   /** Deduct usage from employee leave balance (annual leave). */
   deductFromBalance: z.boolean().optional(),
+  /** When true, unused balance carries forward (lifetime). When false, balance resets each calendar year. */
+  rolloverUnusedLeave: z.boolean().optional(),
   /** When true, employees cannot select this type in the self-service portal. */
   hideFromEmployeePortal: z.boolean().optional(),
   /** Tiered pay within the entitlement period (day 1 = first day of this leave type in period). */
@@ -63,6 +66,7 @@ export const DEFAULT_ANNUAL_LEAVE_RULES: LeaveTypeRules = {
   allocationBasis: 'OLDEST_VISA_OR_HIRE',
   countsAsPaidLeave: true,
   deductFromBalance: true,
+  rolloverUnusedLeave: true,
   payTiers: [{ fromDay: 1, toDay: 365, payPercent: 100 }],
 };
 
@@ -97,7 +101,7 @@ export function payPercentForLeaveDay(rules: LeaveTypeRules, dayIndex: number): 
 
 export function summarizeLeaveRules(rules: LeaveTypeRules): string {
   const parts: string[] = [];
-  if (rules.entitlementDays) parts.push(`${rules.entitlementDays}-day entitlement`);
+  if (rules.entitlementDays) parts.push(`${rules.entitlementDays}-day entitlement (${rules.entitlementDays / 12} days/month)`);
   if (rules.allocationBasis === 'OLDEST_VISA_OR_HIRE') {
     parts.push('alloc: oldest visa or hire');
   } else if (rules.allocationBasis === 'HIRE_DATE') {
@@ -105,6 +109,9 @@ export function summarizeLeaveRules(rules: LeaveTypeRules): string {
   }
   if (rules.requiresProbationComplete) parts.push('after probation');
   if (rules.deductFromBalance) parts.push('deducts balance');
+  if (rules.deductFromBalance && rules.entitlementDays) {
+    parts.push(rolloverUnusedLeaveFromRules(rules) ? 'rollover enabled' : 'resets yearly');
+  }
   if (rules.hideFromEmployeePortal) parts.push('hidden from portal');
   if (rules.payTiers?.length) {
     const tierText = rules.payTiers
@@ -162,6 +169,11 @@ export function legacyLeaveRequestTypeFromCode(
 
 export function deductFromBalanceFromRules(rules: LeaveTypeRules): boolean {
   return rules.deductFromBalance === true;
+}
+
+/** Default true — unused annual leave carries forward unless explicitly disabled. */
+export function rolloverUnusedLeaveFromRules(rules: LeaveTypeRules): boolean {
+  return rules.rolloverUnusedLeave !== false;
 }
 
 export function isLeaveTypeHiddenFromEmployeePortal(rules: LeaveTypeRules): boolean {

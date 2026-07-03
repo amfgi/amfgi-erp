@@ -8,7 +8,7 @@ import {
   workedHoursFromMinutes,
 } from '@/lib/hr/payroll/payDayBreakdown';
 import { resolveExcludedWeekdays, resolveOtPercent } from '@/lib/hr/payroll/payTypeConfigHelpers';
-import { resolvePerDayComponentSplit } from '@/lib/hr/payroll/salaryComponent';
+import { resolvePerDayComponentSplit, type AttendanceComponentSplit } from '@/lib/hr/payroll/salaryComponent';
 import type { CompensationInput, PayDayBreakdown, PayLineInput, PayTypeConfig } from '@/lib/hr/payroll/types';
 
 export function resolveHolidayOtPercent(line: PayLineInput, employeeConfig: PayTypeConfig): number {
@@ -57,8 +57,19 @@ export function buildPaidHolidayDayRow(params: {
   basicHourRate: number;
   compensation: CompensationInput;
   employeeConfig: PayTypeConfig;
+  splitMap?: Map<string, AttendanceComponentSplit>;
+  packageLines?: PayLineInput[];
 }): PayDayBreakdown {
-  const { line, month, employeeDailyRate, basicHourRate, compensation, employeeConfig } = params;
+  const {
+    line,
+    month,
+    employeeDailyRate,
+    basicHourRate,
+    compensation,
+    employeeConfig,
+    splitMap,
+    packageLines,
+  } = params;
   const lineBasic = lineBasicHours(line);
   const holidayPay = holidayDayPayAmount({
     line,
@@ -73,6 +84,9 @@ export function buildPaidHolidayDayRow(params: {
     compensation,
     month,
     excludedWeekdays,
+    lines: packageLines,
+    config: employeeConfig,
+    splitMap,
   });
   const allowance = roundMoney(componentEarning - componentDeduction);
   const totalSalary = roundMoney(holidayPay + otPay + allowance);

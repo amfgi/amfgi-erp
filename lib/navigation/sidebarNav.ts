@@ -148,6 +148,11 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			},
 			{ href: '/hr/leave', label: 'Leave management', perm: 'hr.leave.view' },
 			{
+				href: '/hr/leave/balances',
+				label: 'Leave balances',
+				perm: 'hr.leave.view',
+			},
+			{
 				href: '/hr/employees',
 				label: 'Employees',
 				perm: 'hr.employee.view',

@@ -6,8 +6,10 @@ import { readOnLeaveFrom } from '@/lib/hr/employeeLeavePeriod';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
 import {
   employeeImportRowToPayload,
+  employeeToExportRow,
   mapEmployeeImportRow,
 } from '@/lib/import-export/employeeFields';
+import { compensationFieldsToExportColumns } from '@/lib/import-export/employeeCompensationFields';
 
 describe('employee import/export fields', () => {
   it('maps workforce short type labels on import', () => {
@@ -73,5 +75,50 @@ describe('employee import/export fields', () => {
     expect(mapped.gender).toBe('F');
     const payload = employeeImportRowToPayload(mapped);
     expect(payload.gender).toBe('F');
+  });
+
+  it('exports compensation columns from current package snapshot', () => {
+    const row = employeeToExportRow({
+      id: 'e1',
+      employeeCode: 'EMP-1',
+      fullName: 'Jane Doe',
+      preferredName: null,
+      email: null,
+      phone: null,
+      nationality: null,
+      dateOfBirth: null,
+      gender: null,
+      designation: null,
+      department: null,
+      employmentType: null,
+      signatureGroup: null,
+      hireDate: null,
+      terminationDate: null,
+      status: 'ACTIVE',
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      bloodGroup: null,
+      portalEnabled: false,
+      adminNotes: null,
+      profileExtension: null,
+      currentCompensation: {
+        payTypeName: 'Monthly Office',
+        payTypeCode: 'MONTHLY_OFFICE',
+        monthlyBasic: 3500,
+        dailyRate: null,
+        components: [
+          { name: 'Housing Allowance', amount: 1500, componentKind: 'EARNING' },
+          { name: 'Loan', amount: 200, componentKind: 'DEDUCTION' },
+        ],
+        totalMonthly: 4800,
+        effectiveFrom: '2024-01-01',
+      },
+    });
+    expect(row['Compensation Type']).toBe('Monthly Office');
+    expect(row['Compensation Basic']).toBe(3500);
+    expect(row['Compensation Components']).toBe('Housing Allowance=1500; Loan=-200');
+    expect(row['Compensation Total']).toBe(4800);
+    expect(row['Compensation Effective From']).toBe('2024-01-01');
+    expect(compensationFieldsToExportColumns(null)['Compensation Type']).toBe('');
   });
 });

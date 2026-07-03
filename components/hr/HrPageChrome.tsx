@@ -43,6 +43,7 @@ function labelForSegment(segment: string, previous?: string) {
     preview: 'Preview',
     runs: 'Pay runs',
     leave: 'Leave management',
+    balances: 'Leave balances',
   };
 
   const dateLabel = prettifyDateSegment(segment);

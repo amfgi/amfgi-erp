@@ -97,6 +97,8 @@ export type SalaryComponentTotals = {
   fixedDeductions: number;
   attendanceEarningPerDay: number;
   attendanceDeductionPerDay: number;
+  attendanceEarningsMonthly: number;
+  attendanceDeductionsMonthly: number;
 };
 
 export type CompensationInput = {

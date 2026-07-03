@@ -2,7 +2,6 @@ import { isPayrollLeaveLine } from '@/lib/hr/attendanceLeavePay';
 import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
 import { holidayDayPayAmount } from '@/lib/hr/payroll/resolveHolidayPayStructure';
 import {
-  applyCalendarDeductCap,
   buildPaidHolidayDayRow,
   holidayWorkedOtPay,
   shouldPayHolidayWorkedOt,
@@ -21,6 +20,7 @@ import {
   isExcludedWeekdayYmd,
   isSundayYmd,
   roundMoney,
+  sumMoney,
 } from '@/lib/hr/payroll/calendar';
 import { evaluateCustomFormula } from '@/lib/hr/payroll/evaluateCustomFormula';
 import { resolveWorkedMinutesFromAttendance } from '@/lib/hr/payroll/resolveWorkedMinutes';
@@ -45,10 +45,15 @@ import {
 } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import {
   applySalaryComponentsToGross,
+  buildAttendanceComponentSplitMap,
+  distributeMoneyByContribution,
   fixedSalaryComponentNet,
+  lineEarnsAttendanceComponentInPay,
   prorateSalaryComponentTotals,
+  resolvePackagePeriodAttendanceNet,
   resolvePerDayAllowance,
   resolvePerDayComponentSplit,
+  type AttendanceComponentSplit,
 } from '@/lib/hr/payroll/salaryComponent';
 import type {
   CompensationInput,
@@ -90,6 +95,179 @@ function applyFixedSalaryComponentsPerPackage(params: {
 
   if (fixedNetTotal !== 0) params.breakdown.salaryComponentsFixed = fixedNetTotal;
   return gross;
+}
+
+function groupLinesByPackage(
+  lines: PayLineInput[],
+  lineCtx: (line: PayLineInput) => LinePayContext
+): Map<string, PayLineInput[]> {
+  const grouped = new Map<string, PayLineInput[]>();
+  for (const line of lines) {
+    const key = lineCtx(line).packageId ?? 'default';
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(line);
+    grouped.set(key, bucket);
+  }
+  return grouped;
+}
+
+function getAttendanceSplitMap(
+  cache: Map<string, Map<string, AttendanceComponentSplit>>,
+  key: string,
+  ctx: LinePayContext,
+  packageLines: PayLineInput[],
+  month: string
+): Map<string, AttendanceComponentSplit> {
+  if (!cache.has(key)) {
+    cache.set(
+      key,
+      buildAttendanceComponentSplitMap({
+        compensation: ctx.compensation,
+        lines: packageLines,
+        month,
+        excludedWeekdays: resolveExcludedWeekdays(ctx.config),
+        config: ctx.config,
+      })
+    );
+  }
+  return cache.get(key)!;
+}
+
+function isInsideCalendarDeductBasicRow(
+  line: PayLineInput,
+  row: PayDayBreakdown,
+  config: PayTypeConfig
+): boolean {
+  if (row.basicHourSalary <= 0) return false;
+  if (shouldPayHolidayWorkedOt(line)) return false;
+  if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) return false;
+  if (isPayrollHolidayLine(line) && line.holidayPayTypeConfig) return false;
+  return true;
+}
+
+function calendarDeductBasicWeight(line: PayLineInput): number {
+  if (isPayrollLeaveLine(line)) {
+    return (line.leavePayPercent ?? 100) / 100;
+  }
+  return 1;
+}
+
+function redistributeCalendarDeductBasicOnRows(
+  lines: PayLineInput[],
+  dayRows: PayDayBreakdown[],
+  lineCtx: (line: PayLineInput) => LinePayContext,
+  month: string
+): void {
+  const rowsByPackage = groupLinesByPackage(lines, lineCtx);
+
+  for (const packageLines of rowsByPackage.values()) {
+    const ctx = lineCtx(packageLines[0]);
+    const rowIndices = packageLines.map((line) => lines.indexOf(line));
+    const monthlyBasic = ctx.compensation.monthlyBasic;
+    const deductDaysInMonth = resolveCalendarDeductDayCount(month, ctx.config);
+    const insideIndices = rowIndices.filter((index) =>
+      isInsideCalendarDeductBasicRow(lines[index], dayRows[index], ctx.config)
+    );
+    if (insideIndices.length === 0 || deductDaysInMonth <= 0) continue;
+
+    const weights = insideIndices.map((index) => calendarDeductBasicWeight(lines[index]));
+    const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+    if (weightSum <= 0) continue;
+
+    const cappedWeightSum = Math.min(weightSum, deductDaysInMonth);
+    const periodBasicTotal = roundMoney((monthlyBasic * cappedWeightSum) / deductDaysInMonth);
+    const amounts = distributeMoneyByContribution(periodBasicTotal, weights);
+
+    insideIndices.forEach((rowIndex, amountIndex) => {
+      const row = dayRows[rowIndex];
+      const delta = roundMoney(amounts[amountIndex] - row.basicHourSalary);
+      row.basicHourSalary = amounts[amountIndex];
+      row.totalSalary = roundMoney(row.totalSalary + delta);
+    });
+  }
+}
+
+function redistributeHourlySplitBasicOnRows(
+  lines: PayLineInput[],
+  dayRows: PayDayBreakdown[],
+  lineCtx: (line: PayLineInput) => LinePayContext
+): void {
+  const rowsByPackage = groupLinesByPackage(lines, lineCtx);
+
+  for (const packageLines of rowsByPackage.values()) {
+    const rowIndices = packageLines
+      .map((line) => lines.indexOf(line))
+      .filter((index) => dayRows[index].basicHourSalary > 0);
+    if (rowIndices.length === 0) continue;
+
+    const monthlyBasic = lineCtx(packageLines[0]).compensation.monthlyBasic;
+    const contributions = rowIndices.map((index) => dayRows[index].basicHourSalary);
+    const uncappedTotal = roundMoney(contributions.reduce((sum, value) => sum + value, 0));
+    const cappedTotal = roundMoney(Math.min(uncappedTotal, monthlyBasic));
+    if (cappedTotal >= uncappedTotal) continue;
+
+    const amounts = distributeMoneyByContribution(cappedTotal, contributions);
+    rowIndices.forEach((rowIndex, amountIndex) => {
+      const row = dayRows[rowIndex];
+      const delta = roundMoney(amounts[amountIndex] - row.basicHourSalary);
+      row.basicHourSalary = amounts[amountIndex];
+      row.totalSalary = roundMoney(row.totalSalary + delta);
+    });
+  }
+}
+
+function syncCalendarDeductAllowanceOnRows(
+  lines: PayLineInput[],
+  dayRows: PayDayBreakdown[],
+  lineCtx: (line: PayLineInput) => LinePayContext,
+  month: string,
+  attendanceSplitCache: Map<string, Map<string, AttendanceComponentSplit>>
+): void {
+  for (const [packageKey, packageLines] of groupLinesByPackage(lines, lineCtx)) {
+    const ctx = lineCtx(packageLines[0]);
+    const splitMap = attendanceSplitCache.get(packageKey);
+    if (!splitMap) continue;
+
+    const allowanceRowIndices: number[] = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if ((lineCtx(line).packageId ?? 'default') !== packageKey) continue;
+      if (!lineEarnsAttendanceComponentInPay(line, ctx.config)) continue;
+      const split = splitMap.get(line.workDate);
+      if (!split) continue;
+
+      const row = dayRows[index];
+      const nextAllowance = roundMoney(split.earning - split.deduction);
+      const delta = roundMoney(nextAllowance - row.allowance);
+      row.componentEarning = split.earning;
+      row.componentDeduction = split.deduction;
+      if (delta !== 0) {
+        row.allowance = nextAllowance;
+        row.totalSalary = roundMoney(row.totalSalary + delta);
+      } else {
+        row.allowance = nextAllowance;
+      }
+      allowanceRowIndices.push(index);
+    }
+
+    if (allowanceRowIndices.length === 0) continue;
+
+    const periodAllowanceNet = resolvePackagePeriodAttendanceNet({
+      compensation: ctx.compensation,
+      earnedEligibleDays: allowanceRowIndices.length,
+      month,
+      excludedWeekdays: resolveExcludedWeekdays(ctx.config),
+    });
+    const currentAllowanceNet = sumMoney(allowanceRowIndices.map((index) => dayRows[index].allowance));
+    const drift = roundMoney(periodAllowanceNet - currentAllowanceNet);
+    if (drift === 0) continue;
+
+    const rowIndex = allowanceRowIndices[allowanceRowIndices.length - 1];
+    const row = dayRows[rowIndex];
+    row.allowance = roundMoney(row.allowance + drift);
+    row.componentEarning = roundMoney((row.componentEarning ?? 0) + drift);
+    row.totalSalary = roundMoney(row.totalSalary + drift);
+  }
 }
 
 function dailyWagePay(
@@ -175,15 +353,22 @@ function buildHourlySplitDayRow(
   params: {
     basic: number;
     denom: number;
-    legacyAllowancePerDay: number;
-    attendanceEarningPerDay: number;
-    attendanceDeductionPerDay: number;
-    includeAttendanceComponents: boolean;
+    compensation: CompensationInput;
+    month: string;
+    excludedWeekdays: number[];
     config: PayTypeConfig;
+    splitMap: Map<string, AttendanceComponentSplit>;
+    packageLines: PayLineInput[];
   }
 ): PayDayBreakdown {
-  const { basic, denom, legacyAllowancePerDay, attendanceEarningPerDay, attendanceDeductionPerDay, includeAttendanceComponents, config } =
-    params;
+  const {
+    compensation,
+    month,
+    excludedWeekdays,
+    config,
+    splitMap,
+    packageLines,
+  } = params;
 
   if (line.status === 'ABSENT' && !isPayrollLeaveLine(line)) {
     return emptyPayDayBreakdown(line);
@@ -201,7 +386,7 @@ function buildHourlySplitDayRow(
 
   const workedHours = workedHoursFromMinutes(line.workedMinutes);
   if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) {
-    const otHourRateRaw = (basic * 12) / 365 / lineBasic;
+    const otHourRateRaw = (params.basic * 12) / 365 / lineBasic;
     return buildExcludedWeekdayWorkDayRowWithOtRate(line, otHourRateRaw, config);
   }
 
@@ -209,21 +394,21 @@ function buildHourlySplitDayRow(
     return emptyPayDayBreakdown(line);
   }
 
-  const lineBasicRateRaw = basic / denom / lineBasic;
-  const otHourRateRaw = (basic * 12) / 365 / lineBasic;
+  const lineBasicRateRaw = params.basic / params.denom / lineBasic;
+  const otHourRateRaw = (params.basic * 12) / 365 / lineBasic;
   const basicHourRate = roundMoney(lineBasicRateRaw);
   const otHourRate = roundMoney(otHourRateRaw);
   const basicHours = Math.min(workedHours, lineBasic);
   const otHours = Math.max(0, workedHours - lineBasic);
-  let componentEarning = 0;
-  let componentDeduction = 0;
-  if (legacyAllowancePerDay && (workedHours > 0 || line.status === 'PRESENT')) {
-    componentEarning += legacyAllowancePerDay;
-  }
-  if (includeAttendanceComponents && line.status === 'PRESENT') {
-    componentEarning += attendanceEarningPerDay;
-    componentDeduction += attendanceDeductionPerDay;
-  }
+  const { earning: componentEarning, deduction: componentDeduction } = resolvePerDayComponentSplit({
+    line,
+    compensation,
+    month,
+    excludedWeekdays,
+    lines: packageLines,
+    config,
+    splitMap,
+  });
   const allowance = roundMoney(componentEarning - componentDeduction);
   const payBeforeAllowance = roundMoney(basicHours * lineBasicRateRaw + otHours * otHourRateRaw);
   const { basicHourSalary, otHourSalary } = splitBasicOtSalary({
@@ -247,8 +432,8 @@ function buildHourlySplitDayRow(
     otHourRate,
     otHourSalary,
     allowance: allowanceRounded,
-    componentEarning: roundMoney(componentEarning),
-    componentDeduction: roundMoney(componentDeduction),
+    componentEarning,
+    componentDeduction,
     totalSalary: totalSalaryRounded,
   });
 }
@@ -298,7 +483,9 @@ function buildCalendarDeductDayRow(
   dailyRate: number,
   config: PayTypeConfig,
   month: string,
-  compensation: CompensationInput
+  compensation: CompensationInput,
+  splitMap: Map<string, AttendanceComponentSplit>,
+  packageLines: PayLineInput[]
 ): PayDayBreakdown {
   const dayPay = calendarDeductDayPay(line, dailyRate, config, month, compensation);
 
@@ -312,6 +499,8 @@ function buildCalendarDeductDayRow(
       basicHourRate,
       compensation,
       employeeConfig: config,
+      splitMap,
+      packageLines,
     });
   }
 
@@ -393,6 +582,9 @@ function buildCalendarDeductDayRow(
     compensation,
     month,
     excludedWeekdays: resolveExcludedWeekdays(config),
+    lines: packageLines,
+    config,
+    splitMap,
   });
   const allowance = roundMoney(componentEarning - componentDeduction);
   const totalSalary = roundMoney(dayPay + allowance);
@@ -482,7 +674,15 @@ export function calculatePayLine(params: {
     }
     gross = usesPerLineContext
       ? applyFixedSalaryComponentsPerPackage({ gross, lines, breakdown, lineCtx })
-      : applySalaryComponentsToGross({ gross, compensation, lines, breakdown });
+      : applySalaryComponentsToGross({
+          gross,
+          compensation,
+          lines,
+          breakdown,
+          month,
+          excludedWeekdays: resolveExcludedWeekdays(config),
+          config,
+        });
     return {
       gross,
       breakdown,
@@ -497,18 +697,35 @@ export function calculatePayLine(params: {
       monthlyBasic: number;
     };
     const accruals = new Map<string, PackageAccrual>();
-    let allowanceGross = 0;
     let earnedDays = 0;
     let unpaidAbsentDays = 0;
     let deductDaysInMonth = resolveCalendarDeductDayCount(month, config);
+    const linesByPackage = groupLinesByPackage(lines, lineCtx);
+    const attendanceSplitCache = new Map<string, Map<string, AttendanceComponentSplit>>();
 
     for (const line of lines) {
       const ctx = lineCtx(line);
       deductDaysInMonth = resolveCalendarDeductDayCount(month, ctx.config);
       const dailyRate = ctx.compensation.monthlyBasic / deductDaysInMonth;
-      const row = buildCalendarDeductDayRow(line, dailyRate, ctx.config, month, ctx.compensation);
+      const packageKey = ctx.packageId ?? 'default';
+      const packageLines = linesByPackage.get(packageKey) ?? [line];
+      const splitMap = getAttendanceSplitMap(
+        attendanceSplitCache,
+        packageKey,
+        ctx,
+        packageLines,
+        month
+      );
+      const row = buildCalendarDeductDayRow(
+        line,
+        dailyRate,
+        ctx.config,
+        month,
+        ctx.compensation,
+        splitMap,
+        packageLines
+      );
       dayRows.push(row);
-      allowanceGross += row.allowance;
       const key = ctx.packageId ?? 'default';
       const bucket = accruals.get(key) ?? {
         accrualGross: 0,
@@ -536,17 +753,21 @@ export function calculatePayLine(params: {
       }
     }
 
-    let gross = 0;
+    redistributeCalendarDeductBasicOnRows(lines, dayRows, lineCtx, month);
+    syncCalendarDeductAllowanceOnRows(lines, dayRows, lineCtx, month, attendanceSplitCache);
+
     let outsideCapGross = 0;
-    for (const bucket of accruals.values()) {
-      gross += applyCalendarDeductCap(
-        bucket.accrualGross - bucket.outsideCapGross,
-        bucket.outsideCapGross,
-        bucket.monthlyBasic
-      );
-      outsideCapGross += bucket.outsideCapGross;
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const row = dayRows[index];
+      const ctx = lineCtx(line);
+      if (shouldPayHolidayWorkedOt(line)) {
+        outsideCapGross += row.otHourSalary;
+      } else if (shouldPayExcludedWeekdayWorkAtOtOnly(line, ctx.config)) {
+        outsideCapGross += row.totalSalary;
+      }
     }
-    gross = roundMoney(gross + allowanceGross);
+    let gross = sumMoney(dayRows.map((row) => row.totalSalary));
     breakdown.monthlyBasic = compensation.monthlyBasic;
     if (accruals.size === 1) {
       const only = [...accruals.values()][0];
@@ -565,6 +786,9 @@ export function calculatePayLine(params: {
           compensation,
           lines,
           breakdown,
+          month,
+          excludedWeekdays: resolveExcludedWeekdays(config),
+          config,
           attendanceOnDayRows: true,
         });
     return { gross, breakdown, days: sortPayDayBreakdowns(dayRows) };
@@ -589,7 +813,15 @@ export function calculatePayLine(params: {
     breakdown.dailyWageTotal = roundMoney(gross);
     gross = usesPerLineContext
       ? applyFixedSalaryComponentsPerPackage({ gross, lines, breakdown, lineCtx })
-      : applySalaryComponentsToGross({ gross, compensation, lines, breakdown });
+      : applySalaryComponentsToGross({
+          gross,
+          compensation,
+          lines,
+          breakdown,
+          month,
+          excludedWeekdays: resolveExcludedWeekdays(config),
+          config,
+        });
     return { gross: roundMoney(gross), breakdown, days: sortPayDayBreakdowns(dayRows) };
   }
 
@@ -607,6 +839,9 @@ export function calculatePayLine(params: {
           compensation,
           lines,
           breakdown: custom.breakdown,
+          month,
+          excludedWeekdays: resolveExcludedWeekdays(config),
+          config,
         });
     custom.days = mergeCustomDayTrace(lines, custom.days);
     return custom;
@@ -615,6 +850,8 @@ export function calculatePayLine(params: {
   if (config.mode === 'HOURLY_SPLIT') {
     let gross = 0;
     const fixedByPackage = new Map<string, number>();
+    const linesByPackage = groupLinesByPackage(lines, lineCtx);
+    const attendanceSplitCache = new Map<string, Map<string, AttendanceComponentSplit>>();
 
     for (const line of lines) {
       const ctx = lineCtx(line);
@@ -622,10 +859,15 @@ export function calculatePayLine(params: {
       const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
       const basic = ctx.compensation.monthlyBasic;
       const comps = ctx.compensation.salaryComponents;
-      const legacyAllowancePerDay =
-        !comps && ctx.compensation.monthlyAllowance > 0 ? ctx.compensation.monthlyAllowance / denom : 0;
-      const attendanceEarningPerDay = comps?.attendanceEarningPerDay ?? 0;
-      const attendanceDeductionPerDay = comps?.attendanceDeductionPerDay ?? 0;
+      const packageKey = ctx.packageId ?? 'default';
+      const packageLines = linesByPackage.get(packageKey) ?? [line];
+      const splitMap = getAttendanceSplitMap(
+        attendanceSplitCache,
+        packageKey,
+        ctx,
+        packageLines,
+        month
+      );
 
       if (isPayrollHolidayLine(line)) {
         const lineBasic = lineBasicHours(line);
@@ -638,6 +880,8 @@ export function calculatePayLine(params: {
           basicHourRate,
           compensation: ctx.compensation,
           employeeConfig: ctx.config,
+          splitMap,
+          packageLines,
         });
         dayRows.push(row);
         gross += row.totalSalary;
@@ -656,11 +900,12 @@ export function calculatePayLine(params: {
       const row = buildHourlySplitDayRow(line, {
         basic,
         denom,
-        legacyAllowancePerDay,
-        attendanceEarningPerDay,
-        attendanceDeductionPerDay,
-        includeAttendanceComponents: Boolean(comps),
+        compensation: ctx.compensation,
+        month,
+        excludedWeekdays,
         config: ctx.config,
+        splitMap,
+        packageLines,
       });
       dayRows.push(row);
       gross += row.totalSalary;
@@ -675,6 +920,9 @@ export function calculatePayLine(params: {
         }
       }
     }
+
+    redistributeHourlySplitBasicOnRows(lines, dayRows, lineCtx);
+    gross = roundMoney(dayRows.reduce((sum, row) => sum + row.totalSalary, 0));
 
     let fixedNet = 0;
     for (const value of fixedByPackage.values()) {

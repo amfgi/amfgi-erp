@@ -52,6 +52,21 @@ export function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+export function moneyToCents(n: number): number {
+  return Math.round(roundMoney(n) * 100);
+}
+
+export function centsToMoney(cents: number): number {
+  return cents / 100;
+}
+
+/** Sum money values in integer cents to avoid floating-point drift (e.g. 26 × 46.15). */
+export function sumMoney(values: number[]): number {
+  if (values.length === 0) return 0;
+  const totalCents = values.reduce((sum, value) => sum + moneyToCents(value), 0);
+  return centsToMoney(totalCents);
+}
+
 export function monthBounds(month: string) {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('Invalid month, expected YYYY-MM');
   const [year, monthIndex] = month.split('-').map(Number);

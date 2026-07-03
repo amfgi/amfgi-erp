@@ -71,12 +71,11 @@ export async function POST(req: Request) {
     resolved.deductFromBalance
   );
   if (daysNeeded > 0) {
-    const year = startDate.getUTCFullYear();
     const check = await assertSufficientLeaveBalance(prisma, {
       companyId: emp.companyId,
       employeeId: emp.id,
-      year,
       daysNeeded,
+      leaveCalendarYear: startDate.getUTCFullYear(),
     });
     if (!check.ok) return errorResponse(check.message, 422);
   }

@@ -2,7 +2,8 @@ import {
   calculatePayLine,
   attendanceLinesForPayroll,
 } from '@/lib/hr/payroll/calculatePayLine';
-import { daysInMonth, denomDaysExcludingSundays, roundMoney, weekdayIndexYmd } from '@/lib/hr/payroll/calendar';
+import { daysInMonth, denomDaysExcludingSundays, roundMoney, sumMoney, weekdayIndexYmd } from '@/lib/hr/payroll/calendar';
+import { evaluatePayHealthCheck } from '@/lib/hr/payroll/payHealthCheck';
 
 describe('payroll calendar', () => {
   it('uses actual days in month', () => {
@@ -121,7 +122,7 @@ describe('calculatePayLine', () => {
         { workDate: '2026-06-26', status: 'ABSENT', leaveType: null, basicHours: 9, workedMinutes: 0, isSunday: false },
       ],
     });
-    expect(result.gross).toBeCloseTo(25 * (Math.round(daily * 100) / 100), 2);
+    expect(result.gross).toBeCloseTo((3000 * 25) / 26, 2);
     expect(result.breakdown.earnedDays).toBe(25);
   });
 
@@ -394,5 +395,114 @@ describe('attendanceLinesForPayroll', () => {
     expect(result.breakdown.salaryComponentsFixed).toBeCloseTo(-expectedDeduction, 2);
     expect(expectedDeduction).toBeCloseTo(25.38, 2);
     expect(expectedDeduction).toBeLessThan(50);
+  });
+
+  it('pays exact monthly basic and allowance on full working-day attendance', () => {
+    const month = '2026-06';
+    const config = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT' as const,
+      deductDenominator: 'WORKING_DAYS' as const,
+      excludedWeekdays: [0],
+    };
+    const compensation = {
+      monthlyBasic: 1500,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents: {
+        fixedEarnings: 0,
+        fixedDeductions: 0,
+        attendanceEarningsMonthly: 1200,
+        attendanceDeductionsMonthly: 0,
+        attendanceEarningPerDay: 1200 / 26,
+        attendanceDeductionPerDay: 0,
+      },
+    };
+    const lines = Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      const workDate = `2026-06-${String(day).padStart(2, '0')}`;
+      const isSunday = day === 7 || day === 14 || day === 21 || day === 28;
+      return {
+        workDate,
+        status: isSunday ? ('ABSENT' as const) : ('PRESENT' as const),
+        leaveType: null,
+        basicHours: 9,
+        workedMinutes: isSunday ? 0 : 540,
+        isSunday,
+      };
+    });
+    const result = calculatePayLine({ month, config, compensation, lines });
+    const basicPaid = sumMoney(result.days.map((day) => day.basicHourSalary));
+    const allowancePaid = sumMoney(result.days.map((day) => day.allowance));
+
+    expect(basicPaid).toBe(1500);
+    expect(allowancePaid).toBe(1200);
+    expect(result.gross).toBe(2700);
+
+    const health = evaluatePayHealthCheck({
+      month,
+      config,
+      compensation,
+      lines,
+      result,
+    });
+    expect(health.allowancePaid).toBe(1200);
+    expect(health.basicPaid).toBe(1500);
+  });
+
+  it('caps attendance allowance when paid holidays add extra eligible days', () => {
+    const month = '2026-06';
+    const config = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT' as const,
+      deductDenominator: 'WORKING_DAYS' as const,
+      excludedWeekdays: [0],
+    };
+    const compensation = {
+      monthlyBasic: 1500,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents: {
+        fixedEarnings: 0,
+        fixedDeductions: 0,
+        attendanceEarningsMonthly: 1200,
+        attendanceDeductionsMonthly: 0,
+        attendanceEarningPerDay: 1200 / 26,
+        attendanceDeductionPerDay: 0,
+      },
+    };
+    const lines = Array.from({ length: 30 }, (_, index) => {
+      const day = index + 1;
+      const workDate = `2026-06-${String(day).padStart(2, '0')}`;
+      const isSunday = day === 7 || day === 14 || day === 21 || day === 28;
+      if (workDate === '2026-06-07') {
+        return {
+          workDate,
+          status: 'ABSENT' as const,
+          leaveType: null,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: true,
+          isHoliday: true,
+          holidayPaid: true,
+          holidayName: 'Eid',
+        };
+      }
+      return {
+        workDate,
+        status: isSunday ? ('ABSENT' as const) : ('PRESENT' as const),
+        leaveType: null,
+        basicHours: 9,
+        workedMinutes: isSunday ? 0 : 540,
+        isSunday,
+      };
+    });
+    const result = calculatePayLine({ month, config, compensation, lines });
+    const allowancePaid = sumMoney(result.days.map((day) => day.allowance));
+    const health = evaluatePayHealthCheck({ month, config, compensation, lines, result });
+
+    expect(allowancePaid).toBe(1200);
+    expect(health.allowancePaid).toBe(1200);
+    expect(health.allowanceCap).toBe(1200);
+    expect(health.issues).toEqual([]);
+    expect(health.ok).toBe(true);
   });
 });

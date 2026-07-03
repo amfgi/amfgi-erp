@@ -1,7 +1,9 @@
 import {
   applySalaryComponentsToGross,
   attendanceSalaryComponentNet,
+  buildAttendanceComponentSplitMap,
   buildSalaryComponentTotals,
+  distributeMoneyAcrossUnits,
   fixedSalaryComponentNet,
   netSalaryComponentTotal,
   prorateSalaryComponentTotals,
@@ -12,6 +14,7 @@ import {
   resolveSalaryComponentDisplayTotals,
 } from '@/lib/hr/payroll/salaryComponent';
 import { calculatePayLine } from '@/lib/hr/payroll/calculatePayLine';
+import { roundMoney, sumMoney } from '@/lib/hr/payroll/calendar';
 import type { CompensationInput } from '@/lib/hr/payroll/types';
 
 describe('prorateSalaryComponentTotals', () => {
@@ -60,6 +63,81 @@ describe('netSalaryComponentTotal', () => {
   });
 });
 
+describe('distributeMoneyAcrossUnits', () => {
+  it('allocates the full period total across attendance days without drift', () => {
+    const amounts = distributeMoneyAcrossUnits(211.54, 26);
+    expect(amounts).toHaveLength(26);
+    expect(sumMoney(amounts)).toBe(211.54);
+  });
+
+  it('allocates 1200 across 26 days to exactly 1200', () => {
+    const amounts = distributeMoneyAcrossUnits(1200, 26);
+    expect(sumMoney(amounts)).toBe(1200);
+  });
+});
+
+describe('resolvePeriodAttendanceAmount', () => {
+  it('never exceeds the monthly assignment when extra eligible days are present', () => {
+    const compensation: CompensationInput = {
+      monthlyBasic: 1500,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents: buildSalaryComponentTotals(
+        [{ amount: 1200, componentKind: 'EARNING', applicationMode: 'ATTENDANCE_PRESENT' }],
+        '2026-06',
+        [0]
+      ),
+    };
+    const lines = Array.from({ length: 27 }, (_, index) => ({
+      workDate: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      status: 'PRESENT' as const,
+      leaveType: null,
+      basicHours: 9,
+      workedMinutes: 540,
+      isSunday: false,
+    }));
+    const caps = resolveSalaryComponentCaps({
+      compensation,
+      lines,
+      month: '2026-06',
+      excludedWeekdays: [0],
+    });
+    expect(caps.earningsCap).toBe(1200);
+  });
+});
+
+describe('buildAttendanceComponentSplitMap', () => {
+  it('never exceeds the monthly attendance assignment for a full month', () => {
+    const compensation: CompensationInput = {
+      monthlyBasic: 3000,
+      monthlyAllowance: 0,
+      dailyRate: 0,
+      salaryComponents: buildSalaryComponentTotals(
+        [{ amount: 211.54, componentKind: 'EARNING', applicationMode: 'ATTENDANCE_PRESENT' }],
+        '2026-06',
+        [0]
+      ),
+    };
+    const lines = Array.from({ length: 26 }, (_, index) => ({
+      workDate: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      status: 'PRESENT' as const,
+      leaveType: null,
+      basicHours: 9,
+      workedMinutes: 540,
+      isSunday: false,
+    }));
+    const splitMap = buildAttendanceComponentSplitMap({
+      compensation,
+      lines,
+      month: '2026-06',
+      excludedWeekdays: [0],
+    });
+    const total = sumMoney([...splitMap.values()].map((split) => split.earning));
+    expect(total).toBe(211.54);
+    expect(Math.max(...[...splitMap.values()].map((split) => split.earning))).toBeLessThanOrEqual(8.14);
+  });
+});
+
 describe('resolvePerDayComponentSplit', () => {
   it('splits attendance earnings and deductions per eligible day', () => {
     const compensation: CompensationInput = {
@@ -85,6 +163,16 @@ describe('resolvePerDayComponentSplit', () => {
         isSunday: false,
       },
       compensation,
+      lines: [
+        {
+          workDate: '2026-06-02',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 9,
+          workedMinutes: 540,
+          isSunday: false,
+        },
+      ],
       month: '2026-06',
       excludedWeekdays: [0],
     });
@@ -137,7 +225,7 @@ describe('resolveMonthlyAllowanceCap', () => {
 });
 
 describe('resolveSalaryComponentCaps', () => {
-  it('sums per-day rounded attendance amounts instead of days × unrounded rate', () => {
+  it('uses period attendance totals that match distributed day splits', () => {
     const compensation: CompensationInput = {
       monthlyBasic: 3000,
       monthlyAllowance: 0,
@@ -165,15 +253,23 @@ describe('resolveSalaryComponentCaps', () => {
       month: '2026-06',
       excludedWeekdays: [0],
     });
-    const perDay = resolvePerDayComponentSplit({
-      line: lines[0],
-      compensation,
-      month: '2026-06',
-      excludedWeekdays: [0],
-    }).earning;
-    const legacyCap = 250 + 26 * (211.54 / 26);
-    expect(caps.earningsCap).toBeCloseTo(250 + perDay * 26, 2);
-    expect(caps.earningsCap).not.toBeCloseTo(legacyCap, 2);
+    const distributedEarnings = roundMoney(
+      lines.reduce((sum, line) => {
+        return (
+          sum +
+          resolvePerDayComponentSplit({
+            line,
+            compensation,
+            lines,
+            month: '2026-06',
+            excludedWeekdays: [0],
+          }).earning
+        );
+      }, 0)
+    );
+    expect(caps.earningsCap).toBe(461.54);
+    expect(distributedEarnings).toBe(211.54);
+    expect(caps.earningsCap).toBeCloseTo(250 + distributedEarnings, 2);
   });
 });
 
@@ -259,8 +355,16 @@ describe('applySalaryComponentsToGross', () => {
         },
       ],
       breakdown,
+      month: '2026-06',
+      excludedWeekdays: [0],
     });
-    const attendanceNet = attendanceSalaryComponentNet(compensation.salaryComponents!, 2);
+    const attendanceNet = attendanceSalaryComponentNet(
+      compensation.salaryComponents!,
+      2,
+      26,
+      '2026-06',
+      [0]
+    );
     expect(gross).toBeCloseTo(3000 + 200 + attendanceNet, 2);
     expect(breakdown.salaryComponentsFixed).toBe(200);
     expect(breakdown.salaryComponentsAttendance).toBeCloseTo(attendanceNet, 2);

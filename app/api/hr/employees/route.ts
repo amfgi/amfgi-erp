@@ -13,9 +13,11 @@ import {
 } from '@/lib/hr/employeeTypeSettings';
 import {
   buildEmployeeListWhere,
-  filterEmployeesByWorkforceType,
+  filterEmployeesByWorkforceFilters,
+  readEmployeeDirectoryFiltersFromSearchParams,
   sortEmployeesByName,
 } from '@/lib/hr/employeeListQuery';
+import { batchCurrentCompensationForEmployees } from '@/lib/import-export/employeeCompensationServer';
 import { parseNationalityInput } from '@/lib/hr/countryNames';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
@@ -65,15 +67,18 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const idsParam = searchParams.get('ids');
   const forExport = searchParams.get('forExport') === '1';
-  const q = (searchParams.get('q') ?? '').trim();
-  const status = searchParams.get('status');
-  const employeeType = searchParams.get('employeeType');
-  const portal = searchParams.get('portal');
+  const directoryFilters = readEmployeeDirectoryFiltersFromSearchParams(searchParams);
+  const { q, status, employeeType, portal } = directoryFilters;
   const limitParam = searchParams.get('limit');
 
   if (forExport) {
-    const where = buildEmployeeListWhere(companyId, { q, status, portal });
-    const needsTypeFilter = Boolean(employeeType && employeeType !== 'ALL');
+    const where = buildEmployeeListWhere(companyId, directoryFilters);
+    const exportIds = idsParam
+      ? [...new Set(idsParam.split(',').map((part) => part.trim()).filter(Boolean))].slice(0, 10000)
+      : [];
+    if (exportIds.length > 0) {
+      where.id = { in: exportIds };
+    }
     const exportSelect = {
       id: true,
       employeeCode: true,
@@ -105,8 +110,19 @@ export async function GET(req: Request) {
       take: 10000,
       select: exportSelect,
     });
-    const filtered = needsTypeFilter ? filterEmployeesByWorkforceType(list, employeeType) : list;
-    return successResponse(sortEmployeesByName(filtered));
+    const filtered = filterEmployeesByWorkforceFilters(list, directoryFilters);
+    const sorted = sortEmployeesByName(filtered);
+    const compensationByEmployee = await batchCurrentCompensationForEmployees(
+      prisma,
+      companyId,
+      sorted.map((e) => e.id)
+    );
+    return successResponse(
+      sorted.map((employee) => ({
+        ...employee,
+        currentCompensation: compensationByEmployee.get(employee.id) ?? null,
+      }))
+    );
   }
 
   const company = await prisma.company.findUnique({

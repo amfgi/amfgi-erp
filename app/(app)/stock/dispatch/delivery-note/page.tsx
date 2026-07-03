@@ -696,6 +696,7 @@ export default function DeliveryNoteCreatePage() {
             customer?: { id?: string; name?: string } | null;
           } | null;
           firstStockOutTransactionId: string | null;
+          signedCopyUrl?: string | null;
           transactionIds?: string[];
         };
 
@@ -729,7 +730,7 @@ export default function DeliveryNoteCreatePage() {
         );
         setNotes(d.documentNotes?.trim() || '');
         setOverrideReason('');
-        setSignedCopyUrl(null);
+        setSignedCopyUrl(d.signedCopyUrl ?? null);
 
         const rows = Array.isArray(d.customItemsJson)
           ? (d.customItemsJson as Array<Record<string, unknown>>).map((row) => ({
@@ -2445,7 +2446,7 @@ export default function DeliveryNoteCreatePage() {
         </div>
 
         {/* Signed Copy Upload — Edit mode only */}
-        {editingTransactionId && (
+        {(editingTransactionId || editingDeliveryNoteId) && (
           <div className="border border-border border-b-0 bg-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-1.5">
               <div>
@@ -2493,7 +2494,11 @@ export default function DeliveryNoteCreatePage() {
                         try {
                           const formData = new FormData();
                           formData.append('file', file);
-                          formData.append('transactionId', editingTransactionId);
+                          if (editingTransactionId) {
+                            formData.append('transactionId', editingTransactionId);
+                          } else if (editingDeliveryNoteId) {
+                            formData.append('deliveryNoteId', editingDeliveryNoteId);
+                          }
 
                           const res = await fetch('/api/upload/signed-copy', {
                             method: 'POST',
