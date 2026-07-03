@@ -30,6 +30,10 @@ export type CreateCompensationPackageInput = {
   allowances: AllowanceInput[];
 };
 
+export type UpdateCompensationPackageInput = CreateCompensationPackageInput & {
+  packageId: string;
+};
+
 export async function closeOpenCompensationPackages(
   tx: Prisma.TransactionClient,
   companyId: string,
@@ -56,9 +60,12 @@ export async function closeOpenCompensationPackages(
   });
 }
 
-export async function createCompensationPackage(
-  prisma: PrismaClient,
-  input: CreateCompensationPackageInput
+async function validateCompensationPackageInput(
+  db: PrismaClient,
+  input: Pick<
+    CreateCompensationPackageInput,
+    'companyId' | 'employeeId' | 'payTypeId' | 'visaPeriodId' | 'effectiveFrom' | 'effectiveTo' | 'allowances'
+  >
 ) {
   let effectiveFrom: Date;
   let effectiveTo: Date | null = null;
@@ -70,26 +77,95 @@ export async function createCompensationPackage(
   }
 
   if (input.visaPeriodId) {
-    const visa = await prisma.visaPeriod.findFirst({
+    const visa = await db.visaPeriod.findFirst({
       where: { id: input.visaPeriodId, companyId: input.companyId, employeeId: input.employeeId },
     });
     if (!visa) throw new Error('Visa period not found for this employee');
   }
 
-  const payType = await prisma.payType.findFirst({
+  const payType = await db.payType.findFirst({
     where: { id: input.payTypeId, companyId: input.companyId },
   });
   if (!payType) throw new Error('Pay type not found');
 
   const allowanceTypeIds = [...new Set(input.allowances.map((a) => a.allowanceTypeId))];
   if (allowanceTypeIds.length > 0) {
-    const count = await prisma.allowanceType.count({
+    const count = await db.allowanceType.count({
       where: { companyId: input.companyId, id: { in: allowanceTypeIds }, isActive: true },
     });
     if (count !== allowanceTypeIds.length) throw new Error('One or more allowance types are invalid');
   }
 
-  const filteredAllowances = input.allowances.filter((a) => a.amount > 0);
+  return {
+    effectiveFrom,
+    effectiveTo,
+    payType,
+    filteredAllowances: input.allowances.filter((a) => a.amount > 0),
+  };
+}
+
+export async function updateCompensationPackage(
+  db: PrismaClient,
+  input: UpdateCompensationPackageInput
+) {
+  const { effectiveFrom, effectiveTo, payType, filteredAllowances } =
+    await validateCompensationPackageInput(db, input);
+
+  return db.$transaction(async (tx) => {
+    const existing = await tx.employeeCompensation.findFirst({
+      where: { id: input.packageId, companyId: input.companyId, employeeId: input.employeeId },
+      select: { id: true },
+    });
+    if (!existing) throw new Error('Compensation package not found');
+
+    await tx.employeeCompensation.update({
+      where: { id: input.packageId },
+      data: {
+        payTypeId: payType.id,
+        visaPeriodId: input.visaPeriodId ?? null,
+        monthlyBasic: input.monthlyBasic ?? null,
+        monthlyAllowance: null,
+        dailyRate: input.dailyRate ?? null,
+        wpsTransferAmount: input.wpsTransferAmount ?? null,
+        effectiveFrom,
+        effectiveTo,
+        notes: input.notes?.trim() || null,
+      },
+    });
+
+    await tx.employeeAllowance.deleteMany({
+      where: { companyId: input.companyId, employeeCompensationId: input.packageId },
+    });
+
+    if (filteredAllowances.length > 0) {
+      await tx.employeeAllowance.createMany({
+        data: filteredAllowances.map((a) => ({
+          companyId: input.companyId,
+          employeeId: input.employeeId,
+          employeeCompensationId: input.packageId,
+          allowanceTypeId: a.allowanceTypeId,
+          amount: a.amount,
+          effectiveFrom,
+          effectiveTo,
+        })),
+      });
+    }
+
+    await repairCompensationTimeline(tx, input.companyId, input.employeeId);
+
+    return tx.employeeCompensation.findFirstOrThrow({
+      where: { id: input.packageId },
+      include: packageInclude,
+    });
+  });
+}
+
+export async function createCompensationPackage(
+  prisma: PrismaClient,
+  input: CreateCompensationPackageInput
+) {
+  const { effectiveFrom, effectiveTo, payType, filteredAllowances } =
+    await validateCompensationPackageInput(prisma, input);
 
   return prisma.$transaction(async (tx) => {
     await closeOpenCompensationPackages(tx, input.companyId, input.employeeId, effectiveFrom);

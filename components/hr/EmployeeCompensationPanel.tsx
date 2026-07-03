@@ -262,12 +262,14 @@ function CompensationDetailBody({ pkg }: { pkg: CompensationPackage }) {
 export default function EmployeeCompensationPanel({
   employeeId,
   canCreate,
-  canEdit,
+  canRecordChange,
+  canEditPackage,
   canDelete,
 }: {
   employeeId: string;
   canCreate: boolean;
-  canEdit: boolean;
+  canRecordChange: boolean;
+  canEditPackage: boolean;
   canDelete: boolean;
 }) {
   const [packages, setPackages] = useState<CompensationPackage[]>([]);
@@ -275,6 +277,8 @@ export default function EmployeeCompensationPanel({
   const [allowanceTypes, setAllowanceTypes] = useState<AllowanceType[]>([]);
   const [visaPeriods, setVisaPeriods] = useState<VisaPeriod[]>([]);
   const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<'create' | 'record_change' | 'edit'>('create');
+  const [editingPackageId, setEditingPackageId] = useState<string | null>(null);
   const [detailPackage, setDetailPackage] = useState<CompensationPackage | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -315,7 +319,63 @@ export default function EmployeeCompensationPanel({
     [sortedPackages]
   );
 
-  const canOpenCompensationForm = currentPackage ? canEdit : canCreate;
+  const populateFormFromPackage = (
+    pkg: CompensationPackage | null,
+    opts?: { effectiveFromToday?: boolean }
+  ) => {
+    const activeVisa = visaPeriods.find((v) => v.status === 'ACTIVE') ?? visaPeriods[0] ?? null;
+    const initialPayTypeId = pkg?.payType.id ?? payTypes[0]?.id ?? '';
+    const initialMode = resolvePayTypeMode(payTypes.find((pt) => pt.id === initialPayTypeId));
+    setPayTypeId(initialPayTypeId);
+    setVisaPeriodId(pkg?.visaPeriod?.id ?? activeVisa?.id ?? '');
+    if (usesDailyRateField(initialMode)) {
+      setMonthlyBasic('');
+      setDailyRate(pkg?.dailyRate != null ? String(pkg.dailyRate) : '');
+    } else if (usesMonthlyBasicField(initialMode)) {
+      setDailyRate('');
+      setMonthlyBasic(pkg?.monthlyBasic != null ? String(pkg.monthlyBasic) : '');
+    } else {
+      setMonthlyBasic(pkg?.monthlyBasic != null ? String(pkg.monthlyBasic) : '');
+      setDailyRate(pkg?.dailyRate != null ? String(pkg.dailyRate) : '');
+    }
+    setWpsTransferAmount(pkg?.wpsTransferAmount != null ? String(pkg.wpsTransferAmount) : '');
+    setEffectiveFrom(
+      opts?.effectiveFromToday
+        ? new Date().toISOString().slice(0, 10)
+        : pkg?.effectiveFrom ?? new Date().toISOString().slice(0, 10)
+    );
+    setNotes(pkg?.notes ?? '');
+    const amounts: Record<string, string> = {};
+    for (const t of allowanceTypes) {
+      const existing = pkg?.allowances.find((a) => a.allowanceTypeId === t.id);
+      amounts[t.id] = existing ? String(existing.amount) : '';
+    }
+    setAllowanceAmounts(amounts);
+  };
+
+  const openCreateForm = () => {
+    if (!canCreate) return;
+    setFormMode('create');
+    setEditingPackageId(null);
+    populateFormFromPackage(null);
+    setFormOpen(true);
+  };
+
+  const openRecordChangeForm = () => {
+    if (!canRecordChange) return;
+    setFormMode('record_change');
+    setEditingPackageId(null);
+    populateFormFromPackage(currentPackage, { effectiveFromToday: true });
+    setFormOpen(true);
+  };
+
+  const openEditForm = (pkg: CompensationPackage) => {
+    if (!canEditPackage) return;
+    setFormMode('edit');
+    setEditingPackageId(pkg.id);
+    populateFormFromPackage(pkg);
+    setFormOpen(true);
+  };
 
   const selectedPayType = useMemo(
     () => payTypes.find((pt) => pt.id === payTypeId),
@@ -367,43 +427,14 @@ export default function EmployeeCompensationPanel({
     void load();
   }, [load]);
 
-  const resetForm = () => {
-    const activeVisa = visaPeriods.find((v) => v.status === 'ACTIVE') ?? visaPeriods[0] ?? null;
-    const initialPayTypeId = currentPackage?.payType.id ?? payTypes[0]?.id ?? '';
-    const initialMode = resolvePayTypeMode(payTypes.find((pt) => pt.id === initialPayTypeId));
-    setPayTypeId(initialPayTypeId);
-    setVisaPeriodId(activeVisa?.id ?? '');
-    if (usesDailyRateField(initialMode)) {
-      setMonthlyBasic('');
-      setDailyRate(currentPackage?.dailyRate != null ? String(currentPackage.dailyRate) : '');
-    } else if (usesMonthlyBasicField(initialMode)) {
-      setDailyRate('');
-      setMonthlyBasic(currentPackage?.monthlyBasic != null ? String(currentPackage.monthlyBasic) : '');
-    } else {
-      setMonthlyBasic(currentPackage?.monthlyBasic != null ? String(currentPackage.monthlyBasic) : '');
-      setDailyRate(currentPackage?.dailyRate != null ? String(currentPackage.dailyRate) : '');
-    }
-    setWpsTransferAmount(
-      currentPackage?.wpsTransferAmount != null ? String(currentPackage.wpsTransferAmount) : ''
-    );
-    setEffectiveFrom(new Date().toISOString().slice(0, 10));
-    setNotes('');
-    const amounts: Record<string, string> = {};
-    for (const t of allowanceTypes) {
-      const existing = currentPackage?.allowances.find((a) => a.allowanceTypeId === t.id);
-      amounts[t.id] = existing ? String(existing.amount) : '';
-    }
-    setAllowanceAmounts(amounts);
-  };
-
-  const openForm = () => {
-    if (!canOpenCompensationForm) return;
-    resetForm();
-    setFormOpen(true);
-  };
-
   const save = async () => {
-    if (!canOpenCompensationForm) return;
+    const canSave =
+      formMode === 'create'
+        ? canCreate
+        : formMode === 'record_change'
+          ? canRecordChange
+          : canEditPackage;
+    if (!canSave) return;
     if (!payTypeId) {
       toast.error('Select a salary structure');
       return;
@@ -417,6 +448,10 @@ export default function EmployeeCompensationPanel({
       toast.error('Enter monthly basic for this salary structure');
       return;
     }
+    if (formMode === 'edit' && !editingPackageId) {
+      toast.error('No compensation record selected');
+      return;
+    }
     setSaving(true);
 
     const allowances = allowanceTypes
@@ -426,27 +461,37 @@ export default function EmployeeCompensationPanel({
       }))
       .filter((a) => a.amount > 0);
 
-    const res = await fetch(`/api/hr/employees/${employeeId}/compensation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        payTypeId,
-        monthlyBasic: monthlyBasicEnabled && monthlyBasic ? Number(monthlyBasic) : null,
-        dailyRate: dailyRateEnabled && dailyRate ? Number(dailyRate) : null,
-        wpsTransferAmount: wpsTransferAmount.trim() ? Number(wpsTransferAmount) : null,
-        effectiveFrom,
-        visaPeriodId: visaPeriodId || null,
-        notes: notes.trim() || null,
-        allowances,
-      }),
-    });
+    const payload = {
+      payTypeId,
+      monthlyBasic: monthlyBasicEnabled && monthlyBasic ? Number(monthlyBasic) : null,
+      dailyRate: dailyRateEnabled && dailyRate ? Number(dailyRate) : null,
+      wpsTransferAmount: wpsTransferAmount.trim() ? Number(wpsTransferAmount) : null,
+      effectiveFrom,
+      visaPeriodId: visaPeriodId || null,
+      notes: notes.trim() || null,
+      allowances,
+    };
+
+    const res = await fetch(
+      formMode === 'edit'
+        ? `/api/hr/employees/${employeeId}/compensation/${editingPackageId}`
+        : `/api/hr/employees/${employeeId}/compensation`,
+      {
+        method: formMode === 'edit' ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
 
     const json = await readApiJson(res);
     if (!res.ok || !json?.success) {
       toast.error(json?.error ?? 'Failed to save');
     } else {
-      toast.success('Compensation package saved');
+      toast.success(
+        formMode === 'edit' ? 'Compensation record updated' : 'Compensation package saved'
+      );
       setFormOpen(false);
+      setEditingPackageId(null);
       await load();
     }
     setSaving(false);
@@ -530,11 +575,18 @@ export default function EmployeeCompensationPanel({
         </div>
       ) : null}
 
-      {canOpenCompensationForm ? (
-        <Button size="sm" variant="outline" onClick={openForm}>
-          {currentPackage ? 'Record change' : 'Add compensation'}
-        </Button>
-      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {canCreate && !currentPackage ? (
+          <Button size="sm" variant="outline" onClick={openCreateForm}>
+            Add compensation
+          </Button>
+        ) : null}
+        {canRecordChange && packages.length > 0 ? (
+          <Button size="sm" variant="outline" onClick={openRecordChangeForm}>
+            Change record and add compensation
+          </Button>
+        ) : null}
+      </div>
 
       <div className="space-y-3">
         <h3 className="text-sm font-semibold">Compensation history</h3>
@@ -552,7 +604,7 @@ export default function EmployeeCompensationPanel({
                   <TableHead className="text-right">Total / mo</TableHead>
                   <TableHead className="text-right">WPS transfer</TableHead>
                   <TableHead>Recorded</TableHead>
-                  <TableHead className="w-[120px]" />
+                  <TableHead className="w-[160px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -586,6 +638,11 @@ export default function EmployeeCompensationPanel({
                         <Button size="sm" variant="ghost" onClick={() => setDetailPackage(pkg)}>
                           Details
                         </Button>
+                        {canEditPackage ? (
+                          <Button size="sm" variant="ghost" onClick={() => openEditForm(pkg)}>
+                            Edit
+                          </Button>
+                        ) : null}
                         {canDelete ? (
                           <Button
                             size="sm"
@@ -610,15 +667,28 @@ export default function EmployeeCompensationPanel({
       <Modal
         isOpen={formOpen}
         onClose={() => {
-          if (!saving) setFormOpen(false);
+          if (!saving) {
+            setFormOpen(false);
+            setEditingPackageId(null);
+          }
         }}
-        title={currentPackage ? 'Record compensation change' : 'Add compensation package'}
-        description="Basic, salary components, and effective date are saved as one entry. Previous package is closed automatically."
+        title={
+          formMode === 'edit'
+            ? 'Edit compensation record'
+            : formMode === 'record_change'
+              ? 'Change record and add compensation'
+              : 'Add compensation package'
+        }
+        description={
+          formMode === 'edit'
+            ? 'Updates this history entry in place. Use Record change to add a new timeline entry instead.'
+            : 'Basic, salary components, and effective date are saved as one entry. Previous package is closed automatically.'
+        }
         size="lg"
         actions={
           <>
             <Button size="sm" disabled={saving} onClick={() => void save()}>
-              {saving ? 'Saving…' : 'Save package'}
+              {saving ? 'Saving…' : formMode === 'edit' ? 'Save changes' : 'Save package'}
             </Button>
             <Button size="sm" variant="outline" disabled={saving} onClick={() => setFormOpen(false)}>
               Cancel
@@ -782,6 +852,19 @@ export default function EmployeeCompensationPanel({
         actions={
           detailPackage ? (
             <>
+              {canEditPackage ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const pkg = detailPackage;
+                    setDetailPackage(null);
+                    openEditForm(pkg);
+                  }}
+                >
+                  Edit record
+                </Button>
+              ) : null}
               {canDelete ? (
                 <Button
                   size="sm"
