@@ -129,6 +129,23 @@ describe('buildSignatureSheetEntries', () => {
     expect(entries[0]?.signatureNote).toMatch(/^Sign: /);
   });
 
+  it('includes employee photo url on each entry', () => {
+    const entries = buildSignatureSheetEntries({
+      workDateYmd: '2026-06-30',
+      employees: [
+        {
+          id: 'e1',
+          fullName: 'Zara Ali',
+          preferredName: null,
+          photoUrl: 'https://drive.google.com/file/d/abc/view',
+        },
+      ],
+      schedule: { absences: new Set(), assignmentByEmployee: new Map() },
+    });
+
+    expect(entries[0]?.photoUrl).toBe('https://drive.google.com/file/d/abc/view');
+  });
+
   it('orders roster by preferred name, falling back to full name', () => {
     const employees = sortEmployeesByName([
       { id: 'e1', fullName: 'Zara Ali', preferredName: 'Zee' },

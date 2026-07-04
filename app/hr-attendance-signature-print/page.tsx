@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 
 import type { SignatureSheetPayload } from '@/lib/hr/buildAttendanceSignatureSheet';
 import { formatSignatureSheetDateLabel } from '@/lib/hr/buildAttendanceSignatureSheet';
+import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
 export default function HrAttendanceSignaturePrintPage() {
@@ -80,11 +81,15 @@ export default function HrAttendanceSignaturePrintPage() {
         .signature-table .col-serial {
           width: 1%;
           white-space: nowrap;
-          padding: 2px 2px;
           text-align: center;
         }
+        .signature-table .col-photo {
+          width: 1%;
+          text-align: center;
+          vertical-align: middle;
+        }
         .signature-table thead th {
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 600;
           padding: 3px 4px;
         }
@@ -132,7 +137,7 @@ export default function HrAttendanceSignaturePrintPage() {
           background: transparent !important;
         }
         .signature-table tr.row-gap td {
-          height: 5px;
+          height: 3px;
           padding: 0;
           border: none !important;
           background: #e2e2e2;
@@ -202,6 +207,7 @@ export default function HrAttendanceSignaturePrintPage() {
 								<th className='col-serial border border-slate-300'>
 									SN
 								</th>
+								<th className='col-photo border border-slate-300' aria-label='Photo' />
 								<th
 									className='col-name border border-slate-300'
 									style={{
@@ -248,6 +254,17 @@ export default function HrAttendanceSignaturePrintPage() {
 												className='col-serial border border-slate-300 align-middle text-center'
 											>
 												{entry.serial}
+											</td>
+											<td
+												rowSpan={2}
+												className='col-photo border border-slate-300 align-middle'
+											>
+												<EmployeeAvatar
+													name={entry.employeeName}
+													photoUrl={entry.photoUrl}
+													size='sm'
+													className='mx-auto h-11 w-11 rounded-md'
+												/>
 											</td>
 											<td
 												rowSpan={2}
@@ -302,7 +319,7 @@ export default function HrAttendanceSignaturePrintPage() {
 												className='row-gap'
 												aria-hidden='true'
 											>
-												<td colSpan={7} />
+												<td colSpan={8} />
 											</tr>
 										) : null}
 									</Fragment>

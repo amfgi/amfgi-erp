@@ -11,6 +11,7 @@ export type SignatureSheetEntry = {
   serial: number;
   employeeId: string;
   employeeName: string;
+  photoUrl: string | null;
   dutyIn: string;
   breakOut: string;
   breakIn: string;
@@ -39,6 +40,7 @@ type EmployeeRow = {
   id: string;
   fullName: string;
   preferredName: string | null;
+  photoUrl?: string | null;
 };
 
 type AssignmentRow = {
@@ -130,6 +132,7 @@ export function buildSignatureSheetEntries(input: {
       serial: index + 1,
       employeeId: employee.id,
       employeeName: employeeDisplayName(employee),
+      photoUrl: employee.photoUrl?.trim() || null,
       dutyIn,
       breakOut,
       breakIn,
@@ -158,7 +161,7 @@ export async function loadAttendanceSignatureSheet(
     prisma.company.findUnique({ where: { id: companyId }, select: { name: true } }),
     prisma.employee.findMany({
       where: { companyId, status: 'ACTIVE', signatureGroup: trimmedGroup },
-      select: { id: true, fullName: true, preferredName: true },
+      select: { id: true, fullName: true, preferredName: true, photoUrl: true },
     }),
     prisma.workSchedule.findFirst({
       where: { companyId, workDate },
