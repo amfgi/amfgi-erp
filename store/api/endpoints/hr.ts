@@ -102,6 +102,13 @@ export type HrAttendanceOverviewParams = {
   month: string;
 };
 
+export interface HrLeaveStats {
+  pendingCount: number;
+  approvedThisMonth: number;
+  onLeaveToday: number;
+  employeesOnLeaveStatus: number;
+}
+
 export interface HrDocumentType {
   id: string;
   name: string;
@@ -272,6 +279,12 @@ export const hrApi = appApi.injectEndpoints({
       ],
     }),
 
+    getHrLeaveStats: builder.query<HrLeaveStats, void>({
+      query: () => '/hr/leave/stats',
+      transformResponse: (r: { data: HrLeaveStats }) => r.data,
+      providesTags: [{ type: 'Employee', id: 'LEAVE_STATS' }],
+    }),
+
     getHrDocumentTypes: builder.query<HrDocumentType[], void>({
       query: () => '/hr/document-types',
       transformResponse: (r: { data: HrDocumentType[] }) => r.data,
@@ -309,6 +322,7 @@ export const {
   useGetHrSchedulesPageQuery,
   useGetHrSchedulesForMonthQuery,
   useGetHrAttendanceOverviewQuery,
+  useGetHrLeaveStatsQuery,
   useGetHrDocumentTypesQuery,
   useGetHrEmployeeTypeSettingsQuery,
   useGetHrExpertisesQuery,
