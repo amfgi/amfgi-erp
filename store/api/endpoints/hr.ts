@@ -1,10 +1,22 @@
 import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
+import type { PayCalculationMode } from '@/lib/hr/payroll/types';
 import { appendEmployeeDirectorySearchParams, type EmployeeDirectoryFilterParams } from '@/lib/hr/employeeListQuery';
 import { appApi } from '../appApi';
 
 export const HR_EMPLOYEE_PAGE_SIZE_OPTIONS = LIST_PAGE_SIZE_OPTIONS;
 
 export type HrEmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
+
+export type HrEmployeeCompensationSnapshot = {
+  payTypeName: string;
+  payTypeCode: string;
+  payTypeMode: PayCalculationMode | null;
+  monthlyBasic: number | null;
+  dailyRate: number | null;
+  components: Array<{ name: string; amount: number; componentKind: string }>;
+  totalMonthly: number | null;
+  effectiveFrom: string | null;
+};
 
 export interface HrEmployee {
   id: string;
@@ -15,6 +27,7 @@ export interface HrEmployee {
   phone: string | null;
   designation: string | null;
   department: string | null;
+  photoUrl: string | null;
   status: HrEmployeeStatus;
   portalEnabled: boolean;
   employeeType: string;
@@ -27,6 +40,7 @@ export interface HrEmployee {
         breakEnd: string | null;
       }
     | null;
+  currentCompensation?: HrEmployeeCompensationSnapshot | null;
 }
 
 /** Full employee row for Excel export (all importable master fields). */
@@ -53,15 +67,7 @@ export interface HrEmployeeExportRecord {
   portalEnabled: boolean;
   adminNotes: string | null;
   profileExtension: unknown;
-  currentCompensation?: {
-    payTypeName: string;
-    payTypeCode: string;
-    monthlyBasic: number | null;
-    dailyRate: number | null;
-    components: Array<{ name: string; amount: number; componentKind: string }>;
-    totalMonthly: number | null;
-    effectiveFrom: string | null;
-  } | null;
+  currentCompensation?: HrEmployeeCompensationSnapshot | null;
 }
 
 export interface HrScheduleRow {
@@ -156,6 +162,11 @@ export type HrEmployeesListResponse = {
   items: HrEmployee[];
   total: number;
   employeeTypes: string[];
+  stats: {
+    active: number;
+    onLeave: number;
+    portalEnabled: number;
+  };
 };
 
 export const hrApi = appApi.injectEndpoints({

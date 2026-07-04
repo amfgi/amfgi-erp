@@ -104,6 +104,7 @@ describe('employee import/export fields', () => {
       currentCompensation: {
         payTypeName: 'Monthly Office',
         payTypeCode: 'MONTHLY_OFFICE',
+        payTypeMode: 'MONTHLY_CALENDAR_DEDUCT',
         monthlyBasic: 3500,
         dailyRate: null,
         components: [

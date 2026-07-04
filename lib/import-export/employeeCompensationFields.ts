@@ -1,12 +1,36 @@
+import type { PayCalculationMode } from '@/lib/hr/payroll/types';
+
 export type EmployeeCompensationExportSnapshot = {
   payTypeName: string;
   payTypeCode: string;
+  payTypeMode: PayCalculationMode | null;
   monthlyBasic: number | null;
   dailyRate: number | null;
   components: Array<{ name: string; amount: number; componentKind: string }>;
   totalMonthly: number | null;
   effectiveFrom: string | null;
 };
+
+function formatCompensationMoney(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${value.toLocaleString()} AED`;
+}
+
+export function usesDailyCompensationRate(mode: PayCalculationMode | null | undefined) {
+  return mode === 'DAILY_WAGE';
+}
+
+export function formatDirectoryCompensationAmount(
+  compensation: Pick<EmployeeCompensationExportSnapshot, 'payTypeMode' | 'dailyRate' | 'totalMonthly'> | null | undefined
+) {
+  if (!compensation) return 'Not set';
+  if (usesDailyCompensationRate(compensation.payTypeMode)) {
+    if (compensation.dailyRate == null) return '—';
+    return `${formatCompensationMoney(compensation.dailyRate)}/day`;
+  }
+  if (compensation.totalMonthly == null) return '—';
+  return `${formatCompensationMoney(compensation.totalMonthly)}/mo`;
+}
 
 export function compensationFieldsToExportColumns(
   snapshot?: EmployeeCompensationExportSnapshot | null

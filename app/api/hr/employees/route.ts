@@ -13,11 +13,14 @@ import {
 } from '@/lib/hr/employeeTypeSettings';
 import {
   buildEmployeeListWhere,
+  computeEmployeeDirectoryStats,
+  countEmployeeDirectoryStats,
   filterEmployeesByWorkforceFilters,
   readEmployeeDirectoryFiltersFromSearchParams,
   sortEmployeesByName,
 } from '@/lib/hr/employeeListQuery';
 import { batchCurrentCompensationForEmployees } from '@/lib/import-export/employeeCompensationServer';
+import { canHrCompensationView } from '@/lib/hr/compensationPermissions';
 import { parseNationalityInput } from '@/lib/hr/countryNames';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
@@ -149,6 +152,21 @@ export async function GET(req: Request) {
     };
   };
 
+  const includeCompensation = canHrCompensationView(session.user);
+
+  const attachCompensationToItems = async <T extends { id: string }>(items: T[]) => {
+    if (!includeCompensation || items.length === 0) return items;
+    const compensationByEmployee = await batchCurrentCompensationForEmployees(
+      prisma,
+      companyId,
+      items.map((employee) => employee.id)
+    );
+    return items.map((employee) => ({
+      ...employee,
+      currentCompensation: compensationByEmployee.get(employee.id) ?? null,
+    }));
+  };
+
   if (idsParam) {
     const ids = [...new Set(idsParam.split(',').map((part) => part.trim()).filter(Boolean))].slice(0, 100);
     if (ids.length === 0) return successResponse([]);
@@ -193,7 +211,7 @@ export async function GET(req: Request) {
         orderBy: [{ fullName: 'asc' }],
       });
       const filtered = applyEmployeeTypeFilter(allRows);
-      const items = filtered.slice(offset, offset + limit).map(mapEmployee);
+      const items = await attachCompensationToItems(filtered.slice(offset, offset + limit).map(mapEmployee));
       const employeeTypes = Array.from(
         new Set(
           allRows
@@ -206,10 +224,11 @@ export async function GET(req: Request) {
         items,
         total: filtered.length,
         employeeTypes,
+        stats: computeEmployeeDirectoryStats(filtered),
       });
     }
 
-    const [total, list, typeRows] = await Promise.all([
+    const [total, list, typeRows, stats] = await Promise.all([
       prisma.employee.count({ where }),
       prisma.employee.findMany({
         where,
@@ -222,6 +241,7 @@ export async function GET(req: Request) {
         select: { profileExtension: true },
         take: 2000,
       }),
+      countEmployeeDirectoryStats(prisma, where),
     ]);
 
     const employeeTypes = Array.from(
@@ -233,9 +253,10 @@ export async function GET(req: Request) {
     ).sort((a, b) => a.localeCompare(b));
 
     return successResponse({
-      items: list.map(mapEmployee),
+      items: await attachCompensationToItems(list.map(mapEmployee)),
       total,
       employeeTypes,
+      stats,
     });
   }
 

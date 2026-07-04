@@ -5,7 +5,23 @@ import {
   packageInclude,
   type CompensationPackageRow,
 } from '@/lib/hr/payroll/compensationPackageFormat';
+import type { PayCalculationMode } from '@/lib/hr/payroll/types';
 import type { EmployeeCompensationExportSnapshot } from '@/lib/import-export/employeeCompensationFields';
+
+function payTypeModeFromConfig(config: unknown): PayCalculationMode | null {
+  if (!config || typeof config !== 'object') return null;
+  const mode = (config as { mode?: unknown }).mode;
+  if (
+    mode === 'MONTHLY_FIXED' ||
+    mode === 'MONTHLY_CALENDAR_DEDUCT' ||
+    mode === 'DAILY_WAGE' ||
+    mode === 'HOURLY_SPLIT' ||
+    mode === 'CUSTOM'
+  ) {
+    return mode;
+  }
+  return null;
+}
 
 function pickCurrentCompensationPackage(
   packages: CompensationPackageRow[]
@@ -46,6 +62,7 @@ export async function batchCurrentCompensationForEmployees(
     map.set(employeeId, {
       payTypeName: current.payType.name,
       payTypeCode: current.payType.code,
+      payTypeMode: payTypeModeFromConfig(current.payType.config),
       monthlyBasic: formatted.monthlyBasic,
       dailyRate: formatted.dailyRate,
       components: current.allowances.map((a) => ({

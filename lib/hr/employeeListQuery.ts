@@ -1,4 +1,4 @@
-import type { Employee, EmployeeStatus, Prisma } from '@prisma/client';
+import type { Employee, EmployeeStatus, Prisma, PrismaClient } from '@prisma/client';
 
 import { employeeTypeFromProfileExtension } from '@/lib/hr/employeeTypeSettings';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
@@ -228,4 +228,49 @@ export function hasEmployeeDirectoryFilters(filters: EmployeeDirectoryFilterPara
       parseEmployeeFilterValues(filters.visaHolding).length > 0 ||
       parseEmployeeFilterValues(filters.expertise).length > 0
   );
+}
+
+export type EmployeeDirectoryStats = {
+  active: number;
+  onLeave: number;
+  portalEnabled: number;
+};
+
+export function computeEmployeeDirectoryStats<
+  T extends { status: EmployeeStatus; portalEnabled: boolean },
+>(rows: T[]): EmployeeDirectoryStats {
+  let active = 0;
+  let onLeave = 0;
+  let portalEnabled = 0;
+  for (const row of rows) {
+    if (row.status === 'ACTIVE') active += 1;
+    if (row.status === 'ON_LEAVE') onLeave += 1;
+    if (row.portalEnabled) portalEnabled += 1;
+  }
+  return { active, onLeave, portalEnabled };
+}
+
+export async function countEmployeeDirectoryStats(
+  db: PrismaClient,
+  where: Prisma.EmployeeWhereInput
+): Promise<EmployeeDirectoryStats> {
+  const [statusGroups, portalEnabled] = await Promise.all([
+    db.employee.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    }),
+    db.employee.count({
+      where: {
+        AND: [where, { portalEnabled: true }],
+      },
+    }),
+  ]);
+
+  const countByStatus = new Map(statusGroups.map((group) => [group.status, group._count._all]));
+  return {
+    active: countByStatus.get('ACTIVE') ?? 0,
+    onLeave: countByStatus.get('ON_LEAVE') ?? 0,
+    portalEnabled,
+  };
 }

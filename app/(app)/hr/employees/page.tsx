@@ -1,12 +1,14 @@
 ﻿'use client';
 
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { LayoutGrid, Table2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 
 import EmployeeImportModal from '@/components/hr/EmployeeImportModal';
 import EmployeeExportModal from '@/components/hr/EmployeeExportModal';
+import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
@@ -16,14 +18,20 @@ import { Select } from '@/components/ui/shadcn/select';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
 import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
+import { formatDirectoryCompensationAmount } from '@/lib/import-export/employeeCompensationFields';
+import { canHrCompensationView } from '@/lib/hr/compensationPermissions';
 import { cn } from '@/lib/utils';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import {
   useGetHrEmployeesPageQuery,
   HR_EMPLOYEE_PAGE_SIZE_OPTIONS,
+  type HrEmployee,
 } from '@/store/api/endpoints/hr';
 
 type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
+type DirectoryViewMode = 'table' | 'grid';
+
+const VIEW_MODE_STORAGE_KEY = 'hr-employees-view-mode';
 
 const STATUS_OPTIONS: Array<{ value: 'ALL' | EmployeeStatus; label: string }> = [
   { value: 'ALL', label: 'All statuses' },
@@ -74,6 +82,148 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
   );
 }
 
+function initialViewMode(): DirectoryViewMode {
+  if (typeof window === 'undefined') return 'table';
+  const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+  if (stored === 'table' || stored === 'grid') return stored;
+  return window.matchMedia('(max-width: 767px)').matches ? 'grid' : 'table';
+}
+
+function DirectoryViewToggle({
+  viewMode,
+  onChange,
+}: {
+  viewMode: DirectoryViewMode;
+  onChange: (mode: DirectoryViewMode) => void;
+}) {
+  return (
+    <div
+      className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5"
+      role="group"
+      aria-label="Directory view"
+    >
+      <button
+        type="button"
+        onClick={() => onChange('table')}
+        aria-pressed={viewMode === 'table'}
+        aria-label="Table view"
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition',
+          viewMode === 'table'
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <Table2 className="size-3.5 shrink-0" />
+        Table
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('grid')}
+        aria-pressed={viewMode === 'grid'}
+        aria-label="Grid view"
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition',
+          viewMode === 'grid'
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <LayoutGrid className="size-3.5 shrink-0" />
+        Grid
+      </button>
+    </div>
+  );
+}
+
+function EmployeeCompensationSummary({
+  compensation,
+}: {
+  compensation: HrEmployee['currentCompensation'];
+}) {
+  if (!compensation) {
+    return <span className="text-muted-foreground">Not set</span>;
+  }
+
+  return (
+    <div>
+      <p className="text-foreground">{compensation.payTypeName}</p>
+      <p className="mt-1 tabular-nums text-xs text-muted-foreground">
+        {formatDirectoryCompensationAmount(compensation)}
+      </p>
+    </div>
+  );
+}
+
+function EmployeeGridCard({
+  employee,
+  onOpen,
+  onContextMenu,
+  showCompensation,
+}: {
+  employee: HrEmployee;
+  onOpen: (employeeId: string) => void;
+  onContextMenu: (event: MouseEvent, employeeId: string) => void;
+  showCompensation: boolean;
+}) {
+  return (
+    <article
+      className="flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card transition-colors hover:bg-muted/30"
+      onDoubleClick={() => onOpen(employee.id)}
+      onContextMenu={(event) => onContextMenu(event, employee.id)}
+    >
+      <div className="flex flex-col items-center border-b border-border bg-muted/20 px-4 pb-4 pt-5 text-center">
+        <EmployeeAvatar name={employee.fullName} photoUrl={employee.photoUrl} size="lg" />
+        <h3 className="mt-4 line-clamp-2 text-sm font-semibold text-foreground">{employee.fullName}</h3>
+      </div>
+      <div className="flex flex-1 flex-col gap-2 px-4 py-3 text-sm">
+        <p className="line-clamp-1 text-muted-foreground">{employee.designation || 'No designation'}</p>
+        <p className="text-foreground">{prettyEmployeeType(employee.employeeType)}</p>
+        {showCompensation ? (
+          <div className="text-sm">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Compensation</p>
+            <EmployeeCompensationSummary compensation={employee.currentCompensation} />
+          </div>
+        ) : null}
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+          <Badge variant="outline" className={cn('font-medium', statusBadgeClasses[employee.status])}>
+            {prettyStatus(employee.status)}
+          </Badge>
+          <span
+            className={cn(
+              'text-xs',
+              employee.portalEnabled ? 'font-medium text-sky-600 dark:text-sky-300' : 'text-muted-foreground',
+            )}
+          >
+            {employee.portalEnabled ? 'Portal on' : 'Portal off'}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">{employee.phone || 'No mobile number'}</p>
+      </div>
+    </article>
+  );
+}
+
+function EmployeeGridSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div key={index} className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="flex flex-col items-center border-b border-border px-4 pb-4 pt-5">
+            <div className="h-28 w-28 animate-pulse rounded-2xl bg-muted" />
+            <div className="mt-4 h-4 w-32 animate-pulse rounded bg-muted" />
+            <div className="mt-2 h-3 w-20 animate-pulse rounded bg-muted" />
+          </div>
+          <div className="space-y-2 px-4 py-3">
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function HrEmployeesPage() {
   const router = useRouter();
   const { openMenu } = useGlobalContextMenu();
@@ -82,17 +232,35 @@ export default function HrEmployeesPage() {
   const [status, setStatus] = useState<'ALL' | EmployeeStatus>('ALL');
   const [employeeType, setEmployeeType] = useState<'ALL' | '__none__' | string>('ALL');
   const [portal, setPortal] = useState<'ALL' | 'enabled' | 'disabled'>('ALL');
-  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
 
   const deferredQuery = useDeferredValue(q);
 
+  const filterKey = `${deferredQuery}|${status}|${employeeType}|${portal}|${pageSize}`;
+  const [pageByFilter, setPageByFilter] = useState<Record<string, number>>({});
+  const page = pageByFilter[filterKey] ?? 1;
+  const setPage = useCallback(
+    (next: number) => {
+      setPageByFilter((current) => ({ ...current, [filterKey]: next }));
+    },
+    [filterKey],
+  );
+
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.employee.view');
+  const canViewCompensation = session?.user ? canHrCompensationView(session.user) : false;
   const canEdit = isSA || perms.includes('hr.employee.edit');
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [viewMode, setViewModeState] = useState<DirectoryViewMode>(() => initialViewMode());
+
+  const setViewMode = useCallback((mode: DirectoryViewMode) => {
+    setViewModeState(mode);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    }
+  }, []);
 
   const {
     data: employeesPage,
@@ -112,34 +280,33 @@ export default function HrEmployeesPage() {
 
   const list = employeesPage?.items ?? [];
   const totalEmployees = employeesPage?.total ?? 0;
-  const employeeTypeChoices = employeesPage?.employeeTypes ?? [];
-
-  useEffect(() => {
-    setPage(1);
-  }, [deferredQuery, status, employeeType, portal, pageSize]);
-
-  useEffect(() => {
-    if (employeeType === 'ALL' || employeeType === '__none__') return;
-    if (!employeeTypeChoices.includes(employeeType)) setEmployeeType('ALL');
-  }, [employeeType, employeeTypeChoices]);
-
-  const totals = useMemo(() => {
-    const active = list.filter((employee) => employee.status === 'ACTIVE').length;
-    const onLeave = list.filter((employee) => employee.status === 'ON_LEAVE').length;
-    const portalEnabled = list.filter((employee) => employee.portalEnabled).length;
-    return {
-      total: totalEmployees,
-      active,
-      onLeave,
-      portalEnabled,
-    };
-  }, [list, totalEmployees]);
+  const employeeTypeChoices = useMemo(
+    () => employeesPage?.employeeTypes ?? [],
+    [employeesPage?.employeeTypes],
+  );
+  const selectedEmployeeType =
+    employeeType === 'ALL' ||
+    employeeType === '__none__' ||
+    employeeTypeChoices.includes(employeeType)
+      ? employeeType
+      : 'ALL';
+  const stats = employeesPage?.stats ?? { active: 0, onLeave: 0, portalEnabled: 0 };
 
   const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
   const pageStart = totalEmployees === 0 ? 0 : (page - 1) * pageSize;
 
   const openEmployeeProfile = (employeeId: string) => {
     router.push(`/hr/employees/${employeeId}`);
+  };
+
+  const openEmployeeContextMenu = (event: MouseEvent, employeeId: string) => {
+    event.preventDefault();
+    openMenu(event.clientX, event.clientY, [
+      {
+        label: 'Open profile',
+        action: () => openEmployeeProfile(employeeId),
+      },
+    ]);
   };
 
   if (!canView) {
@@ -163,10 +330,10 @@ export default function HrEmployeesPage() {
           </p>
         </div>
         <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Employees" value={totals.total} hint="Matching current filters" />
-          <StatCard label="Active on page" value={totals.active} hint="Current page only" />
-          <StatCard label="On leave on page" value={totals.onLeave} hint="Current page only" />
-          <StatCard label="Portal on page" value={totals.portalEnabled} hint="Current page only" />
+          <StatCard label="Employees" value={totalEmployees} hint="Matching current filters" />
+          <StatCard label="Active" value={stats.active} hint="Matching current filters" />
+          <StatCard label="On leave" value={stats.onLeave} hint="Matching current filters" />
+          <StatCard label="Portal enabled" value={stats.portalEnabled} hint="Matching current filters" />
         </div>
       </header>
 
@@ -194,7 +361,7 @@ export default function HrEmployeesPage() {
             <div className="space-y-2">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Type</span>
               <Select
-                value={employeeType}
+                value={selectedEmployeeType}
                 onChange={(e) => setEmployeeType(e.target.value as 'ALL' | '__none__' | string)}
               >
                 <option value="ALL">All types</option>
@@ -251,7 +418,7 @@ export default function HrEmployeesPage() {
         directoryFilters={{
           q: deferredQuery,
           status,
-          employeeType,
+          employeeType: selectedEmployeeType,
           portal,
         }}
         employeeTypeChoices={employeeTypeChoices}
@@ -260,35 +427,48 @@ export default function HrEmployeesPage() {
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Employee master table</h2>
+            <h2 className="text-lg font-semibold text-foreground">Employee directory</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Double-click a row to open the profile. Right-click a row for actions.
+              {viewMode === 'grid'
+                ? 'Double-click a card to open the profile. Right-click for actions.'
+                : 'Double-click a row to open the profile. Right-click a row for actions.'}
             </p>
           </div>
+          <DirectoryViewToggle viewMode={viewMode} onChange={setViewMode} />
         </div>
 
         {loading ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full text-left text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  {['Employee name', 'Code', 'Designation', 'Type', 'Status', 'Portal', 'Mobile number'].map(
-                    (header) => (
+          viewMode === 'grid' ? (
+            <EmployeeGridSkeleton />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[900px] w-full text-left text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                  {[
+                    'Employee name',
+                    'Designation',
+                    'Type',
+                    ...(canViewCompensation ? ['Compensation'] : []),
+                    'Status',
+                    'Portal',
+                    'Mobile number',
+                  ].map((header) => (
                       <th
                         key={header}
                         className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:pl-5 last:pr-5"
                       >
                         {header}
                       </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                <TableSkeleton rows={6} columns={7} />
-              </tbody>
-            </table>
-          </div>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <TableSkeleton rows={6} columns={canViewCompensation ? 7 : 6} />
+                </tbody>
+              </table>
+            </div>
+          )
         ) : totalEmployees === 0 ? (
           <div className="px-6 py-12 text-center">
             <h3 className="text-lg font-semibold text-foreground">No employees found</h3>
@@ -308,6 +488,18 @@ export default function HrEmployeesPage() {
             <h3 className="text-lg font-semibold text-foreground">No employees on this page</h3>
             <p className="mt-2 text-sm text-muted-foreground">Try another page or adjust filters.</p>
           </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {list.map((employee) => (
+              <EmployeeGridCard
+                key={employee.id}
+                employee={employee}
+                onOpen={openEmployeeProfile}
+                onContextMenu={openEmployeeContextMenu}
+                showCompensation={canViewCompensation}
+              />
+            ))}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-[900px] w-full text-left text-sm">
@@ -317,12 +509,14 @@ export default function HrEmployeesPage() {
                     Employee name
                   </th>
                   <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Code
-                  </th>
-                  <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Designation
                   </th>
                   <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Type</th>
+                  {canViewCompensation ? (
+                    <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Compensation
+                    </th>
+                  ) : null}
                   <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Status
                   </th>
@@ -340,28 +534,20 @@ export default function HrEmployeesPage() {
                     key={employee.id}
                     className="cursor-pointer align-top transition-colors hover:bg-muted/40"
                     onDoubleClick={() => openEmployeeProfile(employee.id)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      openMenu(event.clientX, event.clientY, [
-                        {
-                          label: 'Open profile',
-                          action: () => openEmployeeProfile(employee.id),
-                        },
-                      ]);
-                    }}
+                    onContextMenu={(event) => openEmployeeContextMenu(event, employee.id)}
                   >
                     <td className="px-5 py-4">
-                      <div>
-                        <p className="font-medium text-foreground">{employee.fullName}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {employee.preferredName && employee.preferredName !== employee.fullName
-                            ? `Preferred: ${employee.preferredName}`
-                            : 'Employee profile'}
-                        </p>
+                      <div className="flex items-start gap-3">
+                        <EmployeeAvatar name={employee.fullName} photoUrl={employee.photoUrl} size="sm" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-foreground">{employee.fullName}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {employee.preferredName && employee.preferredName !== employee.fullName
+                              ? `Preferred: ${employee.preferredName}`
+                              : 'Employee profile'}
+                          </p>
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-4 py-4 font-mono text-xs text-emerald-600 dark:text-emerald-300/90">
-                      {employee.employeeCode}
                     </td>
                     <td className="px-4 py-4">{employee.designation || 'Not set'}</td>
                     <td className="px-4 py-4">
@@ -370,6 +556,11 @@ export default function HrEmployeesPage() {
                         <p className="mt-1 text-xs text-muted-foreground">{employee.basicHoursPerDay || 0} h/day</p>
                       </div>
                     </td>
+                    {canViewCompensation ? (
+                      <td className="px-4 py-4">
+                        <EmployeeCompensationSummary compensation={employee.currentCompensation} />
+                      </td>
+                    ) : null}
                     <td className="px-4 py-4">
                       <Badge variant="outline" className={cn('font-medium', statusBadgeClasses[employee.status])}>
                         {prettyStatus(employee.status)}
@@ -401,10 +592,7 @@ export default function HrEmployeesPage() {
               pageEnd={pageStart + list.length}
               pageSizeOptions={HR_EMPLOYEE_PAGE_SIZE_OPTIONS}
               onPageChange={setPage}
-              onPageSizeChange={(size) => {
-                setPageSize(size);
-                setPage(1);
-              }}
+              onPageSizeChange={setPageSize}
             />
           </div>
         ) : null}
