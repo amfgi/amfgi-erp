@@ -567,6 +567,7 @@ export default function StockLiveUpdates() {
           status?: string;
           employeeType?: string;
           portal?: string;
+          compensation?: string;
         };
         const searchParams = new URLSearchParams();
         searchParams.set('limit', String(params.limit));
@@ -577,6 +578,9 @@ export default function StockLiveUpdates() {
           searchParams.set('employeeType', params.employeeType);
         }
         if (params.portal && params.portal !== 'ALL') searchParams.set('portal', params.portal);
+        if (params.compensation && params.compensation !== 'ALL') {
+          searchParams.set('compensation', params.compensation);
+        }
         const json = await fetchJson<{ data: unknown }>(`/api/hr/employees?${searchParams.toString()}`);
         upsertQueryData(appApi, 'getHrEmployeesPage', arg, json.data);
       }),

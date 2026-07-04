@@ -16,6 +16,7 @@ import {
   isDraftNonWorking,
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
+import { employeeSortLabel } from '@/lib/hr/employeeListQuery';
 import TimeEntryInput, { TIME_ENTRY_FLAT_INPUT_CLASS } from '@/components/hr/TimeEntryInput';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +28,8 @@ export interface AttendanceGridEmployee {
   status?: 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
   basicHoursPerDay?: number;
   employeeType?: 'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER';
+  /** HR employment option — used to group workers on the day attendance sheet. */
+  signatureGroup?: string | null;
 }
 
 export interface AttendanceGridDraftRow {
@@ -98,6 +101,8 @@ interface AttendanceEntryGridProps {
   leavePreviewByRowKey?: Record<string, string>;
   /** Day sheet = one date, many employees. Employee-month = one employee, many dates. */
   sheetMode?: 'employees' | 'dates';
+  /** Day sheet only: split the Workers section by employee signature group. */
+  groupWorkersBySignatureGroup?: boolean;
   resolveRowKey?: (draft: AttendanceGridDraftRow) => string;
   monthDateBounds?: { min: string; max: string };
   onWorkDateChange?: (rowKey: string, workDate: string) => void;
@@ -395,8 +400,58 @@ function workedHourTone(minutes: number): string {
 }
 
 function employeeDisplayName(employee: AttendanceGridEmployee | undefined): string {
-  return employee?.preferredName || employee?.fullName || '';
+  if (!employee) return '';
+  return employeeSortLabel(employee);
 }
+
+const WORKER_SIGNATURE_GROUP_UNASSIGNED = 'No signature group';
+
+function workerSignatureGroupLabel(employee: AttendanceGridEmployee | undefined): string {
+  const raw = employee?.signatureGroup?.trim();
+  return raw || WORKER_SIGNATURE_GROUP_UNASSIGNED;
+}
+
+function sortDraftRowsByEmployeeName(
+  drafts: AttendanceGridDraftRow[],
+  employeesById: Map<string, AttendanceGridEmployee>
+): AttendanceGridDraftRow[] {
+  return [...drafts].sort((a, b) =>
+    employeeDisplayName(employeesById.get(a.employeeId)).localeCompare(
+      employeeDisplayName(employeesById.get(b.employeeId)),
+      undefined,
+      { sensitivity: 'base' }
+    )
+  );
+}
+
+function groupWorkerRowsBySignatureGroup(
+  drafts: AttendanceGridDraftRow[],
+  employeesById: Map<string, AttendanceGridEmployee>
+): Array<{ groupLabel: string; rows: AttendanceGridDraftRow[] }> {
+  const buckets = new Map<string, AttendanceGridDraftRow[]>();
+  for (const draft of drafts) {
+    const label = workerSignatureGroupLabel(employeesById.get(draft.employeeId));
+    const bucket = buckets.get(label) ?? [];
+    bucket.push(draft);
+    buckets.set(label, bucket);
+  }
+
+  return [...buckets.entries()]
+    .sort(([left], [right]) => {
+      if (left === WORKER_SIGNATURE_GROUP_UNASSIGNED) return 1;
+      if (right === WORKER_SIGNATURE_GROUP_UNASSIGNED) return -1;
+      return left.localeCompare(right, undefined, { sensitivity: 'base' });
+    })
+    .map(([groupLabel, groupRows]) => ({
+      groupLabel,
+      rows: sortDraftRowsByEmployeeName(groupRows, employeesById),
+    }));
+}
+
+const WORKER_SIGNATURE_SUBSECTION_HEADER = {
+  borderClass: 'border-emerald-400/35',
+  bgClass: 'bg-emerald-500/5',
+} as const;
 
 function ReadOnlyMetaCell({ value }: { value: string | null | undefined }) {
   const text = value?.trim() || '—';
@@ -442,6 +497,7 @@ export default function AttendanceEntryGrid({
   leavePreviewByEmployeeId = {},
   leavePreviewByRowKey = {},
   sheetMode = 'employees',
+  groupWorkersBySignatureGroup = false,
   resolveRowKey,
   monthDateBounds,
   onWorkDateChange,
@@ -511,7 +567,7 @@ export default function AttendanceEntryGrid({
     }
     return EMPLOYEE_TYPE_SECTION_ORDER.map((type) => ({
       type,
-      rows: buckets.get(type) ?? [],
+      rows: sortDraftRowsByEmployeeName(buckets.get(type) ?? [], employeesById),
     })).filter((section) => section.rows.length > 0);
   }, [employeesById, isDatesMode, rows]);
 
@@ -1250,6 +1306,22 @@ export default function AttendanceEntryGrid({
 								let navRowIndex = 0;
 								return employeeTypeSections.map((section) => {
 									const header = EMPLOYEE_TYPE_SECTION_HEADER[section.type];
+									const workerSubsections =
+										!isDatesMode &&
+										groupWorkersBySignatureGroup &&
+										section.type === 'LABOUR_WORKER' &&
+										section.rows.length > 0
+											? groupWorkerRowsBySignatureGroup(section.rows, employeesById)
+											: null;
+
+									const renderSectionRows = (sectionRows: AttendanceGridDraftRow[]) =>
+										sectionRows.map((draft) => {
+											const row = renderDraftGridRow(draft, lineIndex, navRowIndex);
+											lineIndex += 1;
+											navRowIndex += 1;
+											return row;
+										});
+
 									return (
 										<Fragment key={section.type}>
 											{!isDatesMode
@@ -1260,12 +1332,19 @@ export default function AttendanceEntryGrid({
 														header
 													)
 												: null}
-											{section.rows.map((draft) => {
-												const row = renderDraftGridRow(draft, lineIndex, navRowIndex);
-												lineIndex += 1;
-												navRowIndex += 1;
-												return row;
-											})}
+											{workerSubsections
+												? workerSubsections.map((subsection) => (
+														<Fragment key={`${section.type}-${subsection.groupLabel}`}>
+															{renderGridSectionHeader(
+																gridTemplateColumns,
+																subsection.groupLabel,
+																`${subsection.rows.length} worker${subsection.rows.length === 1 ? '' : 's'}`,
+																WORKER_SIGNATURE_SUBSECTION_HEADER
+															)}
+															{renderSectionRows(subsection.rows)}
+														</Fragment>
+													))
+												: renderSectionRows(section.rows)}
 										</Fragment>
 									);
 								});

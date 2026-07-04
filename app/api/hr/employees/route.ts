@@ -71,11 +71,15 @@ export async function GET(req: Request) {
   const idsParam = searchParams.get('ids');
   const forExport = searchParams.get('forExport') === '1';
   const directoryFilters = readEmployeeDirectoryFiltersFromSearchParams(searchParams);
-  const { q, status, employeeType, portal } = directoryFilters;
+  const { employeeType } = directoryFilters;
   const limitParam = searchParams.get('limit');
+  const includeCompensation = canHrCompensationView(session.user);
+  const listFilters = includeCompensation
+    ? directoryFilters
+    : { ...directoryFilters, compensation: undefined };
 
   if (forExport) {
-    const where = buildEmployeeListWhere(companyId, directoryFilters);
+    const where = buildEmployeeListWhere(companyId, listFilters);
     const exportIds = idsParam
       ? [...new Set(idsParam.split(',').map((part) => part.trim()).filter(Boolean))].slice(0, 10000)
       : [];
@@ -152,8 +156,6 @@ export async function GET(req: Request) {
     };
   };
 
-  const includeCompensation = canHrCompensationView(session.user);
-
   const attachCompensationToItems = async <T extends { id: string }>(items: T[]) => {
     if (!includeCompensation || items.length === 0) return items;
     const compensationByEmployee = await batchCurrentCompensationForEmployees(
@@ -177,18 +179,7 @@ export async function GET(req: Request) {
     return successResponse(list.map(mapEmployee));
   }
 
-  const where: Prisma.EmployeeWhereInput = { companyId };
-  if (status && status !== 'ALL') where.status = status as Prisma.EnumEmployeeStatusFilter;
-  if (portal === 'enabled') where.portalEnabled = true;
-  if (portal === 'disabled') where.portalEnabled = false;
-  if (q) {
-    where.OR = [
-      { fullName: { contains: q, mode: 'insensitive' } },
-      { employeeCode: { contains: q, mode: 'insensitive' } },
-      { email: { contains: q, mode: 'insensitive' } },
-      { phone: { contains: q, mode: 'insensitive' } },
-    ];
-  }
+  const where = buildEmployeeListWhere(companyId, listFilters);
 
   const applyEmployeeTypeFilter = <T extends { profileExtension: unknown }>(rows: T[]) => {
     if (!employeeType || employeeType === 'ALL') return rows;

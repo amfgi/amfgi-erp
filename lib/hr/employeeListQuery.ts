@@ -8,6 +8,7 @@ export type EmployeeListFilterParams = {
   status?: string | null;
   employeeType?: string | null;
   portal?: string | null;
+  compensation?: string | null;
   designation?: string | null;
   department?: string | null;
   employmentType?: string | null;
@@ -21,6 +22,7 @@ export type EmployeeDirectoryFilterParams = {
   status?: string;
   employeeType?: string;
   portal?: string;
+  compensation?: string;
   designation?: string;
   department?: string;
   employmentType?: string;
@@ -114,6 +116,15 @@ export function buildEmployeeListWhere(
   applyOptionalEmploymentField(where, 'employmentType', filters.employmentType);
   applyOptionalEmploymentField(where, 'signatureGroup', filters.signatureGroup);
 
+  const compensationValues = parseEmployeeFilterValues(filters.compensation);
+  if (compensationValues.length === 1) {
+    if (compensationValues[0] === 'set') {
+      appendAndClause(where, { compensations: { some: {} } });
+    } else if (compensationValues[0] === 'not_set') {
+      appendAndClause(where, { compensations: { none: {} } });
+    }
+  }
+
   return where;
 }
 
@@ -164,8 +175,23 @@ export function filterEmployeesByWorkforceFilters<T extends { profileExtension: 
   return result;
 }
 
-export function sortEmployeesByName<T extends Pick<Employee, 'fullName'>>(rows: T[]): T[] {
-  return [...rows].sort((a, b) => a.fullName.localeCompare(b.fullName));
+export function employeeSortLabel(
+  employee: Pick<Employee, 'fullName'> & { preferredName?: string | null }
+): string {
+  return (employee.preferredName?.trim() || employee.fullName).trim();
+}
+
+export function compareEmployeesBySortLabel(
+  a: Pick<Employee, 'fullName'> & { preferredName?: string | null },
+  b: Pick<Employee, 'fullName'> & { preferredName?: string | null }
+): number {
+  return employeeSortLabel(a).localeCompare(employeeSortLabel(b), undefined, { sensitivity: 'base' });
+}
+
+export function sortEmployeesByName<T extends Pick<Employee, 'fullName'> & { preferredName?: string | null }>(
+  rows: T[]
+): T[] {
+  return [...rows].sort(compareEmployeesBySortLabel);
 }
 
 export function readEmployeeDirectoryFiltersFromSearchParams(
@@ -176,6 +202,7 @@ export function readEmployeeDirectoryFiltersFromSearchParams(
     status: searchParams.get('status'),
     employeeType: searchParams.get('employeeType'),
     portal: searchParams.get('portal'),
+    compensation: searchParams.get('compensation'),
     designation: searchParams.get('designation'),
     department: searchParams.get('department'),
     employmentType: searchParams.get('employmentType'),
@@ -199,6 +226,7 @@ export function appendEmployeeDirectorySearchParams(
   setFilter('status', params.status);
   setFilter('employeeType', params.employeeType);
   setFilter('portal', params.portal);
+  setFilter('compensation', params.compensation);
   setFilter('designation', params.designation);
   setFilter('department', params.department);
   setFilter('employmentType', params.employmentType);
@@ -221,6 +249,7 @@ export function hasEmployeeDirectoryFilters(filters: EmployeeDirectoryFilterPara
       parseEmployeeFilterValues(filters.status).length > 0 ||
       parseEmployeeFilterValues(filters.employeeType).length > 0 ||
       parseEmployeeFilterValues(filters.portal).length > 0 ||
+      parseEmployeeFilterValues(filters.compensation).length > 0 ||
       parseEmployeeFilterValues(filters.designation).length > 0 ||
       parseEmployeeFilterValues(filters.department).length > 0 ||
       parseEmployeeFilterValues(filters.employmentType).length > 0 ||

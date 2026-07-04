@@ -3,6 +3,7 @@ import {
   buildSignatureSheetEntries,
   formatSignatureSheetDateLabel,
 } from '@/lib/hr/buildAttendanceSignatureSheet';
+import { sortEmployeesByName } from '@/lib/hr/employeeListQuery';
 
 const employees = [
   { id: 'e1', fullName: 'Zara Ali', preferredName: null },
@@ -126,5 +127,24 @@ describe('buildSignatureSheetEntries', () => {
       schedule: { absences: new Set(), assignmentByEmployee: new Map() },
     });
     expect(entries[0]?.signatureNote).toMatch(/^Sign: /);
+  });
+
+  it('orders roster by preferred name, falling back to full name', () => {
+    const employees = sortEmployeesByName([
+      { id: 'e1', fullName: 'Zara Ali', preferredName: 'Zee' },
+      { id: 'e2', fullName: 'Adam King', preferredName: 'Ben' },
+      { id: 'e3', fullName: 'Carla Factory', preferredName: null },
+    ]);
+    const entries = buildSignatureSheetEntries({
+      workDateYmd: '2026-06-30',
+      employees,
+      schedule: { absences: new Set(), assignmentByEmployee: new Map() },
+    });
+
+    expect(entries.map((entry) => entry.employeeName)).toEqual([
+      'Ben',
+      'Carla Factory',
+      'Zee',
+    ]);
   });
 });

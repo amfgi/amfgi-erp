@@ -12,6 +12,7 @@ import {
   employeeTypeFromProfileExtension,
   readEmployeeTypeSettingsFromCompanyData,
 } from '@/lib/hr/employeeTypeSettings';
+import { compareEmployeesBySortLabel } from '@/lib/hr/employeeListQuery';
 
 const attendanceEntryInclude = {
   employee: {
@@ -21,6 +22,7 @@ const attendanceEntryInclude = {
       preferredName: true,
       employeeCode: true,
       status: true,
+      signatureGroup: true,
       profileExtension: true,
     },
   },
@@ -54,6 +56,10 @@ const attendanceEntryInclude = {
 } satisfies Prisma.AttendanceEntryInclude;
 
 type AttendanceEntryRow = Prisma.AttendanceEntryGetPayload<{ include: typeof attendanceEntryInclude }>;
+
+function sortAttendanceRowsByEmployeeLabel(rows: AttendanceEntryRow[]): AttendanceEntryRow[] {
+  return [...rows].sort((a, b) => compareEmployeesBySortLabel(a.employee, b.employee));
+}
 
 function serializeAttendanceRow(
   row: AttendanceEntryRow,
@@ -198,7 +204,9 @@ export async function GET(req: Request) {
       ]);
 
       return successResponse({
-        items: rows.map((row) => serializeAttendanceRow(row, typeSettings)),
+        items: sortAttendanceRowsByEmployeeLabel(rows).map((row) =>
+          serializeAttendanceRow(row, typeSettings)
+        ),
         total,
       });
     }
@@ -209,7 +217,9 @@ export async function GET(req: Request) {
       orderBy: [{ employee: { fullName: 'asc' } }],
     });
 
-    return successResponse(rows.map((row) => serializeAttendanceRow(row, typeSettings)));
+    return successResponse(
+      sortAttendanceRowsByEmployeeLabel(rows).map((row) => serializeAttendanceRow(row, typeSettings))
+    );
   } catch {
     return errorResponse('Failed to fetch attendance', 500);
   }

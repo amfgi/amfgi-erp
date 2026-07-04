@@ -16,6 +16,7 @@ import {
   normalizeDraftStatusFromApi,
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
+import { employeeSortLabel } from '@/lib/hr/employeeListQuery';
 import {
   fetchJobById,
   jobToSearchItem,
@@ -39,6 +40,7 @@ interface EmployeeRow {
   preferredName: string | null;
   employeeCode: string;
   status?: 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
+  signatureGroup?: string | null;
   profileExtension?: unknown;
   basicHoursPerDay?: number;
   employeeType?: 'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER';
@@ -386,7 +388,8 @@ function hourIndicatorDotClass(kind: HourIndicatorKind | undefined): string {
 }
 
 function employeeDisplayName(employee: EmployeeRow | undefined): string {
-  return employee?.preferredName || employee?.fullName || '';
+  if (!employee) return '';
+  return employeeSortLabel(employee);
 }
 
 function employeeTypeSortValue(employee: EmployeeRow | undefined): number {
@@ -915,6 +918,7 @@ export default function AttendanceCreatePage() {
             preferredName: (employee?.preferredName as string | null | undefined) ?? null,
             employeeCode: String((employee?.employeeCode as string | undefined) ?? ''),
             status: ((employee?.status as EmployeeRow['status'] | undefined) ?? 'ACTIVE'),
+            signatureGroup: (employee?.signatureGroup as string | null | undefined) ?? null,
             profileExtension: employee?.profileExtension,
             employeeType: (employee?.employeeType as EmployeeRow['employeeType'] | undefined) ?? 'LABOUR_WORKER',
             basicHoursPerDay: Number((employee?.basicHoursPerDay as number | undefined) ?? 0) || undefined,
@@ -1226,6 +1230,7 @@ export default function AttendanceCreatePage() {
             employee?.fullName ?? '',
             employee?.preferredName ?? '',
             employee?.employeeCode ?? '',
+            employee?.signatureGroup ?? '',
             draft.jobNumber,
             assignment?.customerName ?? externalJobMeta?.customerName ?? '',
             assignment?.siteName ?? externalJobMeta?.siteName ?? '',
@@ -1247,6 +1252,16 @@ export default function AttendanceCreatePage() {
         const employeeB = employeeById.get(b.employeeId);
         const typeDelta = employeeTypeSortValue(employeeA) - employeeTypeSortValue(employeeB);
         if (typeDelta !== 0) return typeDelta;
+        const workerTypeA = employeeA?.employeeType ?? 'LABOUR_WORKER';
+        const workerTypeB = employeeB?.employeeType ?? 'LABOUR_WORKER';
+        if (workerTypeA === 'LABOUR_WORKER' && workerTypeB === 'LABOUR_WORKER') {
+          const groupDelta = (employeeA?.signatureGroup ?? '').localeCompare(
+            employeeB?.signatureGroup ?? '',
+            undefined,
+            { sensitivity: 'base' }
+          );
+          if (groupDelta !== 0) return groupDelta;
+        }
         return employeeDisplayName(employeeA).localeCompare(employeeDisplayName(employeeB), undefined, {
           sensitivity: 'base',
         });
@@ -1718,6 +1733,7 @@ export default function AttendanceCreatePage() {
       >
         <AttendanceEntryGrid
           gridPreferenceKey={ATTENDANCE_DAY_SHEET_GRID_PREFERENCE_KEY}
+          groupWorkersBySignatureGroup
           rows={visibleDrafts}
           employeesById={employeeById}
           assignmentsById={assignmentMetaById}

@@ -89,22 +89,16 @@ export default function HrAttendanceSignaturePrintPage() {
           padding: 3px 4px;
         }
         .signature-table tbody .col-serial,
-        .signature-table tbody .col-name,
-        .signature-table tbody .col-note {
+        .signature-table tbody .col-name {
           font-size: 12px;
           font-weight: 600;
         }
-        .signature-table tbody .col-time {
+        .signature-table tbody .col-time,
+        .signature-table tbody .col-note {
           font-size: 8px;
           font-weight: 600;
           text-align: left;
           white-space: nowrap;
-        }
-        .signature-table tbody td.col-time:not(.col-sign) {
-          border-bottom: none !important;
-        }
-        .signature-table tbody td.col-sign.col-time {
-          border-top: none !important;
         }
         .signature-table .col-name {
           white-space: nowrap;
@@ -114,8 +108,6 @@ export default function HrAttendanceSignaturePrintPage() {
           width: 1%;
           min-width: 12ch;
           white-space: nowrap;
-          padding: 2px 2px;
-          text-align: center;
         }
         .signature-table .col-sign {
           height: 1.75rem;
@@ -230,7 +222,7 @@ export default function HrAttendanceSignaturePrintPage() {
 								<th className='col-time w-16 border border-slate-300'>
 									Duty Out
 								</th>
-								<th className='col-note border border-slate-300'>
+								<th className='col-time col-note border border-slate-300'>
 									Note
 								</th>
 							</tr>
@@ -280,10 +272,7 @@ export default function HrAttendanceSignaturePrintPage() {
 											<td className='col-time border border-slate-300'>
 												{entry.dutyOut}
 											</td>
-											<td
-												rowSpan={2}
-												className='col-note border border-slate-300 align-middle text-center font-semibold uppercase tracking-wide text-[8px]!'
-											>
+											<td className='col-time col-note border border-slate-300 font-semibold uppercase tracking-wide'>
 												{entry.locationLabel}
 											</td>
 										</tr>
@@ -306,6 +295,7 @@ export default function HrAttendanceSignaturePrintPage() {
 												) : null}
 											</td>
 											<td className='col-sign col-time border border-slate-300' />
+											<td className='col-sign col-time col-note border border-slate-300' />
 										</tr>
 										{!isLast ? (
 											<tr

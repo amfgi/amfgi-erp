@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useDeferredValue, useMemo, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
@@ -232,11 +232,12 @@ export default function HrEmployeesPage() {
   const [status, setStatus] = useState<'ALL' | EmployeeStatus>('ALL');
   const [employeeType, setEmployeeType] = useState<'ALL' | '__none__' | string>('ALL');
   const [portal, setPortal] = useState<'ALL' | 'enabled' | 'disabled'>('ALL');
+  const [compensation, setCompensation] = useState<'ALL' | 'set' | 'not_set'>('ALL');
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
 
   const deferredQuery = useDeferredValue(q);
 
-  const filterKey = `${deferredQuery}|${status}|${employeeType}|${portal}|${pageSize}`;
+  const filterKey = `${deferredQuery}|${status}|${employeeType}|${portal}|${compensation}|${pageSize}`;
   const [pageByFilter, setPageByFilter] = useState<Record<string, number>>({});
   const page = pageByFilter[filterKey] ?? 1;
   const setPage = useCallback(
@@ -274,6 +275,7 @@ export default function HrEmployeesPage() {
       status,
       employeeType,
       portal,
+      ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
     },
     { skip: !canView },
   );
@@ -339,7 +341,12 @@ export default function HrEmployeesPage() {
 
       <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div
+            className={cn(
+              'grid min-w-0 flex-1 gap-4 sm:grid-cols-2',
+              canViewCompensation ? 'xl:grid-cols-5' : 'xl:grid-cols-4',
+            )}
+          >
             <div className="space-y-2 sm:col-span-2 xl:col-span-1">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search</span>
               <Input
@@ -381,6 +388,21 @@ export default function HrEmployeesPage() {
                 <option value="disabled">Disabled only</option>
               </Select>
             </div>
+            {canViewCompensation ? (
+              <div className="space-y-2">
+                <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Compensation
+                </span>
+                <Select
+                  value={compensation}
+                  onChange={(e) => setCompensation(e.target.value as 'ALL' | 'set' | 'not_set')}
+                >
+                  <option value="ALL">All</option>
+                  <option value="set">Compensation set</option>
+                  <option value="not_set">Not set</option>
+                </Select>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -420,6 +442,7 @@ export default function HrEmployeesPage() {
           status,
           employeeType: selectedEmployeeType,
           portal,
+          ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
         }}
         employeeTypeChoices={employeeTypeChoices}
       />

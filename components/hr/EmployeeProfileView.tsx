@@ -58,6 +58,7 @@ import {
   readEmployeeDocumentCustomTitle,
 } from '@/lib/hr/employeeDocumentDisplay';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
+import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 type Tab = 'overview' | 'visa' | 'documents' | 'compensation' | 'access';
@@ -777,53 +778,6 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     setBusyKey(null);
   };
 
-  useEffect(() => {
-    if (!emp) return;
-    const nextExpertises = parseWorkforceProfile(emp.profileExtension).expertises;
-    setSelectedExpertises(nextExpertises);
-    setNationality(displayNationalityCountryName(emp.nationality));
-    setGender(emp.gender ?? '');
-    setDesignation(emp.designation ?? '');
-    setDepartment(emp.department ?? '');
-    setEmploymentType(emp.employmentType ?? '');
-    setSignatureGroup(emp.signatureGroup ?? '');
-    const workforce = parseWorkforceProfile(emp.profileExtension);
-    setWorkforceRoleType(workforce.employeeType);
-    setVisaHolding(workforce.visaHolding);
-    setEmploymentStatus(emp.status);
-    setOverviewInitialSignature(buildOverviewEmployeeSignature(emp, nextExpertises));
-    setOverviewDirty(false);
-    const frame = requestAnimationFrame(() => {
-      if (!overviewFormRef.current) return;
-      const signature = buildOverviewDraftSignature(
-        overviewFormRef.current,
-        nextExpertises,
-        controlledOverviewFieldsFromEmp(emp),
-      );
-      setOverviewInitialSignature(signature);
-      setOverviewDirty(false);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [emp]);
-
-  useEffect(() => {
-    if (tab !== 'overview' || !emp || overviewInitialSignature !== null) return;
-    const nextExpertises = parseWorkforceProfile(emp.profileExtension).expertises;
-    setOverviewInitialSignature(buildOverviewEmployeeSignature(emp, nextExpertises));
-    setOverviewDirty(false);
-    const frame = requestAnimationFrame(() => {
-      if (!overviewFormRef.current) return;
-      const signature = buildOverviewDraftSignature(
-        overviewFormRef.current,
-        nextExpertises,
-        controlledOverviewFieldsFromEmp(emp),
-      );
-      setOverviewInitialSignature(signature);
-      setOverviewDirty(false);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [emp, overviewInitialSignature, tab]);
-
   const syncOverviewDirty = useCallback(
     (
       nextExpertises?: string[],
@@ -873,6 +827,82 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     if (!overviewDirty) return true;
     return window.confirm('You have unsaved changes on this employee profile. Leave without saving?');
   }, [overviewDirty]);
+
+  const resetOverviewFromEmployee = useCallback((record: EmployeeRecord) => {
+    const nextExpertises = parseWorkforceProfile(record.profileExtension).expertises;
+    setSelectedExpertises(nextExpertises);
+    setNationality(displayNationalityCountryName(record.nationality));
+    setGender(record.gender ?? '');
+    setDesignation(record.designation ?? '');
+    setDepartment(record.department ?? '');
+    setEmploymentType(record.employmentType ?? '');
+    setSignatureGroup(record.signatureGroup ?? '');
+    const workforce = parseWorkforceProfile(record.profileExtension);
+    setWorkforceRoleType(workforce.employeeType);
+    setVisaHolding(workforce.visaHolding);
+    setEmploymentStatus(record.status);
+    setOverviewInitialSignature(buildOverviewEmployeeSignature(record, nextExpertises));
+    setOverviewDirty(false);
+  }, []);
+
+  const clearTransientTabState = useCallback(() => {
+    setShowVisaForm(false);
+    setEditingVisa(null);
+    setEditingDoc(null);
+    setViewingDoc(null);
+    setShowAddDocumentModal(false);
+    setAddDocTypeSelection('');
+    setAddPortalViewEnabled(false);
+    setAddPortalDownloadEnabled(false);
+    setEditPortalViewEnabled(false);
+    setEditPortalDownloadEnabled(false);
+    setExpandedVisaId(null);
+    setLinkUserId('');
+  }, []);
+
+  const handleTabChange = useCallback(
+    (nextTab: Tab) => {
+      if (nextTab === tab) return;
+      clearTransientTabState();
+      setTab(nextTab);
+    },
+    [tab, clearTransientTabState],
+  );
+
+  useEffect(() => {
+    if (!emp) return;
+    resetOverviewFromEmployee(emp);
+    const frame = requestAnimationFrame(() => {
+      if (!overviewFormRef.current) return;
+      const nextExpertises = parseWorkforceProfile(emp.profileExtension).expertises;
+      const signature = buildOverviewDraftSignature(
+        overviewFormRef.current,
+        nextExpertises,
+        controlledOverviewFieldsFromEmp(emp),
+      );
+      setOverviewInitialSignature(signature);
+      setOverviewDirty(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [emp, resetOverviewFromEmployee]);
+
+  useEffect(() => {
+    if (tab !== 'overview' || !emp || overviewInitialSignature !== null) return;
+    const nextExpertises = parseWorkforceProfile(emp.profileExtension).expertises;
+    setOverviewInitialSignature(buildOverviewEmployeeSignature(emp, nextExpertises));
+    setOverviewDirty(false);
+    const frame = requestAnimationFrame(() => {
+      if (!overviewFormRef.current) return;
+      const signature = buildOverviewDraftSignature(
+        overviewFormRef.current,
+        nextExpertises,
+        controlledOverviewFieldsFromEmp(emp),
+      );
+      setOverviewInitialSignature(signature);
+      setOverviewDirty(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [emp, overviewInitialSignature, tab]);
 
   useEffect(() => {
     if (!overviewDirty) return;
@@ -968,7 +998,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     'mt-1 rounded-lg border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/40 focus:ring-emerald-500/30';
 
   return (
-    <div className="space-y-0 pb-12">
+    <div className="pb-12">
       <input
         ref={photoInputRef}
         type="file"
@@ -976,8 +1006,8 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
         className="hidden"
         onChange={() => void uploadPhotoFromInput()}
       />
-      {/* Hero */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-linear-to-br from-slate-900 via-slate-900 to-emerald-950/40">
+      <div className="mb-6">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-linear-to-br from-slate-900 via-slate-900 to-emerald-950/40 shadow-sm">
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.07]"
           style={{
@@ -1034,7 +1064,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             >
               Back to directory
             </Button>
-            {tab === 'overview' && canEdit && (
+            {canEdit ? (
               <Button
                 type="button"
                 onClick={() => overviewFormRef.current?.requestSubmit()}
@@ -1042,23 +1072,17 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
               >
                 {busyKey === 'overview' ? 'Saving...' : overviewDirty ? 'Save changes' : 'Saved'}
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
 
         {/* Tab bar */}
-        <div className="flex flex-wrap gap-1 border-t border-white/5 bg-black/20 px-4 py-2 sm:px-6">
+        <div className="flex flex-wrap gap-1 border-t border-white/5 bg-slate-950 px-4 py-2 sm:px-6">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
-              onClick={() => {
-                setTab(t.id);
-                setShowVisaForm(false);
-                setEditingVisa(null);
-                setEditingDoc(null);
-                setShowAddDocumentModal(false);
-              }}
+              onClick={() => handleTabChange(t.id)}
               className={[
                 'rounded-lg px-4 py-2 text-left text-sm transition-colors',
                 tab === t.id
@@ -1071,9 +1095,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             </button>
           ))}
         </div>
+        </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_minmax(12rem,18rem)]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_minmax(12rem,18rem)]">
         <div className="min-w-0 space-y-6">
           {isBusy && (
             <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-4 py-2 text-xs text-emerald-200">
@@ -1081,15 +1106,15 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             </div>
           )}
 
-          {tab === 'overview' && (
-            <form
-              key={emp.updatedAt}
-              ref={overviewFormRef}
-              onSubmit={onSaveOverview}
-              onInput={() => syncOverviewDirty()}
-              onChange={() => syncOverviewDirty()}
-              className="space-y-4"
-            >
+          <form
+            key={emp.updatedAt}
+            ref={overviewFormRef}
+            onSubmit={onSaveOverview}
+            onInput={() => syncOverviewDirty()}
+            onChange={() => syncOverviewDirty()}
+            className={cn('space-y-4', tab !== 'overview' && 'hidden')}
+            aria-hidden={tab !== 'overview'}
+          >
               <section className={sectionClass}>
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-emerald-400/90">Personal identity</h2>
                 <div className={sectionGrid}>
@@ -1327,7 +1352,6 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
               )}
 
             </form>
-          )}
 
           {tab === 'visa' && (
             <div className="space-y-6">

@@ -1,6 +1,7 @@
 import type { AssignmentLocationType, PrismaClient } from '@prisma/client';
 
 import { parseBreakWindow } from '@/lib/hr/attendanceSheetModel';
+import { employeeSortLabel, sortEmployeesByName } from '@/lib/hr/employeeListQuery';
 import { dateFromYmd } from '@/lib/hr/workDate';
 import { formatScheduleTimeForPrint } from '@/lib/hr/scheduleTimeDisplay';
 
@@ -81,7 +82,7 @@ export function buildScheduleSnapshot(input: {
 }
 
 function employeeDisplayName(employee: EmployeeRow): string {
-  return (employee.preferredName || employee.fullName).trim();
+  return employeeSortLabel(employee);
 }
 
 export function formatSignatureSheetDateLabel(workDateYmd: string): string {
@@ -157,7 +158,6 @@ export async function loadAttendanceSignatureSheet(
     prisma.company.findUnique({ where: { id: companyId }, select: { name: true } }),
     prisma.employee.findMany({
       where: { companyId, status: 'ACTIVE', signatureGroup: trimmedGroup },
-      orderBy: { fullName: 'asc' },
       select: { id: true, fullName: true, preferredName: true },
     }),
     prisma.workSchedule.findFirst({
@@ -185,7 +185,7 @@ export async function loadAttendanceSignatureSheet(
 
   const entries = buildSignatureSheetEntries({
     workDateYmd,
-    employees,
+    employees: sortEmployeesByName(employees),
     schedule: scheduleSnapshot,
   });
 

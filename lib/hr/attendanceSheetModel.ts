@@ -5,6 +5,7 @@ import {
   normalizeDraftStatusFromApi,
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
+import { employeeSortLabel } from '@/lib/hr/employeeListQuery';
 import { dubaiWallTimeToUtc, parseTimeCell } from '@/lib/hr/dubaiShift';
 
 export type AttendanceSheetEmployee = AttendanceGridEmployee & {
@@ -54,7 +55,8 @@ export function draftsEqual(a: AttendanceGridDraftRow[], b: AttendanceGridDraftR
 }
 
 export function employeeDisplayName(employee: AttendanceSheetEmployee | undefined): string {
-  return employee?.preferredName || employee?.fullName || '';
+  if (!employee) return '';
+  return employeeSortLabel(employee);
 }
 
 export function formatWorkDateLabel(ymd: string): string {
