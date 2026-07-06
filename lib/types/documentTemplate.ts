@@ -11,6 +11,7 @@
 export const KNOWN_ITEM_TYPES = [
   'delivery-note',
   'subcontract-delivery-note',
+  'dispatch-note',
   'goods-receipt',
   'packing-slip',
   'material-label',

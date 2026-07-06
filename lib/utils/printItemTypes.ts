@@ -35,6 +35,10 @@ export function filterTemplatesForDeliveryNotePrint(
   return exact;
 }
 
+export function filterTemplatesForDispatchNotePrint(templates: DocumentTemplate[]): DocumentTemplate[] {
+  return templates.filter((t) => String(t.itemType) === 'dispatch-note');
+}
+
 export function resolveDefaultPrintTemplateId(
   templates: DocumentTemplate[],
   deliveryType?: string | null

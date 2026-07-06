@@ -950,14 +950,14 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
 
   if (!canView) {
     return (
-      <div className="rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-panel-soft)] p-8 text-center text-[var(--foreground-muted)] shadow-sm">
+      <div className="rounded-2xl border border-(--border-strong) bg-(--surface-panel-soft) p-8 text-center text-(--foreground-muted) shadow-sm">
         You do not have permission to view this employee profile.
       </div>
     );
   }
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-[var(--foreground-muted)]">
+      <div className="flex min-h-[40vh] items-center justify-center text-(--foreground-muted)">
         <div className="flex items-center gap-3">
           <span className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
           Loading profile...
@@ -967,7 +967,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   }
   if (!emp) {
     return (
-      <div className="rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-panel-soft)] p-8 text-center text-[var(--foreground-muted)] shadow-sm">
+      <div className="rounded-2xl border border-(--border-strong) bg-(--surface-panel-soft) p-8 text-center text-(--foreground-muted) shadow-sm">
         Employee not found.
       </div>
     );
@@ -1344,7 +1344,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                       name="adminNotes"
                       rows={3}
                       defaultValue={emp.adminNotes ?? ''}
-                      className={`${fieldClass} min-h-[4.5rem] py-1.5`}
+                      className={`${fieldClass} min-h-18 py-1.5`}
                       placeholder="Onboarding notes, compliance flags..."
                     />
                   </label>

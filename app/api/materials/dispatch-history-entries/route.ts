@@ -30,9 +30,12 @@ function mapCustomItemsFromJson(json: unknown): Array<{ name: string; descriptio
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin && !session.user.permissions.includes('transaction.stock_out')) {
-    return errorResponse('Forbidden', 403);
-  }
+  const perms = (session.user.permissions ?? []) as string[];
+  const canList =
+    session.user.isSuperAdmin ||
+    perms.includes('transaction.stock_out') ||
+    perms.includes('settings.manage');
+  if (!canList) return errorResponse('Forbidden', 403);
 
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
 

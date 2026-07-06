@@ -25,8 +25,10 @@ import { PageChromeEditor } from './PageChromeEditor';
 import {
   buildDeliveryNoteTemplateData,
   buildDeliveryNoteTemplateDataFromEntity,
+  buildDispatchNoteTemplateData,
   getMockData,
   type AnyTemplateDataContext,
+  type DispatchNoteContext,
   type TemplateDataContext,
   type WorkScheduleContext,
 } from '@/lib/utils/templateData';
@@ -192,6 +194,14 @@ type DispatchPreviewEntry = {
   transactionIds: string[];
   materialsCount: number;
   isPrintOnly?: boolean;
+};
+
+type StockDispatchPreviewEntry = {
+  entryId: string;
+  jobNumber: string;
+  dispatchDate: string;
+  transactionIds: string[];
+  materialsCount: number;
 };
 
 type SchedulePreviewOption = {
@@ -387,6 +397,12 @@ export function TemplateBuilder({
   const [schedulePreviewDetailLoading, setSchedulePreviewDetailLoading] = useState(false);
   const [liveTxnLoading, setLiveTxnLoading] = useState(false);
   const [livePreviewBase, setLivePreviewBase] = useState<TemplateDataContext | null>(null);
+  const [dispatchEntries, setDispatchEntries] = useState<StockDispatchPreviewEntry[]>([]);
+  const [dispatchEntriesLoading, setDispatchEntriesLoading] = useState(false);
+  const [dispatchEntriesError, setDispatchEntriesError] = useState<string | null>(null);
+  const [dispatchSelectedEntryId, setDispatchSelectedEntryId] = useState('');
+  const [dispatchPreviewLoading, setDispatchPreviewLoading] = useState(false);
+  const [dispatchLivePreviewBase, setDispatchLivePreviewBase] = useState<DispatchNoteContext | null>(null);
   const [workSchedulePreviewBase, setWorkSchedulePreviewBase] = useState<WorkScheduleContext | null>(null);
   /** DB-backed profile URLs â€” session/JWT can omit long Drive URLs; preview must match /profile. */
   const [profileForPreview, setProfileForPreview] = useState<{
@@ -754,7 +770,67 @@ export function TemplateBuilder({
   }, [templateItemType, companyId, template.id]);
 
   useEffect(() => {
-    if (!isDeliveryNoteFamilyItemType(String(templateItemType))) {
+    if (templateItemType !== 'dispatch-note' || !companyId) {
+      setDispatchEntries([]);
+      setDispatchEntriesError(null);
+      return;
+    }
+    let cancelled = false;
+    setDispatchEntriesLoading(true);
+    setDispatchEntriesError(null);
+    fetch('/api/materials/dispatch-history-entries?filterType=all&noteType=dispatch&limit=100')
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (!json.success) {
+          setDispatchEntriesError(json.error || 'Could not load dispatch entries');
+          setDispatchEntries([]);
+          return;
+        }
+        const raw = json.data?.entries ?? [];
+        const filtered: StockDispatchPreviewEntry[] = raw
+          .filter((e: Record<string, unknown>) => e.isDeliveryNote !== true)
+          .map((e: Record<string, unknown>) => {
+            const dd = e.dispatchDate as string | Date | undefined;
+            const dispatchDate =
+              typeof dd === 'string'
+                ? dd
+                : dd instanceof Date
+                  ? dd.toISOString()
+                  : '';
+            const entryId = String(e.entryId ?? e.id ?? '');
+            const ids = (e.transactionIds as string[] | undefined) ?? [];
+            return {
+              entryId,
+              jobNumber: String(e.jobNumber ?? '—'),
+              dispatchDate,
+              transactionIds: ids,
+              materialsCount: Number(e.materialsCount ?? ids.length),
+            };
+          })
+          .filter((e: StockDispatchPreviewEntry) => Boolean(e.entryId) && e.transactionIds.length > 0);
+        setDispatchEntries(filtered);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDispatchEntriesError('Failed to load dispatch entries');
+          setDispatchEntries([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDispatchEntriesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [templateItemType, companyId, template.id]);
+
+  useEffect(() => {
+    const supportsPreviewData =
+      isDeliveryNoteFamilyItemType(String(templateItemType)) ||
+      templateItemType === 'work-schedule' ||
+      templateItemType === 'dispatch-note';
+    if (!supportsPreviewData) {
       setLeftTool((t) => (t === 'preview-data' ? 'section-order' : t));
     }
   }, [templateItemType]);
@@ -904,6 +980,45 @@ export function TemplateBuilder({
     };
   }, [dnSelectedEntryId, templateItemType, companySnapshot, dnEntries]);
 
+  useEffect(() => {
+    if (templateItemType !== 'dispatch-note' || !dispatchSelectedEntryId) {
+      setDispatchLivePreviewBase(null);
+      return;
+    }
+    const entry = dispatchEntries.find((e) => e.entryId === dispatchSelectedEntryId);
+    if (!entry || entry.transactionIds.length === 0) {
+      setDispatchLivePreviewBase(null);
+      return;
+    }
+    let cancelled = false;
+    setDispatchPreviewLoading(true);
+
+    const load = async () => {
+      try {
+        const jsons = await Promise.all(
+          entry.transactionIds.map((id) => fetch(`/api/transactions/${id}`).then((r) => r.json()))
+        );
+        if (cancelled) return;
+        const txns = jsons.filter((j) => j.success && j.data).map((j) => j.data);
+        const stockOuts = txns.filter((t: { type?: string }) => t.type === 'STOCK_OUT');
+        if (!stockOuts.length) {
+          setDispatchLivePreviewBase(null);
+          return;
+        }
+        setDispatchLivePreviewBase(buildDispatchNoteTemplateData(stockOuts, companySnapshot ?? {}));
+      } catch {
+        if (!cancelled) setDispatchLivePreviewBase(null);
+      } finally {
+        if (!cancelled) setDispatchPreviewLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatchSelectedEntryId, templateItemType, companySnapshot, dispatchEntries]);
+
   const dnPreviewEntries = useMemo(() => {
     if (templateItemType === 'subcontract-delivery-note') {
       return dnEntries.filter((entry) => entry.deliveryType === 'SUBCONTRACT');
@@ -928,6 +1043,8 @@ export function TemplateBuilder({
     setSectionOrderSelection([]);
     setDnSelectedEntryId('');
     setLivePreviewBase(null);
+    setDispatchSelectedEntryId('');
+    setDispatchLivePreviewBase(null);
     setLeftTool('section-order');
     historyPast.current = [];
     historyFuture.current = [];
@@ -1328,6 +1445,16 @@ export function TemplateBuilder({
         ...userSlice,
       } as AnyTemplateDataContext;
     }
+    if (templateItemType === 'dispatch-note' && dispatchSelectedEntryId && dispatchLivePreviewBase) {
+      return {
+        ...dispatchLivePreviewBase,
+        company: {
+          ...dispatchLivePreviewBase.company,
+          letterheadUrl: letter || dispatchLivePreviewBase.company.letterheadUrl,
+        },
+        ...userSlice,
+      } as AnyTemplateDataContext;
+    }
     if (templateItemType === 'work-schedule' && workSchedulePreviewBase) {
       return {
         ...workSchedulePreviewBase,
@@ -1350,6 +1477,8 @@ export function TemplateBuilder({
     templateItemType,
     dnSelectedEntryId,
     livePreviewBase,
+    dispatchSelectedEntryId,
+    dispatchLivePreviewBase,
     workSchedulePreviewBase,
     letterheadUrl,
     session?.user?.name,
@@ -1790,14 +1919,17 @@ export function TemplateBuilder({
 								Format
 							</NavChip>
 							{(isDeliveryNoteFamilyItemType(String(templateItemType)) ||
-								templateItemType === 'work-schedule') && (
+								templateItemType === 'work-schedule' ||
+								templateItemType === 'dispatch-note') && (
 								<NavChip
 									active={leftTool === 'preview-data'}
 									onClick={() => setLeftTool('preview-data')}
 									title={
 										isDeliveryNoteFamilyItemType(String(templateItemType))
 											? 'Pick a real delivery note for preview data'
-											: 'Choose schedule preview data'
+											: templateItemType === 'dispatch-note'
+											  ? 'Pick a real dispatch entry for preview data'
+											  : 'Choose schedule preview data'
 									}
 								>
 									Preview data
@@ -1937,16 +2069,28 @@ export function TemplateBuilder({
 
 						{leftTool === 'preview-data' &&
 							(isDeliveryNoteFamilyItemType(String(templateItemType)) ||
-								templateItemType === 'work-schedule') && (
+								templateItemType === 'work-schedule' ||
+								templateItemType === 'dispatch-note') && (
 								<div className='space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40'>
 									<p className='text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-500'>
 										Preview data
 									</p>
-									<p className='text-[11px] leading-relaxed text-slate-600 dark:text-slate-400'>
-										Choose a saved delivery note (with or
-										without stock dispatch) to preview real
-										job, customer, and line data.
-									</p>
+									{isDeliveryNoteFamilyItemType(String(templateItemType)) ? (
+										<p className='text-[11px] leading-relaxed text-slate-600 dark:text-slate-400'>
+											Choose a saved delivery note (with or without stock dispatch) to
+											preview real job, customer, and line data.
+										</p>
+									) : templateItemType === 'dispatch-note' ? (
+										<p className='text-[11px] leading-relaxed text-slate-600 dark:text-slate-400'>
+											Choose a saved material dispatch entry to preview real job,
+											customer, and stock-out lines.
+										</p>
+									) : (
+										<p className='text-[11px] leading-relaxed text-slate-600 dark:text-slate-400'>
+											Test this template with the current draft, sample data, or an older
+											saved schedule.
+										</p>
+									)}
 									{!companyId && (
 										<p className='text-[10px] text-amber-500/90'>
 											Active company required to load
@@ -2070,6 +2214,73 @@ export function TemplateBuilder({
 												)}
 											</>
 										)}
+									{templateItemType === 'dispatch-note' && companyId && (
+										<>
+											<label className='block text-[10px] font-medium text-slate-600 dark:text-slate-400'>
+												Dispatch entry
+											</label>
+											<select
+												value={dispatchSelectedEntryId}
+												onChange={(e) => setDispatchSelectedEntryId(e.target.value)}
+												className='w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+												disabled={dispatchEntriesLoading}
+											>
+												<option value=''>Sample / mock data</option>
+												{dispatchEntries.map((ent) => {
+													const d = ent.dispatchDate ? formatDate(ent.dispatchDate) : '—';
+													const linesLabel =
+														ent.materialsCount > 1
+															? `${ent.materialsCount} lines`
+															: ent.materialsCount === 1
+																? '1 line'
+																: '';
+													return (
+														<option key={ent.entryId} value={ent.entryId}>
+															{ent.jobNumber} | {d}
+															{linesLabel ? ` (${linesLabel})` : ''}
+														</option>
+													);
+												})}
+											</select>
+											{dispatchEntriesLoading && (
+												<p className='text-[10px] text-slate-500 dark:text-slate-500'>
+													Loading entries...
+												</p>
+											)}
+											{dispatchEntriesError && (
+												<p className='text-[10px] text-red-400'>{dispatchEntriesError}</p>
+											)}
+											{!dispatchEntriesLoading &&
+												dispatchEntries.length === 0 &&
+												companyId &&
+												!dispatchEntriesError && (
+													<p className='text-[10px] text-slate-600 dark:text-slate-500'>
+														No dispatch entries found yet.
+													</p>
+												)}
+											{dispatchPreviewLoading && dispatchSelectedEntryId && (
+												<p className='text-[10px] text-slate-500 dark:text-slate-500'>
+													Loading transactions...
+												</p>
+											)}
+											{dispatchSelectedEntryId &&
+												!dispatchPreviewLoading &&
+												!dispatchLivePreviewBase && (
+													<p className='text-[10px] text-slate-600 dark:text-slate-500'>
+														Could not load that dispatch entry.
+													</p>
+												)}
+											{dispatchLivePreviewBase && (
+												<div className='rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'>
+													<p>
+														{dispatchLivePreviewBase.dispatch?.reference ?? '—'} |{' '}
+														{dispatchLivePreviewBase.job?.jobNumber ?? '—'} |{' '}
+														{dispatchLivePreviewBase.items?.length ?? 0} material lines
+													</p>
+												</div>
+											)}
+										</>
+									)}
 									{templateItemType === 'work-schedule' && (
 										<div className='space-y-2'>
 											<p className='text-[10px] text-slate-600 dark:text-slate-400'>

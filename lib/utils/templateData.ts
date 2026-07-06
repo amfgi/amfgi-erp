@@ -157,6 +157,22 @@ export interface PackingSlipContext {
   today: string;
 }
 
+export interface DispatchNoteContext {
+  company: TemplateDataContext['company'];
+  dispatch: {
+    date: string;
+    notes: string;
+    totalCost: number;
+    quantity: number;
+    reference: string;
+  };
+  job: TemplateDataContext['job'];
+  customer: TemplateDataContext['customer'];
+  material: TemplateDataContext['material'];
+  items: TemplateDataContext['items'];
+  today: string;
+}
+
 export interface MaterialLabelContext {
   company: TemplateDataContext['company'];
   material: {
@@ -247,6 +263,7 @@ export type UserPrintSlice = {
 
 export type AnyTemplateDataContext = (
   | TemplateDataContext
+  | DispatchNoteContext
   | GoodsReceiptContext
   | PackingSlipContext
   | MaterialLabelContext
@@ -425,6 +442,17 @@ function stockOutMaterialTableRows(transactions: any[]): Array<{
     .map((t) => ({
       name: String(t.material?.name ?? ''),
       description: '',
+      qty: String(t.quantity ?? ''),
+      unit: String(t.material?.unit ?? ''),
+    }));
+}
+
+function dispatchMaterialTableRows(transactions: any[]): TemplateDataContext['items'] {
+  return transactions
+    .filter((t) => t?.type === 'STOCK_OUT' && t.material)
+    .map((t) => ({
+      name: String(t.material?.name ?? ''),
+      description: t.warehouse?.name ? String(t.warehouse.name) : '',
       qty: String(t.quantity ?? ''),
       unit: String(t.material?.unit ?? ''),
     }));
@@ -679,6 +707,85 @@ export function buildDeliveryNoteTemplateData(
       first.job?.customer as Record<string, unknown> | null | undefined
     ),
     customItems,
+    items,
+    today: formatDate(new Date().toISOString()),
+  };
+}
+
+/**
+ * Build preview/print context for a job dispatch (grouped STOCK_OUT lines, not a delivery note).
+ */
+export function buildDispatchNoteTemplateData(
+  stockOutTransactions: any[],
+  company: any
+): DispatchNoteContext {
+  const txs = stockOutTransactions.filter((t) => t?.type === 'STOCK_OUT');
+  const first = txs[0];
+  if (!first) {
+    return {
+      company: {
+        name: company?.name ?? '',
+        address: company?.address ?? '',
+        phone: company?.phone ?? '',
+        email: company?.email ?? '',
+        letterheadUrl: company?.letterheadUrl ?? '',
+        slug: company?.slug,
+        description: company?.description,
+      },
+      dispatch: {
+        date: formatDate(new Date().toISOString()),
+        notes: '',
+        totalCost: 0,
+        quantity: 0,
+        reference: '',
+      },
+      job: null,
+      customer: null,
+      material: null,
+      items: [],
+      today: formatDate(new Date().toISOString()),
+    };
+  }
+
+  const items = dispatchMaterialTableRows(txs);
+  const totalCost = txs.reduce((s, t) => s + (Number(t.totalCost) || 0), 0);
+  const totalQty = txs.reduce((s, t) => s + (Number(t.quantity) || 0), 0);
+  const withMat = txs.find((t) => t.material);
+  const jobSlice = jobTemplateSlice(first.job as Record<string, unknown> | null | undefined);
+  const enrichedJobSlice = jobSlice
+    ? enrichWithPrimaryContact(jobSlice, first.job?.contactsJson, first.job?.contactPerson)
+    : null;
+  const jobNumber = first.job?.jobNumber ?? 'N/A';
+  const reference = `${jobNumber} / ${formatDate(first.date)}`;
+
+  return {
+    company: {
+      name: company?.name ?? '',
+      address: company?.address ?? '',
+      phone: company?.phone ?? '',
+      email: company?.email ?? '',
+      letterheadUrl: company?.letterheadUrl ?? '',
+      slug: company?.slug,
+      description: company?.description,
+    },
+    dispatch: {
+      date: formatDate(first.date),
+      notes: (first.notes ?? '').trim(),
+      totalCost,
+      quantity: totalQty,
+      reference,
+    },
+    job: enrichedJobSlice,
+    customer: customerTemplateSlice(
+      first.job?.customer as Record<string, unknown> | null | undefined
+    ),
+    material: withMat?.material
+      ? {
+          name: withMat.material.name ?? '',
+          unit: withMat.material.unit ?? '',
+          unitCost: withMat.material.unitCost ?? 0,
+        }
+      : null,
     items,
     today: formatDate(new Date().toISOString()),
   };
@@ -984,6 +1091,35 @@ export const MOCK_PACKING_SLIP_DATA: PackingSlipContext = {
   today: MOCK_PREVIEW_DATA.today,
 };
 
+export const MOCK_DISPATCH_NOTE_DATA: DispatchNoteContext = {
+  company: MOCK_PREVIEW_DATA.company,
+  dispatch: {
+    date: '10 Jun 2026',
+    notes: 'Issued to site for installation works.',
+    totalCost: 8750,
+    quantity: 70,
+    reference: 'JOB-2026-018 / 10 Jun 2026',
+  },
+  job: MOCK_PREVIEW_DATA.job,
+  customer: MOCK_PREVIEW_DATA.customer,
+  material: MOCK_PREVIEW_DATA.material,
+  items: [
+    {
+      name: 'Fiberglass Sheet 3mm',
+      description: 'Main Store',
+      qty: '50',
+      unit: 'SQM',
+    },
+    {
+      name: 'Aluminium Angle 25mm',
+      description: 'Main Store',
+      qty: '20',
+      unit: 'PCS',
+    },
+  ],
+  today: MOCK_PREVIEW_DATA.today,
+};
+
 export const MOCK_MATERIAL_LABEL_DATA: MaterialLabelContext = {
   company: MOCK_PREVIEW_DATA.company,
   material: {
@@ -1218,6 +1354,9 @@ export function buildDataContext(
   let ctx: AnyTemplateDataContext;
   if (itemType === 'delivery-note' || itemType === 'subcontract-delivery-note') {
     ctx = buildDeliveryNoteFamilyContext(sourceDoc, company) as AnyTemplateDataContext;
+  } else if (itemType === 'dispatch-note') {
+    const txs = Array.isArray(sourceDoc) ? sourceDoc : sourceDoc ? [sourceDoc] : [];
+    ctx = buildDispatchNoteTemplateData(txs, company) as AnyTemplateDataContext;
   } else if (itemType === 'goods-receipt') {
     ctx = MOCK_GRN_DATA as AnyTemplateDataContext;
   } else if (itemType === 'packing-slip') {
@@ -1249,6 +1388,8 @@ export function getMockData(itemType: ItemType): AnyTemplateDataContext {
       return { ...MOCK_PREVIEW_DATA, ...MOCK_USER_PRINT };
     case 'subcontract-delivery-note':
       return { ...MOCK_SUBCONTRACT_DN_DATA, ...MOCK_USER_PRINT };
+    case 'dispatch-note':
+      return { ...MOCK_DISPATCH_NOTE_DATA, ...MOCK_USER_PRINT };
     case 'goods-receipt':
       return { ...MOCK_GRN_DATA, ...MOCK_USER_PRINT };
     case 'packing-slip':

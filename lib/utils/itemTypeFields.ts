@@ -40,6 +40,7 @@ export const USER_PRINT_FIELDS: FieldDef[] = [
 export const ITEM_TYPE_LABELS: Record<KnownItemType, string> = {
   'delivery-note': 'Delivery Note',
   'subcontract-delivery-note': 'Subcontract Delivery Note',
+  'dispatch-note': 'Dispatch Note',
   'goods-receipt': 'Goods Receipt',
   'packing-slip': 'Packing Slip',
   'material-label': 'Material Label',
@@ -139,6 +140,32 @@ const SUBCONTRACT_DELIVERY_NOTE_EXTRA_FIELDS: FieldDef[] = [
   { path: 'referenceJob.contactPerson', label: 'Reference Job Contact', category: 'Reference Job' },
 ];
 
+const DISPATCH_NOTE_PRINT_FIELDS: FieldDef[] = [
+  { path: 'company.name', label: 'Company Name', category: 'Company' },
+  { path: 'company.address', label: 'Company Address', category: 'Company' },
+  { path: 'company.phone', label: 'Company Phone', category: 'Company' },
+  { path: 'company.email', label: 'Company Email', category: 'Company' },
+  { path: 'company.slug', label: 'Company Slug', category: 'Company' },
+  { path: 'company.description', label: 'Company Description', category: 'Company' },
+  { path: 'company.letterheadUrl', label: 'Letterhead Image URL', category: 'Company' },
+  { path: 'dispatch.date', label: 'Dispatch Date', category: 'Document' },
+  { path: 'dispatch.notes', label: 'Dispatch Notes', category: 'Document' },
+  { path: 'dispatch.totalCost', label: 'Total Cost', category: 'Document' },
+  { path: 'dispatch.quantity', label: 'Total Quantity', category: 'Document' },
+  { path: 'dispatch.reference', label: 'Reference (Job / Date)', category: 'Document' },
+  ...JOB_PRINT_FIELDS,
+  { path: 'customer.name', label: 'Customer Name', category: 'Customer' },
+  { path: 'customer.contactPerson', label: 'Customer Contact', category: 'Customer' },
+  { path: 'customer.phone', label: 'Customer Phone', category: 'Customer' },
+  { path: 'customer.email', label: 'Customer Email', category: 'Customer' },
+  { path: 'customer.address', label: 'Customer Address', category: 'Customer' },
+  { path: 'customer.trnNumber', label: 'Customer TRN Number', category: 'Customer' },
+  { path: 'material.name', label: 'Material Name', category: 'Material' },
+  { path: 'material.unit', label: 'Material Unit', category: 'Material' },
+  { path: 'material.unitCost', label: 'Material Unit Cost', category: 'Material' },
+  { path: 'today', label: "Today's Date", category: 'General' },
+];
+
 export const ITEM_TYPE_FIELDS: Record<KnownItemType, FieldDef[]> = {
   'delivery-note': DELIVERY_NOTE_PRINT_FIELDS,
 
@@ -146,6 +173,8 @@ export const ITEM_TYPE_FIELDS: Record<KnownItemType, FieldDef[]> = {
     DELIVERY_NOTE_PRINT_FIELDS,
     SUBCONTRACT_DELIVERY_NOTE_EXTRA_FIELDS
   ),
+
+  'dispatch-note': DISPATCH_NOTE_PRINT_FIELDS,
 
   'goods-receipt': [
     { path: 'company.name', label: 'Company Name', category: 'Company' },

@@ -28,6 +28,8 @@ import {
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import type { DocumentTemplate } from '@/lib/types/documentTemplate';
 import { openDeliveryNotePrint } from '@/lib/print/openDeliveryNotePrint';
+import { openDispatchNotePrint } from '@/lib/print/openDispatchNotePrint';
+import { filterTemplatesForDispatchNotePrint } from '@/lib/utils/printItemTypes';
 import {
   customItemsFromJson,
   parseDeliveryNoteCustomItemsFromNotes,
@@ -168,6 +170,10 @@ export default function DispatchPage() {
   const loading = isLoading;
   const isRefreshing = isFetching && !isLoading;
 
+  function entrySupportsPrint(entry: Entry): boolean {
+    return entry.transactionIds.length > 0 || Boolean(entry.deliveryNoteId);
+  }
+
   useEffect(() => {
     if (!printModalEntry || !session?.user?.activeCompanyId) return;
     let cancelled = false;
@@ -179,18 +185,23 @@ export default function DispatchPage() {
         const json = await res.json();
         const company = json.data as { printTemplates?: DocumentTemplate[] | null };
         const raw = Array.isArray(company.printTemplates) ? company.printTemplates : [];
-        const preferredType =
-          printModalEntry.deliveryType === 'SUBCONTRACT'
-            ? 'subcontract-delivery-note'
-            : 'delivery-note';
-        let dn = raw.filter((t) => String(t.itemType) === preferredType);
-        if (dn.length === 0 && preferredType === 'subcontract-delivery-note') {
-          dn = raw.filter((t) => String(t.itemType) === 'delivery-note');
+        let templates: DocumentTemplate[];
+        if (printModalEntry.isDeliveryNote) {
+          const preferredType =
+            printModalEntry.deliveryType === 'SUBCONTRACT'
+              ? 'subcontract-delivery-note'
+              : 'delivery-note';
+          templates = raw.filter((t) => String(t.itemType) === preferredType);
+          if (templates.length === 0 && preferredType === 'subcontract-delivery-note') {
+            templates = raw.filter((t) => String(t.itemType) === 'delivery-note');
+          }
+        } else {
+          templates = filterTemplatesForDispatchNotePrint(raw);
         }
         if (cancelled) return;
-        setPrintTemplates(dn);
-        const def = dn.find((t) => t.isDefault);
-        setSelectedPrintTplId(def?.id ?? dn[0]?.id ?? '');
+        setPrintTemplates(templates);
+        const def = templates.find((t) => t.isDefault);
+        setSelectedPrintTplId(def?.id ?? templates[0]?.id ?? '');
       } finally {
         if (!cancelled) setPrintTplLoading(false);
       }
@@ -419,7 +430,7 @@ export default function DispatchPage() {
           action: () => router.push(deliveryNoteDuplicateHref(entry)),
         });
       }
-      if (entry.isDeliveryNote && (entry.transactionIds[0] || entry.deliveryNoteId)) {
+      if (entrySupportsPrint(entry)) {
         options.push({
           label: 'Print',
           action: () => setPrintModalEntry(entry),
@@ -544,7 +555,7 @@ export default function DispatchPage() {
             >
               View
             </Button>
-            {entry.isDeliveryNote && (entry.transactionIds[0] || entry.deliveryNoteId) ? (
+            {entrySupportsPrint(entry) ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -847,7 +858,7 @@ export default function DispatchPage() {
                       <span className="text-xs text-muted-foreground">{entry.materials.length} item{entry.materials.length !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="bg-muted/30 rounded-lg border border-border overflow-x-auto">
-                      <table className="w-full min-w-[36rem] text-sm">
+                      <table className="w-full min-w-xl text-sm">
                         <thead>
                           <tr className="bg-card/80 border-b border-border">
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase w-8">#</th>
@@ -901,7 +912,7 @@ export default function DispatchPage() {
                       <span className="text-xs text-muted-foreground">{customItems.length} item{customItems.length !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="bg-muted/30 rounded-lg border border-border overflow-x-auto">
-                      <table className="w-full min-w-[36rem] text-sm">
+                      <table className="w-full min-w-xl text-sm">
                         <thead>
                           <tr className="bg-card/80 border-b border-border">
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase w-12">No.</th>
@@ -979,7 +990,7 @@ export default function DispatchPage() {
                   >
                     Close
                   </button>
-                  {isDeliveryNote && (entry.transactionIds[0] || entry.deliveryNoteId) ? (
+                  {entrySupportsPrint(entry) ? (
                     <button
                       onClick={() => setPrintModalEntry(entry)}
                       className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 text-sm font-medium transition-colors inline-flex items-center gap-1.5"
@@ -1035,10 +1046,12 @@ export default function DispatchPage() {
         );
       })()}
 
-      {/* Print format picker (delivery notes) */}
+      {/* Print format picker */}
       <ResponsiveDialog open={printModalEntry !== null} onClose={() => setPrintModalEntry(null)} size="sm">
           <div className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
-            <h2 className="text-base font-semibold text-foreground sm:text-lg">Print delivery note</h2>
+            <h2 className="text-base font-semibold text-foreground sm:text-lg">
+              Print {printModalEntry?.isDeliveryNote ? 'delivery note' : 'dispatch note'}
+            </h2>
             {printModalEntry ? (
               <p className="mt-1 text-sm text-muted-foreground">
                 Job {printModalEntry.jobNumber} · choose a layout (from Settings → Print templates).
@@ -1050,7 +1063,7 @@ export default function DispatchPage() {
               <p className="text-sm text-muted-foreground py-4">Loading formats…</p>
             ) : printTemplates.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No delivery-note templates saved. Print will use the built-in default layout.
+                No {printModalEntry?.isDeliveryNote ? 'delivery-note' : 'dispatch-note'} templates saved. Print will use the built-in default layout.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -1089,21 +1102,32 @@ export default function DispatchPage() {
                 type="button"
                 onClick={() => {
                   if (!printModalEntry) return;
-                  const tid = printModalEntry.transactionIds[0];
-                  const dnid = printModalEntry.deliveryNoteId;
                   const templateId = selectedPrintTplId || undefined;
-                  if (tid) {
-                    openDeliveryNotePrint(
-                      { transactionId: tid, templateId },
-                      { onError: (msg) => toast.error(msg) }
-                    );
-                  } else if (dnid) {
-                    openDeliveryNotePrint(
-                      { deliveryNoteId: dnid, templateId },
+                  if (printModalEntry.isDeliveryNote) {
+                    const tid = printModalEntry.transactionIds[0];
+                    const dnid = printModalEntry.deliveryNoteId;
+                    if (tid) {
+                      openDeliveryNotePrint(
+                        { transactionId: tid, templateId },
+                        { onError: (msg) => toast.error(msg) }
+                      );
+                    } else if (dnid) {
+                      openDeliveryNotePrint(
+                        { deliveryNoteId: dnid, templateId },
+                        { onError: (msg) => toast.error(msg) }
+                      );
+                    } else {
+                      toast.error('Nothing to print for this entry.');
+                      return;
+                    }
+                  } else if (printModalEntry.transactionIds.length > 0) {
+                    openDispatchNotePrint(
+                      { transactionIds: printModalEntry.transactionIds, templateId },
                       { onError: (msg) => toast.error(msg) }
                     );
                   } else {
                     toast.error('Nothing to print for this entry.');
+                    return;
                   }
                   setPrintModalEntry(null);
                 }}

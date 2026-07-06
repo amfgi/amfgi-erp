@@ -80,7 +80,7 @@ export default function DirectoryListPagination({
         >
           <ChevronLeft className="size-4" />
         </Button>
-        <span className="min-w-[7rem] text-center font-semibold tabular-nums text-foreground">
+        <span className="min-w-28 text-center font-semibold tabular-nums text-foreground">
           Page {page} of {totalPages}
         </span>
         <Button

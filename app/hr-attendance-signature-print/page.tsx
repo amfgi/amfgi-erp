@@ -13,37 +13,36 @@ export default function HrAttendanceSignaturePrintPage() {
   const workDate = searchParams.get('workDate') ?? '';
   const group = searchParams.get('group') ?? '';
   const autoPrint = searchParams.get('auto') === '1';
+  const canFetch = Boolean(workDate && group);
+  const paramsError = canFetch ? null : 'Missing workDate or group';
 
   const [payload, setPayload] = useState<SignatureSheetPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(canFetch);
 
   useEffect(() => {
-    if (!workDate || !group) {
-      setError('Missing workDate or group');
-      setLoading(false);
-      return;
-    }
+    if (!canFetch) return;
 
     const qs = new URLSearchParams({ workDate, group });
     void fetch(`/api/hr/attendance/signature-sheet?${qs.toString()}`, { cache: 'no-store' })
       .then(async (res) => {
         const json = await readApiJson<SignatureSheetPayload>(res);
         if (!json || !res.ok || !json.success || !json.data) {
-          setError(json?.error ?? 'Failed to load signature sheet');
+          setFetchError(json?.error ?? 'Failed to load signature sheet');
           return;
         }
         setPayload(json.data);
       })
-      .catch(() => setError('Failed to load signature sheet'))
+      .catch(() => setFetchError('Failed to load signature sheet'))
       .finally(() => setLoading(false));
-  }, [workDate, group]);
+  }, [workDate, group, canFetch]);
 
   useEffect(() => {
+    const error = paramsError ?? fetchError;
     if (!autoPrint || loading || error || !payload) return;
     const t = window.setTimeout(() => window.print(), 400);
     return () => window.clearTimeout(t);
-  }, [autoPrint, loading, error, payload]);
+  }, [autoPrint, loading, paramsError, fetchError, payload]);
 
   const nameColumnWidthCh = useMemo(() => {
     if (!payload?.entries.length) return 'Name'.length + 2;
@@ -54,12 +53,16 @@ export default function HrAttendanceSignaturePrintPage() {
     return longestName + 2;
   }, [payload?.entries]);
 
+  if (paramsError) {
+    return <p className="p-8 text-sm text-red-700">{paramsError}</p>;
+  }
+
   if (loading) {
     return <p className="p-8 text-sm text-slate-600">Loading signature sheet…</p>;
   }
 
-  if (error || !payload) {
-    return <p className="p-8 text-sm text-red-700">{error ?? 'Signature sheet not found'}</p>;
+  if (fetchError || !payload) {
+    return <p className="p-8 text-sm text-red-700">{fetchError ?? 'Signature sheet not found'}</p>;
   }
 
   const dateLabel = formatSignatureSheetDateLabel(payload.workDate);

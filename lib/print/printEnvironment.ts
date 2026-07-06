@@ -4,6 +4,11 @@ export type DeliveryNotePrintParams = {
   templateId?: string;
 };
 
+export type DispatchNotePrintParams = {
+  transactionIds: string[];
+  templateId?: string;
+};
+
 /** Touch-first devices where hidden iframe printing is unreliable (iOS/Android). */
 export function prefersPrintWindow(): boolean {
   if (typeof window === 'undefined') return false;
@@ -23,4 +28,17 @@ export function buildDeliveryNotePrintUrl(
   if (params.templateId) sp.set('templateId', params.templateId);
   if (options?.embed) sp.set('embed', '1');
   return `/print/delivery-note?${sp.toString()}`;
+}
+
+export function buildDispatchNotePrintUrl(
+  params: DispatchNotePrintParams,
+  options?: { embed?: boolean }
+): string {
+  const sp = new URLSearchParams();
+  if (params.transactionIds.length > 0) {
+    sp.set('ids', params.transactionIds.join(','));
+  }
+  if (params.templateId) sp.set('templateId', params.templateId);
+  if (options?.embed) sp.set('embed', '1');
+  return `/print/dispatch-note?${sp.toString()}`;
 }
