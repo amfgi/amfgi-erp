@@ -307,10 +307,12 @@ export {
   useGetHrSchedulesForMonthQuery,
   useGetHrAttendanceOverviewQuery,
   useGetHrLeaveStatsQuery,
+  useGetHrPendingCompensationQuery,
   useGetHrDocumentTypesQuery,
   useGetHrEmployeeTypeSettingsQuery,
   useGetHrExpertisesQuery,
   type HrEmployee,
   type HrEmployeesListParams,
   type HrLeaveStats,
+  type HrPendingCompensationResponse,
 } from './api/endpoints/hr';

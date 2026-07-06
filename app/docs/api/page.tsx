@@ -308,6 +308,12 @@ Authorization: Bearer amfgi_your_generated_key`;
               <a href="#routes" className="rounded-full px-3 py-2 text-slate-600 hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white">
                 Routes
               </a>
+              <Link
+                href="/docs"
+                className="rounded-full px-3 py-2 text-slate-600 hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+              >
+                User guide
+              </Link>
               <button
                 type="button"
                 onClick={toggleTheme}

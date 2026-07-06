@@ -7,9 +7,11 @@ import Link from 'next/link';
 
 import {
   BarChartPanel,
+  DashboardFeedPanel,
   DashboardSection,
   DashboardStatCard,
   type BarChartItem,
+  type DashboardFeedItem,
 } from '@/components/dashboard';
 import { WorkspaceHubHeader } from '@/components/workspace';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
@@ -22,6 +24,7 @@ import {
   useGetHrAttendanceOverviewQuery,
   useGetHrEmployeesPageQuery,
   useGetHrLeaveStatsQuery,
+  useGetHrPendingCompensationQuery,
   useGetStockDashboardStatsQuery,
   useGetStockIntegrityQuery,
   useGetStockValuationQuery,
@@ -70,6 +73,22 @@ function formatShortDay(value: string | Date) {
   } catch {
     return ymd;
   }
+}
+
+function formatDateLabel(ymd: string) {
+  try {
+    return new Date(`${ymd}T00:00:00`).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return ymd;
+  }
+}
+
+function employeeDisplayName(fullName: string, preferredName: string | null) {
+  return preferredName?.trim() || fullName;
 }
 
 function StatCardsSkeleton({ count = 4 }: { count?: number }) {
@@ -168,8 +187,17 @@ function DashboardContent({
     permissions.includes('hr.leave.approve') ||
     permissions.includes('hr.leave.edit') ||
     permissions.includes('hr.leave.delete');
+  const canViewPendingCompensation =
+    (isSuperAdmin ||
+      permissions.includes('hr.attendance.view') ||
+      permissions.includes('hr.attendance.edit')) &&
+    (isSuperAdmin ||
+      permissions.includes('hr.compensation.view') ||
+      permissions.includes('hr.compensation.create') ||
+      permissions.includes('hr.compensation.edit') ||
+      permissions.includes('hr.payroll.compensation'));
 
-  const canViewHr = canViewHrEmployees || canViewHrAttendance || canViewHrLeave;
+  const canViewHr = canViewHrEmployees || canViewHrAttendance || canViewHrLeave || canViewPendingCompensation;
 
   const { data: stockStats, isFetching: stockStatsLoading } = useGetStockDashboardStatsQuery(undefined, {
     skip: !canViewStock,
@@ -188,6 +216,10 @@ function DashboardContent({
   const { data: leaveStats, isFetching: leaveStatsLoading } = useGetHrLeaveStatsQuery(undefined, {
     skip: !canViewHrLeave,
   });
+  const { data: pendingCompensation, isFetching: pendingCompensationLoading } = useGetHrPendingCompensationQuery(
+    { month },
+    { skip: !canViewPendingCompensation },
+  );
 
   const { data: activeEmployees, isFetching: activeEmployeesLoading } = useGetHrEmployeesPageQuery(
     { limit: 1, offset: 0, status: 'ACTIVE' },
@@ -271,10 +303,28 @@ function DashboardContent({
     ].filter((row) => row.value > 0);
   }, [attendance?.monthStats]);
 
+  const pendingCompensationCount = pendingCompensation?.employees.length ?? 0;
+
+  const pendingCompensationFeedItems: DashboardFeedItem[] = useMemo(
+    () =>
+      (pendingCompensation?.employees ?? []).map((row) => ({
+        key: row.id,
+        primary: employeeDisplayName(row.fullName, row.preferredName),
+        secondary: [row.employeeCode, row.designation].filter(Boolean).join(' · '),
+        meta: `Last attendance ${formatDateLabel(row.lastAttendanceDate)}`,
+        href: `/hr/employees/${row.id}`,
+        badge: {
+          label: `${formatCount(row.attendanceRows)} row${row.attendanceRows === 1 ? '' : 's'}`,
+          tone: 'amber' as const,
+        },
+      })),
+    [pendingCompensation?.employees],
+  );
+
   const stockLoading = stockStatsLoading || valuationLoading || integrityLoading;
   const hrEmployeesLoading =
     activeEmployeesLoading || onLeaveEmployeesLoading || suspendedEmployeesLoading || exitedEmployeesLoading;
-  const hrLoading = attendanceLoading || leaveStatsLoading || hrEmployeesLoading;
+  const hrLoading = attendanceLoading || leaveStatsLoading || hrEmployeesLoading || pendingCompensationLoading;
 
   const refreshing = stockLoading || hrLoading;
 
@@ -426,8 +476,29 @@ function DashboardContent({
                   />
                 </>
               ) : null}
+              {canViewPendingCompensation ? (
+                <DashboardStatCard
+                  label="Need compensation"
+                  value={formatCount(pendingCompensationCount)}
+                  hint={`Attendance in ${formatMonthLabel(month)} without active pay package`}
+                  tone={pendingCompensationCount > 0 ? 'amber' : undefined}
+                  href="/hr/payroll/preview"
+                />
+              ) : null}
             </div>
           )}
+
+          {canViewPendingCompensation && pendingCompensationCount > 0 ? (
+            <DashboardFeedPanel
+              title="Set compensation"
+              description="Employees with attendance this month but no active compensation package for payroll."
+              emptyMessage="Everyone with attendance has an active compensation package."
+              loading={pendingCompensationLoading && pendingCompensationFeedItems.length === 0}
+              href="/hr/payroll/preview"
+              linkLabel="Payroll preview"
+              items={pendingCompensationFeedItems}
+            />
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             {canViewHrAttendance ? (

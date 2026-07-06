@@ -2,6 +2,7 @@ import { P } from '@/lib/permissions';
 import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3,
+  BookOpen,
   Building,
   Building2,
   Calendar,
@@ -323,6 +324,12 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				anyPerms: [P.SETTINGS_API, P.SETTINGS_MANAGE],
 			},
 		],
+	},
+	{
+		type: 'link',
+		href: '/docs',
+		label: 'Documentation',
+		icon: BookOpen,
 	},
 ];
 

@@ -115,6 +115,25 @@ export interface HrLeaveStats {
   employeesOnLeaveStatus: number;
 }
 
+export interface HrPendingCompensationEmployee {
+  id: string;
+  employeeCode: string;
+  fullName: string;
+  preferredName: string | null;
+  designation: string | null;
+  attendanceRows: number;
+  lastAttendanceDate: string;
+}
+
+export interface HrPendingCompensationResponse {
+  month: string;
+  employees: HrPendingCompensationEmployee[];
+}
+
+export type HrPendingCompensationParams = {
+  month: string;
+};
+
 export interface HrDocumentType {
   id: string;
   name: string;
@@ -296,6 +315,15 @@ export const hrApi = appApi.injectEndpoints({
       providesTags: [{ type: 'Employee', id: 'LEAVE_STATS' }],
     }),
 
+    getHrPendingCompensation: builder.query<HrPendingCompensationResponse, HrPendingCompensationParams>({
+      query: ({ month }) => `/dashboard/pending-compensation?month=${encodeURIComponent(month)}`,
+      transformResponse: (r: { data: HrPendingCompensationResponse }) => r.data,
+      providesTags: (_result, _error, arg) => [
+        { type: 'Employee', id: 'PENDING_COMPENSATION' },
+        { type: 'AttendanceOverview', id: arg.month },
+      ],
+    }),
+
     getHrDocumentTypes: builder.query<HrDocumentType[], void>({
       query: () => '/hr/document-types',
       transformResponse: (r: { data: HrDocumentType[] }) => r.data,
@@ -334,6 +362,7 @@ export const {
   useGetHrSchedulesForMonthQuery,
   useGetHrAttendanceOverviewQuery,
   useGetHrLeaveStatsQuery,
+  useGetHrPendingCompensationQuery,
   useGetHrDocumentTypesQuery,
   useGetHrEmployeeTypeSettingsQuery,
   useGetHrExpertisesQuery,

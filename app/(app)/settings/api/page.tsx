@@ -491,6 +491,9 @@ export default function SettingsApiPage() {
             <Link href="/docs/api" className="mt-4 inline-flex text-xs font-semibold text-primary underline-offset-4 hover:underline">
               Open private route catalog
             </Link>
+            <Link href="/docs" className="mt-2 inline-flex text-xs font-semibold text-primary underline-offset-4 hover:underline">
+              Open user guide
+            </Link>
           </section>
 
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">

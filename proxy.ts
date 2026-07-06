@@ -64,7 +64,7 @@ export async function proxy(req: NextRequest) {
 
   if (
     pathname.startsWith('/login') ||
-    pathname.startsWith('/docs/api') ||
+    pathname.startsWith('/docs') ||
     pathname.startsWith('/privacy-policy') ||
     pathname.startsWith('/terms-of-service') ||
     pathname.startsWith('/api/auth') ||
