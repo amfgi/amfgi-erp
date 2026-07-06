@@ -1424,6 +1424,25 @@ function getTableGridBorderStyles(
   };
 }
 
+function resolveTableSlnoCellValue(
+  item: Record<string, unknown> | null,
+  ds: TableSection['dataSource'],
+  globalRowIdx: number,
+  section: Pick<TableSection, 'fillPageWithEmptyRows' | 'numberEmptyRowsSlno'>
+): string {
+  if (item !== null) {
+    const explicit = item.slno ?? item.lineNo;
+    if (explicit != null && String(explicit).trim() !== '') {
+      return String(explicit);
+    }
+    if (ds === 'customItems') return '';
+    return String(globalRowIdx + 1);
+  }
+  const numberEmptyRows =
+    Boolean(section.fillPageWithEmptyRows) && section.numberEmptyRowsSlno !== false;
+  return numberEmptyRows ? String(globalRowIdx + 1) : '';
+}
+
 function TableRenderer({
   section,
   data,
@@ -1847,6 +1866,13 @@ function TableRenderer({
     for (let i = 0; i < displayItems.length; i += maxRowsPerPage) {
       rowChunks.push(displayItems.slice(i, i + maxRowsPerPage));
     }
+    if (section.fillPageWithEmptyRows) {
+      for (const chunk of rowChunks) {
+        while (chunk.length < maxRowsPerPage) {
+          chunk.push(null);
+        }
+      }
+    }
   } else {
     rowChunks.push(displayItems);
   }
@@ -1917,18 +1943,10 @@ function TableRenderer({
             >
               {section.columns.map((col, ci) => {
                 let cellValue: unknown = '';
-                if (item !== null) {
-                  if (col.field === 'slno') {
-                    const explicit = item.slno ?? item.lineNo;
-                    cellValue =
-                      explicit != null && String(explicit).trim() !== ''
-                        ? String(explicit)
-                        : ds === 'customItems'
-                          ? ''
-                          : String(globalRowIdx + 1);
-                  } else {
-                    cellValue = item[col.field] ?? '';
-                  }
+                if (col.field === 'slno') {
+                  cellValue = resolveTableSlnoCellValue(item, ds, globalRowIdx, section);
+                } else if (item !== null) {
+                  cellValue = item[col.field] ?? '';
                 }
                 const locationTone =
                   col.field === 'locationDisplay'

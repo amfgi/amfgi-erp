@@ -91,7 +91,9 @@ export function estimateSectionHeightMm(section: DocumentSection, contentWidthMm
       const borderPad = section.showBorders ? (section.borderWidthPx ?? 1) * PX_TO_MM * 2 + 1 : 0;
       const visibleRows =
         section.maxRowsPerPage && section.maxRowsPerPage > 0
-          ? Math.min(section.minRows, section.maxRowsPerPage)
+          ? section.fillPageWithEmptyRows
+            ? section.maxRowsPerPage
+            : Math.min(section.minRows, section.maxRowsPerPage)
           : section.minRows;
       return Math.max(20, Math.ceil(headerRow + visibleRows * bodyRow + borderPad + 2));
     }

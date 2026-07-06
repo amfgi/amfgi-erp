@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import type { DocumentSection, ItemType, SectionCanvasRect } from '@/lib/types/documentTemplate';
+import type { DocumentSection, ItemType, SectionCanvasRect, TableSection } from '@/lib/types/documentTemplate';
 import {
   getSectionTypeLabel,
   getSectionCustomNameInputValue,
@@ -46,14 +46,26 @@ function EditorCheckBox({
   label,
   checked,
   onChange: onCheck,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
-      <input type="checkbox" checked={checked} onChange={(e) => onCheck(e.target.checked)} className="rounded" />
+    <label
+      className={`flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 ${
+        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onCheck(e.target.checked)}
+        className="rounded"
+      />
       {label}
     </label>
   );
@@ -1207,11 +1219,38 @@ export function SectionEditor({
               onChange({
                 ...section,
                 maxRowsPerPage: v > 0 ? v : undefined,
+                ...((v > 0 ? {} : { fillPageWithEmptyRows: false }) as Partial<TableSection>),
               })
             }
             min={0}
             max={100}
           />
+          <EditorCheckBox
+            label="Fill page with empty rows"
+            checked={Boolean(section.fillPageWithEmptyRows)}
+            onChange={(v) =>
+              onChange({
+                ...section,
+                fillPageWithEmptyRows: v,
+                numberEmptyRowsSlno: v ? section.numberEmptyRowsSlno ?? true : section.numberEmptyRowsSlno,
+              })
+            }
+            disabled={!section.maxRowsPerPage || section.maxRowsPerPage <= 0}
+          />
+          {section.fillPageWithEmptyRows && (section.maxRowsPerPage ?? 0) > 0 ? (
+            <EditorCheckBox
+              label="Auto-number empty rows (SL.NO.)"
+              checked={section.numberEmptyRowsSlno !== false}
+              onChange={(v) => onChange({ ...section, numberEmptyRowsSlno: v })}
+            />
+          ) : null}
+          {(section.maxRowsPerPage ?? 0) > 0 && section.fillPageWithEmptyRows ? (
+            <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+              Each printed page shows exactly {section.maxRowsPerPage} body rows; remaining slots are
+              blank lines
+              {section.numberEmptyRowsSlno !== false ? ' with continuous SL.NO.' : ''} for handwriting.
+            </p>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <EditorInput label="Row Padding (mm)" type="number" value={section.rowPadding} onChange={(v) => onChange({ ...section, rowPadding: v })} min={0} max={10} />
             <EditorInput label="Row Min Height (mm)" type="number" value={section.rowMinHeightMm ?? 0} onChange={(v) => onChange({ ...section, rowMinHeightMm: Number(v) })} min={0} max={40} />

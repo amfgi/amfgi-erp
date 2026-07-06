@@ -192,6 +192,10 @@ export interface TableSection {
   minRows: number;        // minimum empty rows to show
   /** When > 0, splits the table across pages with at most this many body rows per page (print). */
   maxRowsPerPage?: number;
+  /** Pad each page chunk to `maxRowsPerPage` with blank rows (requires maxRowsPerPage > 0). */
+  fillPageWithEmptyRows?: boolean;
+  /** When filling empty rows, auto-number the SL.NO. column (default true when fill is on). */
+  numberEmptyRowsSlno?: boolean;
   rowPadding: number;     // mm vertical padding per cell
   rowMinHeightMm?: number;
 }
