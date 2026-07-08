@@ -92,9 +92,25 @@ function isLineEmpty(line: Line) {
 }
 
 function normalizeLines(lines: Line[], jobId = '') {
-  const nonEmptyLines = lines.filter((line) => !isLineEmpty(line));
-  const requiredEmptyRows = Math.max(MIN_EMPTY_ROWS, MIN_VISIBLE_ROWS - nonEmptyLines.length);
-  return [...nonEmptyLines, ...Array.from({ length: requiredEmptyRows }, () => emptyLine(jobId))];
+  if (lines.length === 0) {
+    return Array.from({ length: MIN_VISIBLE_ROWS }, () => emptyLine(jobId));
+  }
+
+  const nonEmptyCount = lines.filter((line) => !isLineEmpty(line)).length;
+  const requiredEmptyRows = Math.max(MIN_EMPTY_ROWS, MIN_VISIBLE_ROWS - nonEmptyCount);
+
+  let trailingEmpty = 0;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (isLineEmpty(lines[i])) trailingEmpty += 1;
+    else break;
+  }
+
+  if (trailingEmpty >= requiredEmptyRows) {
+    return lines;
+  }
+
+  const toAppend = requiredEmptyRows - trailingEmpty;
+  return [...lines, ...Array.from({ length: toAppend }, () => emptyLine(jobId))];
 }
 
 function getSelectedUom(material: Material | undefined, quantityUomId: string) {
@@ -493,6 +509,26 @@ export default function DispatchMaterialsPage() {
     setLines((prev) => normalizeLines([...prev, emptyLine(selectedJob)], selectedJob));
   };
 
+  const insertLineAbove = (id: string) => {
+    setLines((prev) => {
+      const index = prev.findIndex((line) => line.id === id);
+      if (index < 0) return prev;
+      const next = [...prev];
+      next.splice(index, 0, emptyLine(selectedJob));
+      return normalizeLines(next, selectedJob);
+    });
+  };
+
+  const insertLineBelow = (id: string) => {
+    setLines((prev) => {
+      const index = prev.findIndex((line) => line.id === id);
+      if (index < 0) return prev;
+      const next = [...prev];
+      next.splice(index + 1, 0, emptyLine(selectedJob));
+      return normalizeLines(next, selectedJob);
+    });
+  };
+
   const removeLine = (id: string) => {
     setLines((prev) => normalizeLines(prev.filter((line) => line.id !== id), selectedJob));
   };
@@ -798,6 +834,9 @@ export default function DispatchMaterialsPage() {
           onUpdateLine={updateLine}
           persistScope="dispatch-entry"
           budgetWarningMaterialIds={budgetWarningMaterialIds}
+          onInsertRowAbove={insertLineAbove}
+          onInsertRowBelow={insertLineBelow}
+          onDeleteRow={removeLine}
         />
 
         {budgetWarningAppliesToCurrentLines && budgetWarning ? (

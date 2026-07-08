@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, type KeyboardEvent } from 'react';
+import { useCallback, type FocusEvent, type KeyboardEvent } from 'react';
 import {
   createBlockInputWheelRef,
   type InputPropsWithRef,
@@ -27,10 +27,22 @@ function isFocusableNavTarget(element: HTMLElement | null): element is HTMLEleme
   return true;
 }
 
+function selectFocusedFieldContent(target: HTMLElement) {
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  try {
+    target.select();
+  } catch {
+    // Some input types (e.g. date) may not support select().
+  }
+}
+
 function tryFocusCell(row: number, col: number): boolean {
   const target = queryNavCell(row, col);
   if (!isFocusableNavTarget(target)) return false;
   target.focus();
+  requestAnimationFrame(() => selectFocusedFieldContent(target));
   return true;
 }
 
@@ -143,14 +155,19 @@ export function useLineGridKeyboardNav(rowCount: number, navigableColCount: numb
     [advanceFocus, focusCell]
   );
 
+  const onGridFocus = useCallback((event: FocusEvent<HTMLElement>) => {
+    selectFocusedFieldContent(event.currentTarget);
+  }, []);
+
   const getNavInputProps = useCallback(
     (row: number, col: number): LineGridNavInputProps => ({
       'data-line-grid-nav': 'true',
       'data-nav-row': String(row),
       'data-nav-col': String(col),
       onKeyDown: onGridKeyDown,
+      onFocus: onGridFocus,
     }),
-    [onGridKeyDown]
+    [onGridFocus, onGridKeyDown]
   );
 
   return { getNavInputProps, onGridKeyDown, focusCell, advanceFocus };
@@ -167,6 +184,7 @@ export function mergeLineGridInputProps(
   options?: MergeLineGridInputPropsOptions
 ): LineGridNavInputProps {
   const navOnKeyDown = navProps.onKeyDown;
+  const navOnFocus = navProps.onFocus;
   const blockWheel = options?.blockWheel ?? existing?.type === 'number';
 
   return {
@@ -180,6 +198,10 @@ export function mergeLineGridInputProps(
       if (!event.defaultPrevented) {
         existing?.onKeyDown?.(event);
       }
+    },
+    onFocus: (event) => {
+      navOnFocus?.(event);
+      existing?.onFocus?.(event);
     },
     ref: blockWheel ? createBlockInputWheelRef(existing?.ref) : existing?.ref,
   };

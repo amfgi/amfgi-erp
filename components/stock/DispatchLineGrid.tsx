@@ -4,9 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useSession } from 'next-auth/react';
 import SearchSelect from '@/components/ui/SearchSelect';
 import LineGridColumnSettings, { type LineGridColumnConfig } from '@/components/stock/LineGridColumnSettings';
+import type { ContextMenuOption } from '@/components/ui/ContextMenu';
+import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import {
   mergeLineGridInputProps,
   useLineGridKeyboardNav,
+  LINE_GRID_NAV_ATTR,
   type MergeLineGridInputPropsOptions,
 } from '@/lib/stock/lineGridKeyboardNav';
 import { withBlockInputWheelChange } from '@/lib/utils/blockInputWheelChange';
@@ -65,6 +68,10 @@ interface DispatchLineGridProps {
   showSubcontractReceive?: boolean;
   /** Lock issue columns when partial receive has started. */
   subcontractIssueReadOnly?: boolean;
+  /** Right-click row menu: insert above / below, delete. */
+  onInsertRowAbove?: (lineId: string) => void;
+  onInsertRowBelow?: (lineId: string) => void;
+  onDeleteRow?: (lineId: string) => void;
 }
 
 type DispatchGridColumnKey =
@@ -251,7 +258,12 @@ export default function DispatchLineGrid({
   variant = 'dispatch',
   showSubcontractReceive = false,
   subcontractIssueReadOnly = false,
+  onInsertRowAbove,
+  onInsertRowBelow,
+  onDeleteRow,
 }: DispatchLineGridProps) {
+  const { openMenu: openContextMenu } = useGlobalContextMenu();
+  const rowContextMenuEnabled = Boolean(onInsertRowAbove || onInsertRowBelow || onDeleteRow);
   const isWarehouseTransfer = variant === 'warehouse-transfer';
   const isSubcontract = variant === 'subcontract';
   const inputsEnabled = gridEnabled ?? Boolean(selectedJob);
@@ -345,6 +357,46 @@ export default function DispatchLineGrid({
     [visibleGridColumns]
   );
   const { getNavInputProps, advanceFocus } = useLineGridKeyboardNav(lines.length, navigableColumns.length);
+  const gridBodyRef = useRef<HTMLDivElement>(null);
+  const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const root = gridBodyRef.current;
+    if (!root) return;
+
+    const syncActiveRow = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) {
+        setActiveRowIndex(null);
+        return;
+      }
+      const navEl = target.closest<HTMLElement>(`[${LINE_GRID_NAV_ATTR}="true"]`);
+      if (!navEl || !root.contains(navEl)) {
+        setActiveRowIndex(null);
+        return;
+      }
+      const row = Number(navEl.dataset.navRow ?? -1);
+      setActiveRowIndex(row >= 0 ? row : null);
+    };
+
+    const onFocusIn = (event: FocusEvent) => syncActiveRow(event.target);
+    const onFocusOut = () => {
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (!active || !root.contains(active)) {
+          setActiveRowIndex(null);
+          return;
+        }
+        syncActiveRow(active);
+      });
+    };
+
+    root.addEventListener('focusin', onFocusIn);
+    root.addEventListener('focusout', onFocusOut);
+    return () => {
+      root.removeEventListener('focusin', onFocusIn);
+      root.removeEventListener('focusout', onFocusOut);
+    };
+  }, [lines.length]);
   const navColIndex = useCallback(
     (key: DispatchGridColumnKey) => navigableColumns.indexOf(key),
     [navigableColumns]
@@ -358,6 +410,35 @@ export default function DispatchLineGrid({
       requestAnimationFrame(() => advanceFocus(rowIndex, col, direction));
     },
     [advanceFocus, navColIndex]
+  );
+
+  const handleRowContextMenu = useCallback(
+    (lineId: string, event: React.MouseEvent) => {
+      if (!rowContextMenuEnabled || subcontractIssueReadOnly) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const options: ContextMenuOption[] = [];
+      if (onInsertRowAbove) {
+        options.push({ label: 'Insert row up', action: () => onInsertRowAbove(lineId) });
+      }
+      if (onInsertRowBelow) {
+        options.push({ label: 'Insert row down', action: () => onInsertRowBelow(lineId) });
+      }
+      if (onDeleteRow) {
+        if (options.length > 0) options.push({ divider: true });
+        options.push({ label: 'Delete row', action: () => onDeleteRow(lineId), danger: true });
+      }
+      if (options.length === 0) return;
+      openContextMenu(event.clientX, event.clientY, options);
+    },
+    [
+      onDeleteRow,
+      onInsertRowAbove,
+      onInsertRowBelow,
+      openContextMenu,
+      rowContextMenuEnabled,
+      subcontractIssueReadOnly,
+    ]
   );
   const cellNavInputProps = useCallback(
     (
@@ -540,7 +621,7 @@ export default function DispatchLineGrid({
         />
       </div>
 
-      <div className="overflow-x-auto overscroll-x-contain">
+      <div ref={gridBodyRef} className="overflow-x-auto overscroll-x-contain">
         <div className="min-w-max bg-card">
           <div
             className="grid border-b border-border bg-muted/50"
@@ -575,16 +656,23 @@ export default function DispatchLineGrid({
               const isBudgetWarningRow =
                 Boolean(line.materialId) && budgetWarningMaterialIdSet?.has(line.materialId) === true;
 
+              const isActiveRow = activeRowIndex === idx;
+
               return (
                 <div
                   key={line.id}
                   className={cn(
-                    'grid border-b border-border',
-                    isBudgetWarningRow
-                      ? 'bg-amber-500/15 hover:bg-amber-500/20 dark:bg-amber-500/20 dark:hover:bg-amber-500/25'
-                      : 'hover:bg-muted/40'
+                    'grid border-b border-border transition-colors',
+                    isActiveRow
+                      ? 'bg-primary/12 ring-1 ring-inset ring-primary/25 dark:bg-primary/20'
+                      : isBudgetWarningRow
+                        ? 'bg-amber-500/15 hover:bg-amber-500/20 dark:bg-amber-500/20 dark:hover:bg-amber-500/25'
+                        : 'hover:bg-muted/40'
                   )}
                   style={{ gridTemplateColumns }}
+                  onContextMenu={
+                    rowContextMenuEnabled ? (event) => handleRowContextMenu(line.id, event) : undefined
+                  }
                 >
                   {visibleGridColumns.map((column) => {
                     const cellClassName = 'border-r border-border last:border-r-0';
