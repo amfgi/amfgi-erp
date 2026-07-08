@@ -60,6 +60,7 @@ import {
 } from '@/lib/hr/employeeDocumentDisplay';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import { cn } from '@/lib/utils';
+import { driveStoredUrlToOpenUrl } from '@/lib/utils/googleDriveUrl';
 import toast from 'react-hot-toast';
 
 type Tab = 'overview' | 'visa' | 'documents' | 'compensation' | 'access';
@@ -162,9 +163,7 @@ async function readApiJson(res: Response): Promise<{ success?: boolean; error?: 
 }
 
 function driveFileWebViewUrl(url: string | null | undefined): string | null {
-  const value = url?.trim();
-  if (!value) return null;
-  return value;
+  return driveStoredUrlToOpenUrl(url);
 }
 
 function tenureLabel(hire: string | null | undefined) {
