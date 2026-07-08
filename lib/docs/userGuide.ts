@@ -1018,13 +1018,13 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
         blocks: [
           {
             type: 'paragraph',
-            text: 'HR in AMFGI is organized into five sidebar groups: Schedule & Attendance, Employees, Leave Management, Payroll, and My HR (self-service for linked employees). The legacy /hr URL redirects to schedule planning. Daily operations flow from published schedules → attendance capture → leave approvals → payroll preview → pay run finalize.',
+            text: 'HR in AMFGI is organized into five sidebar groups: Schedule & Attendance, Employees, Leave Management, Payroll, and My HR (self-service for linked employees). The legacy /hr URL redirects to schedule planning. Daily operations flow from published schedules → attendance capture → leave approvals → payroll preview.',
           },
           {
             type: 'callout',
             variant: 'note',
             title: 'Recommended daily order',
-            body: '1) Employee type timings (before period changes) → 2) Publish schedule day → 3) Mark day absences on schedule if needed → 4) Attendance day sheet: save, submit, approve → 5) Approve leave requests (syncs to attendance) → 6) Month-end: payroll preview then finalize pay run.',
+            body: '1) Employee type timings (before period changes) → 2) Publish schedule day → 3) Mark day absences on schedule if needed → 4) Attendance day sheet: save, submit, approve → 5) Approve leave requests (syncs to attendance) → 6) Month-end: payroll preview and export.',
           },
         ],
       },
@@ -1045,7 +1045,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
               'hr.document.* / hr.document_type.* — Employee files and document type catalog.',
               'hr.leave.view / hr.leave.approve / hr.leave.edit / hr.leave.delete — Leave inbox and balances.',
               'hr.payroll.settings — Leave types, pay types, salary structure, components, holidays.',
-              'hr.payroll.compensation — Payroll preview and pay runs.',
+              'hr.payroll.compensation — Payroll preview.',
               'hr.compensation.* — View/edit compensation records on employee profiles.',
               'hr.visa.* — Visa & contract tab on employee profile.',
               'hr.account_access.* — Link portal login to employee record.',
@@ -1473,29 +1473,6 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
                 title: 'Export',
                 body: 'Download XLSX of included and skipped employees for finance review.',
               },
-              {
-                title: 'Finalize pay run',
-                body: 'Creates immutable monthly snapshot — one pay run per company per month. Fix attendance first if warnings show draft rows.',
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'pay-runs',
-        title: 'Pay runs',
-        blocks: [
-          {
-            type: 'paragraph',
-            text: 'Routes: Payroll → Pay runs (/hr/payroll/runs) and detail (/hr/payroll/runs/[id]). Read-only snapshots after finalize.',
-          },
-          {
-            type: 'list',
-            items: [
-              'List shows month, status, total gross, employee count, line count, note, created date.',
-              'Detail — per-employee pay lines with full breakdown and CSV export.',
-              'Print payslips — all employees or individual via /hr-payroll-payslip-print?runId=…',
-              'Delete run (pilot corrections) — remove snapshot, fix attendance, re-finalize from preview.',
             ],
           },
         ],
@@ -1533,7 +1510,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
               'Salary structure — assign component packages or defaults tied to pay types.',
               'Salary components — define codes (housing, transport, loan repayment) as fixed monthly earning or deduction.',
               'Allowance types (/hr/settings/allowance-types) — catalog for allowance line labels on compensation.',
-              'Components flow into payroll preview day lines and pay run breakdown.',
+              'Components flow into payroll preview day lines and salary breakdowns.',
             ],
           },
         ],
@@ -1606,7 +1583,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
               },
               {
                 title: 'Payroll close',
-                body: 'Payroll preview (approved attendance only) → finalize pay run → print payslips.',
+                body: 'Payroll preview (approved attendance only) → export Excel for finance review.',
               },
             ],
           },

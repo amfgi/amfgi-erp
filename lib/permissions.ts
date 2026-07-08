@@ -408,7 +408,7 @@ export const PERMISSION_GROUPS: Array<{
     group: 'HR — Payroll setup',
     perms: [
       { key: P.HR_PAYROLL_SETTINGS, label: 'Manage salary structure' },
-      { key: P.HR_PAYROLL_COMPENSATION, label: 'Payroll preview & runs (legacy full access)' },
+      { key: P.HR_PAYROLL_COMPENSATION, label: 'Payroll preview' },
     ],
   },
   {

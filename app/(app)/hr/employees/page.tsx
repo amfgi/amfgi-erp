@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useDeferredValue, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { LayoutGrid, Table2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 
@@ -17,9 +17,10 @@ import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
-import { DEFAULT_LIST_PAGE_SIZE } from '@/lib/pagination/serverList';
+import { DEFAULT_LIST_PAGE_SIZE, parseListLimit } from '@/lib/pagination/serverList';
 import { formatDirectoryCompensationAmount } from '@/lib/import-export/employeeCompensationFields';
 import { canHrCompensationView } from '@/lib/hr/compensationPermissions';
+import { rememberHrEmployeesDirectoryUrl } from '@/lib/hr/employeesDirectoryUrl';
 import { cn } from '@/lib/utils';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import {
@@ -30,8 +31,57 @@ import {
 
 type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'SUSPENDED' | 'EXITED';
 type DirectoryViewMode = 'table' | 'grid';
+type PortalFilter = 'ALL' | 'enabled' | 'disabled';
+type CompensationFilter = 'ALL' | 'set' | 'not_set';
 
 const VIEW_MODE_STORAGE_KEY = 'hr-employees-view-mode';
+const STATUS_VALUES = new Set(['ALL', 'ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'EXITED']);
+const PORTAL_VALUES = new Set(['ALL', 'enabled', 'disabled']);
+const COMPENSATION_VALUES = new Set(['ALL', 'set', 'not_set']);
+
+function parseStatus(raw: string | null): 'ALL' | EmployeeStatus {
+  if (raw && STATUS_VALUES.has(raw)) return raw as 'ALL' | EmployeeStatus;
+  return 'ALL';
+}
+
+function parsePortal(raw: string | null): PortalFilter {
+  if (raw && PORTAL_VALUES.has(raw)) return raw as PortalFilter;
+  return 'ALL';
+}
+
+function parseCompensation(raw: string | null): CompensationFilter {
+  if (raw && COMPENSATION_VALUES.has(raw)) return raw as CompensationFilter;
+  return 'ALL';
+}
+
+function parsePage(raw: string | null): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+}
+
+function buildDirectorySearchParams(input: {
+  q: string;
+  status: 'ALL' | EmployeeStatus;
+  employeeType: string;
+  portal: PortalFilter;
+  compensation: CompensationFilter;
+  page: number;
+  pageSize: number;
+  includeCompensation: boolean;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+  const trimmedQ = input.q.trim();
+  if (trimmedQ) params.set('q', trimmedQ);
+  if (input.status !== 'ALL') params.set('status', input.status);
+  if (input.employeeType !== 'ALL') params.set('employeeType', input.employeeType);
+  if (input.portal !== 'ALL') params.set('portal', input.portal);
+  if (input.includeCompensation && input.compensation !== 'ALL') {
+    params.set('compensation', input.compensation);
+  }
+  if (input.page > 1) params.set('page', String(input.page));
+  if (input.pageSize !== DEFAULT_LIST_PAGE_SIZE) params.set('pageSize', String(input.pageSize));
+  return params;
+}
 
 const STATUS_OPTIONS: Array<{ value: 'ALL' | EmployeeStatus; label: string }> = [
   { value: 'ALL', label: 'All statuses' },
@@ -226,26 +276,25 @@ function EmployeeGridSkeleton() {
 
 export default function HrEmployeesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { openMenu } = useGlobalContextMenu();
   const { data: session } = useSession();
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState<'ALL' | EmployeeStatus>('ALL');
-  const [employeeType, setEmployeeType] = useState<'ALL' | '__none__' | string>('ALL');
-  const [portal, setPortal] = useState<'ALL' | 'enabled' | 'disabled'>('ALL');
-  const [compensation, setCompensation] = useState<'ALL' | 'set' | 'not_set'>('ALL');
-  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+
+  const [q, setQ] = useState(() => searchParams.get('q') ?? '');
+  const [status, setStatus] = useState<'ALL' | EmployeeStatus>(() => parseStatus(searchParams.get('status')));
+  const [employeeType, setEmployeeType] = useState<'ALL' | '__none__' | string>(
+    () => searchParams.get('employeeType') ?? 'ALL',
+  );
+  const [portal, setPortal] = useState<PortalFilter>(() => parsePortal(searchParams.get('portal')));
+  const [compensation, setCompensation] = useState<CompensationFilter>(() =>
+    parseCompensation(searchParams.get('compensation')),
+  );
+  const [pageSize, setPageSizeState] = useState(() =>
+    parseListLimit(searchParams.get('pageSize'), HR_EMPLOYEE_PAGE_SIZE_OPTIONS),
+  );
+  const [page, setPageState] = useState(() => parsePage(searchParams.get('page')));
 
   const deferredQuery = useDeferredValue(q);
-
-  const filterKey = `${deferredQuery}|${status}|${employeeType}|${portal}|${compensation}|${pageSize}`;
-  const [pageByFilter, setPageByFilter] = useState<Record<string, number>>({});
-  const page = pageByFilter[filterKey] ?? 1;
-  const setPage = useCallback(
-    (next: number) => {
-      setPageByFilter((current) => ({ ...current, [filterKey]: next }));
-    },
-    [filterKey],
-  );
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -262,6 +311,72 @@ export default function HrEmployeesPage() {
       window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
     }
   }, []);
+
+  const setPage = useCallback((next: number) => {
+    setPageState(Math.max(1, next));
+  }, []);
+
+  const setPageSize = useCallback((next: number) => {
+    setPageSizeState(next);
+    setPageState(1);
+  }, []);
+
+  const setStatusFilter = useCallback((next: 'ALL' | EmployeeStatus) => {
+    setStatus(next);
+    setPageState(1);
+  }, []);
+
+  const setEmployeeTypeFilter = useCallback((next: 'ALL' | '__none__' | string) => {
+    setEmployeeType(next);
+    setPageState(1);
+  }, []);
+
+  const setPortalFilter = useCallback((next: PortalFilter) => {
+    setPortal(next);
+    setPageState(1);
+  }, []);
+
+  const setCompensationFilter = useCallback((next: CompensationFilter) => {
+    setCompensation(next);
+    setPageState(1);
+  }, []);
+
+  const setSearchQuery = useCallback((next: string) => {
+    setQ(next);
+    setPageState(1);
+  }, []);
+
+  useEffect(() => {
+    const params = buildDirectorySearchParams({
+      q: deferredQuery,
+      status,
+      employeeType,
+      portal,
+      compensation,
+      page,
+      pageSize,
+      includeCompensation: canViewCompensation,
+    });
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/employees?${next}` : '/hr/employees';
+    rememberHrEmployeesDirectoryUrl(href);
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [
+    deferredQuery,
+    status,
+    employeeType,
+    portal,
+    compensation,
+    page,
+    pageSize,
+    canViewCompensation,
+    router,
+    searchParams,
+  ]);
 
   const {
     data: employeesPage,
@@ -296,6 +411,11 @@ export default function HrEmployeesPage() {
 
   const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
   const pageStart = totalEmployees === 0 ? 0 : (page - 1) * pageSize;
+
+  useEffect(() => {
+    if (!employeesPage) return;
+    if (page > totalPages) setPageState(totalPages);
+  }, [employeesPage, page, totalPages]);
 
   const openEmployeeProfile = (employeeId: string) => {
     router.push(`/hr/employees/${employeeId}`);
@@ -351,13 +471,13 @@ export default function HrEmployeesPage() {
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search</span>
               <Input
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name, employee code, or mobile number"
               />
             </div>
             <div className="space-y-2">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</span>
-              <Select value={status} onChange={(e) => setStatus(e.target.value as 'ALL' | EmployeeStatus)}>
+              <Select value={status} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | EmployeeStatus)}>
                 {STATUS_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -369,7 +489,7 @@ export default function HrEmployeesPage() {
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Type</span>
               <Select
                 value={selectedEmployeeType}
-                onChange={(e) => setEmployeeType(e.target.value as 'ALL' | '__none__' | string)}
+                onChange={(e) => setEmployeeTypeFilter(e.target.value as 'ALL' | '__none__' | string)}
               >
                 <option value="ALL">All types</option>
                 <option value="__none__">No type</option>
@@ -382,7 +502,7 @@ export default function HrEmployeesPage() {
             </div>
             <div className="space-y-2">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Portal</span>
-              <Select value={portal} onChange={(e) => setPortal(e.target.value as 'ALL' | 'enabled' | 'disabled')}>
+              <Select value={portal} onChange={(e) => setPortalFilter(e.target.value as PortalFilter)}>
                 <option value="ALL">All</option>
                 <option value="enabled">Enabled only</option>
                 <option value="disabled">Disabled only</option>
@@ -395,7 +515,7 @@ export default function HrEmployeesPage() {
                 </span>
                 <Select
                   value={compensation}
-                  onChange={(e) => setCompensation(e.target.value as 'ALL' | 'set' | 'not_set')}
+                  onChange={(e) => setCompensationFilter(e.target.value as CompensationFilter)}
                 >
                   <option value="ALL">All</option>
                   <option value="set">Compensation set</option>

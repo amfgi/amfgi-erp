@@ -17,6 +17,7 @@ import { createEmployeeRecord } from '@/lib/hr/createEmployeeClient';
 import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
 import { todayYmdLocal } from '@/lib/hr/employeeLeavePeriod';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
+import { readHrEmployeesDirectoryUrl } from '@/lib/hr/employeesDirectoryUrl';
 import { useAppDispatch } from '@/store/hooks';
 
 export default function NewEmployeePage() {
@@ -238,7 +239,11 @@ export default function NewEmployeePage() {
               <Button type="submit" disabled={saving}>
                 {saving ? 'Creating employee…' : 'Create employee'}
               </Button>
-              <Button type="button" variant="secondary" onClick={() => router.push('/hr/employees')}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => router.push(readHrEmployeesDirectoryUrl())}
+              >
                 Back to employees
               </Button>
             </div>

@@ -26,7 +26,7 @@ A multi-company ERP for fiberglass and steel workshop operations — inventory/s
 - **Stock & Inventory**: Materials, categories, units, warehouses, FIFO stock batches, goods receipt, dispatch, manual adjustments, inter-company & warehouse transfers, issue/non-stock reconciliation, stock count sessions, integrity reports, inventory-by-warehouse.
 - **Jobs & Job Costing**: Parent contracts + variations, budget job items, formulas, job-wise cost analysis, external/hybrid job sources (Project Management API integration).
 - **Customers & Suppliers**: Directory management with contacts, linked jobs and transactions, configurable local/external source modes.
-- **HR & Payroll**: Employees (driver/office/hybrid/worker types), visa periods, documents & document types, attendance, company holidays, salary components, pay types, allowance types, pay runs, and tiered leave.
+- **HR & Payroll**: Employees (driver/office/hybrid/worker types), visa periods, documents & document types, attendance, company holidays, salary components, pay types, allowance types, payroll preview, and tiered leave.
 - **Leave Management**: Configurable leave types (entitlement, pay tiers, rollover, portal visibility), accrual by hire/visa anchor, annual + per-type balances, approvals synced to schedule absences, overlap prevention.
 - **Scheduling & Dispatch**: Daily work schedules with drag helpers, presence/editor sync, driver trip plans, multi-assign print layouts.
 - **Delivery Notes**: Structured delivery notes with company letterhead + print template builder, signed copies.

@@ -31,6 +31,7 @@ import {
   canHrDocumentView,
 } from '@/lib/hr/documentPermissions';
 import { canHrDocumentTypeView } from '@/lib/hr/documentTypePermissions';
+import { readHrEmployeesDirectoryUrl } from '@/lib/hr/employeesDirectoryUrl';
 import {
   canHrAccountAccessCreate,
   canHrAccountAccessDelete,
@@ -1059,7 +1060,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
               variant="secondary"
               onClick={() => {
                 if (!confirmOverviewLeave()) return;
-                router.push('/hr/employees');
+                router.push(readHrEmployeesDirectoryUrl());
               }}
             >
               Back to directory

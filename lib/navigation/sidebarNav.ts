@@ -228,11 +228,6 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				perm: 'hr.payroll.compensation',
 			},
 			{
-				href: '/hr/payroll/runs',
-				label: 'Pay runs',
-				perm: 'hr.payroll.compensation',
-			},
-			{
 				href: '/hr/settings/salary-structure',
 				label: 'Salary structure',
 				perm: 'hr.payroll.settings',

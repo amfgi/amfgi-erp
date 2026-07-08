@@ -1,6 +1,6 @@
 # HR payroll foundation — operations guide
 
-This document describes how to use the payroll **foundation** features (pay types, compensation, leave, attendance snapshots). **Pay runs** snapshot a month from preview; payslip PDF and WPS export are a later phase.
+This document describes how to use the payroll **foundation** features (pay types, compensation, leave, attendance snapshots). **Pay runs** (month finalize / payslip print) are temporarily disabled in the app; use payroll preview + Excel export instead.
 
 ## Recommended daily order
 
@@ -20,7 +20,7 @@ This document describes how to use the payroll **foundation** features (pay type
 |-------|---------|
 | `basicHours` | Snapshotted per row when created/saved |
 | `leaveType` | ANNUAL, SICK, EMERGENCY, ONE_DAY when status is LEAVE |
-| `workflowStatus` | Only APPROVED rows should count in pay runs |
+| `workflowStatus` | Only APPROVED rows should count in payroll preview |
 | `status` | ABSENT = unpaid deduction (office scheme); paid leave types do not deduct |
 
 ## Leave balance
@@ -32,17 +32,11 @@ HR sets annual entitlement per employee/year under **Leave → Annual balances**
 - **Route:** `/hr/payroll/preview` (requires `hr.payroll.compensation`).
 - Uses **approved** attendance rows only for the selected month; draft rows are shown as a warning.
 - Resolves the compensation record effective during that month and runs `calculatePayLine`.
-- **Export CSV** downloads all rows (included and skipped) for the selected month.
-- **Finalize pay run** saves an immutable snapshot for that month (one run per company per month).
+- **Export Excel** downloads all rows (included and skipped) for the selected month.
 
-## Pay runs
+## Pay runs (temporarily disabled)
 
-- **List:** `/hr/payroll/runs`
-- **Detail:** `/hr/payroll/runs/[id]` — read-only lines with breakdown and CSV export.
-- Created from preview via `POST /api/hr/payroll/runs` with `{ month, note? }`.
-- **Delete** (pilot corrections): pay run detail → Delete, then re-finalize after fixing attendance.
-- **Check month:** `GET /api/hr/payroll/runs?month=YYYY-MM` returns `[]` or one row.
-- **Payslips:** Pay run detail → **Print all payslips** or per-employee **Payslip** → `/hr-payroll-payslip-print?runId=…` → browser Print / Save as PDF.
+Pay run list, finalize, pay-run detail, and payslip print routes/API return unavailable for now. DB tables remain for a later restore.
 
 ## WPS export (later)
 

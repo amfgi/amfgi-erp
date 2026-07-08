@@ -41,7 +41,6 @@ function labelForSegment(segment: string, previous?: string) {
     'company-holidays': 'Company holidays',
     payroll: 'Payroll',
     preview: 'Preview',
-    runs: 'Pay runs',
     leave: 'Leave management',
     balances: 'Leave balances',
   };

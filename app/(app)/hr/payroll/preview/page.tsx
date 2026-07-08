@@ -533,9 +533,6 @@ export default function PayrollPreviewPage() {
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailEmployee, setDetailEmployee] = useState<PreviewEmployee | null>(null);
-  const [finalizedRunId, setFinalizedRunId] = useState<string | null>(null);
-  const [finalizeNote, setFinalizeNote] = useState('');
-  const [finalizing, setFinalizing] = useState(false);
 
   useEffect(() => {
     if (!canView) return;
@@ -555,22 +552,13 @@ export default function PayrollPreviewPage() {
     try {
       const q = new URLSearchParams({ month });
       if (filterEmployeeId) q.set('employeeId', filterEmployeeId);
-      const [previewRes, runsRes] = await Promise.all([
-        fetch(`/api/hr/payroll/preview?${q}`, { cache: 'no-store' }),
-        fetch(`/api/hr/payroll/runs?month=${encodeURIComponent(month)}`, { cache: 'no-store' }),
-      ]);
+      const previewRes = await fetch(`/api/hr/payroll/preview?${q}`, { cache: 'no-store' });
       const json = await readApiJson<PreviewPayload>(previewRes);
       if (!json || !previewRes.ok || !json.success) {
         toast.error(json?.error ?? 'Failed to load preview');
         setPreview(null);
       } else {
         setPreview(json.data as PreviewPayload);
-      }
-      const runsJson = await readApiJson<Array<{ id: string }>>(runsRes);
-      if (runsJson?.success && Array.isArray(runsJson.data) && runsJson.data[0]) {
-        setFinalizedRunId(runsJson.data[0].id);
-      } else {
-        setFinalizedRunId(null);
       }
     } finally {
       setLoading(false);
@@ -581,39 +569,6 @@ export default function PayrollPreviewPage() {
     if (!canView) return;
     void loadPreview();
   }, [canView, loadPreview]);
-
-  const finalizePayRun = async () => {
-    if (!month || finalizedRunId) return;
-    if (
-      !window.confirm(
-        `Finalize pay run for ${month}? This saves a read-only snapshot and cannot be replaced for the same month.`
-      )
-    ) {
-      return;
-    }
-    setFinalizing(true);
-    try {
-      const res = await fetch('/api/hr/payroll/runs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          month,
-          note: finalizeNote.trim() || null,
-        }),
-      });
-      const json = await readApiJson<{ id: string }>(res);
-      if (!json || !res.ok || !json.success) {
-        toast.error(json?.error ?? 'Failed to finalize pay run');
-        return;
-      }
-      toast.success('Pay run finalized');
-      const id = json.data?.id as string;
-      setFinalizedRunId(id);
-      router.push(`/hr/payroll/runs/${id}`);
-    } finally {
-      setFinalizing(false);
-    }
-  };
 
   useEffect(() => {
     const q = new URLSearchParams();
@@ -703,33 +658,7 @@ export default function PayrollPreviewPage() {
         >
           Export Excel
         </Button>
-        {!finalizedRunId ? (
-          <div className="min-w-[180px] flex-1 max-w-xs">
-            <label className="text-xs text-muted-foreground">Finalize note (optional)</label>
-            <Input
-              value={finalizeNote}
-              onChange={(e) => setFinalizeNote(e.target.value)}
-              placeholder="e.g. June payroll approved by HR"
-            />
-          </div>
-        ) : null}
-        <Button
-          size="sm"
-          disabled={!preview || finalizing || Boolean(finalizedRunId)}
-          onClick={() => void finalizePayRun()}
-        >
-          {finalizing ? 'Finalizing…' : finalizedRunId ? 'Already finalized' : 'Finalize pay run'}
-        </Button>
       </div>
-
-      {finalizedRunId ? (
-        <div className="mb-4 rounded-lg border border-emerald-200/60 bg-emerald-50/50 px-4 py-3 text-sm dark:bg-emerald-950/20">
-          A pay run for {month} is already finalized.{' '}
-          <Link href={`/hr/payroll/runs/${finalizedRunId}`} className="font-medium text-primary hover:underline">
-            View pay run
-          </Link>
-        </div>
-      ) : null}
 
       {detailEmployee && preview ? (
         <EmployeeBreakdownModal
