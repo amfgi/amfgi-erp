@@ -53,6 +53,7 @@ interface Line {
   receiveDestWarehouseId?: string;
   sourceTransactionId?: string;
   originalDispatchQty?: number; // Track original qty for editing validation
+  originalReturnQty?: number; // Track original return so edit validation does not double-count
   originalWarehouseId?: string;
 }
 
@@ -313,6 +314,7 @@ export default function DispatchMaterialsPage() {
           sourceTransactionId: line.transactionId ?? undefined,
           originalWarehouseId: line.warehouseId ?? '',
           originalDispatchQty: line.quantity,
+          originalReturnQty: line.returnQty ? Number(line.returnQty) : 0,
         }));
 
         setLines(normalizeLines(newLines, selectedJob));
@@ -639,6 +641,10 @@ export default function DispatchMaterialsPage() {
         toast.error(`Invalid return quantity for ${mat.name}`);
         return;
       }
+      if (ret > qty) {
+        toast.error(`Return quantity cannot exceed dispatch quantity for ${mat.name}`);
+        return;
+      }
 
       // Sixth check: Sufficient stock (compare in base UOM)
       const baseQty = qtyInBase(mat.materialUoms, line.quantityUomId, qty);
@@ -663,20 +669,52 @@ export default function DispatchMaterialsPage() {
           }
         }
       }
+    }
 
-      if (ret > 0) {
-        const retBase = qtyInBase(mat.materialUoms, line.quantityUomId, ret);
-        const jobMatSummary = jobMaterials.find((jm: any) => jm.materialId === line.materialId);
-        if (jobMatSummary) {
-          const totalReturnAfter = jobMatSummary.returned + retBase;
-          if (totalReturnAfter > jobMatSummary.dispatched) {
-            const maxCanReturn = jobMatSummary.dispatched - jobMatSummary.returned;
-            toast.error(
-              `Cannot return ${retBase.toFixed(3)} ${mat.unit} (from return entry) for ${mat.name}. Only ${maxCanReturn.toFixed(3)} ${mat.unit} can be returned for this job (Total dispatched: ${jobMatSummary.dispatched.toFixed(3)}, Already returned: ${jobMatSummary.returned.toFixed(3)})`
-            );
-            return;
-          }
-        }
+    // Job-level return check: credit this entry's original dispatch/return so edits are not double-counted
+    const draftByMaterial = new Map<
+      string,
+      { dispatchBase: number; returnBase: number; originalDispatchBase: number; originalReturnBase: number; unit: string; name: string }
+    >();
+    for (const line of validLines) {
+      const mat = getMaterial(line.materialId);
+      if (!mat) continue;
+      const qty = parseFloat(line.dispatchQty);
+      const ret = line.returnQty ? parseFloat(line.returnQty) : 0;
+      const bucket = draftByMaterial.get(line.materialId) ?? {
+        dispatchBase: 0,
+        returnBase: 0,
+        originalDispatchBase: 0,
+        originalReturnBase: 0,
+        unit: mat.unit,
+        name: mat.name,
+      };
+      bucket.dispatchBase += qtyInBase(mat.materialUoms, line.quantityUomId, qty);
+      bucket.returnBase += ret > 0 ? qtyInBase(mat.materialUoms, line.quantityUomId, ret) : 0;
+      bucket.originalDispatchBase += line.originalDispatchQty
+        ? qtyInBase(mat.materialUoms, line.quantityUomId, Number(line.originalDispatchQty))
+        : 0;
+      bucket.originalReturnBase += line.originalReturnQty
+        ? qtyInBase(mat.materialUoms, line.quantityUomId, Number(line.originalReturnQty))
+        : 0;
+      draftByMaterial.set(line.materialId, bucket);
+    }
+
+    for (const [materialId, draft] of draftByMaterial) {
+      if (draft.returnBase <= 0.0005) continue;
+      const jobMatSummary = jobMaterials.find((jm: { materialId: string }) => jm.materialId === materialId) as
+        | { dispatched: number; returned: number }
+        | undefined;
+      const jobDispatched = (jobMatSummary?.dispatched ?? 0) - draft.originalDispatchBase;
+      const jobReturned = (jobMatSummary?.returned ?? 0) - draft.originalReturnBase;
+      const totalDispatchedAfter = jobDispatched + draft.dispatchBase;
+      const totalReturnAfter = jobReturned + draft.returnBase;
+      if (totalReturnAfter > totalDispatchedAfter + 0.0005) {
+        const maxCanReturn = Math.max(0, totalDispatchedAfter - jobReturned);
+        toast.error(
+          `Cannot return ${draft.returnBase.toFixed(3)} ${draft.unit} for ${draft.name}. Only ${maxCanReturn.toFixed(3)} ${draft.unit} can be returned for this job after this update`
+        );
+        return;
       }
     }
 

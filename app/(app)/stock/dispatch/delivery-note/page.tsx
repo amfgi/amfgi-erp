@@ -82,6 +82,7 @@ interface Line {
   receiveQty?: string;
   receiveDestWarehouseId?: string;
   originalDispatchQty?: number;
+  originalReturnQty?: number;
   originalWarehouseId?: string;
 }
 
@@ -698,6 +699,7 @@ export default function DeliveryNoteCreatePage() {
           firstStockOutTransactionId: string | null;
           signedCopyUrl?: string | null;
           transactionIds?: string[];
+          returnQtyByTransactionId?: Record<string, number>;
         };
 
         setDeliveryType(d.deliveryType ?? 'DISPATCH');
@@ -792,32 +794,39 @@ export default function DeliveryNoteCreatePage() {
             })
           );
           const validTxns = txnResults.filter(Boolean) as Array<{
+            id?: string;
             notes?: string | null;
             material?: { id: string };
             quantity: number;
             warehouseId?: string | null;
             quantityUomId?: string | null;
+            returnQty?: number;
           }>;
           if (validTxns[0] && !loadedContactName) {
             loadedContactName =
               parseDeliveryContactPerson(validTxns[0].notes || '') || d.job?.contactPerson?.trim() || '';
           }
           if (validTxns.length > 0) {
+            const returnMap = d.returnQtyByTransactionId ?? {};
             setLines(
               normalizeLines(
                 validTxns
                   .filter((txn) => txn.material)
-                  .map((txn) => ({
-                    id: generateId(),
-                    jobId: canonicalJobId,
-                    materialId: txn.material!.id,
-                    dispatchQty: String(txn.quantity),
-                    returnQty: '',
-                    quantityUomId: txn.quantityUomId ?? '',
-                    warehouseId: txn.warehouseId ?? '',
-                    originalDispatchQty: txn.quantity,
-                    originalWarehouseId: txn.warehouseId ?? '',
-                  })),
+                  .map((txn) => {
+                    const originalReturn = txn.id ? Number(returnMap[txn.id] ?? 0) : 0;
+                    return {
+                      id: generateId(),
+                      jobId: canonicalJobId,
+                      materialId: txn.material!.id,
+                      dispatchQty: String(txn.quantity),
+                      returnQty: originalReturn > 0 ? String(originalReturn) : '',
+                      quantityUomId: txn.quantityUomId ?? '',
+                      warehouseId: txn.warehouseId ?? '',
+                      originalDispatchQty: txn.quantity,
+                      originalReturnQty: originalReturn,
+                      originalWarehouseId: txn.warehouseId ?? '',
+                    };
+                  }),
                 canonicalJobId
               )
             );
@@ -1555,19 +1564,60 @@ export default function DeliveryNoteCreatePage() {
         }
 
         const ret = line.returnQty ? parseFloat(line.returnQty) : 0;
-        if (ret > 0) {
-          const retBase = qtyInBase(mat.materialUoms, line.quantityUomId, ret);
-          const jobMatSummary = jobMaterials.find((jm: any) => jm.materialId === line.materialId);
-          if (jobMatSummary) {
-            const totalReturnAfter = jobMatSummary.returned + retBase;
-            if (totalReturnAfter > jobMatSummary.dispatched) {
-              const maxCanReturn = jobMatSummary.dispatched - jobMatSummary.returned;
-              toast.error(
-                `Cannot return ${retBase.toFixed(3)} ${mat.unit} (from entry). Only ${maxCanReturn.toFixed(3)} can be returned`
-              );
-              return;
-            }
-          }
+        if (isNaN(ret) || ret < 0) {
+          toast.error(`Invalid return quantity for ${mat.name}`);
+          return;
+        }
+        if (ret > qty) {
+          toast.error(`Return quantity cannot exceed dispatch quantity for ${mat.name}`);
+          return;
+        }
+      }
+
+      // Credit this entry's original qty so same-page dispatch+return edits are not double-counted
+      const draftByMaterial = new Map<
+        string,
+        { dispatchBase: number; returnBase: number; originalDispatchBase: number; originalReturnBase: number; unit: string; name: string }
+      >();
+      for (const line of validLines) {
+        const mat = getMaterial(line.materialId);
+        if (!mat) continue;
+        const qty = parseFloat(line.dispatchQty);
+        const ret = line.returnQty ? parseFloat(line.returnQty) : 0;
+        const bucket = draftByMaterial.get(line.materialId) ?? {
+          dispatchBase: 0,
+          returnBase: 0,
+          originalDispatchBase: 0,
+          originalReturnBase: 0,
+          unit: mat.unit,
+          name: mat.name,
+        };
+        bucket.dispatchBase += qtyInBase(mat.materialUoms, line.quantityUomId, qty);
+        bucket.returnBase += ret > 0 ? qtyInBase(mat.materialUoms, line.quantityUomId, ret) : 0;
+        bucket.originalDispatchBase += line.originalDispatchQty
+          ? qtyInBase(mat.materialUoms, line.quantityUomId, Number(line.originalDispatchQty))
+          : 0;
+        bucket.originalReturnBase += line.originalReturnQty
+          ? qtyInBase(mat.materialUoms, line.quantityUomId, Number(line.originalReturnQty))
+          : 0;
+        draftByMaterial.set(line.materialId, bucket);
+      }
+
+      for (const [materialId, draft] of draftByMaterial) {
+        if (draft.returnBase <= 0.0005) continue;
+        const jobMatSummary = jobMaterials.find((jm: { materialId: string }) => jm.materialId === materialId) as
+          | { dispatched: number; returned: number }
+          | undefined;
+        const jobDispatched = (jobMatSummary?.dispatched ?? 0) - draft.originalDispatchBase;
+        const jobReturned = (jobMatSummary?.returned ?? 0) - draft.originalReturnBase;
+        const totalDispatchedAfter = jobDispatched + draft.dispatchBase;
+        const totalReturnAfter = jobReturned + draft.returnBase;
+        if (totalReturnAfter > totalDispatchedAfter + 0.0005) {
+          const maxCanReturn = Math.max(0, totalDispatchedAfter - jobReturned);
+          toast.error(
+            `Cannot return ${draft.returnBase.toFixed(3)} ${draft.unit} for ${draft.name}. Only ${maxCanReturn.toFixed(3)} ${draft.unit} can be returned after this update`
+          );
+          return;
         }
       }
     }

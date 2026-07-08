@@ -65,6 +65,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const stockOutIds = dn.transactions.map((txn) => txn.id);
     const signedCopyFromTxn = dn.transactions.find((txn) => txn.signedCopyUrl)?.signedCopyUrl ?? null;
+
+    const returnRows =
+      stockOutIds.length > 0
+        ? await prisma.transaction.findMany({
+            where: {
+              companyId,
+              type: 'RETURN',
+              parentTransactionId: { in: stockOutIds },
+            },
+            select: { parentTransactionId: true, quantity: true },
+          })
+        : [];
+    const returnQtyByTransactionId: Record<string, number> = {};
+    for (const row of returnRows) {
+      const parentId = row.parentTransactionId;
+      if (!parentId) continue;
+      returnQtyByTransactionId[parentId] =
+        (returnQtyByTransactionId[parentId] ?? 0) + decimalToNumberOrZero(row.quantity);
+    }
+
     const allTxnIds =
       dn.deliveryType === 'SUBCONTRACT'
         ? await prisma.transaction.findMany({
@@ -116,6 +136,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       firstStockOutTransactionId: stockOutIds[0] ?? null,
       signedCopyUrl: dn.signedCopyUrl ?? signedCopyFromTxn,
       transactionIds: allTxnIds.map((txn) => txn.id),
+      returnQtyByTransactionId,
     });
   } catch (err: unknown) {
     console.error('delivery-notes GET:', err);
