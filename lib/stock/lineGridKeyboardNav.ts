@@ -51,6 +51,48 @@ function focusNavCell(row: number, col: number, rowCount: number, colCount: numb
   }
 }
 
+export type LineGridAdvanceDirection = 'next' | 'prev' | 'down' | 'up';
+
+export function resolveLineGridAdvanceTarget(
+  row: number,
+  col: number,
+  direction: LineGridAdvanceDirection,
+  rowCount: number,
+  colCount: number
+): { row: number; col: number } {
+  if (rowCount <= 0 || colCount <= 0) {
+    return { row: 0, col: 0 };
+  }
+
+  let nextRow = row;
+  let nextCol = col;
+
+  if (direction === 'next') {
+    if (col < colCount - 1) {
+      nextCol = col + 1;
+    } else {
+      nextRow = row + 1;
+      nextCol = 0;
+    }
+  } else if (direction === 'prev') {
+    if (col > 0) {
+      nextCol = col - 1;
+    } else {
+      nextRow = row - 1;
+      nextCol = colCount - 1;
+    }
+  } else if (direction === 'down') {
+    nextRow = row + 1;
+  } else if (direction === 'up') {
+    nextRow = row - 1;
+  }
+
+  return {
+    row: Math.max(0, Math.min(rowCount - 1, nextRow)),
+    col: Math.max(0, Math.min(colCount - 1, nextCol)),
+  };
+}
+
 export function useLineGridKeyboardNav(rowCount: number, navigableColCount: number) {
   const focusCell = useCallback(
     (row: number, col: number) => {
@@ -60,10 +102,17 @@ export function useLineGridKeyboardNav(rowCount: number, navigableColCount: numb
     [navigableColCount, rowCount]
   );
 
+  const advanceFocus = useCallback(
+    (row: number, col: number, direction: LineGridAdvanceDirection) => {
+      if (rowCount <= 0 || navigableColCount <= 0) return;
+      const target = resolveLineGridAdvanceTarget(row, col, direction, rowCount, navigableColCount);
+      focusCell(target.row, target.col);
+    },
+    [focusCell, navigableColCount, rowCount]
+  );
+
   const onGridKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-
       const target = event.currentTarget;
       if (target.getAttribute('aria-expanded') === 'true') return;
 
@@ -71,14 +120,27 @@ export function useLineGridKeyboardNav(rowCount: number, navigableColCount: numb
       const col = Number(target.dataset.navCol ?? -1);
       if (row < 0 || col < 0) return;
 
-      event.preventDefault();
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault();
+        if (event.key === 'ArrowUp') focusCell(row - 1, col);
+        if (event.key === 'ArrowDown') focusCell(row + 1, col);
+        if (event.key === 'ArrowLeft') focusCell(row, col - 1);
+        if (event.key === 'ArrowRight') focusCell(row, col + 1);
+        return;
+      }
 
-      if (event.key === 'ArrowUp') focusCell(row - 1, col);
-      if (event.key === 'ArrowDown') focusCell(row + 1, col);
-      if (event.key === 'ArrowLeft') focusCell(row, col - 1);
-      if (event.key === 'ArrowRight') focusCell(row, col + 1);
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        advanceFocus(row, col, event.shiftKey ? 'prev' : 'next');
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        advanceFocus(row, col, event.shiftKey ? 'up' : 'down');
+      }
     },
-    [focusCell]
+    [advanceFocus, focusCell]
   );
 
   const getNavInputProps = useCallback(
@@ -91,7 +153,7 @@ export function useLineGridKeyboardNav(rowCount: number, navigableColCount: numb
     [onGridKeyDown]
   );
 
-  return { getNavInputProps, onGridKeyDown, focusCell };
+  return { getNavInputProps, onGridKeyDown, focusCell, advanceFocus };
 }
 
 export type MergeLineGridInputPropsOptions = {

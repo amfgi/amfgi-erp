@@ -344,10 +344,20 @@ export default function DispatchLineGrid({
         .filter((key) => DISPATCH_NAVIGABLE_COLUMN_KEYS.includes(key)),
     [visibleGridColumns]
   );
-  const { getNavInputProps } = useLineGridKeyboardNav(lines.length, navigableColumns.length);
+  const { getNavInputProps, advanceFocus } = useLineGridKeyboardNav(lines.length, navigableColumns.length);
   const navColIndex = useCallback(
     (key: DispatchGridColumnKey) => navigableColumns.indexOf(key),
     [navigableColumns]
+  );
+  const afterSelectNav = useCallback(
+    (rowIndex: number, key: DispatchGridColumnKey, method: 'enter' | 'tab' | 'click' = 'click') => {
+      const col = navColIndex(key);
+      if (col < 0) return;
+      if (method === 'click') return;
+      const direction = method === 'tab' ? 'next' : 'down';
+      requestAnimationFrame(() => advanceFocus(rowIndex, col, direction));
+    },
+    [advanceFocus, navColIndex]
   );
   const cellNavInputProps = useCallback(
     (
@@ -513,7 +523,12 @@ export default function DispatchLineGrid({
   return (
     <div className="border-b border-border">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Excel View</div>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          Excel View
+          <span className="ml-2 normal-case tracking-normal text-[10px] text-muted-foreground/80">
+            ↑↓←→ move · Tab → next · Enter ↓ next row
+          </span>
+        </div>
         <LineGridColumnSettings
           columns={gridColumns.filter((column) => {
             if (!effectiveShowWarehouseColumn && column.key === 'warehouse') return false;
@@ -588,6 +603,7 @@ export default function DispatchLineGrid({
                               onChange={(id) => onUpdateLine(line.id, 'materialId', id)}
                               placeholder="Material"
                               disabled={!inputsEnabled}
+                              minCharactersToSearch={1}
                               items={materials.filter((material) => material.isActive).map((material) => ({
                                 id: material.id,
                                 label: material.name,
@@ -597,6 +613,7 @@ export default function DispatchLineGrid({
                               allowClearButton={false}
                               clearOnEmptyInput
                               passThroughArrowKeys
+                              onAfterSelect={(_id, method) => afterSelectNav(idx, 'material', method)}
                               inputProps={cellNavInputProps(idx, 'material', {
                                 className: '!rounded-none !border-0 !bg-transparent !px-2 !py-1.5 !text-sm focus:!ring-0 min-w-0',
                               })}
@@ -618,6 +635,7 @@ export default function DispatchLineGrid({
                                 onChange={(id) => onUpdateLine(line.id, 'quantityUomId', id)}
                                 placeholder="UOM"
                                 disabled={!inputsEnabled}
+                                minCharactersToSearch={1}
                                 items={getMaterialUomOptions(mat).map((uom) => ({
                                   id: uom.value,
                                   label: uom.label,
@@ -626,6 +644,7 @@ export default function DispatchLineGrid({
                                 allowClearButton={false}
                                 clearOnEmptyInput
                                 passThroughArrowKeys
+                                onAfterSelect={(_id, method) => afterSelectNav(idx, 'uom', method)}
                                 inputProps={cellNavInputProps(idx, 'uom', {
                                   className: '!rounded-none !border-0 !bg-transparent !px-2 !py-1.5 !text-xs focus:!ring-0 min-w-0',
                                 })}
@@ -810,6 +829,8 @@ export default function DispatchLineGrid({
                               disabled={subcontractIssueReadOnly || !inputsEnabled || !mat}
                               dropdownInPortal
                               passThroughArrowKeys
+                              minCharactersToSearch={1}
+                              onAfterSelect={(_id, method) => afterSelectNav(idx, 'warehouse', method)}
                               items={warehouses.map((warehouse) => {
                                 const warehouseStock = formatWarehouseStock(mat, warehouse.id, line.quantityUomId);
                                 return {

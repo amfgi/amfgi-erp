@@ -46,7 +46,7 @@ interface SearchSelectProps<T extends { id: string; label: string; searchText?: 
   /** When true, ↑/↓ move grid focus while closed; while open, ↑/↓ navigate suggestions. */
   passThroughArrowKeys?: boolean;
   /** Called after a value is chosen (click, Enter, or Tab on a suggestion). */
-  onAfterSelect?: (itemId: string) => void;
+  onAfterSelect?: (itemId: string, method?: 'enter' | 'tab' | 'click') => void;
   /** Shown at the bottom of the empty-results panel (e.g. create-new action). */
   emptyAction?: {
     label?: string | ((query: string) => string);
@@ -174,7 +174,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
 
   const displayedValue = isOpen ? input : selectedItem?.label ?? (value ? input : '');
 
-  const handleSelect = (itemId: string) => {
+  const handleSelect = (itemId: string, method: 'enter' | 'tab' | 'click' = 'click') => {
     onChange(itemId);
     const item = items.find((i) => i.id === itemId);
     if (item) {
@@ -182,7 +182,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     }
     setIsOpen(false);
     setHighlightedIdx(0);
-    onAfterSelect?.(itemId);
+    onAfterSelect?.(itemId, method);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,10 +212,10 @@ export default function SearchSelect<T extends { id: string; label: string; sear
       return;
     }
 
-    if (isSubmitKey && activelySearching && highlightedItem) {
+    if (isSubmitKey && isOpen && activelySearching && highlightedItem) {
       e.preventDefault();
       e.stopPropagation();
-      handleSelect(highlightedItem.id);
+      handleSelect(highlightedItem.id, e.key === 'Tab' ? 'tab' : 'enter');
       return;
     }
 
@@ -249,14 +249,14 @@ export default function SearchSelect<T extends { id: string; label: string; sear
         e.preventDefault();
         e.stopPropagation();
         if (highlightedItem) {
-          handleSelect(highlightedItem.id);
+          handleSelect(highlightedItem.id, 'enter');
         }
         break;
       case 'Tab':
         if (highlightedItem) {
           e.preventDefault();
           e.stopPropagation();
-          handleSelect(highlightedItem.id);
+          handleSelect(highlightedItem.id, 'tab');
         }
         break;
       case 'Escape':
