@@ -355,9 +355,17 @@ export default function SearchSelect<T extends { id: string; label: string; sear
               setIsOpen(true);
               setHighlightedIdx(0);
             }
-            const cursorPos = nextInput.length;
+            const selectAllOnFocus =
+              // Custom data attribute used by dispatch line grid keyboard nav; allow via any-cast.
+              (inputProps as any)?.['data-line-grid-nav'] === 'true';
             requestAnimationFrame(() => {
-              inputRef.current?.setSelectionRange(cursorPos, cursorPos);
+              if (!inputRef.current) return;
+              if (selectAllOnFocus) {
+                inputRef.current.select();
+                return;
+              }
+              const cursorPos = nextInput.length;
+              inputRef.current.setSelectionRange(cursorPos, cursorPos);
             });
             inputProps?.onFocus?.(e);
           }}
