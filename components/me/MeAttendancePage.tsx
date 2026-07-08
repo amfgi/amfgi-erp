@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react';
 import {
   type AttendanceRow,
   currentMonthValue,
-  diffMinutes,
   formatDate,
   formatHours,
   formatTime,
@@ -16,15 +15,30 @@ import {
   statusTone,
   workLocationLabel,
 } from './shared';
+import {
+  diffMinutesFromIsoAllowOvernight,
+  resolveDisplayedOvertimeMinutes,
+  workedMinutesFromIsoPunches,
+} from '@/lib/hr/attendanceDuration';
 
 type AttendanceViewMode = 'table' | 'grid';
 
 const VIEW_MODE_STORAGE_KEY = 'me-attendance-view-mode';
 
 function attendanceRowMetrics(row: AttendanceRow) {
-  const breakMinutes = diffMinutes(row.breakStartAt, row.breakEndAt);
-  const workedMinutes = Math.max(0, diffMinutes(row.checkInAt, row.checkOutAt) - breakMinutes);
-  return { breakMinutes, workedMinutes };
+  const breakMinutes = diffMinutesFromIsoAllowOvernight(row.breakStartAt, row.breakEndAt);
+  const workedMinutes = workedMinutesFromIsoPunches({
+    checkInAt: row.checkInAt,
+    checkOutAt: row.checkOutAt,
+    breakStartAt: row.breakStartAt,
+    breakEndAt: row.breakEndAt,
+  });
+  const overtimeMinutes = resolveDisplayedOvertimeMinutes({
+    workedMinutes,
+    basicHours: row.basicHours,
+    storedOvertimeMinutes: row.overtimeMinutes,
+  });
+  return { breakMinutes, workedMinutes, overtimeMinutes };
 }
 
 function initialViewMode(): AttendanceViewMode {
@@ -81,14 +95,13 @@ export default function MeAttendancePage() {
   const attendanceSummary = useMemo(() => {
     return attendanceRows.reduce(
       (acc, row) => {
-        const breakMinutes = diffMinutes(row.breakStartAt, row.breakEndAt);
-        const workedMinutes = Math.max(0, diffMinutes(row.checkInAt, row.checkOutAt) - breakMinutes);
+        const { workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
         acc.days += 1;
         if (row.status === 'PRESENT') acc.present += 1;
         if (row.status === 'ABSENT') acc.absent += 1;
         if (row.status === 'LEAVE') acc.leave += 1;
         acc.workedMinutes += workedMinutes;
-        acc.overtimeMinutes += row.overtimeMinutes ?? 0;
+        acc.overtimeMinutes += overtimeMinutes;
         return acc;
       },
       { days: 0, present: 0, absent: 0, leave: 0, workedMinutes: 0, overtimeMinutes: 0 }
@@ -253,7 +266,7 @@ function AttendanceTableView({ rows }: { rows: AttendanceRow[] }) {
 }
 
 function AttendanceTableCompactRow({ row }: { row: AttendanceRow }) {
-  const { breakMinutes, workedMinutes } = attendanceRowMetrics(row);
+  const { breakMinutes, workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
   const location = workLocationLabel(row);
   const jobNo = jobNumberLabel(row);
 
@@ -280,14 +293,14 @@ function AttendanceTableCompactRow({ row }: { row: AttendanceRow }) {
         {jobNo ? <span>Job {jobNo}</span> : null}
         <span>Break {breakMinutes ? formatHours(breakMinutes) : '-'}</span>
         <span>Worked {workedMinutes ? formatHours(workedMinutes) : '-'}</span>
-        {(row.overtimeMinutes ?? 0) > 0 ? <span>OT {formatHours(row.overtimeMinutes ?? 0)}</span> : null}
+        {overtimeMinutes > 0 ? <span>OT {formatHours(overtimeMinutes)}</span> : null}
       </div>
     </article>
   );
 }
 
 function AttendanceGridCard({ row }: { row: AttendanceRow }) {
-  const { breakMinutes, workedMinutes } = attendanceRowMetrics(row);
+  const { breakMinutes, workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
   const location = workLocationLabel(row);
 
   return (
@@ -313,14 +326,14 @@ function AttendanceGridCard({ row }: { row: AttendanceRow }) {
         <SummaryField label="Job no" value={jobNumberLabel(row) || '-'} />
         <SummaryField label="Break" value={breakMinutes ? formatHours(breakMinutes) : '-'} />
         <SummaryField label="Worked" value={workedMinutes ? formatHours(workedMinutes) : '-'} />
-        <SummaryField label="Overtime" value={(row.overtimeMinutes ?? 0) > 0 ? formatHours(row.overtimeMinutes ?? 0) : '-'} />
+        <SummaryField label="Overtime" value={overtimeMinutes > 0 ? formatHours(overtimeMinutes) : '-'} />
       </div>
     </article>
   );
 }
 
 function AttendanceTableRow({ row }: { row: AttendanceRow }) {
-  const { breakMinutes, workedMinutes } = attendanceRowMetrics(row);
+  const { breakMinutes, workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
 
   return (
     <tr className="group hover:bg-slate-50/80 dark:hover:bg-slate-900/50">
@@ -338,7 +351,7 @@ function AttendanceTableRow({ row }: { row: AttendanceRow }) {
       <td className="hidden whitespace-nowrap px-3 py-2.5 lg:table-cell lg:px-4 lg:py-3">{breakMinutes ? formatHours(breakMinutes) : '-'}</td>
       <td className="hidden whitespace-nowrap px-3 py-2.5 lg:table-cell lg:px-4 lg:py-3">{workedMinutes ? formatHours(workedMinutes) : '-'}</td>
       <td className="hidden whitespace-nowrap px-3 py-2.5 xl:table-cell lg:px-4 lg:py-3">
-        {(row.overtimeMinutes ?? 0) > 0 ? formatHours(row.overtimeMinutes ?? 0) : '-'}
+        {overtimeMinutes > 0 ? formatHours(overtimeMinutes) : '-'}
       </td>
       <td className="sticky right-0 z-10 bg-white px-3 py-2.5 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)] group-hover:bg-slate-50/80 lg:px-4 lg:py-3 dark:bg-slate-950/40 dark:shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.3)] dark:group-hover:bg-slate-900/50">
         <StatusBadge status={row.status} />

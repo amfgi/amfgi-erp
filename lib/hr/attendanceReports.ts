@@ -6,6 +6,11 @@ import {
 } from '@/lib/hr/employeeTypeSettings';
 import { Prisma } from '@prisma/client';
 import { isPaidLeaveType } from '@/lib/hr/leaveTypes';
+import {
+  diffMinutesAllowOvernight,
+  resolveDisplayedOvertimeMinutes,
+  workedMinutesFromPunches,
+} from '@/lib/hr/attendanceDuration';
 import { attendanceReportStatusLabel } from '@/lib/hr/attendanceReportFormatting';
 import type { AttendanceReportBuilderRow } from '@/lib/hr/attendanceReportBuilder';
 
@@ -43,13 +48,6 @@ function monthBounds(month: string) {
   const start = new Date(Date.UTC(year, monthIndex - 1, 1));
   const end = new Date(Date.UTC(year, monthIndex, 1));
   return { start, end };
-}
-
-function diffMinutes(start: Date | null | undefined, end: Date | null | undefined) {
-  if (!start || !end) return 0;
-  const ms = end.getTime() - start.getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return 0;
-  return Math.round(ms / 60000);
 }
 
 function minutesOfDay(date: Date | null | undefined) {
@@ -271,8 +269,18 @@ export async function getMonthlyAttendanceReports(companyId: string, month: stri
     const basicHours = Number.isFinite(snapBasic) && snapBasic > 0
       ? snapBasic
       : basicHoursForProfileExtension(row.employee.profileExtension, typeSettings);
-    const breakMinutes = diffMinutes(row.breakStartAt, row.breakEndAt);
-    const workedMinutes = Math.max(0, diffMinutes(row.checkInAt, row.checkOutAt) - breakMinutes);
+    const breakMinutes = diffMinutesAllowOvernight(row.breakStartAt, row.breakEndAt);
+    const workedMinutes = workedMinutesFromPunches({
+      checkInAt: row.checkInAt,
+      checkOutAt: row.checkOutAt,
+      breakStartAt: row.breakStartAt,
+      breakEndAt: row.breakEndAt,
+    });
+    const overtimeMinutes = resolveDisplayedOvertimeMinutes({
+      workedMinutes,
+      basicHours,
+      storedOvertimeMinutes: row.overtimeMinutes,
+    });
     const resolvedLocation = locationLabel(employeeType, row.workAssignment);
     const siteName = row.workAssignment?.siteNameSnapshot || row.workAssignment?.job?.site || '';
     const clientName = row.workAssignment?.clientNameSnapshot || row.workAssignment?.job?.customer?.name || '';
@@ -292,8 +300,8 @@ export async function getMonthlyAttendanceReports(companyId: string, month: stri
       basicHours,
       totalHours: formatHoursFromMinutes(workedMinutes),
       workedMinutes,
-      overtimeHours: formatHoursFromMinutes(row.overtimeMinutes),
-      overtimeMinutes: row.overtimeMinutes,
+      overtimeHours: formatHoursFromMinutes(overtimeMinutes),
+      overtimeMinutes,
       lateMinutes: row.lateMinutes,
       earlyLeaveMinutes: row.earlyLeaveMinutes,
       employeeCode: row.employee.employeeCode,
@@ -347,7 +355,7 @@ export async function getMonthlyAttendanceReports(companyId: string, month: stri
     if (row.status === 'HALF_DAY') current.halfDayDays += 1;
     if (row.status === 'MISSING_PUNCH') current.missingPunchDays += 1;
     current.workedMinutes += workedMinutes;
-    current.overtimeMinutes += row.overtimeMinutes;
+    current.overtimeMinutes += overtimeMinutes;
     current.lateMinutes += row.lateMinutes;
     current.earlyLeaveMinutes += row.earlyLeaveMinutes;
     current.entries.push(reportRow);

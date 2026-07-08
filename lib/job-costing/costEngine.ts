@@ -14,6 +14,7 @@ import type {
   PricingMode,
 } from '@/lib/job-costing/types';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
+import { workedMinutesFromPunches } from '@/lib/hr/attendanceDuration';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -56,18 +57,13 @@ function getTransactionCost(txn: {
   return { quantity: direction * decimalToNumberOrZero(txn.quantity), cost: direction * cost };
 }
 
-function diffMinutes(start?: Date | null, end?: Date | null) {
-  if (!start || !end) return 0;
-  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-}
-
 function attendanceWorkedMinutesFromPunches(row: {
   checkInAt: Date | null;
   checkOutAt: Date | null;
   breakStartAt: Date | null;
   breakEndAt: Date | null;
 }) {
-  return Math.max(0, diffMinutes(row.checkInAt, row.checkOutAt) - diffMinutes(row.breakStartAt, row.breakEndAt));
+  return workedMinutesFromPunches(row);
 }
 
 function resolveCurrentUnitCostFromLogs(

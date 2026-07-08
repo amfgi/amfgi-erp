@@ -6,7 +6,8 @@ import {
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
 import { employeeSortLabel } from '@/lib/hr/employeeListQuery';
-import { dubaiWallTimeToUtc, parseTimeCell } from '@/lib/hr/dubaiShift';
+import { combineDateAndTimeToIsoAllowOvernight } from '@/lib/hr/attendanceDuration';
+import { parseTimeCell } from '@/lib/hr/dubaiShift';
 
 export type AttendanceSheetEmployee = AttendanceGridEmployee & {
   profileExtension?: unknown;
@@ -87,11 +88,36 @@ export function parseBreakWindow(raw: string | null | undefined): { breakInAt: s
   return { breakInAt: m[1].padStart(5, '0'), breakOutAt: m[2].padStart(5, '0') };
 }
 
-export function combineDateAndTimeToIso(workDate: string, timeVal: string): string | null {
-  if (!timeVal) return null;
-  const parsed = parseTimeCell(timeVal);
-  if (!parsed) return null;
-  return dubaiWallTimeToUtc(workDate, parsed.hour, parsed.minute).toISOString();
+export function combineDateAndTimeToIso(
+  workDate: string,
+  timeVal: string,
+  after?: Date | null
+): string | null {
+  return combineDateAndTimeToIsoAllowOvernight(workDate, timeVal, after);
+}
+
+/** Build duty/break ISO timestamps with overnight roll for times after midnight. */
+export function combineAttendancePunchTimesToIso(
+  workDate: string,
+  times: {
+    checkInAt: string;
+    checkOutAt: string;
+    breakInAt: string;
+    breakOutAt: string;
+  }
+): {
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  breakInAt: string | null;
+  breakOutAt: string | null;
+} {
+  const checkInAt = combineDateAndTimeToIso(workDate, times.checkInAt);
+  const checkInDate = checkInAt ? new Date(checkInAt) : null;
+  const breakInAt = combineDateAndTimeToIso(workDate, times.breakInAt, checkInDate);
+  const breakInDate = breakInAt ? new Date(breakInAt) : checkInDate;
+  const breakOutAt = combineDateAndTimeToIso(workDate, times.breakOutAt, breakInDate);
+  const checkOutAt = combineDateAndTimeToIso(workDate, times.checkOutAt, checkInDate);
+  return { checkInAt, checkOutAt, breakInAt, breakOutAt };
 }
 
 export function sanitizeAbsentDraft(draft: AttendanceGridDraftRow): AttendanceGridDraftRow {

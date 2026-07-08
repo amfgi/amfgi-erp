@@ -24,7 +24,7 @@ import {
   type ScheduleJobRow,
 } from '@/lib/hr/scheduleSearchApi';
 import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
-import { dubaiWallTimeToUtc, parseTimeCell } from '@/lib/hr/dubaiShift';
+import { combineAttendancePunchTimesToIso } from '@/lib/hr/attendanceSheetModel';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
@@ -255,13 +255,6 @@ function parseBreakWindow(raw: string | null | undefined): { breakInAt: string; 
   const m = raw.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
   if (!m) return { breakInAt: '', breakOutAt: '' };
   return { breakInAt: m[1].padStart(5, '0'), breakOutAt: m[2].padStart(5, '0') };
-}
-
-function combineDateAndTimeToIso(workDate: string, timeVal: string): string | null {
-  if (!timeVal) return null;
-  const parsed = parseTimeCell(timeVal);
-  if (!parsed) return null;
-  return dubaiWallTimeToUtc(workDate, parsed.hour, parsed.minute).toISOString();
 }
 
 function minutesFromTimeValue(timeVal: string): number | null {
@@ -1541,10 +1534,19 @@ export default function AttendanceCreatePage() {
           status: draft.status,
           leaveTypeId: isAbsent ? defaultUnpaidLeaveTypeId(leaveTypes) : null,
           remarks: draft.remarks?.trim() || null,
-          checkInAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.checkInAt),
-          checkOutAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.checkOutAt),
-          breakInAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.breakInAt),
-          breakOutAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.breakOutAt),
+          ...(isAbsent
+            ? {
+                checkInAt: null,
+                checkOutAt: null,
+                breakInAt: null,
+                breakOutAt: null,
+              }
+            : combineAttendancePunchTimesToIso(workDate, {
+                checkInAt: draft.checkInAt,
+                checkOutAt: draft.checkOutAt,
+                breakInAt: draft.breakInAt,
+                breakOutAt: draft.breakOutAt,
+              })),
         };
       }),
     };

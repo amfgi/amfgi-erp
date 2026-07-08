@@ -1,4 +1,5 @@
 import { basicHoursToMinutes } from '@/lib/hr/attendanceBasicHours';
+import { workedMinutesFromPunches } from '@/lib/hr/attendanceDuration';
 import type { Prisma } from '@prisma/client';
 
 const PAYABLE_WITHOUT_PUNCH = new Set(['PRESENT', 'HALF_DAY', 'MISSING_PUNCH']);
@@ -14,24 +15,19 @@ export type AttendanceWorkedMinutesInput = {
   breakEndAt?: Date | null;
 };
 
-function diffMinutes(start: Date | null | undefined, end: Date | null | undefined): number {
-  if (!start || !end) return 0;
-  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-}
-
 /** Resolves total worked minutes from punches, stored OT, or scheduled basic hours. */
 export function resolveWorkedMinutesFromAttendance(row: AttendanceWorkedMinutesInput): number {
+  const fromPunch = workedMinutesFromPunches({
+    checkInAt: row.checkInAt,
+    checkOutAt: row.checkOutAt,
+    breakStartAt: row.breakStartAt,
+    breakEndAt: row.breakEndAt,
+  });
+  if (fromPunch > 0) return fromPunch;
+
   if (row.workedMinutes != null && row.workedMinutes > 0) {
     return row.workedMinutes;
   }
-
-  const fromPunch = (() => {
-    if (!row.checkInAt || !row.checkOutAt) return 0;
-    const duty = diffMinutes(row.checkInAt, row.checkOutAt);
-    const breakMinutes = diffMinutes(row.breakStartAt, row.breakEndAt);
-    return Math.max(0, duty - breakMinutes);
-  })();
-  if (fromPunch > 0) return fromPunch;
 
   if (row.status === 'ABSENT' || row.status === 'LEAVE') return 0;
 

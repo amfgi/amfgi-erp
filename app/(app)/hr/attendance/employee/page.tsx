@@ -27,7 +27,7 @@ import {
   calculateWorkedMinutes,
   cloneDraftRows,
   collectSaveValidationIssues,
-  combineDateAndTimeToIso,
+  combineAttendancePunchTimesToIso,
   DAY_SHEET_FIELD_CLASS,
   draftsEqual,
   employeeDisplayName,
@@ -750,10 +750,22 @@ export default function HrEmployeeAttendancePage() {
               status: draft.status,
               leaveTypeId: isAbsent ? defaultUnpaidLeaveTypeId(leaveTypes) : null,
               remarks: draft.remarks?.trim() || null,
-              checkInAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.checkInAt),
-              checkOutAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.checkOutAt),
-              breakInAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.breakInAt),
-              breakOutAt: isAbsent ? null : combineDateAndTimeToIso(workDate, draft.breakOutAt),
+              ...(() => {
+                if (isAbsent) {
+                  return {
+                    checkInAt: null,
+                    checkOutAt: null,
+                    breakInAt: null,
+                    breakOutAt: null,
+                  };
+                }
+                return combineAttendancePunchTimesToIso(workDate, {
+                  checkInAt: draft.checkInAt,
+                  checkOutAt: draft.checkOutAt,
+                  breakInAt: draft.breakInAt,
+                  breakOutAt: draft.breakOutAt,
+                });
+              })(),
             };
           }),
         };

@@ -6,6 +6,7 @@ import { getEmployeePortalLeaveBalance } from '@/lib/hr/leaveBalance';
 import { countLeaveDaysInclusive } from '@/lib/hr/leaveTypes';
 import { dateFromYmd } from '@/lib/hr/workDate';
 import { prisma } from '@/lib/db/prisma';
+import { workedMinutesFromPunches } from '@/lib/hr/attendanceDuration';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
 function monthBoundsUtc(year: number, month: number) {
@@ -76,15 +77,13 @@ export async function GET() {
       if (row.status === 'PRESENT') acc.present += 1;
       if (row.status === 'ABSENT') acc.absent += 1;
       if (row.status === 'LEAVE') acc.leave += 1;
-      const dutyMs =
-        row.checkInAt && row.checkOutAt
-          ? Math.max(0, row.checkOutAt.getTime() - row.checkInAt.getTime())
-          : 0;
-      const breakMs =
-        row.breakStartAt && row.breakEndAt
-          ? Math.max(0, row.breakEndAt.getTime() - row.breakStartAt.getTime())
-          : 0;
-      acc.workedMinutes += Math.max(0, Math.round((dutyMs - breakMs) / 60000));
+      const workedMinutes = workedMinutesFromPunches({
+        checkInAt: row.checkInAt,
+        checkOutAt: row.checkOutAt,
+        breakStartAt: row.breakStartAt,
+        breakEndAt: row.breakEndAt,
+      });
+      acc.workedMinutes += workedMinutes;
       acc.overtimeMinutes += row.overtimeMinutes ?? 0;
       return acc;
     },

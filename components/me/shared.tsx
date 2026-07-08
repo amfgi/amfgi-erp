@@ -69,6 +69,7 @@ export type AttendanceRow = {
   checkOutAt: string | null;
   breakStartAt?: string | null;
   breakEndAt?: string | null;
+  basicHours?: number | null;
   overtimeMinutes?: number | null;
   workAssignment: {
     label: string | null;

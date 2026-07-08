@@ -8,16 +8,22 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function parseBreakWindow(workDateYmd: string, raw: string | null | undefined) {
+function parseBreakWindow(workDateYmd: string, raw: string | null | undefined, afterCheckIn?: Date | null) {
   if (!raw) return { breakStartAt: null as Date | null, breakEndAt: null as Date | null };
   const match = raw.trim().match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
   if (!match) return { breakStartAt: null, breakEndAt: null };
   const start = parseTimeCell(match[1] ?? undefined);
   const end = parseTimeCell(match[2] ?? undefined);
-  return {
-    breakStartAt: start ? dubaiWallTimeToUtc(workDateYmd, start.hour, start.minute) : null,
-    breakEndAt: end ? dubaiWallTimeToUtc(workDateYmd, end.hour, end.minute) : null,
-  };
+  let breakStartAt = start ? dubaiWallTimeToUtc(workDateYmd, start.hour, start.minute) : null;
+  let breakEndAt = end ? dubaiWallTimeToUtc(workDateYmd, end.hour, end.minute) : null;
+  if (afterCheckIn && breakStartAt && breakStartAt.getTime() <= afterCheckIn.getTime()) {
+    breakStartAt = new Date(breakStartAt.getTime() + 24 * 60 * 60 * 1000);
+  }
+  const breakAnchor = breakStartAt ?? afterCheckIn;
+  if (breakAnchor && breakEndAt && breakEndAt.getTime() <= breakAnchor.getTime()) {
+    breakEndAt = new Date(breakEndAt.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return { breakStartAt, breakEndAt };
 }
 
 /**
@@ -97,9 +103,12 @@ export async function regenerateAttendanceBoilerplate(
     if (asg?.shiftStart || asg?.shiftEnd || asg?.breakWindow) {
       const st = parseTimeCell(asg.shiftStart ?? undefined);
       const en = parseTimeCell(asg.shiftEnd ?? undefined);
-      const breakWindow = parseBreakWindow(workDateYmd, asg.breakWindow);
       if (st) checkInAt = dubaiWallTimeToUtc(workDateYmd, st.hour, st.minute);
       if (en) checkOutAt = dubaiWallTimeToUtc(workDateYmd, en.hour, en.minute);
+      if (checkInAt && checkOutAt && checkOutAt.getTime() <= checkInAt.getTime()) {
+        checkOutAt = new Date(checkOutAt.getTime() + 24 * 60 * 60 * 1000);
+      }
+      const breakWindow = parseBreakWindow(workDateYmd, asg.breakWindow, checkInAt);
       breakStartAt = breakWindow.breakStartAt;
       breakEndAt = breakWindow.breakEndAt;
     } else {
@@ -115,8 +124,18 @@ export async function regenerateAttendanceBoilerplate(
         const be = parseTimeCell(setting?.breakEnd);
         if (st) checkInAt = dubaiWallTimeToUtc(workDateYmd, st.hour, st.minute);
         if (en) checkOutAt = dubaiWallTimeToUtc(workDateYmd, en.hour, en.minute);
+        if (checkInAt && checkOutAt && checkOutAt.getTime() <= checkInAt.getTime()) {
+          checkOutAt = new Date(checkOutAt.getTime() + 24 * 60 * 60 * 1000);
+        }
         if (bs) breakStartAt = dubaiWallTimeToUtc(workDateYmd, bs.hour, bs.minute);
         if (be) breakEndAt = dubaiWallTimeToUtc(workDateYmd, be.hour, be.minute);
+        if (checkInAt && breakStartAt && breakStartAt.getTime() <= checkInAt.getTime()) {
+          breakStartAt = new Date(breakStartAt.getTime() + 24 * 60 * 60 * 1000);
+        }
+        const breakAnchor = breakStartAt ?? checkInAt;
+        if (breakAnchor && breakEndAt && breakEndAt.getTime() <= breakAnchor.getTime()) {
+          breakEndAt = new Date(breakEndAt.getTime() + 24 * 60 * 60 * 1000);
+        }
       }
     }
 

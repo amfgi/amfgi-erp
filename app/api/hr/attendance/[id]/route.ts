@@ -9,6 +9,7 @@ import {
   calculateOvertimeMinutes,
   resolveBasicHoursForEmployee,
 } from '@/lib/hr/attendanceBasicHours';
+import { workedMinutesFromPunches } from '@/lib/hr/attendanceDuration';
 import { z } from 'zod';
 
 const PatchSchema = z.object({
@@ -30,13 +31,6 @@ function parseDt(s: string | null): Date | null {
   if (s === null || s === '') return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function diffMinutes(start: Date | null | undefined, end: Date | null | undefined): number {
-  if (!start || !end) return 0;
-  const ms = end.getTime() - start.getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return 0;
-  return Math.round(ms / 60000);
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -101,9 +95,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data.basicHours = basicHours;
   }
 
-  const calculatedLate = dutyStart && nextCheckIn ? Math.max(0, diffMinutes(dutyStart, nextCheckIn)) : 0;
-  const calculatedEarly = dutyEnd && nextCheckOut ? Math.max(0, diffMinutes(nextCheckOut, dutyEnd)) : 0;
-  const workedMinutes = Math.max(0, diffMinutes(nextCheckIn, nextCheckOut) - diffMinutes(nextBreakStart, nextBreakEnd));
+  const calculatedLate =
+    dutyStart && nextCheckIn
+      ? Math.max(0, Math.round((nextCheckIn.getTime() - dutyStart.getTime()) / 60000))
+      : 0;
+  const calculatedEarly =
+    dutyEnd && nextCheckOut
+      ? Math.max(0, Math.round((dutyEnd.getTime() - nextCheckOut.getTime()) / 60000))
+      : 0;
+  const workedMinutes = workedMinutesFromPunches({
+    checkInAt: nextCheckIn,
+    checkOutAt: nextCheckOut,
+    breakStartAt: nextBreakStart,
+    breakEndAt: nextBreakEnd,
+  });
   const calculatedOvertime = calculateOvertimeMinutes(workedMinutes, basicHours, nextStatus);
 
   data.lateMinutes = d.lateMinutes ?? calculatedLate;

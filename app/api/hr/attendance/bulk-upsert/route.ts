@@ -11,6 +11,7 @@ import {
   resolveBasicHoursForEmployee,
 } from '@/lib/hr/attendanceBasicHours';
 import { ensureLeaveTypesReady } from '@/lib/hr/seedLeaveTypes';
+import { workedMinutesFromPunches } from '@/lib/hr/attendanceDuration';
 import { dubaiWallTimeToUtc, parseTimeCell } from '@/lib/hr/dubaiShift';
 import { z } from 'zod';
 
@@ -36,13 +37,6 @@ function parseDt(s: string | null | undefined): Date | null {
   if (!s) return null;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function diffMinutes(start: Date | null | undefined, end: Date | null | undefined): number {
-  if (!start || !end) return 0;
-  const ms = end.getTime() - start.getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return 0;
-  return Math.round(ms / 60000);
 }
 
 export async function POST(req: Request) {
@@ -134,8 +128,12 @@ export async function POST(req: Request) {
       existingRow && !parsed.data.refreshBasicHoursFromTypeSettings
         ? Number(existingRow.basicHours)
         : typeBasicHours;
-    const breakMinutes = diffMinutes(breakInAt, breakOutAt);
-    const workedMinutes = Math.max(0, diffMinutes(checkInAt, checkOutAt) - breakMinutes);
+    const workedMinutes = workedMinutesFromPunches({
+      checkInAt,
+      checkOutAt,
+      breakStartAt: breakInAt,
+      breakEndAt: breakOutAt,
+    });
 
     const asg = row.workAssignmentId ? asgById.get(row.workAssignmentId) : null;
     let dutyStart: Date | null = null;
@@ -146,11 +144,20 @@ export async function POST(req: Request) {
     }
     if (asg?.shiftEnd) {
       const en = parseTimeCell(asg.shiftEnd);
-      if (en) dutyEnd = dubaiWallTimeToUtc(workDateYmd, en.hour, en.minute);
+      if (en) {
+        dutyEnd = dubaiWallTimeToUtc(workDateYmd, en.hour, en.minute);
+        if (dutyStart && dutyEnd.getTime() <= dutyStart.getTime()) {
+          dutyEnd = new Date(dutyEnd.getTime() + 24 * 60 * 60 * 1000);
+        }
+      }
     }
 
-    const lateMinutes = dutyStart && checkInAt ? Math.max(0, diffMinutes(dutyStart, checkInAt)) : 0;
-    const earlyLeaveMinutes = dutyEnd && checkOutAt ? Math.max(0, diffMinutes(checkOutAt, dutyEnd)) : 0;
+    const lateMinutes =
+      dutyStart && checkInAt ? Math.max(0, Math.round((checkInAt.getTime() - dutyStart.getTime()) / 60000)) : 0;
+    const earlyLeaveMinutes =
+      dutyEnd && checkOutAt
+        ? Math.max(0, Math.round((dutyEnd.getTime() - checkOutAt.getTime()) / 60000))
+        : 0;
     const overtimeMinutes = calculateOvertimeMinutes(workedMinutes, basicHours, resolvedStatus);
 
     const data: Record<string, unknown> = {

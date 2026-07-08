@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import { parseReportDateBounds } from '@/lib/reports/dateRangePresets';
 import { resolveJobBudgetContext } from '@/lib/job-costing/budgetJobContext';
 import { parseTrackableItems } from '@/lib/job-costing/progressTracking';
+import { workedMinutesFromPunches } from '@/lib/hr/attendanceDuration';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
 export type MaterialLabelMode = 'name' | 'external';
@@ -212,11 +213,6 @@ function transactionCost(txn: {
   return decimalToNumberOrZero(txn.totalCost);
 }
 
-function diffMinutes(start?: Date | null, end?: Date | null) {
-  if (!start || !end) return 0;
-  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-}
-
 function workedMinutesFromAttendance(row: {
   checkInAt: Date | null;
   checkOutAt: Date | null;
@@ -224,10 +220,7 @@ function workedMinutesFromAttendance(row: {
   breakEndAt: Date | null;
   overtimeMinutes: number;
 }) {
-  const worked = Math.max(
-    0,
-    diffMinutes(row.checkInAt, row.checkOutAt) - diffMinutes(row.breakStartAt, row.breakEndAt),
-  );
+  const worked = workedMinutesFromPunches(row);
   return {
     workedMinutes: worked,
     overtimeMinutes: Math.max(0, row.overtimeMinutes ?? 0),
