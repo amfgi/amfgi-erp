@@ -33,6 +33,7 @@ import {
   employeeDisplayName,
   formatHourValue,
   formatWorkDateLabel,
+  hasBlockingSaveIssues,
   hourIndicatorDotClass,
   sanitizeAbsentDraft,
   TOOLBAR_TAG_CLASS,
@@ -801,6 +802,7 @@ export default function HrEmployeeAttendancePage() {
       leaveLabelForDraft: (draft) => (draft.workDate ? leavePreviewByDate[draft.workDate] : undefined),
     });
     if (
+      issues.incompletePunchTimes.length === 0 &&
       issues.absentWithTiming.length === 0 &&
       issues.presentHourWarnings.length === 0 &&
       issues.onLeaveMarkedPresent.length === 0
@@ -1059,21 +1061,44 @@ export default function HrEmployeeAttendancePage() {
         <Modal
           isOpen={saveValidationConfirm !== null}
           onClose={() => setSaveValidationConfirm(null)}
-          title="Review before saving"
+          title={
+            saveValidationConfirm && hasBlockingSaveIssues(saveValidationConfirm)
+              ? 'Cannot save — incomplete times'
+              : 'Review before saving'
+          }
           size="md"
           actions={
             <>
               <Button type="button" variant="ghost" size="sm" onClick={() => setSaveValidationConfirm(null)}>
                 Go back
               </Button>
-              <Button type="button" size="sm" onClick={() => void saveAll()}>
-                Save anyway
-              </Button>
+              {saveValidationConfirm && !hasBlockingSaveIssues(saveValidationConfirm) ? (
+                <Button type="button" size="sm" onClick={() => void saveAll()}>
+                  Save anyway
+                </Button>
+              ) : null}
             </>
           }
         >
           {saveValidationConfirm ? (
             <div className="space-y-4 text-sm text-muted-foreground">
+              {saveValidationConfirm.incompletePunchTimes.length > 0 ? (
+                <div>
+                  <p className="font-medium text-foreground">Incomplete punch times (must fix)</p>
+                  <p className="mt-1 text-xs">
+                    Allowed: Duty in + Duty out only, or all four times (Duty in, Break out, Break in, Duty
+                    out).
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {saveValidationConfirm.incompletePunchTimes.map((row) => (
+                      <li key={row.rowKey}>
+                        {row.label}
+                        {row.indicatorLabel ? ` — ${row.indicatorLabel}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {saveValidationConfirm.absentWithTiming.length > 0 ? (
                 <div>
                   <p className="font-medium text-foreground">Absent rows still have timing filled in</p>

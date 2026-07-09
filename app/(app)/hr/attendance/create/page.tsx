@@ -24,7 +24,7 @@ import {
   type ScheduleJobRow,
 } from '@/lib/hr/scheduleSearchApi';
 import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
-import { combineAttendancePunchTimesToIso } from '@/lib/hr/attendanceSheetModel';
+import { combineAttendancePunchTimesToIso, incompletePunchPatternReason } from '@/lib/hr/attendanceSheetModel';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
@@ -318,6 +318,7 @@ type SaveValidationIssueRow = {
 };
 
 type SaveValidationIssues = {
+  incompletePunchTimes: SaveValidationIssueRow[];
   absentWithTiming: SaveValidationIssueRow[];
   presentHourWarnings: SaveValidationIssueRow[];
   onLeaveMarkedPresent: SaveValidationIssueRow[];
@@ -329,6 +330,7 @@ function collectSaveValidationIssues(
   leaveSectionEmployeeIdSet: Set<string>,
   leavePreviewByEmployeeId: Record<string, string>
 ): SaveValidationIssues {
+  const incompletePunchTimes: SaveValidationIssueRow[] = [];
   const absentWithTiming: SaveValidationIssueRow[] = [];
   const presentHourWarnings: SaveValidationIssueRow[] = [];
   const onLeaveMarkedPresent: SaveValidationIssueRow[] = [];
@@ -340,6 +342,11 @@ function collectSaveValidationIssues(
       name: employeeDisplayName(employee as EmployeeRow | undefined),
       employeeCode: employee?.employeeCode ?? '',
     };
+
+    const punchReason = incompletePunchPatternReason(draft);
+    if (punchReason) {
+      incompletePunchTimes.push({ ...row, indicatorLabel: punchReason });
+    }
 
     if (draft.status === 'ABSENT' && draftHasTimingFields(draft)) {
       absentWithTiming.push(row);
@@ -368,10 +375,11 @@ function collectSaveValidationIssues(
     }
   }
 
+  incompletePunchTimes.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   absentWithTiming.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   presentHourWarnings.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   onLeaveMarkedPresent.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return { absentWithTiming, presentHourWarnings, onLeaveMarkedPresent };
+  return { incompletePunchTimes, absentWithTiming, presentHourWarnings, onLeaveMarkedPresent };
 }
 
 function hourIndicatorDotClass(kind: HourIndicatorKind | undefined): string {
@@ -575,8 +583,6 @@ function buildDraftFromExistingRow(
   leaveTypes: LeaveTypeOption[]
 ): AttendanceDraftRow {
   const existingAssignment = (row.workAssignment as Record<string, unknown> | null) ?? null;
-  const scheduledBreak = parseBreakWindow((existingAssignment?.breakWindow as string | null | undefined) ?? undefined);
-  const defaultTiming = employee.defaultTiming ?? null;
   const storedStatus = (row.status as AttendanceDraftRow['status'] | 'LEAVE' | 'HALF_DAY' | 'MISSING_PUNCH') ?? 'PRESENT';
   const normalized = normalizeDraftStatusFromApi(storedStatus, leaveTypes);
   const shouldClearTiming = isDraftNonWorking(normalized);
@@ -584,6 +590,8 @@ function buildDraftFromExistingRow(
   const snapBasic = Number(row.basicHours);
   const basicHours = Number.isFinite(snapBasic) && snapBasic > 0 ? snapBasic : employee.basicHoursPerDay ?? 8;
 
+  // Existing rows must show stored punches only — do not refill from schedule/default
+  // timing, or cleared break/duty times reappear after save + reload.
   return sanitizeAbsentDraft({
     employeeId: employee.id,
     workAssignmentId: String((existingAssignment?.id as string | undefined) ?? ''),
@@ -591,28 +599,10 @@ function buildDraftFromExistingRow(
     status: normalized.status,
     leaveTypeId: normalized.leaveTypeId,
     basicHours,
-    checkInAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.checkInAt as string | null) ?? null) ||
-        defaultTiming?.dutyStart ||
-        '',
-    checkOutAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.checkOutAt as string | null) ?? null) ||
-        defaultTiming?.dutyEnd ||
-        '',
-    breakInAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.breakStartAt as string | null) ?? null) ||
-        scheduledBreak.breakInAt ||
-        defaultTiming?.breakStart ||
-        '',
-    breakOutAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.breakEndAt as string | null) ?? null) ||
-        scheduledBreak.breakOutAt ||
-        defaultTiming?.breakEnd ||
-        '',
+    checkInAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkInAt as string | null) ?? null),
+    checkOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkOutAt as string | null) ?? null),
+    breakInAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakStartAt as string | null) ?? null),
+    breakOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakEndAt as string | null) ?? null),
     remarks: String((row.remarks as string | null | undefined) ?? ''),
     source: 'existing',
     leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
@@ -1585,6 +1575,7 @@ export default function AttendanceCreatePage() {
       leavePreviewByEmployeeId
     );
     if (
+      issues.incompletePunchTimes.length === 0 &&
       issues.absentWithTiming.length === 0 &&
       issues.presentHourWarnings.length === 0 &&
       issues.onLeaveMarkedPresent.length === 0
@@ -1875,25 +1866,56 @@ export default function AttendanceCreatePage() {
       <Modal
         isOpen={saveValidationConfirm !== null}
         onClose={() => setSaveValidationConfirm(null)}
-        title="Review before saving"
+        title={
+          saveValidationConfirm && saveValidationConfirm.incompletePunchTimes.length > 0
+            ? 'Cannot save — incomplete times'
+            : 'Review before saving'
+        }
         size="md"
         actions={
           <>
             <Button type="button" variant="ghost" size="sm" onClick={() => setSaveValidationConfirm(null)}>
-              Cancel
+              {saveValidationConfirm && saveValidationConfirm.incompletePunchTimes.length > 0
+                ? 'Go back'
+                : 'Cancel'}
             </Button>
-            <Button type="button" size="sm" onClick={confirmSaveAnyway} disabled={saving}>
-              {saving ? 'Saving…' : 'Save anyway'}
-            </Button>
+            {saveValidationConfirm && saveValidationConfirm.incompletePunchTimes.length === 0 ? (
+              <Button type="button" size="sm" onClick={confirmSaveAnyway} disabled={saving}>
+                {saving ? 'Saving…' : 'Save anyway'}
+              </Button>
+            ) : null}
           </>
         }
       >
         {saveValidationConfirm ? (
           <div className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              Fix the rows below or choose <strong className="text-foreground">Save anyway</strong> to continue for{' '}
-              <strong className="text-foreground">{formatWorkDateLabel(workDate)}</strong>.
-            </p>
+            {saveValidationConfirm.incompletePunchTimes.length > 0 ? (
+              <Alert variant="destructive">
+                <AlertDescription className="space-y-2">
+                  <p>
+                    <strong className="text-foreground">Fix incomplete punch times before saving.</strong>{' '}
+                    Allowed patterns: Duty in + Duty out only, or all four times (Duty in, Break out, Break
+                    in, Duty out).
+                  </p>
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto text-xs">
+                    {saveValidationConfirm.incompletePunchTimes.map((row) => (
+                      <li key={row.employeeId} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-foreground">
+                          {row.name}
+                          <span className="ml-1.5 text-muted-foreground">{row.employeeCode}</span>
+                        </span>
+                        <span className="shrink-0 text-destructive">{row.indicatorLabel}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <p>
+                Fix the rows below or choose <strong className="text-foreground">Save anyway</strong> to continue for{' '}
+                <strong className="text-foreground">{formatWorkDateLabel(workDate)}</strong>.
+              </p>
+            )}
 
             {saveValidationConfirm.absentWithTiming.length > 0 ? (
               <Alert variant="destructive">

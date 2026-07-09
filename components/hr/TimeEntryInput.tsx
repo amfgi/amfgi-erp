@@ -87,6 +87,8 @@ export default function TimeEntryInput({
   className,
   showHalfHourPicker = true,
   onKeyDown,
+  onFocus,
+  onBlur,
   ...inputProps
 }: TimeEntryInputProps) {
   const [rawValue, setRawValue] = useState(value ? formatTimeForDisplay(value) : '');
@@ -129,16 +131,21 @@ export default function TimeEntryInput({
       value={displayValue}
       disabled={disabled}
       placeholder="--:--"
+      {...inputProps}
       onFocus={(e) => {
         setRawValue(value ? formatTimeForDisplay(value) : '');
         setIsEditing(true);
+        onFocus?.(e);
         e.currentTarget.select();
       }}
       onChange={(e) => {
         setRawValue(e.target.value);
         if (isInvalid) setIsInvalid(false);
       }}
-      onBlur={commitValue}
+      onBlur={(e) => {
+        commitValue();
+        onBlur?.(e);
+      }}
       onKeyDown={handleKeyDown}
       className={cn(
         TIME_ENTRY_FLAT_INPUT_CLASS,
@@ -147,7 +154,6 @@ export default function TimeEntryInput({
         isInvalid && 'bg-destructive/10 text-destructive placeholder:text-destructive/60',
         !showHalfHourPicker && className,
       )}
-      {...inputProps}
     />
   );
 

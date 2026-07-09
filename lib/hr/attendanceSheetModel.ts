@@ -169,8 +169,6 @@ export function buildDraftFromExistingAttendanceRow(
   leaveTypes: LeaveTypeOption[]
 ): AttendanceGridDraftRow {
   const existingAssignment = (row.workAssignment as Record<string, unknown> | null) ?? null;
-  const scheduledBreak = parseBreakWindow((existingAssignment?.breakWindow as string | null | undefined) ?? undefined);
-  const defaultTiming = employee.defaultTiming ?? null;
   const storedStatus =
     (row.status as AttendanceGridDraftRow['status'] | 'LEAVE' | 'HALF_DAY' | 'MISSING_PUNCH') ?? 'PRESENT';
   const normalized = normalizeDraftStatusFromApi(storedStatus, leaveTypes);
@@ -180,6 +178,8 @@ export function buildDraftFromExistingAttendanceRow(
   const basicHours =
     Number.isFinite(snapBasic) && snapBasic > 0 ? snapBasic : employee.basicHoursPerDay ?? 8;
 
+  // Existing rows must show stored punches only — do not refill from schedule/default
+  // timing, or cleared break/duty times reappear after save + reload.
   return sanitizeAbsentDraft({
     employeeId: employee.id,
     workDate: toDateYmd((row.workDate as string | Date) ?? ''),
@@ -189,24 +189,10 @@ export function buildDraftFromExistingAttendanceRow(
     status: normalized.status,
     leaveTypeId: normalized.leaveTypeId,
     basicHours,
-    checkInAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.checkInAt as string | null) ?? null) || defaultTiming?.dutyStart || '',
-    checkOutAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.checkOutAt as string | null) ?? null) || defaultTiming?.dutyEnd || '',
-    breakInAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.breakStartAt as string | null) ?? null) ||
-        scheduledBreak.breakInAt ||
-        defaultTiming?.breakStart ||
-        '',
-    breakOutAt: shouldClearTiming
-      ? ''
-      : toLocalTimeInput((row.breakEndAt as string | null) ?? null) ||
-        scheduledBreak.breakOutAt ||
-        defaultTiming?.breakEnd ||
-        '',
+    checkInAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkInAt as string | null) ?? null),
+    checkOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkOutAt as string | null) ?? null),
+    breakInAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakStartAt as string | null) ?? null),
+    breakOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakEndAt as string | null) ?? null),
     remarks: String((row.remarks as string | null | undefined) ?? ''),
     source: 'existing',
     leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
@@ -332,6 +318,52 @@ function draftHasTimingFields(draft: AttendanceGridDraftRow): boolean {
   );
 }
 
+function isTimeFilled(value: string | null | undefined): boolean {
+  return String(value ?? '').trim() !== '';
+}
+
+/**
+ * Allowed punch patterns for present rows:
+ * - no times
+ * - Duty in + Duty out only
+ * - all four: Duty in, Break out, Break in, Duty out
+ *
+ * Any other combination (1 field, 3 fields, partial break, etc.) is invalid.
+ * Grid mapping: breakInAt = Break out, breakOutAt = Break in.
+ */
+export function incompletePunchPatternReason(
+  draft: Pick<AttendanceGridDraftRow, 'status' | 'checkInAt' | 'checkOutAt' | 'breakInAt' | 'breakOutAt'>
+): string | null {
+  if (draft.status === 'ABSENT' || isDraftNonWorking(draft)) return null;
+
+  const dutyIn = isTimeFilled(draft.checkInAt);
+  const dutyOut = isTimeFilled(draft.checkOutAt);
+  const breakOut = isTimeFilled(draft.breakInAt);
+  const breakIn = isTimeFilled(draft.breakOutAt);
+  const filledCount = [dutyIn, dutyOut, breakOut, breakIn].filter(Boolean).length;
+
+  if (filledCount === 0) return null;
+  if (dutyIn && dutyOut && !breakOut && !breakIn) return null;
+  if (dutyIn && dutyOut && breakOut && breakIn) return null;
+
+  if (filledCount === 1) {
+    return 'Only one time filled — use Duty in + Duty out, or fill all four times';
+  }
+  if (filledCount === 3) {
+    return 'Three times filled — complete all four, or clear both break times';
+  }
+  if (breakOut !== breakIn) {
+    return 'Break out and Break in must both be filled or both empty';
+  }
+  if (dutyIn !== dutyOut) {
+    return 'Duty in and Duty out must both be filled';
+  }
+  if ((breakOut || breakIn) && !(dutyIn && dutyOut)) {
+    return 'Break times require Duty in and Duty out';
+  }
+  return 'Incomplete times — use Duty in + Duty out, or fill all four times';
+}
+
 type HourIndicatorKind = 'under_6' | 'over_12' | 'over_14';
 
 function presentHourIndicatorWarning(
@@ -359,10 +391,24 @@ export type SaveValidationIssueRow = {
 };
 
 export type SaveValidationIssues = {
+  /** Hard block — incomplete duty/break punch patterns. */
+  incompletePunchTimes: SaveValidationIssueRow[];
   absentWithTiming: SaveValidationIssueRow[];
   presentHourWarnings: SaveValidationIssueRow[];
   onLeaveMarkedPresent: SaveValidationIssueRow[];
 };
+
+export function hasBlockingSaveIssues(issues: SaveValidationIssues): boolean {
+  return issues.incompletePunchTimes.length > 0;
+}
+
+export function hasSoftSaveWarnings(issues: SaveValidationIssues): boolean {
+  return (
+    issues.absentWithTiming.length > 0 ||
+    issues.presentHourWarnings.length > 0 ||
+    issues.onLeaveMarkedPresent.length > 0
+  );
+}
 
 export function collectSaveValidationIssues(
   drafts: AttendanceGridDraftRow[],
@@ -373,6 +419,7 @@ export function collectSaveValidationIssues(
     leaveLabelForDraft?: (draft: AttendanceGridDraftRow) => string | undefined;
   }
 ): SaveValidationIssues {
+  const incompletePunchTimes: SaveValidationIssueRow[] = [];
   const absentWithTiming: SaveValidationIssueRow[] = [];
   const presentHourWarnings: SaveValidationIssueRow[] = [];
   const onLeaveMarkedPresent: SaveValidationIssueRow[] = [];
@@ -384,6 +431,11 @@ export function collectSaveValidationIssues(
       label: options.labelForDraft(draft),
       secondaryLabel: options.secondaryForDraft?.(draft),
     };
+
+    const punchReason = incompletePunchPatternReason(draft);
+    if (punchReason) {
+      incompletePunchTimes.push({ ...row, indicatorLabel: punchReason });
+    }
 
     if (draft.status === 'ABSENT' && draftHasTimingFields(draft)) {
       absentWithTiming.push(row);
@@ -410,10 +462,11 @@ export function collectSaveValidationIssues(
     }
   }
 
+  incompletePunchTimes.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
   absentWithTiming.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
   presentHourWarnings.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
   onLeaveMarkedPresent.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
-  return { absentWithTiming, presentHourWarnings, onLeaveMarkedPresent };
+  return { incompletePunchTimes, absentWithTiming, presentHourWarnings, onLeaveMarkedPresent };
 }
 
 export function hourIndicatorDotClass(kind: HourIndicatorKind | undefined): string {
