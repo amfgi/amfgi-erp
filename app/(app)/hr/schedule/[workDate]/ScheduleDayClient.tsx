@@ -1376,7 +1376,7 @@ export default function HrScheduleDayPage() {
   const canView = isSA || perms.includes('hr.schedule.view');
   const canEdit = isSA || perms.includes('hr.schedule.edit');
   const canEditJob = isSA || perms.includes('job.edit');
-  const canCreateEmployee = isSA || perms.includes('hr.employee.edit');
+  const canCreateEmployee = isSA || perms.includes('hr.employee.create');
   const { data: scheduleJobsPage, refetch: refetchScheduleJobs } = useGetJobsPageQuery(
     SCHEDULE_JOB_PICKER_LIST_PARAMS,
     { skip: !canView },

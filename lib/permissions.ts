@@ -71,7 +71,9 @@ export const P = {
 
   // HR / Workforce
   HR_EMPLOYEE_VIEW: 'hr.employee.view',
+  HR_EMPLOYEE_CREATE: 'hr.employee.create',
   HR_EMPLOYEE_EDIT: 'hr.employee.edit',
+  HR_EMPLOYEE_DELETE: 'hr.employee.delete',
   HR_DOCUMENT_VIEW: 'hr.document.view',
   HR_DOCUMENT_CREATE: 'hr.document.create',
   HR_DOCUMENT_EDIT: 'hr.document.edit',
@@ -141,7 +143,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.SETTINGS_MEDIA,
     P.SETTINGS_EMAIL,
     P.SETTINGS_API,
-    P.HR_EMPLOYEE_VIEW, P.HR_EMPLOYEE_EDIT,
+    P.HR_EMPLOYEE_VIEW, P.HR_EMPLOYEE_CREATE, P.HR_EMPLOYEE_EDIT, P.HR_EMPLOYEE_DELETE,
     P.HR_DOCUMENT_VIEW, P.HR_DOCUMENT_CREATE, P.HR_DOCUMENT_EDIT, P.HR_DOCUMENT_DELETE,
     P.HR_DOCUMENT_TYPE_VIEW, P.HR_DOCUMENT_TYPE_CREATE, P.HR_DOCUMENT_TYPE_EDIT, P.HR_DOCUMENT_TYPE_DELETE,
     P.HR_SCHEDULE_VIEW, P.HR_SCHEDULE_EDIT, P.HR_SCHEDULE_PUBLISH,
@@ -182,7 +184,9 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
   /** HR workforce preset for custom roles (create via Admin → Roles). */
   hr: [
     P.HR_EMPLOYEE_VIEW,
+    P.HR_EMPLOYEE_CREATE,
     P.HR_EMPLOYEE_EDIT,
+    P.HR_EMPLOYEE_DELETE,
     P.HR_DOCUMENT_VIEW,
     P.HR_DOCUMENT_CREATE,
     P.HR_DOCUMENT_EDIT,
@@ -357,7 +361,9 @@ export const PERMISSION_GROUPS: Array<{
     group: 'HR — Employees',
     perms: [
       { key: P.HR_EMPLOYEE_VIEW, label: 'View' },
+      { key: P.HR_EMPLOYEE_CREATE, label: 'Create' },
       { key: P.HR_EMPLOYEE_EDIT, label: 'Edit' },
+      { key: P.HR_EMPLOYEE_DELETE, label: 'Delete' },
     ],
   },
   {

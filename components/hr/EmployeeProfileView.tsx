@@ -10,6 +10,7 @@ import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { DocumentPortalSelfServiceFields } from '@/components/hr/DocumentPortalSelfServiceFields';
 import EmployeeCompensationPanel from '@/components/hr/EmployeeCompensationPanel';
+import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
 import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
 import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect';
 import { displayNationalityCountryName } from '@/lib/hr/countryNames';
@@ -337,11 +338,13 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   const overviewFormRef = useRef<HTMLFormElement>(null);
   const [overviewDirty, setOverviewDirty] = useState(false);
   const [overviewInitialSignature, setOverviewInitialSignature] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.employee.view');
   const canEdit = isSA || perms.includes('hr.employee.edit');
+  const canDelete = isSA || perms.includes('hr.employee.delete');
   const canCompensation = session?.user ? canHrCompensationView(session.user) : false;
   const canCompensationAdd = session?.user ? canHrCompensationAddPackage(session.user) : false;
   const canCompensationRecordChange = session?.user ? canHrCompensationRecordChange(session.user) : false;
@@ -1064,6 +1067,16 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             >
               Back to directory
             </Button>
+            {canDelete ? (
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isBusy}
+                onClick={() => setDeleteModalOpen(true)}
+              >
+                Delete
+              </Button>
+            ) : null}
             {canEdit ? (
               <Button
                 type="button"
@@ -2115,6 +2128,13 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
           </div>
         </aside>
       </div>
+
+      <EmployeeDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        employee={emp ? { id: emp.id, fullName: emp.fullName, employeeCode: emp.employeeCode } : null}
+        onDeleted={() => router.push(readHrEmployeesDirectoryUrl())}
+      />
     </div>
   );
 }

@@ -6,6 +6,10 @@ import {
   checkEmployeeEmailUserConflict,
   employeeEmailConflictStatus,
 } from '@/lib/hr/employeeEmailUserConflict';
+import {
+  checkEmployeeDeleteEligibility,
+  formatEmployeeDeleteBlockMessage,
+} from '@/lib/hr/checkEmployeeDeleteEligibility';
 import { P } from '@/lib/permissions';
 import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
@@ -264,13 +268,17 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
   const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+  if (!requirePerm(session.user, P.HR_EMPLOYEE_DELETE)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
   const existing = await prisma.employee.findFirst({ where: { id, companyId } });
   if (!existing) return errorResponse('Not found', 404);
 
-  await prisma.user.updateMany({ where: { linkedEmployeeId: id }, data: { linkedEmployeeId: null } });
+  const eligibility = await checkEmployeeDeleteEligibility(prisma, companyId, id);
+  if (!eligibility.canDelete) {
+    return errorResponse(formatEmployeeDeleteBlockMessage(eligibility), 400);
+  }
+
   await prisma.employee.delete({ where: { id } });
   publishLiveUpdate({
     companyId,

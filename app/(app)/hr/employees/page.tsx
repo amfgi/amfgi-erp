@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 
 import EmployeeImportModal from '@/components/hr/EmployeeImportModal';
 import EmployeeExportModal from '@/components/hr/EmployeeExportModal';
+import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -300,9 +301,11 @@ export default function HrEmployeesPage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.employee.view');
   const canViewCompensation = session?.user ? canHrCompensationView(session.user) : false;
-  const canEdit = isSA || perms.includes('hr.employee.edit');
+  const canCreate = isSA || perms.includes('hr.employee.create');
+  const canDelete = isSA || perms.includes('hr.employee.delete');
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<HrEmployee | null>(null);
   const [viewMode, setViewModeState] = useState<DirectoryViewMode>(() => initialViewMode());
 
   const setViewMode = useCallback((mode: DirectoryViewMode) => {
@@ -423,11 +426,21 @@ export default function HrEmployeesPage() {
 
   const openEmployeeContextMenu = (event: MouseEvent, employeeId: string) => {
     event.preventDefault();
+    const employee = list.find((row) => row.id === employeeId);
     openMenu(event.clientX, event.clientY, [
       {
         label: 'Open profile',
         action: () => openEmployeeProfile(employeeId),
       },
+      ...(canDelete && employee
+        ? [
+            {
+              label: 'Delete employee',
+              danger: true as const,
+              action: () => setDeleteTarget(employee),
+            },
+          ]
+        : []),
     ]);
   };
 
@@ -539,12 +552,12 @@ export default function HrEmployeesPage() {
                 Export
               </Button>
             ) : null}
-            {canEdit ? (
+            {canCreate ? (
               <Button type="button" size="sm" variant="outline" onClick={() => setImportModalOpen(true)}>
                 Import
               </Button>
             ) : null}
-            {canEdit ? (
+            {canCreate ? (
               <Link href="/hr/employees/new" className={buttonVariants({ size: 'sm' })}>
                 Add employee
               </Link>
@@ -565,6 +578,11 @@ export default function HrEmployeesPage() {
           ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
         }}
         employeeTypeChoices={employeeTypeChoices}
+      />
+      <EmployeeDeleteModal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        employee={deleteTarget}
       />
 
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
@@ -618,7 +636,7 @@ export default function HrEmployeesPage() {
             <p className="mt-2 text-sm text-muted-foreground">
               Try adjusting the search or status filter, or create the first employee record for this company.
             </p>
-            {canEdit ? (
+            {canCreate ? (
               <div className="mt-5 flex justify-center">
                 <Link href="/hr/employees/new" className={buttonVariants({ size: 'sm' })}>
                   Add employee

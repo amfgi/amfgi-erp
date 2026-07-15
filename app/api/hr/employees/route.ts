@@ -282,7 +282,7 @@ export async function POST(req: Request) {
   const ctx = await requireCompanySession();
   if (!ctx.ok) return ctx.response;
   const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+  if (!requirePerm(session.user, P.HR_EMPLOYEE_CREATE)) return errorResponse('Forbidden', 403);
 
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);

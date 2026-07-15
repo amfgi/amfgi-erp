@@ -1041,7 +1041,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
             items: [
               'hr.schedule.view / hr.schedule.edit / hr.schedule.publish — Schedule list and day editor.',
               'hr.attendance.view / hr.attendance.edit / hr.attendance.approve — Attendance overview, day sheet, employee month grid, reports.',
-              'hr.employee.view / hr.employee.edit — Employee directory and profile edits.',
+              'hr.employee.view / hr.employee.create / hr.employee.edit / hr.employee.delete — Employee directory, create, profile edits, and delete (only when no linked data).',
               'hr.document.* / hr.document_type.* — Employee files and document type catalog.',
               'hr.leave.view / hr.leave.approve / hr.leave.edit / hr.leave.delete — Leave inbox and balances.',
               'hr.payroll.settings — Leave types, pay types, salary structure, components, holidays.',
@@ -1251,15 +1251,19 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
               },
               {
                 title: 'Add employee',
-                body: '/hr/employees/new — wizard for core identity, employment type, contact, and workforce profile.',
+                body: '/hr/employees/new — requires hr.employee.create. Wizard for core identity, employment type, contact, and workforce profile.',
               },
               {
                 title: 'Open profile',
                 body: '/hr/employees/[id] — full employee record (see next section).',
               },
               {
+                title: 'Delete employee',
+                body: 'Requires hr.employee.delete. Only allowed when the employee has no linked data (schedule, attendance, documents, visa, payroll, portal login, etc.).',
+              },
+              {
                 title: 'Import / export',
-                body: 'Bulk import from spreadsheet template; export selected fields for audits or WPS preparation.',
+                body: 'Bulk import requires hr.employee.create; export selected fields for audits or WPS preparation.',
               },
             ],
           },

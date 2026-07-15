@@ -157,7 +157,9 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 		href: '/hr/employees',
 		anyPerms: [
 			'hr.employee.view',
+			'hr.employee.create',
 			'hr.employee.edit',
+			'hr.employee.delete',
 			'hr.settings.employee_types',
 			'hr.settings.expertise_catalog',
 			P.HR_DOCUMENT_TYPE_VIEW,

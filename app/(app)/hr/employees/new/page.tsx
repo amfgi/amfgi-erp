@@ -40,7 +40,7 @@ export default function NewEmployeePage() {
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
-  const canEdit = isSA || perms.includes('hr.employee.edit');
+  const canCreate = isSA || perms.includes('hr.employee.create');
 
   const labelClass = 'text-xs font-medium uppercase tracking-wider text-muted-foreground';
   const fieldGrid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
@@ -54,7 +54,7 @@ export default function NewEmployeePage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) return;
+    if (!canCreate) return;
     setSaving(true);
     try {
       const employee = await createEmployeeRecord({
@@ -83,7 +83,7 @@ export default function NewEmployeePage() {
     }
   };
 
-  if (!canEdit) {
+  if (!canCreate) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <Alert>
