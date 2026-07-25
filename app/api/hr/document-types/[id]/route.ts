@@ -5,7 +5,8 @@ import {
   canHrDocumentTypeDelete,
   canHrDocumentTypeEdit,
 } from '@/lib/hr/documentTypePermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { P } from '@/lib/permissions';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -20,13 +21,15 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_TYPE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrDocumentTypeEdit(session.user)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
-  const existing = await prisma.employeeDocumentType.findFirst({ where: { id, companyId } });
+  const existing = await prisma.employeeDocumentType.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
 
   const body = await req.json();
@@ -46,7 +49,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const row = await prisma.employeeDocumentType.update({ where: { id }, data });
     publishLiveUpdate({
-      companyId,
+      companyId: existing.companyId,
       channel: 'hr',
       entity: 'document-type',
       action: 'updated',
@@ -61,13 +64,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_TYPE_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrDocumentTypeDelete(session.user)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
-  const existing = await prisma.employeeDocumentType.findFirst({ where: { id, companyId } });
+  const existing = await prisma.employeeDocumentType.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
 
   const used = await prisma.employeeDocument.count({ where: { documentTypeId: id } });
@@ -80,7 +85,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
 
   await prisma.employeeDocumentType.delete({ where: { id } });
   publishLiveUpdate({
-    companyId,
+    companyId: existing.companyId,
     channel: 'hr',
     entity: 'document-type',
     action: 'deleted',

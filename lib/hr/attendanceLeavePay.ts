@@ -18,6 +18,7 @@ export function isPayrollLeaveLine(line: {
   leaveType?: string | null;
   leaveTypeId?: string | null;
   leaveRequestId?: string | null;
+  source?: string | null;
   leaveTypeCode?: string | null;
   leaveTypeRules?: unknown;
 }): boolean {

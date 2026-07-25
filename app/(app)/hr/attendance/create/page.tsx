@@ -2,8 +2,9 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import AttendanceEntryGrid, {
   ATTENDANCE_DAY_SHEET_GRID_PREFERENCE_KEY,
   type AttendanceGridAssignmentMeta,
@@ -17,6 +18,7 @@ import {
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
 import { employeeSortLabel } from '@/lib/hr/employeeListQuery';
+import { resolveDefaultHrCompanyId } from '@/lib/hr/hrCompanyPreference';
 import {
   fetchJobById,
   jobToSearchItem,
@@ -611,9 +613,13 @@ function buildDraftFromExistingRow(
 }
 
 export default function AttendanceCreatePage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
   const workDate = searchParams.get('workDate') || todayYmd();
+  const [companyId, setCompanyId] = useState(linkedCompanyId);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [onLeaveEmployees, setOnLeaveEmployees] = useState<EmployeeRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
@@ -633,6 +639,11 @@ export default function AttendanceCreatePage() {
   const [allJobsLoading, setAllJobsLoading] = useState(false);
   const [jobsById, setJobsById] = useState<Map<string, ScheduleJobRow>>(new Map());
   const [jobCatalogVersion, setJobCatalogVersion] = useState(0);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [leavePreviewByEmployeeId, setLeavePreviewByEmployeeId] = useState<Record<string, string>>({});
+  const [leavePreviewEmployees, setLeavePreviewEmployees] = useState<
+    Record<string, { fullName: string; preferredName: string | null; employeeCode: string }>
+  >({});
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useJobLiveUpdate(useCallback(() => setJobCatalogVersion((version) => version + 1), []));
@@ -643,11 +654,11 @@ export default function AttendanceCreatePage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.attendance.view');
   const canEdit = isSA || perms.includes('hr.attendance.edit');
-  const [reloadToken, setReloadToken] = useState(0);
-  const [leavePreviewByEmployeeId, setLeavePreviewByEmployeeId] = useState<Record<string, string>>({});
-  const [leavePreviewEmployees, setLeavePreviewEmployees] = useState<
-    Record<string, { fullName: string; preferredName: string | null; employeeCode: string }>
-  >({});
+
+  const companyQuery = useMemo(
+    () => (companyId.trim() ? `&companyId=${encodeURIComponent(companyId.trim())}` : ''),
+    [companyId],
+  );
 
   const draftsRef = useRef<AttendanceDraftRow[]>([]);
   const undoStackRef = useRef<AttendanceDraftRow[][]>([]);
@@ -660,6 +671,35 @@ export default function AttendanceCreatePage() {
   const editHistoryResetTimerRef = useRef<number | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+
+  useEffect(() => {
+    if (linkedCompanyId) setCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !companyId) return;
+    const params = new URLSearchParams();
+    params.set('workDate', workDate);
+    if (companyId.trim()) params.set('companyId', companyId.trim());
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = `/hr/attendance/create?${next}`;
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [companyId, companyOptions.length, router, searchParams, workDate]);
 
   useEffect(() => {
     draftsRef.current = drafts;
@@ -818,6 +858,10 @@ export default function AttendanceCreatePage() {
         if (!cancelled) setLoading(false);
         return;
       }
+      if (!companyId) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
       if (!cancelled) {
         setLoading(true);
         setBulkAbsentSnapshot(null);
@@ -825,11 +869,11 @@ export default function AttendanceCreatePage() {
 
       const [scheduleRes, attendanceRes, leaveTypesRes, activeEmpRes, onLeaveEmpRes, leavePreviewRes] =
         await Promise.all([
-        fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' }),
-        fetch(`/api/hr/attendance?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' }),
+        fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}${companyQuery}`, { cache: 'no-store' }),
+        fetch(`/api/hr/attendance?workDate=${encodeURIComponent(workDate)}${companyQuery}`, { cache: 'no-store' }),
         fetch('/api/hr/leave-types', { cache: 'no-store' }),
-        fetch('/api/hr/employees?status=ACTIVE', { cache: 'no-store' }),
-        fetch('/api/hr/employees?status=ON_LEAVE', { cache: 'no-store' }),
+        fetch(`/api/hr/employees?status=ACTIVE&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }),
+        fetch(`/api/hr/employees?status=ON_LEAVE&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }),
         fetch(
           `/api/hr/leave-requests?workDate=${encodeURIComponent(workDate)}&status=APPROVED`,
           { cache: 'no-store' }
@@ -990,7 +1034,7 @@ export default function AttendanceCreatePage() {
       setLoading(false);
 
       if (hasExistingAttendance) {
-        void fetch('/api/hr/employees?status=ACTIVE', { cache: 'no-store' })
+        void fetch(`/api/hr/employees?status=ACTIVE&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' })
           .then(async (empRes) => {
             const empJson = await empRes.json();
             if (cancelled || !empRes.ok || !empJson?.success) return;
@@ -1003,7 +1047,7 @@ export default function AttendanceCreatePage() {
             });
           })
           .catch(() => undefined);
-        void fetch('/api/hr/employees?status=ON_LEAVE', { cache: 'no-store' })
+        void fetch(`/api/hr/employees?status=ON_LEAVE&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' })
           .then(async (empRes) => {
             const empJson = await empRes.json();
             if (cancelled || !empRes.ok || !empJson?.success) return;
@@ -1015,7 +1059,7 @@ export default function AttendanceCreatePage() {
     return () => {
       cancelled = true;
     };
-  }, [canView, workDate, reloadToken]);
+  }, [canView, companyId, companyQuery, workDate, reloadToken]);
 
   const assignmentsById = useMemo(
     () => new Map(assignments.map((assignment) => [assignment.id, assignment])),
@@ -1509,6 +1553,7 @@ export default function AttendanceCreatePage() {
     setSaving(true);
     const payload = {
       workDate,
+      companyId,
       rows: drafts.map((draft) => {
         const isAbsent = draft.status === 'ABSENT';
         return {
@@ -1602,7 +1647,7 @@ export default function AttendanceCreatePage() {
     );
   }
 
-  if (loading) {
+  if (loading || !companyId) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <div className="h-20 animate-pulse rounded-lg border border-border bg-muted/30" />
@@ -1616,7 +1661,13 @@ export default function AttendanceCreatePage() {
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 space-y-1">
           <Link
-            href={`/hr/attendance?workDate=${encodeURIComponent(workDate)}`}
+            href={(() => {
+              const params = new URLSearchParams();
+              if (workDate.trim()) params.set('workDate', workDate.trim());
+              if (companyId.trim()) params.set('companyId', companyId.trim());
+              const query = params.toString();
+              return query ? `/hr/attendance?${query}` : '/hr/attendance';
+            })()}
             className="text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
           >
             ← Attendance
@@ -1632,9 +1683,15 @@ export default function AttendanceCreatePage() {
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {(() => {
             const scheduleTag = scheduleStatusBadgeProps(schedule?.status);
+            const scheduleHref = (() => {
+              const params = new URLSearchParams();
+              params.set('workDate', workDate);
+              if (companyId.trim()) params.set('companyId', companyId.trim());
+              return `/hr/schedule?${params.toString()}`;
+            })();
             return (
               <Link
-                href={`/hr/schedule?workDate=${encodeURIComponent(workDate)}`}
+                href={scheduleHref}
                 title="Open work schedule for this date"
                 className={cn(
                   'inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -1698,7 +1755,12 @@ export default function AttendanceCreatePage() {
             </>
           ) : null}
           <Link
-            href={`/hr/attendance?workDate=${encodeURIComponent(workDate)}`}
+            href={(() => {
+              const params = new URLSearchParams();
+              params.set('workDate', workDate);
+              if (companyId.trim()) params.set('companyId', companyId.trim());
+              return `/hr/attendance?${params.toString()}`;
+            })()}
             className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
           >
             Cancel
@@ -1726,6 +1788,7 @@ export default function AttendanceCreatePage() {
       >
         <AttendanceEntryGrid
           gridPreferenceKey={ATTENDANCE_DAY_SHEET_GRID_PREFERENCE_KEY}
+          preferenceCompanyId={companyId}
           groupWorkersBySignatureGroup
           rows={visibleDrafts}
           employeesById={employeeById}

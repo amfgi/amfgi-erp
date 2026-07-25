@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
 import EntityImportModal from '@/components/import-export/EntityImportModal';
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { extractImportApiErrorMessage } from '@/lib/import-export/apiErrors';
 import { runChunkedBulkImport } from '@/lib/import-export/chunkedBulkImport';
 import {
@@ -12,6 +14,7 @@ import {
   employeeImportRowToPayload,
   mapEmployeeImportRow,
 } from '@/lib/import-export/employeeFields';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import type { BulkImportResult } from '@/lib/import-export/types';
 import type { ImportPreviewRow, MappedImportRow } from '@/lib/import-export/types';
 import {
@@ -31,19 +34,39 @@ function employeeRecordKey(row: MappedImportRow) {
 }
 
 export default function EmployeeImportModal({ isOpen, onClose }: Props) {
+  const { data: session } = useSession();
+  const { options } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
   const [bulkImport, { isLoading }] = useBulkImportEmployeesMutation();
   const {
     data: employees = [],
     isFetching,
     refetch,
-  } = useGetHrEmployeesForExportQuery(undefined, {
-    skip: !isOpen,
-    refetchOnMountOrArgChange: true,
-  });
+  } = useGetHrEmployeesForExportQuery(
+    companyId ? { companyId } : undefined,
+    {
+      skip: !isOpen || !companyId,
+      refetchOnMountOrArgChange: true,
+    },
+  );
 
   useEffect(() => {
-    if (isOpen) void refetch();
-  }, [isOpen, refetch]);
+    if (!isOpen) return;
+    const defaultCompanyId = resolveDefaultHrCompanyId(
+      options.map((option) => option.id),
+      session?.user?.activeCompanyId,
+    );
+    setCompanyId(defaultCompanyId);
+  }, [isOpen, options, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (isOpen && companyId) void refetch();
+  }, [isOpen, companyId, refetch]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
 
   return (
     <EntityImportModal<MappedImportRow>
@@ -69,11 +92,24 @@ export default function EmployeeImportModal({ isOpen, onClose }: Props) {
       isSubmitting={isLoading}
       mapRow={mapEmployeeImportRow}
       toPayload={(row: ImportPreviewRow<MappedImportRow>) => employeeImportRowToPayload(row)}
+      headerContent={
+        <HrCompanySearchSelect
+          value={companyId}
+          onChange={handleCompanyChange}
+          required
+          label="Company"
+          className="max-w-md"
+        />
+      }
       onSubmit={async ({ newRows, updateRows }, onProgress) => {
+        if (!companyId) {
+          toast.error('Select a company before importing');
+          throw new Error('Company is required');
+        }
         try {
           const result = await runChunkedBulkImport(
             { newRows, updateRows },
-            (chunk) => bulkImport(chunk).unwrap(),
+            (chunk) => bulkImport({ ...chunk, companyId }).unwrap(),
             { onProgress }
           );
           showImportResultToast(result);

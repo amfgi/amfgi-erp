@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import HrPageChrome from '@/components/hr/HrPageChrome';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
@@ -14,6 +15,7 @@ import {
   type EmployeeMetaKind,
   type EmployeeMetaOptionRow,
 } from '@/lib/hr/employeeMetaOptions';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
 const labelClass = 'text-[11px] font-medium uppercase tracking-wide text-muted-foreground';
@@ -21,11 +23,13 @@ const labelClass = 'text-[11px] font-medium uppercase tracking-wide text-muted-f
 function MetaSection({
   kind,
   canEdit,
+  companyId,
   rows,
   onReload,
 }: {
   kind: EmployeeMetaKind;
   canEdit: boolean;
+  companyId: string;
   rows: EmployeeMetaOptionRow[];
   onReload: () => Promise<void>;
 }) {
@@ -60,10 +64,15 @@ function MetaSection({
         await onReload();
       }
     } else {
+      if (!companyId) {
+        toast.error('Select a company');
+        setSaving(false);
+        return;
+      }
       const res = await fetch('/api/hr/employee-meta-options', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, name: name.trim() }),
+        body: JSON.stringify({ companyId, kind, name: name.trim() }),
       });
       const json = await readApiJson(res);
       if (!res.ok || !json?.success) toast.error(json?.error ?? 'Create failed');
@@ -179,18 +188,43 @@ export default function EmploymentOptionsSettingsPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const canManage = session?.user?.isSuperAdmin || perms.includes('hr.employee.edit');
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
 
   const [rows, setRows] = useState<EmployeeMetaOptionRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
+
   const load = useCallback(async () => {
+    if (!companyId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const res = await fetch('/api/hr/employee-meta-options', { cache: 'no-store' });
+    const res = await fetch(`/api/hr/employee-meta-options?companyId=${encodeURIComponent(companyId)}`, {
+      cache: 'no-store',
+    });
     const json = await readApiJson<EmployeeMetaOptionRow[]>(res);
     if (res.ok && json?.success) setRows((json.data ?? []) as EmployeeMetaOptionRow[]);
     else toast.error(json?.error ?? 'Failed to load employment options');
     setLoading(false);
-  }, []);
+  }, [companyId]);
 
   useEffect(() => {
     if (!canManage) {
@@ -210,12 +244,17 @@ export default function EmploymentOptionsSettingsPage() {
 
   return (
     <HrPageChrome>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold">Employment options</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage designation, department, employment type, and signature group lists used on employee profiles and
-          attendance signature sheets.
-        </p>
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">Employment options</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage designation, department, employment type, and signature group lists used on employee profiles and
+            attendance signature sheets.
+          </p>
+        </div>
+        <div className="w-full max-w-xs">
+          <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+        </div>
       </div>
 
       {loading ? (
@@ -223,7 +262,14 @@ export default function EmploymentOptionsSettingsPage() {
       ) : (
         <div className="grid gap-6 xl:grid-cols-3">
           {EMPLOYEE_META_KINDS.map((kind) => (
-            <MetaSection key={kind} kind={kind} canEdit={canManage} rows={rows} onReload={load} />
+            <MetaSection
+              key={kind}
+              kind={kind}
+              canEdit={canManage}
+              companyId={companyId}
+              rows={rows}
+              onReload={load}
+            />
           ))}
         </div>
       )}

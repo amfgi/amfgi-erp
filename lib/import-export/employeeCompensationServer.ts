@@ -36,14 +36,21 @@ function pickCurrentCompensationPackage(
 
 export async function batchCurrentCompensationForEmployees(
   db: Pick<PrismaClient, 'employeeCompensation'>,
-  companyId: string,
+  companyId: string | string[],
   employeeIds: string[]
 ): Promise<Map<string, EmployeeCompensationExportSnapshot>> {
   const map = new Map<string, EmployeeCompensationExportSnapshot>();
   if (employeeIds.length === 0) return map;
 
+  const companyFilter =
+    typeof companyId === 'string'
+      ? { companyId }
+      : companyId.length === 1
+        ? { companyId: companyId[0] }
+        : { companyId: { in: companyId } };
+
   const rows = await db.employeeCompensation.findMany({
-    where: { companyId, employeeId: { in: employeeIds } },
+    where: { ...companyFilter, employeeId: { in: employeeIds } },
     include: packageInclude,
     orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   });

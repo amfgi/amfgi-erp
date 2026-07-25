@@ -1,10 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { WORKFORCE_EMPLOYEE_TYPE_OPTIONS, type WorkforceEmployeeType } from '@/lib/hr/workforceProfile';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { useGetHrEmployeeTypeSettingsQuery } from '@/store/api/endpoints/hr';
@@ -20,9 +23,32 @@ const cellInputClass = cn(
 );
 
 export default function EmployeeTypeSettingsPage() {
+  const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
   const [overrides, setOverrides] = useState<Partial<SettingsMap>>({});
   const [saving, setSaving] = useState(false);
-  const { data, isLoading, refetch } = useGetHrEmployeeTypeSettingsQuery();
+  const { data, isLoading, refetch } = useGetHrEmployeeTypeSettingsQuery(
+    companyId ? { companyId } : undefined,
+    { skip: !companyId },
+  );
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+    setOverrides({});
+  };
 
   const settings = useMemo<SettingsMap | null>(() => {
     if (!data) return null;
@@ -50,11 +76,15 @@ export default function EmployeeTypeSettingsPage() {
 
   const save = async () => {
     if (!settings) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     const res = await fetch('/api/hr/employee-type-settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
+      body: JSON.stringify({ companyId, ...settings }),
     });
     const json = await res.json();
     setSaving(false);
@@ -102,9 +132,14 @@ export default function EmployeeTypeSettingsPage() {
             Define default basic hours and duty/break timings by employee type. Attendance will consume these defaults.
           </p>
         </div>
-        <Button type="button" size="sm" onClick={() => void save()} disabled={saving}>
-          {saving ? 'Saving…' : 'Save settings'}
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="w-full max-w-xs">
+            <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+          </div>
+          <Button type="button" size="sm" onClick={() => void save()} disabled={saving || !companyId}>
+            {saving ? 'Saving…' : 'Save settings'}
+          </Button>
+        </div>
       </header>
 
       <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">

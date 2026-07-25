@@ -33,6 +33,7 @@ export async function GET(req: Request) {
       workDate: { gte: dateFromYmd(fromY), lte: dateFromYmd(toY) },
     },
     include: {
+      leaveTypeRef: { select: { id: true, name: true, code: true, rules: true } },
       workAssignment: {
         select: {
           label: true,

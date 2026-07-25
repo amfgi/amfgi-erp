@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  requireHrSession,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import {
   applyLeaveBalanceAdjustment,
   getOrCreateLeaveBalance,
@@ -12,6 +15,7 @@ import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
 const UpsertSchema = z.object({
+  companyId: z.string().min(1).optional(),
   employeeId: z.string().min(1),
   entitlementDays: z.number().min(0).max(3650).optional(),
   adjustedDays: z.number().min(-365).max(365).optional(),
@@ -20,12 +24,24 @@ const UpsertSchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_LEAVE_VIEW)) return errorResponse('Forbidden', 403);
-
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_LEAVE_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
+  if (!ctx.ok) return ctx.response;
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
+
   const employeeId = searchParams.get('employeeId') ?? undefined;
   const includeAllEmployees = searchParams.get('includeAllEmployees') === '1';
 
@@ -38,14 +54,20 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_LEAVE_APPROVE)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = UpsertSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const ctx = await requireHrSession({ permission: P.HR_LEAVE_APPROVE });
+  if (!ctx.ok) return ctx.response;
+
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: ctx.session.user.activeCompanyId,
+  });
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
 
   const { employeeId, entitlementDays, adjustedDays, adjustmentDelta, recalculateEntitlement } =
     parsed.data;

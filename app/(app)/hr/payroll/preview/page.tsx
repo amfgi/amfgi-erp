@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
 import HrPageChrome from '@/components/hr/HrPageChrome';
+import HrCompanySearchSelect from '@/components/hr/HrCompanySearchSelect';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/shadcn/button';
@@ -41,6 +42,8 @@ type PreviewEmployee = {
   employeeName: string;
   employeeFullName?: string;
   employeePreferredName?: string | null;
+  companyId?: string;
+  companyName?: string;
   payTypeName: string | null;
   payTypeCode: string | null;
   workforceRoleTypeShort?: string;
@@ -528,15 +531,23 @@ export default function PayrollPreviewPage() {
   const canView = session?.user?.isSuperAdmin || perms.includes('hr.payroll.compensation');
 
   const [month, setMonth] = useState(() => searchParams.get('month') || currentMonth());
+  const [companyId, setCompanyId] = useState(() => searchParams.get('companyId')?.trim() ?? '');
   const [filterEmployeeId, setFilterEmployeeId] = useState(() => searchParams.get('employeeId') ?? '');
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailEmployee, setDetailEmployee] = useState<PreviewEmployee | null>(null);
 
+  const setCompanyFilter = useCallback((next: string) => {
+    setCompanyId(next);
+    setFilterEmployeeId('');
+  }, []);
+
   useEffect(() => {
     if (!canView) return;
-    void fetch('/api/hr/employees?limit=500', { cache: 'no-store' })
+    const q = new URLSearchParams({ limit: '500' });
+    if (companyId) q.set('companyId', companyId);
+    void fetch(`/api/hr/employees?${q}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((json) => {
         if (json?.success && Array.isArray(json.data?.items)) {
@@ -544,13 +555,14 @@ export default function PayrollPreviewPage() {
         }
       })
       .catch(() => {});
-  }, [canView]);
+  }, [canView, companyId]);
 
   const loadPreview = useCallback(async () => {
     if (!month) return;
     setLoading(true);
     try {
       const q = new URLSearchParams({ month });
+      if (companyId) q.set('companyId', companyId);
       if (filterEmployeeId) q.set('employeeId', filterEmployeeId);
       const previewRes = await fetch(`/api/hr/payroll/preview?${q}`, { cache: 'no-store' });
       const json = await readApiJson<PreviewPayload>(previewRes);
@@ -563,7 +575,7 @@ export default function PayrollPreviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [month, filterEmployeeId]);
+  }, [month, companyId, filterEmployeeId]);
 
   useEffect(() => {
     if (!canView) return;
@@ -573,6 +585,7 @@ export default function PayrollPreviewPage() {
   useEffect(() => {
     const q = new URLSearchParams();
     if (month) q.set('month', month);
+    if (companyId) q.set('companyId', companyId);
     if (filterEmployeeId) q.set('employeeId', filterEmployeeId);
     const next = q.toString();
     const current =
@@ -580,7 +593,7 @@ export default function PayrollPreviewPage() {
     if (next !== current) {
       router.replace(next ? `/hr/payroll/preview?${next}` : '/hr/payroll/preview', { scroll: false });
     }
-  }, [month, filterEmployeeId, router]);
+  }, [month, companyId, filterEmployeeId, router]);
 
   const searchItems = useMemo(
     () =>
@@ -627,6 +640,14 @@ export default function PayrollPreviewPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4">
+        <HrCompanySearchSelect
+          value={companyId}
+          onChange={setCompanyFilter}
+          allowClear
+          label="Company"
+          placeholder="All companies"
+          className="w-56"
+        />
         <div>
           <label className="text-xs text-muted-foreground">Month</label>
           <Input type="month" className="w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -696,10 +717,11 @@ export default function PayrollPreviewPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[1580px] text-sm">
+              <table className="w-full min-w-[1680px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
                     <th className="px-3 py-2">Employee</th>
+                    <th className="px-3 py-2">Company</th>
                     <th className="px-3 py-2">Role</th>
                     <th className="px-3 py-2">Visa holding</th>
                     <th className="px-3 py-2">Visa sponsor</th>
@@ -722,7 +744,7 @@ export default function PayrollPreviewPage() {
                     const summary = summarizeEmployeeRow(row);
                     return (
                       <tr
-                        key={row.employeeId}
+                        key={`${row.companyId ?? ''}:${row.employeeId}`}
                         className={cn(
                           'border-b transition-colors',
                           pendingCompensation
@@ -740,6 +762,9 @@ export default function PayrollPreviewPage() {
                       >
                         <td className="px-3 py-2 font-medium text-foreground">
                           {resolveDisplayFullName(row)}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {row.companyName ?? '—'}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground">
                           {row.workforceRoleTypeShort ?? '—'}

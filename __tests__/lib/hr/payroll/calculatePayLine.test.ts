@@ -229,6 +229,93 @@ describe('calculatePayLine', () => {
     const basicPay = 900 / 26;
     expect(result.gross).toBeCloseTo(basicPay + allowancePerDay, 2);
   });
+
+  it('hourly split pays approved paid sick leave at the daily rate', () => {
+    const result = calculatePayLine({
+      month: '2026-07',
+      config: { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] },
+      compensation: { monthlyBasic: 900, monthlyAllowance: 0, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-07-20',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-1',
+          leavePayPercent: 100,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    const denom = 31 - 4; // July 2026 has 4 Sundays
+    const daily = 900 / denom;
+    expect(result.gross).toBeCloseTo(daily, 2);
+    expect(result.days[0]?.totalSalary).toBeCloseTo(daily, 2);
+    expect(result.days[0]?.status).toBe('Leave (SICK)');
+    expect(result.days[0]?.detail).toBe('Paid leave');
+  });
+
+  it('hourly split pays half-pay sick leave at 50% and unpaid leave at zero', () => {
+    const result = calculatePayLine({
+      month: '2026-07',
+      config: { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] },
+      compensation: { monthlyBasic: 900, monthlyAllowance: 0, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-07-20',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-1',
+          leavePayPercent: 50,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-07-21',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-2',
+          leavePayPercent: 0,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    const daily = 900 / 27;
+    expect(result.gross).toBeCloseTo(daily / 2, 2);
+    expect(result.days[0]?.detail).toBe('50% paid leave');
+    expect(result.days[1]?.totalSalary).toBe(0);
+    expect(result.days[1]?.detail).toBe('Unpaid leave');
+  });
+
+  it('daily wage pays approved paid sick leave at the daily rate', () => {
+    const result = calculatePayLine({
+      month: '2026-07',
+      config: { mode: 'DAILY_WAGE', otPercent: 90 },
+      compensation: { monthlyBasic: 0, monthlyAllowance: 0, dailyRate: 120 },
+      lines: [
+        {
+          workDate: '2026-07-20',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-1',
+          leavePayPercent: 100,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    expect(result.gross).toBe(120);
+    expect(result.days[0]?.detail).toBe('Paid leave');
+  });
 });
 
 describe('attendanceLinesForPayroll', () => {

@@ -6,11 +6,15 @@ import {
   canHrDocumentTypeEdit,
   canHrDocumentTypeView,
 } from '@/lib/hr/documentTypePermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { P } from '@/lib/permissions';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
+const companySelect = { id: true, name: true, slug: true } as const;
+
 const CreateSchema = z.object({
+  companyId: z.string().min(1).optional(),
   name: z.string().min(1).max(120),
   slug: z.string().min(1).max(80).regex(/^[a-z0-9-]+$/i, 'Slug: letters, numbers, hyphen'),
   requiresVisaPeriod: z.boolean().optional(),
@@ -20,30 +24,64 @@ const CreateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-export async function GET() {
-  const ctx = await requireCompanySession();
+async function requireDocumentTypeListSession(searchParams: URLSearchParams) {
+  const permOrder = [P.HR_DOCUMENT_TYPE_VIEW, P.HR_DOCUMENT_VIEW, P.HR_SETTINGS_DOC_TYPES];
+  for (const permission of permOrder) {
+    const ctx = await requireHrSession({
+      permission,
+      companyId: searchParams.get('companyId'),
+    });
+    if (ctx.ok) return ctx;
+  }
+  return requireHrSession({
+    permission: P.HR_DOCUMENT_TYPE_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const ctx = await requireDocumentTypeListSession(searchParams);
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!canHrDocumentTypeView(session.user)) {
-    return errorResponse('Forbidden', 403);
+  const { session } = ctx;
+  if (!canHrDocumentTypeView(session.user)) return errorResponse('Forbidden', 403);
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
   }
 
   const list = await prisma.employeeDocumentType.findMany({
     where: { companyId },
+    include: { company: { select: companySelect } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
   });
   return successResponse(list);
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!canHrDocumentTypeCreate(session.user)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_TYPE_CREATE });
+  if (!ctx.ok) return ctx.response;
+  const { session } = ctx;
+  if (!canHrDocumentTypeCreate(session.user)) return errorResponse('Forbidden', 403);
+
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: ctx.session.user.activeCompanyId,
+  });
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
   const d = parsed.data;
 
   try {
@@ -58,6 +96,7 @@ export async function POST(req: Request) {
         sortOrder: d.sortOrder ?? 0,
         isActive: d.isActive ?? true,
       },
+      include: { company: { select: companySelect } },
     });
     publishLiveUpdate({
       companyId,
@@ -75,15 +114,31 @@ export async function POST(req: Request) {
 }
 
 /** Idempotent: upserts catalog types from `lib/hr/defaultDocumentTypes`. */
-export async function PUT() {
-  const ctx = await requireCompanySession();
+export async function PUT(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_DOCUMENT_TYPE_EDIT,
+    companyId: searchParams.get('companyId'),
+  });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session } = ctx;
   if (!canHrDocumentTypeEdit(session.user)) return errorResponse('Forbidden', 403);
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
 
   await ensureDefaultEmployeeDocumentTypes(prisma, companyId);
   const list = await prisma.employeeDocumentType.findMany({
     where: { companyId },
+    include: { company: { select: companySelect } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
   });
   publishLiveUpdate({

@@ -2,11 +2,14 @@ import { prisma } from '@/lib/db/prisma';
 import { LeaveTypeRulesSchema } from '@/lib/hr/leaveTypeRules';
 import { ensureLeaveTypesReady } from '@/lib/hr/seedLeaveTypes';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
+const companySelect = { id: true, name: true, slug: true } as const;
+
 const CreateSchema = z.object({
+  companyId: z.string().min(1).optional(),
   name: z.string().min(1).max(120),
   code: z.string().min(1).max(60).regex(/^[A-Z0-9_]+$/i),
   description: z.string().max(2000).optional().nullable(),
@@ -15,40 +18,57 @@ const CreateSchema = z.object({
   rules: LeaveTypeRulesSchema.optional(),
 });
 
-function canViewLeaveTypes(user: { isSuperAdmin?: boolean; permissions?: string[] }) {
-  if (user.isSuperAdmin) return true;
-  const perms = user.permissions ?? [];
-  return (
-    perms.includes(P.HR_PAYROLL_SETTINGS) ||
-    perms.includes(P.HR_ATTENDANCE_VIEW) ||
-    perms.includes(P.HR_ATTENDANCE_EDIT)
-  );
-}
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const permOrder = [P.HR_PAYROLL_SETTINGS, P.HR_ATTENDANCE_VIEW, P.HR_ATTENDANCE_EDIT];
 
-export async function GET() {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
-  if (!canViewLeaveTypes(session.user)) return errorResponse('Forbidden', 403);
+  let ctx: Awaited<ReturnType<typeof requireHrSession>> | null = null;
+  for (const permission of permOrder) {
+    const attempt = await requireHrSession({
+      permission,
+      companyId: searchParams.get('companyId'),
+    });
+    ctx = attempt;
+    if (attempt.ok) break;
+  }
+  if (!ctx?.ok) return ctx?.response ?? errorResponse('Forbidden', 403);
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
 
   await ensureLeaveTypesReady(prisma, companyId);
 
   const rows = await prisma.leaveType.findMany({
     where: { companyId },
+    include: { company: { select: companySelect } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
   });
   return successResponse(rows);
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
+  if (!ctx.ok) return ctx.response;
+
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: ctx.session.user.activeCompanyId,
+  });
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
 
   const code = parsed.data.code.trim().toUpperCase();
   const duplicate = await prisma.leaveType.findFirst({ where: { companyId, code } });
@@ -64,6 +84,7 @@ export async function POST(req: Request) {
       isActive: parsed.data.isActive ?? true,
       rules: parsed.data.rules ?? {},
     },
+    include: { company: { select: companySelect } },
   });
   return successResponse(row, 201);
 }

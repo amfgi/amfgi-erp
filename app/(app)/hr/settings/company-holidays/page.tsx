@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { Button } from '@/components/ui/shadcn/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
@@ -17,6 +18,7 @@ import {
   type WorkforceEmployeeType,
   type WorkforceVisaHolding,
 } from '@/lib/hr/workforceProfile';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
 interface PayTypeOption {
@@ -455,6 +457,8 @@ function HolidayFormModal({
 export default function HrCompanyHolidaysPage() {
   const { data: session } = useSession();
   const currentYear = new Date().getFullYear();
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
   const [year, setYear] = useState(currentYear);
   const [list, setList] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -469,11 +473,34 @@ export default function HrCompanyHolidaysPage() {
   const canView = isSA || perms.includes('hr.payroll.settings');
   const canEdit = canView;
 
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
+
   const load = useCallback(async () => {
-    if (!canView) return;
+    if (!canView || !companyId) {
+      if (!companyId) setList([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch(`/api/hr/company-holidays?year=${year}`, { cache: 'no-store' });
+      const res = await fetch(
+        `/api/hr/company-holidays?year=${year}&companyId=${encodeURIComponent(companyId)}`,
+        { cache: 'no-store' },
+      );
       const json = await readApiJson<Row[]>(res);
       if (!res.ok || !json?.success) {
         toast.error(json?.error ?? 'Failed to load holidays');
@@ -495,11 +522,11 @@ export default function HrCompanyHolidaysPage() {
     } finally {
       setLoading(false);
     }
-  }, [canView, year]);
+  }, [canView, companyId, year]);
 
   useEffect(() => {
-    if (!canView) return;
-    void fetch('/api/hr/pay-types', { cache: 'no-store' })
+    if (!canView || !companyId) return;
+    void fetch(`/api/hr/pay-types?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((json) => {
         if (json?.success && Array.isArray(json.data)) {
@@ -517,7 +544,10 @@ export default function HrCompanyHolidaysPage() {
       })
       .catch(() => setPayTypes([]));
 
-    void fetch('/api/hr/employee-meta-options?kind=EMPLOYMENT_TYPE&activeOnly=1', { cache: 'no-store' })
+    void fetch(
+      `/api/hr/employee-meta-options?kind=EMPLOYMENT_TYPE&activeOnly=1&companyId=${encodeURIComponent(companyId)}`,
+      { cache: 'no-store' },
+    )
       .then((res) => res.json())
       .then((json) => {
         if (json?.success && Array.isArray(json.data)) {
@@ -529,7 +559,7 @@ export default function HrCompanyHolidaysPage() {
         }
       })
       .catch(() => setEmploymentTypes([]));
-  }, [canView]);
+  }, [canView, companyId]);
 
   useEffect(() => {
     void load();
@@ -547,11 +577,15 @@ export default function HrCompanyHolidaysPage() {
 
   const onCreate = async (form: HolidayFormState) => {
     if (!canEdit || saving) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     const res = await fetch('/api/hr/company-holidays', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formStateToBody(form)),
+      body: JSON.stringify({ ...formStateToBody(form), companyId }),
     });
     const json = await readApiJson(res);
     if (!res.ok || !json?.success) toast.error(json?.error ?? 'Create failed');
@@ -619,7 +653,10 @@ export default function HrCompanyHolidaysPage() {
             and leave. Configure holiday pay and OT rules per salary structure.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-full min-w-[220px] max-w-xs">
+            <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+          </div>
           <div className="flex items-center gap-2">
             <label className={labelClass}>Year</label>
             <Input
@@ -632,7 +669,7 @@ export default function HrCompanyHolidaysPage() {
             />
           </div>
           {canEdit ? (
-            <Button type="button" size="sm" onClick={() => setShowCreate(true)}>
+            <Button type="button" size="sm" onClick={() => setShowCreate(true)} disabled={!companyId}>
               Add holiday
             </Button>
           ) : null}

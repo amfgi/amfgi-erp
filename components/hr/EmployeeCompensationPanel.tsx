@@ -261,12 +261,14 @@ function CompensationDetailBody({ pkg }: { pkg: CompensationPackage }) {
 
 export default function EmployeeCompensationPanel({
   employeeId,
+  companyId,
   canCreate,
   canRecordChange,
   canEditPackage,
   canDelete,
 }: {
   employeeId: string;
+  companyId?: string;
   canCreate: boolean;
   canRecordChange: boolean;
   canEditPackage: boolean;
@@ -395,10 +397,13 @@ export default function EmployeeCompensationPanel({
   }, [selectedPayTypeMode, payTypeId]);
 
   const load = useCallback(async () => {
+    const catalogQuery = companyId?.trim()
+      ? `?companyId=${encodeURIComponent(companyId.trim())}`
+      : '';
     const [compRes, ptRes, atRes, visaRes] = await Promise.all([
       fetch(`/api/hr/employees/${employeeId}/compensation`, { cache: 'no-store' }),
-      fetch('/api/hr/pay-types', { cache: 'no-store' }),
-      fetch('/api/hr/salary-components', { cache: 'no-store' }),
+      fetch(`/api/hr/pay-types${catalogQuery}`, { cache: 'no-store' }),
+      fetch(`/api/hr/salary-components${catalogQuery}`, { cache: 'no-store' }),
       fetch(`/api/hr/employees/${employeeId}/visa-periods`, { cache: 'no-store' }),
     ]);
     const compJson = await readApiJson<CompensationPackage[]>(compRes);
@@ -421,7 +426,7 @@ export default function EmployeeCompensationPanel({
       setAllowanceTypes(((atJson.data ?? []) as AllowanceType[]).filter((t) => t.isActive !== false));
     }
     if (visaRes.ok && visaJson?.success) setVisaPeriods((visaJson.data ?? []) as VisaPeriod[]);
-  }, [employeeId]);
+  }, [companyId, employeeId]);
 
   useEffect(() => {
     void load();

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import HrPageChrome from '@/components/hr/HrPageChrome';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
 type ComponentKind = 'EARNING' | 'DEDUCTION';
@@ -46,6 +48,8 @@ export default function SalaryComponentPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const canManage = session?.user?.isSuperAdmin || perms.includes('hr.payroll.settings');
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
 
   const [rows, setRows] = useState<SalaryComponentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,14 +62,35 @@ export default function SalaryComponentPage() {
   const [applicationMode, setApplicationMode] = useState<ApplicationMode>('ATTENDANCE_PRESENT');
   const [isActive, setIsActive] = useState(true);
 
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
+
   const load = useCallback(async () => {
+    if (!companyId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const res = await fetch('/api/hr/salary-components', { cache: 'no-store' });
+    const res = await fetch(`/api/hr/salary-components?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
     const json = await readApiJson<SalaryComponentRow[]>(res);
     if (res.ok && json?.success) setRows((json.data ?? []) as SalaryComponentRow[]);
     else toast.error(json?.error ?? 'Failed to load salary components');
     setLoading(false);
-  }, []);
+  }, [companyId]);
 
   useEffect(() => {
     if (!canManage) {
@@ -100,6 +125,10 @@ export default function SalaryComponentPage() {
       toast.error('Name is required');
       return;
     }
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
 
     const payload = {
@@ -128,7 +157,7 @@ export default function SalaryComponentPage() {
       const res = await fetch('/api/hr/salary-components', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, code: finalCode }),
+        body: JSON.stringify({ ...payload, code: finalCode, companyId }),
       });
       const json = await readApiJson(res);
       if (!res.ok || !json?.success) toast.error(json?.error ?? 'Create failed');
@@ -165,13 +194,18 @@ export default function SalaryComponentPage() {
 
   return (
     <HrPageChrome>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold">Salary components</h1>
-        <p className="text-sm text-muted-foreground">
-          Define earnings and deductions (housing, transport, loans, etc.). Assign amounts per employee on
-          their profile. Choose whether each component is added to salary directly each month or prorated by
-          present days.
-        </p>
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">Salary components</h1>
+          <p className="text-sm text-muted-foreground">
+            Define earnings and deductions (housing, transport, loans, etc.). Assign amounts per employee on
+            their profile. Choose whether each component is added to salary directly each month or prorated by
+            present days.
+          </p>
+        </div>
+        <div className="w-full max-w-xs">
+          <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

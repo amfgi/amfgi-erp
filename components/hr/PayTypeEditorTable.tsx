@@ -53,11 +53,13 @@ function compensationNeedsLabel(config: Record<string, unknown>) {
 
 export default function PayTypeEditorTable({
   rows,
+  companyId,
   saving,
   onSavingChange,
   onReload,
 }: {
   rows: PayTypeRecord[];
+  companyId: string;
   saving: boolean;
   onSavingChange: (v: boolean) => void;
   onReload: () => Promise<void>;
@@ -177,11 +179,16 @@ export default function PayTypeEditorTable({
   const cloneTemplate = async (templateCode: string) => {
     const tpl = DEFAULT_PAY_TYPE_TEMPLATES.find((t) => t.code === templateCode);
     if (!tpl) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     onSavingChange(true);
     const res = await fetch('/api/hr/pay-types', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        companyId,
         name: `${tpl.name} (custom)`,
         code: `${templateCode}_CUSTOM_${Date.now().toString(36).slice(-4)}`.toUpperCase(),
         config: tpl.config,
@@ -202,6 +209,10 @@ export default function PayTypeEditorTable({
       toast.error('Name is required');
       return;
     }
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     if (mode === 'CUSTOM' && !formulaScript.trim()) {
       toast.error('Custom formula script is required');
       return;
@@ -215,6 +226,7 @@ export default function PayTypeEditorTable({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          companyId,
           name: name.trim(),
           code: finalCode,
           config,
@@ -556,6 +568,7 @@ export default function PayTypeEditorTable({
                   : formulaScriptForMode(mode))
               }
               mode={mode}
+              companyId={companyId}
             />
           </div>
 

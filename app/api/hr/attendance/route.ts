@@ -5,7 +5,11 @@ import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  companyIdWhere,
+  requireHrSession,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import {
   basicHoursForProfileExtension,
@@ -115,12 +119,24 @@ function monthBoundsYmd(monthYmd: string): { start: Date; end: Date } {
 }
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_VIEW)) return errorResponse('Forbidden', 403);
-
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_ATTENDANCE_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
+  if (!ctx.ok) return ctx.response;
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
+  const companyIds = [companyId];
   const employeeId = searchParams.get('employeeId')?.trim() ?? '';
   const monthRaw = searchParams.get('month')?.trim().slice(0, 7) ?? '';
   const workDateRaw = searchParams.get('workDate');
@@ -143,13 +159,13 @@ export async function GET(req: Request) {
       }
 
       const employee = await prisma.employee.findFirst({
-        where: { companyId, id: employeeId },
+        where: { ...companyIdWhere(companyIds), id: employeeId },
         select: { id: true },
       });
       if (!employee) return errorResponse('Employee not found', 404);
 
       const rows = await prisma.attendanceEntry.findMany({
-        where: { companyId, employeeId, workDate: { gte: start, lte: end } },
+        where: { ...companyIdWhere(companyIds), employeeId, workDate: { gte: start, lte: end } },
         include: attendanceEntryInclude,
         orderBy: [{ workDate: 'asc' }],
       });
@@ -173,7 +189,7 @@ export async function GET(req: Request) {
     }
     const workDate = dateFromYmd(workDateYmd);
     const limitParam = searchParams.get('limit');
-    const where = { companyId, workDate };
+    const where = { ...companyIdWhere(companyIds), workDate };
 
     if (limitParam !== null) {
       const limit = parseListLimit(limitParam);
@@ -226,12 +242,23 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_EDIT)) return errorResponse('Forbidden', 403);
-
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_ATTENDANCE_EDIT,
+    companyId: searchParams.get('companyId'),
+  });
+  if (!ctx.ok) return ctx.response;
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
   const workDateRaw = searchParams.get('workDate');
   if (!workDateRaw) return errorResponse('workDate query required (YYYY-MM-DD)', 400);
 

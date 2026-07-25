@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, hasPerm, requireHrSession } from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
 import { z } from 'zod';
@@ -14,14 +14,17 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_EMPLOYEE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
+  if (!hasPerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
 
   const { id } = await params;
-  const existing = await prisma.workforceExpertise.findFirst({ where: { id, companyId } });
+  const existing = await prisma.workforceExpertise.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
@@ -50,14 +53,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_EMPLOYEE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
+  if (!hasPerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
 
   const { id } = await params;
-  const existing = await prisma.workforceExpertise.findFirst({ where: { id, companyId } });
+  const existing = await prisma.workforceExpertise.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
   const name = existing.name.trim();
 
   const employees = await prisma.employee.findMany({

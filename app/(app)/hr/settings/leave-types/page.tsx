@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import HrPageChrome from '@/components/hr/HrPageChrome';
 import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import type { LeaveAllocationBasis, LeavePayTier, LeaveTypeRules } from '@/lib/hr/leaveTypeRules';
 import { LEAVE_ALLOCATION_BASIS_OPTIONS, summarizeLeaveRules } from '@/lib/hr/leaveTypeRules';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
 type LeaveTypeRow = {
@@ -44,6 +46,8 @@ export default function LeaveTypesSettingsPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const canManage = session?.user?.isSuperAdmin || perms.includes('hr.payroll.settings');
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
 
   const [rows, setRows] = useState<LeaveTypeRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,14 +67,35 @@ export default function LeaveTypesSettingsPage() {
   const [hideFromEmployeePortal, setHideFromEmployeePortal] = useState(false);
   const [payTiers, setPayTiers] = useState<LeavePayTier[]>([]);
 
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
+
   const load = useCallback(async () => {
+    if (!companyId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const res = await fetch('/api/hr/leave-types', { cache: 'no-store' });
+    const res = await fetch(`/api/hr/leave-types?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
     const json = await readApiJson<LeaveTypeRow[]>(res);
     if (res.ok && json?.success) setRows((json.data ?? []) as LeaveTypeRow[]);
     else toast.error(json?.error ?? 'Failed to load leave types');
     setLoading(false);
-  }, []);
+  }, [companyId]);
 
   useEffect(() => {
     if (!canManage) {
@@ -136,6 +161,10 @@ export default function LeaveTypesSettingsPage() {
       toast.error('Name is required');
       return;
     }
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     const rules = buildRulesFromForm();
 
@@ -163,6 +192,7 @@ export default function LeaveTypesSettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          companyId,
           name: name.trim(),
           code: finalCode,
           description: description.trim() || null,
@@ -205,7 +235,7 @@ export default function LeaveTypesSettingsPage() {
 
   return (
     <HrPageChrome>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-lg font-semibold">Leave types</h1>
           <p className="text-sm text-muted-foreground">
@@ -213,7 +243,12 @@ export default function LeaveTypesSettingsPage() {
             is prorated per calendar year from the allocation date configured below.
           </p>
         </div>
-        <Button onClick={openCreateModal}>Add leave type</Button>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-full min-w-[220px] max-w-xs">
+            <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+          </div>
+          <Button onClick={openCreateModal} disabled={!companyId}>Add leave type</Button>
+        </div>
       </div>
 
       <section className="rounded-lg border border-border">

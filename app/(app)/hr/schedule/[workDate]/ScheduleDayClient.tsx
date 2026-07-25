@@ -1,7 +1,7 @@
 'use client';
 
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from 'react-redux';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/shadcn/table';
 import CreateEmployeeModal from '@/components/hr/CreateEmployeeModal';
+import { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
 import ScheduleSearchSelect from '@/components/hr/ScheduleSearchSelect';
 import { ScheduleWorkerPoolCard } from '@/components/hr/ScheduleWorkerPoolCard';
@@ -52,6 +53,7 @@ import {
 } from '@/lib/hr/scheduleVerticalListDrag';
 import { isCoarsePointerDevice } from '@/lib/utils/coarsePointer';
 import type { EmployeeTypeTimingSetting } from '@/lib/hr/employeeTypeSettings';
+import { resolveDefaultHrCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
 import {
   fetchEmployeesByIds,
@@ -1275,9 +1277,13 @@ function applyScheduleViewPrefs(
 
 export default function HrScheduleDayPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const workDate = String(params.workDate ?? '');
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
   const { data: session, status: sessionStatus } = useSession();
-  const activeCompanyId = session?.user?.activeCompanyId ?? '';
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [selectedCompanyId, setSelectedCompanyId] = useState(linkedCompanyId);
   const [schedule, setSchedule] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1377,13 +1383,58 @@ export default function HrScheduleDayPage() {
   const canEdit = isSA || perms.includes('hr.schedule.edit');
   const canEditJob = isSA || perms.includes('job.edit');
   const canCreateEmployee = isSA || perms.includes('hr.employee.create');
+
+  useEffect(() => {
+    if (linkedCompanyId) setSelectedCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setSelectedCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !selectedCompanyId) return;
+    const params = new URLSearchParams();
+    if (selectedCompanyId.trim()) params.set('companyId', selectedCompanyId.trim());
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/schedule/${workDate}?${next}` : `/hr/schedule/${workDate}`;
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [companyOptions.length, router, searchParams, selectedCompanyId, workDate]);
+
+  // Employees and jobs are company-scoped: their composite FKs and the server-side
+  // reference checks reject any record from a different company (HTTP 422 on save).
+  // When the selected company changes, drop the previously loaded pool so the
+  // worker/driver/job pickers never surface another company's records.
+  useEffect(() => {
+    setEmployeeById(new Map());
+    setJobById(new Map());
+  }, [selectedCompanyId]);
+
+  const scheduleEmployeeListParams = useMemo(
+    () => ({
+      ...SCHEDULE_EMPLOYEE_LIST_PARAMS,
+      companyId: selectedCompanyId || undefined,
+    }),
+    [selectedCompanyId],
+  );
   const { data: scheduleJobsPage, refetch: refetchScheduleJobs } = useGetJobsPageQuery(
     SCHEDULE_JOB_PICKER_LIST_PARAMS,
     { skip: !canView },
   );
   const { data: scheduleEmployeesPage, refetch: refetchScheduleEmployees } = useGetHrEmployeesPageQuery(
-    SCHEDULE_EMPLOYEE_LIST_PARAMS,
-    { skip: !canView },
+    scheduleEmployeeListParams,
+    { skip: !canView || !selectedCompanyId },
   );
   const canPub = isSA || perms.includes('hr.schedule.publish');
   const status = schedule && typeof schedule === 'object' ? String((schedule as { status?: string }).status ?? '') : '';
@@ -1468,11 +1519,10 @@ export default function HrScheduleDayPage() {
   );
 
   useEffect(() => {
-    if (sessionStatus !== 'authenticated' || !session?.user?.activeCompanyId) {
+    if (sessionStatus !== 'authenticated') {
       return;
     }
 
-    const companyId = session.user.activeCompanyId;
     const controller = new AbortController();
 
     void (async () => {
@@ -1512,7 +1562,7 @@ export default function HrScheduleDayPage() {
           });
         }
 
-        viewPrefsCompanyRef.current = companyId;
+        viewPrefsCompanyRef.current = 'loaded';
         skipViewPrefsSaveRef.current = true;
         setViewPrefsLoaded(true);
       } catch {
@@ -1527,20 +1577,20 @@ export default function HrScheduleDayPage() {
             setRowSettings,
           });
         }
-        viewPrefsCompanyRef.current = companyId;
+        viewPrefsCompanyRef.current = 'loaded';
         skipViewPrefsSaveRef.current = true;
         setViewPrefsLoaded(true);
       }
     })();
 
     return () => controller.abort();
-  }, [session?.user?.activeCompanyId, sessionStatus]);
+  }, [sessionStatus]);
 
   useEffect(() => {
-    if (!viewPrefsLoaded || sessionStatus !== 'authenticated' || !session?.user?.activeCompanyId) {
+    if (!viewPrefsLoaded || sessionStatus !== 'authenticated') {
       return;
     }
-    if (viewPrefsCompanyRef.current !== session.user.activeCompanyId) {
+    if (viewPrefsCompanyRef.current !== 'loaded') {
       return;
     }
     if (skipViewPrefsSaveRef.current) {
@@ -1572,7 +1622,6 @@ export default function HrScheduleDayPage() {
     };
   }, [
     rowSettings,
-    session?.user?.activeCompanyId,
     sessionStatus,
     showRowLabels,
     showWorkerRail,
@@ -1990,7 +2039,14 @@ export default function HrScheduleDayPage() {
   );
 
   const loadSchedule = useCallback(async () => {
-    const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' });
+    if (!selectedCompanyId) {
+      setSchedule(null);
+      return;
+    }
+    const res = await fetch(
+      `/api/hr/schedule?workDate=${encodeURIComponent(workDate)}&companyId=${encodeURIComponent(selectedCompanyId)}`,
+      { cache: 'no-store' },
+    );
     const json = await res.json();
     if (res.ok && json?.success) {
       const data = json.data as Record<string, unknown> | null;
@@ -1998,8 +2054,8 @@ export default function HrScheduleDayPage() {
         data &&
         typeof data === 'object' &&
         'companyId' in data &&
-        activeCompanyId &&
-        String(data.companyId ?? '') !== activeCompanyId
+        selectedCompanyId &&
+        String(data.companyId ?? '') !== selectedCompanyId
       ) {
         setSchedule(null);
         return;
@@ -2008,18 +2064,22 @@ export default function HrScheduleDayPage() {
     } else {
       setSchedule(null);
     }
-  }, [activeCompanyId, workDate]);
+  }, [selectedCompanyId, workDate]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (!canView) return;
+      if (!canView || !selectedCompanyId) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
       setSchedule(null);
       if (!cancelled) setLoading(true);
       await loadSchedule();
+      const companyQuery = `companyId=${encodeURIComponent(selectedCompanyId)}`;
       const [timingRes, sr] = await Promise.all([
-        fetch('/api/hr/employee-type-settings', { cache: 'no-store' }),
-        fetch('/api/hr/schedule', { cache: 'no-store' }),
+        fetch(`/api/hr/employee-type-settings?${companyQuery}`, { cache: 'no-store' }),
+        fetch(`/api/hr/schedule?${companyQuery}`, { cache: 'no-store' }),
       ]);
       const [timingJson, sj] = await Promise.all([timingRes.json(), sr.json()]);
       if (cancelled) return;
@@ -2043,7 +2103,7 @@ export default function HrScheduleDayPage() {
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [canView, loadSchedule, workDate, activeCompanyId]);
+  }, [canView, loadSchedule, selectedCompanyId, workDate]);
 
   const mapFromApi = useCallback((sch: Record<string, unknown>) => {
     const asg = (sch.assignments as Array<Record<string, unknown>>) ?? [];
@@ -2176,7 +2236,7 @@ export default function HrScheduleDayPage() {
     schedule &&
     typeof schedule === 'object' &&
     'id' in schedule &&
-    scheduleCompanyId === activeCompanyId &&
+    scheduleCompanyId === selectedCompanyId &&
     scheduleWorkDate === workDate
       ? String((schedule as { id: string }).id)
       : '';
@@ -2247,7 +2307,7 @@ export default function HrScheduleDayPage() {
     let cancelled = false;
     void (async () => {
       const [employees, jobs] = await Promise.all([
-        fetchEmployeesByIds(missingEmployeeIds),
+        fetchEmployeesByIds(missingEmployeeIds, { companyId: selectedCompanyId || undefined }),
         fetchJobsByIds(missingJobIds),
       ]);
       if (cancelled) return;
@@ -2257,7 +2317,7 @@ export default function HrScheduleDayPage() {
     return () => {
       cancelled = true;
     };
-  }, [drafts, schedule, driverTripState, driverLogVersion, employeeById, jobById, mergeEmployees, mergeJobs]);
+  }, [drafts, schedule, driverTripState, driverLogVersion, employeeById, jobById, mergeEmployees, mergeJobs, selectedCompanyId]);
 
   const employeeProfiles = useMemo(() => Array.from(employeeById.values()), [employeeById]);
 
@@ -2580,10 +2640,14 @@ export default function HrScheduleDayPage() {
   );
 
   const createSchedule = async () => {
+    if (!selectedCompanyId) {
+      toast.error('Select a company');
+      return;
+    }
     const res = await fetch('/api/hr/schedule', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workDate }),
+      body: JSON.stringify({ workDate, companyId: selectedCompanyId }),
     });
     const json = await readApiEnvelope<{ success?: boolean; error?: string }>(res);
     if (!res.ok || !json?.success) toast.error(json?.error ?? 'Failed');
@@ -2976,12 +3040,15 @@ export default function HrScheduleDayPage() {
   }, [executePublish]);
 
   const applyPreviousScheduleTemplate = useCallback(async () => {
-    if (!selectedTemplateDate) return;
+    if (!selectedTemplateDate || !selectedCompanyId) return;
     setApplyingTemplate(true);
     try {
-      const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(selectedTemplateDate)}`, {
+      const res = await fetch(
+        `/api/hr/schedule?workDate=${encodeURIComponent(selectedTemplateDate)}&companyId=${encodeURIComponent(selectedCompanyId)}`,
+        {
         cache: 'no-store',
-      });
+      },
+      );
       const json = await res.json();
       if (!res.ok || !json?.success || !json.data) {
         toast.error(json?.error ?? 'Failed to load template');
@@ -3010,6 +3077,7 @@ export default function HrScheduleDayPage() {
     driverLogVersion,
     mapFromApi,
     markScheduleStructureDirty,
+    selectedCompanyId,
     selectedTemplateDate,
     syncDriverTripStateFromLogs,
   ]);
@@ -4395,12 +4463,12 @@ export default function HrScheduleDayPage() {
   const openSchedulePrintOutput = async (intent: 'print' | 'download') => {
     const previewData = buildSchedulePreviewData();
     const companyId =
-      session?.user?.activeCompanyId ??
+      selectedCompanyId ||
       (schedule && typeof schedule === 'object' && 'companyId' in schedule
         ? String((schedule as { companyId?: string | null }).companyId ?? '')
         : '');
     if (!companyId) {
-      toast.error('No active company found for schedule printing.');
+      toast.error('Select a company for schedule printing.');
       return;
     }
     const printJobId = `schedule-print-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -4467,7 +4535,7 @@ export default function HrScheduleDayPage() {
       </div>
     );
   }
-  if (loading) {
+  if (loading || !selectedCompanyId) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-3">
         <div className="h-20 animate-pulse rounded-lg border border-border bg-muted/30" />
@@ -6162,6 +6230,7 @@ export default function HrScheduleDayPage() {
 				onClose={() => setPendingWorkerCreate(null)}
 				initialFullName={pendingWorkerCreate?.suggestedName ?? ''}
 				defaultEmployeeType='LABOUR_WORKER'
+				defaultCompanyId={selectedCompanyId}
 				onCreated={handleWorkerEmployeeCreated}
 			/>
 

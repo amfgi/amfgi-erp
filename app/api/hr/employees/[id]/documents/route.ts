@@ -3,7 +3,7 @@ import { canHrDocumentCreate } from '@/lib/hr/documentPermissions';
 import { normalizePortalDocumentFlags } from '@/lib/hr/employeeDocumentPortal';
 import { EMPLOYEE_DOC_OTHER_SLUG, resolveEmployeeDocumentCustomFields } from '@/lib/hr/employeeDocumentDisplay';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -23,31 +23,38 @@ const DocSchema = z.object({
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_DOCUMENT_VIEW)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
 
   const docs = await prisma.employeeDocument.findMany({
-    where: { employeeId, companyId },
-    include: { documentType: true, visaPeriod: { select: { id: true, label: true } } },
+    where: { employeeId, companyId: emp.companyId },
+    include: {
+      company: { select: { id: true, name: true, slug: true } },
+      documentType: true,
+      visaPeriod: { select: { id: true, label: true } },
+    },
     orderBy: { expiryDate: 'asc' },
   });
   return successResponse(docs);
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_CREATE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrDocumentCreate(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
 
   const body = await req.json();
@@ -56,7 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const d = parsed.data;
 
   const dt = await prisma.employeeDocumentType.findFirst({
-    where: { id: d.documentTypeId, companyId },
+    where: { id: d.documentTypeId, companyId: emp.companyId },
   });
   if (!dt) return errorResponse('Invalid document type', 422);
 
@@ -70,7 +77,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (d.visaPeriodId) {
     const vp = await prisma.visaPeriod.findFirst({
-      where: { id: d.visaPeriodId, employeeId, companyId },
+      where: { id: d.visaPeriodId, employeeId, companyId: emp.companyId },
     });
     if (!vp) return errorResponse('Invalid visa period', 422);
   }
@@ -79,7 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const doc = await prisma.employeeDocument.create({
     data: {
-      companyId,
+      companyId: emp.companyId,
       employeeId,
       documentTypeId: d.documentTypeId,
       visaPeriodId: d.visaPeriodId ?? null,

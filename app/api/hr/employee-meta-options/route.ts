@@ -1,50 +1,91 @@
+import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { EMPLOYEE_META_KINDS, parseEmployeeMetaKind } from '@/lib/hr/employeeMetaOptions';
 import { P } from '@/lib/permissions';
-import { hasPerm, requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  companyIdWhere,
+  getHrAccessibleCompanyIds,
+  hasPerm,
+  requireHrSession,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
+import type { Session } from 'next-auth';
 import { z } from 'zod';
 
+const companySelect = { id: true, name: true, slug: true } as const;
+
 const CreateSchema = z.object({
+  companyId: z.string().min(1).optional(),
   kind: z.enum(EMPLOYEE_META_KINDS),
   name: z.string().min(1).max(120),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });
 
-export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+async function metaOptionListCompanyIds(filter: string | null) {
+  const session = (await auth()) as Session | null;
+  if (!session?.user) return { ok: false as const, response: errorResponse('Unauthorized', 401) };
   if (!hasPerm(session.user, P.HR_EMPLOYEE_VIEW) && !hasPerm(session.user, P.HR_EMPLOYEE_EDIT)) {
-    return errorResponse('Forbidden', 403);
+    return { ok: false as const, response: errorResponse('Forbidden', 403) };
   }
 
-  const kind = parseEmployeeMetaKind(new URL(req.url).searchParams.get('kind'));
-  const activeOnly = new URL(req.url).searchParams.get('activeOnly') === '1';
+  const [viewIds, editIds] = await Promise.all([
+    getHrAccessibleCompanyIds(session.user, P.HR_EMPLOYEE_VIEW),
+    getHrAccessibleCompanyIds(session.user, P.HR_EMPLOYEE_EDIT),
+  ]);
+  let companyIds = [...new Set([...viewIds, ...editIds])];
+  if (companyIds.length === 0) return { ok: false as const, response: errorResponse('Forbidden', 403) };
+
+  const trimmed = filter?.trim() || null;
+  if (trimmed) {
+    if (!companyIds.includes(trimmed)) return { ok: false as const, response: errorResponse('Forbidden', 403) };
+    companyIds = [trimmed];
+  }
+
+  return { ok: true as const, session, companyIds };
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const ctx = await metaOptionListCompanyIds(searchParams.get('companyId'));
+  if (!ctx.ok) return ctx.response;
+  const { companyIds } = ctx;
+
+  const kind = parseEmployeeMetaKind(searchParams.get('kind'));
+  const activeOnly = searchParams.get('activeOnly') === '1';
 
   const rows = await prisma.employeeMetaOption.findMany({
     where: {
-      companyId,
+      ...companyIdWhere(companyIds),
       ...(kind ? { kind } : {}),
       ...(activeOnly ? { isActive: true } : {}),
     },
     orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+    include: { company: { select: companySelect } },
   });
 
   return successResponse(rows);
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const authCtx = await requireHrSession({ permission: P.HR_EMPLOYEE_EDIT });
+  if (!authCtx.ok) return authCtx.response;
+  const { session } = authCtx;
+  if (!hasPerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+
+  const writeCompanyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: session.user.activeCompanyId,
+  });
+  if (!writeCompanyId) return errorResponse('companyId is required', 400);
+  if (!authCtx.companyIds.includes(writeCompanyId)) return errorResponse('Forbidden', 403);
+  const companyId = writeCompanyId;
 
   try {
     const row = await prisma.employeeMetaOption.create({
@@ -55,6 +96,7 @@ export async function POST(req: Request) {
         sortOrder: parsed.data.sortOrder ?? 0,
         isActive: parsed.data.isActive ?? true,
       },
+      include: { company: { select: companySelect } },
     });
     publishLiveUpdate({
       companyId,

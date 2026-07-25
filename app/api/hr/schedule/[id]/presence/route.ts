@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import {
   listScheduleEditorPresence,
@@ -14,21 +14,20 @@ const HeartbeatSchema = z.object({
   displayName: z.string().min(1).max(120),
 });
 
-async function loadScheduleForPresence(scheduleId: string, companyId: string) {
+async function loadScheduleForPresence(scheduleId: string, companyIds: string[]) {
   return prisma.workSchedule.findFirst({
-    where: { id: scheduleId, companyId },
-    select: { id: true, status: true },
+    where: { id: scheduleId, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true, status: true },
   });
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_VIEW)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id: scheduleId } = await params;
 
-  const sch = await loadScheduleForPresence(scheduleId, companyId);
+  const sch = await loadScheduleForPresence(scheduleId, companyIds);
   if (!sch) return errorResponse('Not found', 404);
 
   const rows = await listScheduleEditorPresence(scheduleId);
@@ -36,15 +35,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_VIEW)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
   const { id: scheduleId } = await params;
 
-  const sch = await loadScheduleForPresence(scheduleId, companyId);
+  const sch = await loadScheduleForPresence(scheduleId, companyIds);
   if (!sch) return errorResponse('Schedule not found for active company', 404);
   if (sch.status === 'LOCKED') return errorResponse('Schedule is locked', 403);
+  const companyId = sch.companyId;
 
   const body = await req.json();
   const parsed = HeartbeatSchema.safeParse(body);
@@ -98,13 +97,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   const { id: scheduleId } = await params;
 
-  const sch = await loadScheduleForPresence(scheduleId, companyId);
+  const sch = await loadScheduleForPresence(scheduleId, companyIds);
   if (!sch) return errorResponse('Not found', 404);
+  const companyId = sch.companyId;
 
   const body = await req.json().catch(() => ({}));
   const sessionId = typeof (body as { sessionId?: unknown }).sessionId === 'string'

@@ -1,20 +1,22 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { buildEmployeeDriveFolderName, uploadToDrive } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
 import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_EMPLOYEE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   try {
     const formData = await req.formData();

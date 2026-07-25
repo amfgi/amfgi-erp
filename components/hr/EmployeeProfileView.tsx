@@ -111,6 +111,7 @@ interface DocRow {
 
 interface EmployeeRecord {
   id: string;
+  companyId?: string;
   employeeCode: string;
   fullName: string;
   preferredName: string | null;
@@ -401,11 +402,16 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     setEditPortalDownloadEnabled(editingDoc.portalDownloadEnabled);
   }, [editingDoc]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<EmployeeRecord | null> => {
     const res = await fetch(`/api/hr/employees/${employeeId}`, { cache: 'no-store' });
     const json = await res.json();
-    if (res.ok && json?.success) setEmp(json.data as EmployeeRecord);
-    else setEmp(null);
+    if (res.ok && json?.success) {
+      const employee = json.data as EmployeeRecord;
+      setEmp(employee);
+      return employee;
+    }
+    setEmp(null);
+    return null;
   }, [employeeId]);
 
   useEffect(() => {
@@ -415,11 +421,15 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
         if (!cancelled) setLoading(false);
         return;
       }
-      await load();
-      const tr = await fetch('/api/hr/document-types', { cache: 'no-store' });
+      const employee = await load();
+      const employeeCompanyId = String(employee?.companyId ?? '').trim();
+      const catalogParams = employeeCompanyId
+        ? `?companyId=${encodeURIComponent(employeeCompanyId)}`
+        : '';
+      const tr = await fetch(`/api/hr/document-types${catalogParams}`, { cache: 'no-store' });
       const tj = await tr.json();
       if (!cancelled && tr.ok && tj?.success) setCatalogDocTypes(tj.data as CatalogDocType[]);
-      const er = await fetch('/api/hr/expertises', { cache: 'no-store' });
+      const er = await fetch(`/api/hr/expertises${catalogParams}`, { cache: 'no-store' });
       const ej = await er.json();
       if (!cancelled && er.ok && ej?.success) {
         setExpertiseCatalog((ej.data as Array<{ name: string }>).map((x) => x.name));
@@ -2011,6 +2021,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             <div className="rounded-2xl border border-white/10 bg-slate-900/35 p-6">
               <EmployeeCompensationPanel
                 employeeId={employeeId}
+                companyId={emp.companyId}
                 canCreate={canCompensationAdd}
                 canRecordChange={canCompensationRecordChange}
                 canEditPackage={canCompensationEditPackage}

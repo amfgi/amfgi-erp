@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db/prisma';
 import { canHrDocumentDelete, canHrDocumentEdit } from '@/lib/hr/documentPermissions';
 import { normalizePortalDocumentFlags } from '@/lib/hr/employeeDocumentPortal';
 import { EMPLOYEE_DOC_OTHER_SLUG } from '@/lib/hr/employeeDocumentDisplay';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { P } from '@/lib/permissions';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -23,17 +24,18 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrDocumentEdit(session.user)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
   const existing = await prisma.employeeDocument.findFirst({
-    where: { id, companyId },
+    where: { id, ...companyIdWhere(companyIds) },
     include: { documentType: { select: { slug: true } } },
   });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
@@ -106,13 +108,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrDocumentDelete(session.user)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
-  const existing = await prisma.employeeDocument.findFirst({ where: { id, companyId } });
+  const existing = await prisma.employeeDocument.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
 
   await prisma.employeeDocument.delete({ where: { id } });

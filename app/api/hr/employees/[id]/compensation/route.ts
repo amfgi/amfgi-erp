@@ -4,12 +4,13 @@ import {
   canHrCompensationRecordChange,
   canHrCompensationView,
 } from '@/lib/hr/compensationPermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { resolveRouteEmployeeId } from '@/lib/hr/resolveRouteEmployeeId';
 import {
   createCompensationPackage,
   listCompensationPackages,
 } from '@/lib/hr/payroll/compensationPackages';
+import { P } from '@/lib/permissions';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -31,17 +32,20 @@ const CreateSchema = z.object({
 });
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationView(session.user)) {
     return errorResponse('Forbidden', 403);
   }
   const employeeId = await resolveRouteEmployeeId(req, params);
   if (!employeeId) return errorResponse('Employee id required', 400);
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   try {
     const packages = await listCompensationPackages(companyId, employeeId);
@@ -55,14 +59,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_CREATE });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   const employeeId = await resolveRouteEmployeeId(req, params);
   if (!employeeId) return errorResponse('Employee id required', 400);
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   const existingCount = await prisma.employeeCompensation.count({
     where: { companyId, employeeId },

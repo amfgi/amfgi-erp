@@ -32,9 +32,11 @@ function isActiveForMonth(row: AllowanceRow, month: string) {
 
 export default function EmployeeAllowancesPanel({
   employeeId,
+  companyId,
   canEdit,
 }: {
   employeeId: string;
+  companyId?: string;
   canEdit: boolean;
 }) {
   const [rows, setRows] = useState<AllowanceRow[]>([]);
@@ -51,9 +53,12 @@ export default function EmployeeAllowancesPanel({
   const previewMonth = new Date().toISOString().slice(0, 7);
 
   const load = useCallback(async () => {
+    const catalogQuery = companyId?.trim()
+      ? `?companyId=${encodeURIComponent(companyId.trim())}`
+      : '';
     const [allowRes, typeRes] = await Promise.all([
       fetch(`/api/hr/employees/${employeeId}/allowances`, { cache: 'no-store' }),
-      fetch('/api/hr/salary-components', { cache: 'no-store' }),
+      fetch(`/api/hr/salary-components${catalogQuery}`, { cache: 'no-store' }),
     ]);
     const allowJson = await readApiJson<AllowanceRow[]>(allowRes);
     const typeJson = await readApiJson<AllowanceType[]>(typeRes);
@@ -63,7 +68,7 @@ export default function EmployeeAllowancesPanel({
       setTypes(active);
       if (!allowanceTypeId && active[0]) setAllowanceTypeId(active[0].id);
     }
-  }, [employeeId, allowanceTypeId]);
+  }, [allowanceTypeId, companyId, employeeId]);
 
   useEffect(() => {
     void load();

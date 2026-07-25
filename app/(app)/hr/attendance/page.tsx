@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
@@ -54,8 +56,18 @@ function formatDateLabel(value: string | Date) {
   }
 }
 
-function scheduleListHref(workDateYmd: string) {
-  return `/hr/schedule?workDate=${encodeURIComponent(workDateYmd)}`;
+function scheduleListHref(workDateYmd: string, companyId: string) {
+  const params = new URLSearchParams();
+  params.set('workDate', workDateYmd);
+  if (companyId.trim()) params.set('companyId', companyId.trim());
+  return `/hr/schedule?${params.toString()}`;
+}
+
+function attendanceCreateHref(workDateYmd: string, companyId: string) {
+  const params = new URLSearchParams();
+  params.set('workDate', workDateYmd);
+  if (companyId.trim()) params.set('companyId', companyId.trim());
+  return `/hr/attendance/create?${params.toString()}`;
 }
 
 function formatMonthLabel(monthYmd: string) {
@@ -70,8 +82,13 @@ function formatMonthLabel(monthYmd: string) {
   }
 }
 
-async function fetchScheduleForDate(workDateYmd: string): Promise<Record<string, unknown> | null> {
-  const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDateYmd)}`, { cache: 'no-store' });
+async function fetchScheduleForDate(workDateYmd: string, companyId: string): Promise<Record<string, unknown> | null> {
+  if (!companyId.trim()) return null;
+  const params = new URLSearchParams({
+    workDate: workDateYmd,
+    companyId: companyId.trim(),
+  });
+  const res = await fetch(`/api/hr/schedule?${params.toString()}`, { cache: 'no-store' });
   const json = await res.json();
   if (!res.ok || !json?.success) return null;
   return json.data ?? null;
@@ -98,12 +115,11 @@ export default function HrAttendancePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const linkedMonth = monthFromSearchParams(searchParams);
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
   const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState(linkedCompanyId);
   const [month, setMonth] = useState(() => linkedMonth || currentMonthYmd());
-
-  useEffect(() => {
-    if (linkedMonth) setMonth(linkedMonth);
-  }, [linkedMonth]);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [pickerDate, setPickerDate] = useState(todayYmd());
   const [noScheduleDate, setNoScheduleDate] = useState<string | null>(null);
@@ -114,22 +130,64 @@ export default function HrAttendancePage() {
   const canView = isSA || perms.includes('hr.attendance.view');
   const canEdit = isSA || perms.includes('hr.attendance.edit');
 
+  const setCompanyFilter = useCallback((nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  }, []);
+
+  useEffect(() => {
+    if (linkedCompanyId) setCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !companyId) return;
+    const params = new URLSearchParams();
+    if (month.trim()) params.set('month', month.trim());
+    if (companyId.trim()) params.set('companyId', companyId.trim());
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/attendance?${next}` : '/hr/attendance';
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [companyId, companyOptions.length, month, router, searchParams]);
+
+  useEffect(() => {
+    if (linkedMonth) setMonth(linkedMonth);
+  }, [linkedMonth]);
+
   const {
     data: overview,
     isLoading: loading,
     isFetching: refreshing,
     refetch: refreshOverview,
-  } = useGetHrAttendanceOverviewQuery({ month }, { skip: !canView });
+  } = useGetHrAttendanceOverviewQuery({ month, companyId }, { skip: !canView || !companyId });
 
   const goToAttendanceSheet = (dateYmd: string) => {
-    router.push(`/hr/attendance/create?workDate=${encodeURIComponent(dateYmd)}`);
+    router.push(attendanceCreateHref(dateYmd, companyId));
     setNoScheduleDate(null);
   };
 
   const openAttendanceSheetWithScheduleCheck = async (dateYmd: string) => {
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setCheckingSchedule(true);
     try {
-      const schedule = await fetchScheduleForDate(dateYmd);
+      const schedule = await fetchScheduleForDate(dateYmd, companyId);
       if (!schedule) {
         setNoScheduleDate(dateYmd);
         return;
@@ -156,8 +214,16 @@ export default function HrAttendancePage() {
   };
 
   const deleteAttendanceByDate = async (dateYmd: string) => {
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     if (!window.confirm(`Delete all attendance entries for ${dateYmd}?`)) return;
-    const res = await fetch(`/api/hr/attendance?workDate=${encodeURIComponent(dateYmd)}`, { method: 'DELETE' });
+    const params = new URLSearchParams({
+      workDate: dateYmd,
+      companyId,
+    });
+    const res = await fetch(`/api/hr/attendance?${params.toString()}`, { method: 'DELETE' });
     const json = await res.json();
     if (!res.ok || !json?.success) {
       toast.error(json?.error ?? 'Delete failed');
@@ -210,7 +276,7 @@ export default function HrAttendancePage() {
         ) : null}
       </header>
 
-      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         <div className="flex flex-col gap-4 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 space-y-1">
             <h2 className="text-lg font-semibold text-foreground">Attendance days</h2>
@@ -218,21 +284,34 @@ export default function HrAttendancePage() {
               Needs attendance = published schedule with no rows yet. Saved = attendance already recorded.
             </p>
           </div>
-          <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
-            <label htmlFor="attendance-overview-month" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Month
-            </label>
-            <Input
-              id="attendance-overview-month"
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="h-10 w-full min-w-42 sm:w-auto"
+          <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end">
+            <HrCompanySearchSelect
+              value={companyId}
+              onChange={setCompanyFilter}
+              required
+              label="Company"
+              className="min-w-56"
             />
+            <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+              <label htmlFor="attendance-overview-month" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Month
+              </label>
+              <Input
+                id="attendance-overview-month"
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="h-10 w-full min-w-42 sm:w-auto"
+              />
+            </div>
           </div>
         </div>
 
-        {loading && !overview ? (
+        {!companyId ? (
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
+            Select a company to load attendance overview.
+          </div>
+        ) : loading && !overview ? (
           <div className="overflow-x-auto">
             <table className="min-w-[800px] w-full text-left text-sm">
               <thead className="border-b border-border bg-muted/50">
@@ -392,7 +471,7 @@ export default function HrAttendancePage() {
                 onClick={() => {
                   const ymd = noScheduleDate;
                   setNoScheduleDate(null);
-                  router.push(scheduleListHref(ymd));
+                  router.push(scheduleListHref(ymd, companyId));
                 }}
               >
                 <span className="sm:hidden">Create schedule</span>

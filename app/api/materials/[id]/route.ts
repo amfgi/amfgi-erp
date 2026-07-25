@@ -26,6 +26,9 @@ const UpdateSchema = z.object({
   externalItemName:    z.string().min(1).max(100).optional(),
   unitCost:            z.number().finite().min(0).optional(),
   reorderLevel:        z.number().finite().min(0).optional(),
+  netWeight:           z.number().finite().min(0).nullable().optional(),
+  grossWeight:         z.number().finite().min(0).nullable().optional(),
+  dimension:           z.string().max(100).nullable().optional(),
   assemblyOutputQuantity: z.number().finite().positive().optional(),
   assemblyOverheadPercent: z.number().finite().min(0).optional(),
   assemblyUseDynamicCost: z.boolean().optional(),
@@ -168,6 +171,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           warehouseId: warehouseRef ? warehouseRef.warehouseId : undefined,
           unitCost: parsed.data.unitCost !== undefined ? decimalToNumber(parsed.data.unitCost) ?? null : undefined,
           reorderLevel: parsed.data.reorderLevel !== undefined ? decimalToNumber(parsed.data.reorderLevel) ?? null : undefined,
+          netWeight:
+            parsed.data.netWeight !== undefined ? decimalToNumber(parsed.data.netWeight) ?? null : undefined,
+          grossWeight:
+            parsed.data.grossWeight !== undefined ? decimalToNumber(parsed.data.grossWeight) ?? null : undefined,
+          dimension:
+            parsed.data.dimension !== undefined ? (parsed.data.dimension?.trim() || null) : undefined,
           assemblyOutputQuantity:
             parsed.data.assemblyOutputQuantity !== undefined
               ? decimalToNumber(parsed.data.assemblyOutputQuantity) ?? 1

@@ -1,18 +1,17 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
 /** Legacy endpoint — attendance rows are created only when saving the day sheet. */
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_ATTENDANCE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_EDIT)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   const sch = await prisma.workSchedule.findFirst({
-    where: { id, companyId },
+    where: { id, ...companyIdWhere(companyIds) },
     select: { id: true, status: true, workDate: true },
   });
   if (!sch) return errorResponse('Not found', 404);

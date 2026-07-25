@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
 function monthBounds(monthYmd: string) {
@@ -108,12 +108,24 @@ async function loadOverviewDaysForMonth(
 }
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_VIEW)) return errorResponse('Forbidden', 403);
-
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_ATTENDANCE_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
+  if (!ctx.ok) return ctx.response;
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
+
   const monthRaw =
     searchParams.get('month') ?? searchParams.get('workDate')?.trim().slice(0, 7) ?? currentMonthYmd();
 

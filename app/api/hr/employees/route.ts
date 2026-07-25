@@ -23,7 +23,11 @@ import { batchCurrentCompensationForEmployees } from '@/lib/import-export/employ
 import { canHrCompensationView } from '@/lib/hr/compensationPermissions';
 import { parseNationalityInput } from '@/lib/hr/countryNames';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  companyIdWhere,
+  requireHrSession,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
@@ -35,6 +39,7 @@ const employeeEmailField = z
   .transform((v) => (v === '' || v == null ? null : v));
 
 const CreateSchema = z.object({
+  companyId: z.string().min(1).optional(),
   employeeCode: z.string().min(1).max(80),
   fullName: z.string().min(1).max(200),
   preferredName: z.string().max(200).optional().nullable(),
@@ -61,13 +66,17 @@ const CreateSchema = z.object({
   autoProvisionLogin: z.boolean().optional(),
 });
 
-export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_VIEW)) return errorResponse('Forbidden', 403);
+const companySelect = { id: true, name: true, slug: true } as const;
 
+export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_EMPLOYEE_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
+  if (!ctx.ok) return ctx.response;
+  const { session, companyIds } = ctx;
+
   const idsParam = searchParams.get('ids');
   const forExport = searchParams.get('forExport') === '1';
   const directoryFilters = readEmployeeDirectoryFiltersFromSearchParams(searchParams);
@@ -77,9 +86,10 @@ export async function GET(req: Request) {
   const listFilters = includeCompensation
     ? directoryFilters
     : { ...directoryFilters, compensation: undefined };
+  const scope = companyIdWhere(companyIds);
 
   if (forExport) {
-    const where = buildEmployeeListWhere(companyId, listFilters);
+    const where = buildEmployeeListWhere(companyIds, listFilters);
     const exportIds = idsParam
       ? [...new Set(idsParam.split(',').map((part) => part.trim()).filter(Boolean))].slice(0, 10000)
       : [];
@@ -88,6 +98,7 @@ export async function GET(req: Request) {
     }
     const exportSelect = {
       id: true,
+      companyId: true,
       employeeCode: true,
       fullName: true,
       preferredName: true,
@@ -109,6 +120,7 @@ export async function GET(req: Request) {
       portalEnabled: true,
       adminNotes: true,
       profileExtension: true,
+      company: { select: companySelect },
     } as const;
 
     const list = await prisma.employee.findMany({
@@ -121,7 +133,7 @@ export async function GET(req: Request) {
     const sorted = sortEmployeesByName(filtered);
     const compensationByEmployee = await batchCurrentCompensationForEmployees(
       prisma,
-      companyId,
+      companyIds,
       sorted.map((e) => e.id)
     );
     return successResponse(
@@ -132,13 +144,16 @@ export async function GET(req: Request) {
     );
   }
 
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { hrEmployeeTypeSettings: true, printTemplates: true },
+  const companies = await prisma.company.findMany({
+    where: { id: { in: companyIds } },
+    select: { id: true, hrEmployeeTypeSettings: true, printTemplates: true },
   });
-  const typeSettings = readEmployeeTypeSettingsFromCompanyData(company);
+  const typeSettingsByCompany = new Map(
+    companies.map((c) => [c.id, readEmployeeTypeSettingsFromCompanyData(c)])
+  );
 
-  const mapEmployee = (employee: Employee) => {
+  const mapEmployee = (employee: Employee & { company?: { id: string; name: string; slug: string } }) => {
+    const typeSettings = typeSettingsByCompany.get(employee.companyId) ?? readEmployeeTypeSettingsFromCompanyData(null);
     const employeeTypeValue = employeeTypeFromProfileExtension(employee.profileExtension);
     const timing = typeSettings[employeeTypeValue];
     return {
@@ -160,7 +175,7 @@ export async function GET(req: Request) {
     if (!includeCompensation || items.length === 0) return items;
     const compensationByEmployee = await batchCurrentCompensationForEmployees(
       prisma,
-      companyId,
+      companyIds,
       items.map((employee) => employee.id)
     );
     return items.map((employee) => ({
@@ -173,13 +188,14 @@ export async function GET(req: Request) {
     const ids = [...new Set(idsParam.split(',').map((part) => part.trim()).filter(Boolean))].slice(0, 100);
     if (ids.length === 0) return successResponse([]);
     const list = await prisma.employee.findMany({
-      where: { companyId, id: { in: ids } },
+      where: { ...scope, id: { in: ids } },
       orderBy: [{ fullName: 'asc' }],
+      include: { company: { select: companySelect } },
     });
     return successResponse(list.map(mapEmployee));
   }
 
-  const where = buildEmployeeListWhere(companyId, listFilters);
+  const where = buildEmployeeListWhere(companyIds, listFilters);
 
   const applyEmployeeTypeFilter = <T extends { profileExtension: unknown }>(rows: T[]) => {
     if (!employeeType || employeeType === 'ALL') return rows;
@@ -200,6 +216,7 @@ export async function GET(req: Request) {
       const allRows = await prisma.employee.findMany({
         where,
         orderBy: [{ fullName: 'asc' }],
+        include: { company: { select: companySelect } },
       });
       const filtered = applyEmployeeTypeFilter(allRows);
       const items = await attachCompensationToItems(filtered.slice(offset, offset + limit).map(mapEmployee));
@@ -226,9 +243,10 @@ export async function GET(req: Request) {
         orderBy: [{ fullName: 'asc' }],
         skip: offset,
         take: limit,
+        include: { company: { select: companySelect } },
       }),
       prisma.employee.findMany({
-        where: { companyId },
+        where: scope,
         select: { profileExtension: true },
         take: 2000,
       }),
@@ -255,40 +273,33 @@ export async function GET(req: Request) {
     where,
     orderBy: [{ fullName: 'asc' }],
     take: 500,
+    include: { company: { select: companySelect } },
   });
 
-  return successResponse(
-    list.map((employee) => {
-      const employeeType = employeeTypeFromProfileExtension(employee.profileExtension);
-      const timing = typeSettings[employeeType];
-      return {
-        ...employee,
-        employeeType,
-        basicHoursPerDay: basicHoursForProfileExtension(employee.profileExtension, typeSettings),
-        defaultTiming: timing
-          ? {
-              dutyStart: timing.dutyStart,
-              dutyEnd: timing.dutyEnd,
-              breakStart: timing.breakStart,
-              breakEnd: timing.breakEnd,
-            }
-          : null,
-      };
-    })
-  );
+  return successResponse(list.map(mapEmployee));
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_CREATE)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
   const d = parsed.data;
+  const authCtx = await requireHrSession({ permission: P.HR_EMPLOYEE_CREATE });
+  if (!authCtx.ok) return authCtx.response;
+
+  const writeCompanyId = resolveHrWriteCompanyId({
+    requestedCompanyId: d.companyId,
+    activeCompanyId: authCtx.session.user.activeCompanyId,
+  });
+  if (!writeCompanyId) {
+    return errorResponse('companyId is required', 400);
+  }
+  if (!authCtx.companyIds.includes(writeCompanyId)) {
+    return errorResponse('Forbidden', 403);
+  }
+
+  const companyId = writeCompanyId;
   const emailNorm = d.email ? d.email.trim().toLowerCase() : null;
   const auto = d.autoProvisionLogin !== false && Boolean(emailNorm);
 
@@ -360,6 +371,7 @@ export async function POST(req: Request) {
       where: { id: result.emp.id },
       include: {
         userLink: { select: { id: true, email: true, name: true } },
+        company: { select: companySelect },
       },
     });
 
@@ -391,5 +403,4 @@ export async function POST(req: Request) {
     }
     throw e;
   }
-
 }

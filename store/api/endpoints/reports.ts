@@ -539,6 +539,27 @@ export const reportsApi = appApi.injectEndpoints({
       providesTags: ['Job', 'Transaction', 'Material'],
     }),
 
+    getMaterialConsumption: builder.query<
+      import('@/lib/reports/materialConsumption').MaterialConsumptionReport,
+      {
+        from?: string | null;
+        to?: string | null;
+        materialLabel?: 'name' | 'external';
+      }
+    >({
+      query: (params) => {
+        const searchParams = new URLSearchParams();
+        if (params.from) searchParams.set('from', params.from);
+        if (params.to) searchParams.set('to', params.to);
+        if (params.materialLabel) searchParams.set('materialLabel', params.materialLabel);
+        return `/reports/material-consumption?${searchParams.toString()}`;
+      },
+      transformResponse: (r: {
+        data: import('@/lib/reports/materialConsumption').MaterialConsumptionReport;
+      }) => r.data,
+      providesTags: ['Consumption', 'Transaction', 'Material'],
+    }),
+
     updateStockExceptionApproval: builder.mutation<
       {
         id: string;
@@ -584,5 +605,6 @@ export const {
   useGetStockAdjustmentsQuery,
   useGetStockCountSessionsReportQuery,
   useLazyGetMonthlyJobSummaryQuery,
+  useLazyGetMaterialConsumptionQuery,
   useUpdateStockExceptionApprovalMutation,
 } = reportsApi;

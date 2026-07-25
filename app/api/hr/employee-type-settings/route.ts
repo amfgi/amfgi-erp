@@ -2,7 +2,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  hasPerm,
+  requireHrSession,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import {
   DEFAULT_EMPLOYEE_TYPE_SETTINGS,
@@ -21,44 +25,91 @@ const ItemSchema = z.object({
 });
 
 const BodySchema = z.object({
+  companyId: z.string().min(1).optional(),
   OFFICE_STAFF: ItemSchema,
   HYBRID_STAFF: ItemSchema,
   DRIVER: ItemSchema,
   LABOUR_WORKER: ItemSchema,
 });
 
-export async function GET() {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_VIEW)) return errorResponse('Forbidden', 403);
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const filterCompanyId = searchParams.get('companyId');
 
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { hrEmployeeTypeSettings: true, printTemplates: true },
+  if (filterCompanyId) {
+    const ctx = await requireHrSession({
+      permission: P.HR_EMPLOYEE_VIEW,
+      companyId: filterCompanyId,
+    });
+    if (!ctx.ok) return ctx.response;
+    const { session, companyId } = ctx;
+    if (!hasPerm(session.user, P.HR_EMPLOYEE_VIEW)) return errorResponse('Forbidden', 403);
+    if (!companyId) return errorResponse('companyId is required', 400);
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { hrEmployeeTypeSettings: true, printTemplates: true },
+    });
+    if (!company) return errorResponse('Company not found', 404);
+    return successResponse(readEmployeeTypeSettingsFromCompanyData(company));
+  }
+
+  const ctx = await requireHrSession({ permission: P.HR_EMPLOYEE_VIEW });
+  if (!ctx.ok) return ctx.response;
+  const { session, companyIds } = ctx;
+  if (!hasPerm(session.user, P.HR_EMPLOYEE_VIEW)) return errorResponse('Forbidden', 403);
+
+  const companies = await prisma.company.findMany({
+    where: { id: { in: companyIds } },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      hrEmployeeTypeSettings: true,
+      printTemplates: true,
+    },
   });
-  if (!company) return errorResponse('Company not found', 404);
-  const settings = readEmployeeTypeSettingsFromCompanyData(company);
-  return successResponse(settings);
+
+  return successResponse(
+    companies.map((company) => ({
+      companyId: company.id,
+      company: { id: company.id, name: company.name, slug: company.slug },
+      settings: readEmployeeTypeSettingsFromCompanyData(company),
+    }))
+  );
 }
 
 export async function PUT(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
+  const authCtx = await requireHrSession({ permission: P.HR_EMPLOYEE_EDIT });
+  if (!authCtx.ok) return authCtx.response;
+  const { session } = authCtx;
+  if (!hasPerm(session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+
+  const writeCompanyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: session.user.activeCompanyId,
+  });
+  if (!writeCompanyId) return errorResponse('companyId is required', 400);
+  if (!authCtx.companyIds.includes(writeCompanyId)) return errorResponse('Forbidden', 403);
+  const companyId = writeCompanyId;
+
+  const nextSettings = {
+    OFFICE_STAFF: parsed.data.OFFICE_STAFF,
+    HYBRID_STAFF: parsed.data.HYBRID_STAFF,
+    DRIVER: parsed.data.DRIVER,
+    LABOUR_WORKER: parsed.data.LABOUR_WORKER,
+  } as EmployeeTypeSettingsMap;
+
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     select: { hrEmployeeTypeSettings: true, printTemplates: true },
   });
   if (!company) return errorResponse('Company not found', 404);
 
-  const nextSettings = parsed.data as EmployeeTypeSettingsMap;
   const merged = writeEmployeeTypeSettingsIntoCompanyField({
     ...DEFAULT_EMPLOYEE_TYPE_SETTINGS,
     ...nextSettings,

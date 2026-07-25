@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import { LeaveTypeRulesSchema } from '@/lib/hr/leaveTypeRules';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -14,17 +14,16 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const existing = await prisma.leaveType.findFirst({ where: { id, companyId } });
+  const existing = await prisma.leaveType.findFirst({ where: { id, ...companyIdWhere(companyIds) } });
   if (!existing) return errorResponse('Not found', 404);
 
   const row = await prisma.leaveType.update({
@@ -43,17 +42,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
-  const existing = await prisma.leaveType.findFirst({ where: { id, companyId } });
+  const existing = await prisma.leaveType.findFirst({ where: { id, ...companyIdWhere(companyIds) } });
   if (!existing) return errorResponse('Not found', 404);
 
   const inUse = await prisma.attendanceEntry.count({
-    where: { companyId, leaveTypeId: id },
+    where: { companyId: existing.companyId, leaveTypeId: id },
   });
   if (inUse > 0) {
     return errorResponse(

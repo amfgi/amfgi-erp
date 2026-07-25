@@ -22,6 +22,8 @@ type NationalitySearchSelectProps = {
   className?: string;
   inputClassName?: string;
   placeholder?: string;
+  /** Open the country list as soon as the field is focused or clicked. */
+  openOnFocus?: boolean;
 };
 
 export function NationalitySearchSelect({
@@ -32,6 +34,7 @@ export function NationalitySearchSelect({
   className,
   inputClassName,
   placeholder = 'Search country…',
+  openOnFocus = true,
 }: NationalitySearchSelectProps) {
   const items = useMemo(() => nationalityItems, []);
   const resolvedValue = displayNationalityCountryName(value);
@@ -46,6 +49,8 @@ export function NationalitySearchSelect({
         placeholder={placeholder}
         disabled={disabled}
         minCharactersToSearch={0}
+        openOnFocus={openOnFocus}
+        browseAllOnOpen={openOnFocus}
         dropdownInPortal
         allowClearButton={false}
         clearOnEmptyInput

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { Button } from '@/components/ui/shadcn/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
@@ -14,6 +15,7 @@ import {
   canHrDocumentTypeEdit,
   canHrDocumentTypeView,
 } from '@/lib/hr/documentTypePermissions';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { type HrDocumentType, useGetHrDocumentTypesQuery } from '@/store/api/endpoints/hr';
 
 const labelClass = 'text-[11px] font-medium uppercase tracking-wide text-muted-foreground';
@@ -31,16 +33,40 @@ export default function HrDocumentTypesPage() {
   const canEdit = session?.user ? canHrDocumentTypeEdit(session.user) : false;
   const canDelete = session?.user ? canHrDocumentTypeDelete(session.user) : false;
   const canMutate = canCreate || canEdit || canDelete;
-  const { data: list = [], isLoading: loading, refetch } = useGetHrDocumentTypesQuery(undefined, {
-    skip: !canView,
-  });
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
+  const { data: list = [], isLoading: loading, refetch } = useGetHrDocumentTypesQuery(
+    companyId ? { companyId } : undefined,
+    { skip: !canView || !companyId },
+  );
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
 
   const createType = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canCreate || saving) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     const fd = new FormData(e.currentTarget);
     const body = {
+      companyId,
       name: String(fd.get('name') ?? '').trim(),
       slug: String(fd.get('slug') ?? '').trim(),
       requiresVisaPeriod: fd.get('requiresVisaPeriod') === 'on',
@@ -227,11 +253,16 @@ export default function HrDocumentTypesPage() {
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Document types</h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">HR document catalog for your company.</p>
         </div>
-        {canCreate ? (
-          <Button type="button" size="sm" onClick={() => setShowCreate(true)}>
-            New type
-          </Button>
-        ) : null}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="w-full max-w-xs">
+            <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+          </div>
+          {canCreate ? (
+            <Button type="button" size="sm" onClick={() => setShowCreate(true)} disabled={!companyId}>
+              New type
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       {showCreate && canCreate ? (

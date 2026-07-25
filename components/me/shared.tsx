@@ -71,6 +71,17 @@ export type AttendanceRow = {
   breakEndAt?: string | null;
   basicHours?: number | null;
   overtimeMinutes?: number | null;
+  leaveType?: string | null;
+  leaveTypeId?: string | null;
+  leaveRequestId?: string | null;
+  source?: string | null;
+  remarks?: string | null;
+  leaveTypeRef?: {
+    id?: string;
+    name?: string | null;
+    code?: string | null;
+    rules?: unknown;
+  } | null;
   workAssignment: {
     label: string | null;
     jobNumberSnapshot: string | null;
@@ -187,9 +198,24 @@ export function initials(name: string) {
 
 export function statusTone(status: string) {
   const normalized = status.toUpperCase();
-  if (normalized === 'ACTIVE' || normalized === 'PRESENT') return 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300';
-  if (normalized === 'ABSENT' || normalized === 'INACTIVE') return 'bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300';
-  if (normalized === 'LEAVE') return 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300';
+  if (normalized === 'ACTIVE' || normalized === 'PRESENT' || normalized === 'HALF DAY' || normalized === 'HALF_DAY') {
+    return 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300';
+  }
+  if (normalized === 'ABSENT' || normalized === 'INACTIVE') {
+    return 'bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300';
+  }
+  if (normalized === 'LEAVE' || normalized === 'SUNDAY') {
+    return 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300';
+  }
+  return 'bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300';
+}
+
+export function portalAttendanceStatusTone(kind: 'present' | 'absent' | 'leave' | 'sunday' | 'other') {
+  if (kind === 'present') return 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300';
+  if (kind === 'absent') return 'bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300';
+  if (kind === 'leave' || kind === 'sunday') {
+    return 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300';
+  }
   return 'bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300';
 }
 

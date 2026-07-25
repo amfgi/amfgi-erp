@@ -53,6 +53,7 @@ type Props<T extends MappedImportRow> = {
     onProgress?: (processed: number, total: number) => void
   ) => Promise<void>;
   blockDuplicateUpdate?: (match: ExistingRecord) => string | null;
+  headerContent?: React.ReactNode;
 };
 
 export default function EntityImportModal<T extends MappedImportRow>({
@@ -78,6 +79,7 @@ export default function EntityImportModal<T extends MappedImportRow>({
   formatDuplicateInFileError,
   onSubmit,
   blockDuplicateUpdate,
+  headerContent,
 }: Props<T>) {
   const recordKeyFor = (row: T) => {
     const key = getRecordKey?.(row) ?? String(row[previewLabelKey] ?? '').trim().toLowerCase();
@@ -263,6 +265,7 @@ export default function EntityImportModal<T extends MappedImportRow>({
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={title} size="xl">
       <div className="space-y-4">
+        {headerContent}
         {step === 0 ? (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4 sm:flex-row sm:items-start sm:justify-between">

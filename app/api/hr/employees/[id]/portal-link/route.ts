@@ -3,7 +3,8 @@ import {
   canHrAccountAccessCreate,
   canHrAccountAccessDelete,
 } from '@/lib/hr/accountAccessPermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
+import { P } from '@/lib/permissions';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -13,14 +14,17 @@ const BodySchema = z.object({
 
 /** Links `User.linkedEmployeeId` when login email matches employee email (case-insensitive). */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_ACCOUNT_ACCESS_CREATE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrAccountAccessCreate(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
   if (!emp.email?.trim()) return errorResponse('Employee must have an email to link a login', 422);
 
   const body = await req.json();
@@ -69,13 +73,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_ACCOUNT_ACCESS_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrAccountAccessDelete(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
 
   await prisma.user.updateMany({

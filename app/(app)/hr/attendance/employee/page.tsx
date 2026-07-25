@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Redo2, Undo2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -13,6 +13,7 @@ import AttendanceEntryGrid, {
   type AttendanceGridDraftRow,
   type AttendanceGridEmployee,
 } from '@/components/hr/AttendanceEntryGrid';
+import { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import HrPageChrome from '@/components/hr/HrPageChrome';
 import {
   defaultUnpaidLeaveTypeId,
@@ -42,6 +43,7 @@ import {
   type SaveValidationIssues,
 } from '@/lib/hr/attendanceSheetModel';
 import { daysInMonth } from '@/lib/hr/payroll/calendar';
+import { resolveDefaultHrCompanyId } from '@/lib/hr/hrCompanyPreference';
 import {
   fetchJobById,
   jobToSearchItem,
@@ -122,14 +124,12 @@ function datesInRange(startYmd: string, endYmd: string): string[] {
 }
 
 export default function HrEmployeeAttendancePage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-
-  const isSA = session?.user?.isSuperAdmin ?? false;
-  const perms = (session?.user?.permissions ?? []) as string[];
-  const canView = isSA || perms.includes('hr.attendance.view');
-  const canEdit = isSA || perms.includes('hr.attendance.edit');
-
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
+  const [companyId, setCompanyId] = useState(linkedCompanyId);
   const [employeeDirectory, setEmployeeDirectory] = useState<EmployeeListRow[]>([]);
   const [employeeId, setEmployeeId] = useState(searchParams.get('employeeId') ?? '');
   const [month, setMonth] = useState(searchParams.get('month')?.slice(0, 7) || currentMonth());
@@ -156,6 +156,41 @@ export default function HrEmployeeAttendancePage() {
   const [saveValidationConfirm, setSaveValidationConfirm] = useState<SaveValidationIssues | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const isSA = session?.user?.isSuperAdmin ?? false;
+  const perms = (session?.user?.permissions ?? []) as string[];
+  const canView = isSA || perms.includes('hr.attendance.view');
+  const canEdit = isSA || perms.includes('hr.attendance.edit');
+
+  useEffect(() => {
+    if (linkedCompanyId) setCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !companyId) return;
+    const params = new URLSearchParams();
+    if (companyId.trim()) params.set('companyId', companyId.trim());
+    if (employeeId.trim()) params.set('employeeId', employeeId.trim());
+    if (month.trim()) params.set('month', month.trim());
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/attendance/employee?${next}` : '/hr/attendance/employee';
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [companyId, companyOptions.length, employeeId, month, router, searchParams]);
+
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
   const dateBounds = useMemo(() => monthDateBounds(month), [month]);
 
@@ -177,8 +212,8 @@ export default function HrEmployeeAttendancePage() {
   }, [drafts]);
 
   useEffect(() => {
-    if (!canView) return;
-    void fetch('/api/hr/employees?limit=500', { cache: 'no-store' })
+    if (!canView || !companyId) return;
+    void fetch(`/api/hr/employees?limit=500&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((json) => {
         const rows = Array.isArray(json?.data?.items)
@@ -188,7 +223,7 @@ export default function HrEmployeeAttendancePage() {
             : [];
         if (json?.success) setEmployeeDirectory(rows as EmployeeListRow[]);
       });
-  }, [canView]);
+  }, [canView, companyId]);
 
   const syncHistoryUi = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0);
@@ -266,8 +301,12 @@ export default function HrEmployeeAttendancePage() {
   }, [restoreDraftRows, syncHistoryUi]);
 
   const ensureScheduleForDate = useCallback(async (workDate: string) => {
-    if (schedulesByDate.has(workDate)) return;
-    const res = await fetch(`/api/hr/schedule?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' });
+    if (!companyId || schedulesByDate.has(workDate)) return;
+    const params = new URLSearchParams({
+      workDate,
+      companyId,
+    });
+    const res = await fetch(`/api/hr/schedule?${params.toString()}`, { cache: 'no-store' });
     const json = await res.json();
     const scheduleData = res.ok && json?.success ? json.data : null;
     const dayAssignments: AttendanceAssignmentRow[] = Array.isArray(scheduleData?.assignments)
@@ -285,23 +324,28 @@ export default function HrEmployeeAttendancePage() {
         return [...merged.values()];
       });
     }
-  }, [schedulesByDate]);
+  }, [companyId, schedulesByDate]);
 
   const loadSheet = useCallback(async () => {
     if (!employeeId || !month) {
       toast.error('Select an employee and month');
       return;
     }
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setLoading(true);
     setPendingDeletes(new Set());
 
     const bounds = monthDateBounds(month);
+    const companyQuery = `&companyId=${encodeURIComponent(companyId)}`;
     const [attendanceRes, employeeRes, leaveTypesRes, leaveRes] = await Promise.all([
       fetch(
-        `/api/hr/attendance?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}`,
+        `/api/hr/attendance?employeeId=${encodeURIComponent(employeeId)}&month=${encodeURIComponent(month)}${companyQuery}`,
         { cache: 'no-store' }
       ),
-      fetch(`/api/hr/employees?ids=${encodeURIComponent(employeeId)}`, { cache: 'no-store' }),
+      fetch(`/api/hr/employees?ids=${encodeURIComponent(employeeId)}&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }),
       fetch('/api/hr/leave-types', { cache: 'no-store' }),
       fetch(
         `/api/hr/leave-requests?employeeId=${encodeURIComponent(employeeId)}&status=APPROVED&from=${encodeURIComponent(bounds.min)}&to=${encodeURIComponent(bounds.max)}`,
@@ -392,7 +436,7 @@ export default function HrEmployeeAttendancePage() {
     setLoadedKey(`${employeeId}:${month}`);
 
     void Promise.all(nextDrafts.map((draft) => (draft.workDate ? ensureScheduleForDate(draft.workDate) : Promise.resolve())));
-  }, [clearHistoryStacks, employeeId, ensureScheduleForDate, month, runWithoutHistory]);
+  }, [clearHistoryStacks, companyId, employeeId, ensureScheduleForDate, month, runWithoutHistory]);
 
   const sheetReady = loadedKey === `${employeeId}:${month}` && employee !== null;
 
@@ -736,6 +780,7 @@ export default function HrEmployeeAttendancePage() {
       for (const [workDate, rows] of byDate) {
         const payload = {
           workDate,
+          companyId,
           rows: rows.map((draft) => {
             const isAbsent = draft.status === 'ABSENT';
             return {
@@ -939,7 +984,7 @@ export default function HrEmployeeAttendancePage() {
                 className="h-10"
               />
             </div>
-            <Button type="button" className="h-10" disabled={!employeeId || !month || loading} onClick={() => void loadSheet()}>
+            <Button type="button" className="h-10" disabled={!employeeId || !month || !companyId || loading} onClick={() => void loadSheet()}>
               {loading ? 'Loading…' : 'Load sheet'}
             </Button>
           </div>
@@ -974,6 +1019,7 @@ export default function HrEmployeeAttendancePage() {
               <AttendanceEntryGrid
                 sheetMode="dates"
                 gridPreferenceKey={ATTENDANCE_EMPLOYEE_MONTH_GRID_PREFERENCE_KEY}
+                preferenceCompanyId={companyId}
                 resolveRowKey={attendanceDraftRowKey}
                 monthDateBounds={dateBounds}
                 rows={visibleDrafts}

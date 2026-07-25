@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -15,18 +15,18 @@ const PutSchema = z.object({
 });
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_EDIT)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id: scheduleId } = await params;
 
   const sch = await prisma.workSchedule.findFirst({
-    where: { id: scheduleId, companyId },
-    select: { id: true, status: true },
+    where: { id: scheduleId, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true, status: true },
   });
   if (!sch) return errorResponse('Not found', 404);
   if (sch.status === 'LOCKED') return errorResponse('Schedule is locked', 403);
+  const companyId = sch.companyId;
 
   const body = await req.json();
   const parsed = PutSchema.safeParse(body);

@@ -12,7 +12,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession, requirePerm } from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -47,14 +47,17 @@ function resolvePayTypeLinksInput(data: {
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
 
   const { id } = await params;
-  const existing = await prisma.companyHoliday.findFirst({ where: { id, companyId } });
+  const existing = await prisma.companyHoliday.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
@@ -128,14 +131,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
 
   const { id } = await params;
-  const existing = await prisma.companyHoliday.findFirst({ where: { id, companyId } });
+  const existing = await prisma.companyHoliday.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   await prisma.companyHoliday.delete({ where: { id } });
   publishLiveUpdate({

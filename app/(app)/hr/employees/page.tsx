@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import EmployeeImportModal from '@/components/hr/EmployeeImportModal';
 import EmployeeExportModal from '@/components/hr/EmployeeExportModal';
 import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
+import HrCompanySearchSelect from '@/components/hr/HrCompanySearchSelect';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -66,6 +67,7 @@ function buildDirectorySearchParams(input: {
   employeeType: string;
   portal: PortalFilter;
   compensation: CompensationFilter;
+  companyId: string;
   page: number;
   pageSize: number;
   includeCompensation: boolean;
@@ -76,6 +78,7 @@ function buildDirectorySearchParams(input: {
   if (input.status !== 'ALL') params.set('status', input.status);
   if (input.employeeType !== 'ALL') params.set('employeeType', input.employeeType);
   if (input.portal !== 'ALL') params.set('portal', input.portal);
+  if (input.companyId.trim()) params.set('companyId', input.companyId.trim());
   if (input.includeCompensation && input.compensation !== 'ALL') {
     params.set('compensation', input.compensation);
   }
@@ -228,6 +231,7 @@ function EmployeeGridCard({
         <h3 className="mt-4 line-clamp-2 text-sm font-semibold text-foreground">{employee.fullName}</h3>
       </div>
       <div className="flex flex-1 flex-col gap-2 px-4 py-3 text-sm">
+        <p className="line-clamp-1 text-muted-foreground">{employee.company?.name || 'No company'}</p>
         <p className="line-clamp-1 text-muted-foreground">{employee.designation || 'No designation'}</p>
         <p className="text-foreground">{prettyEmployeeType(employee.employeeType)}</p>
         {showCompensation ? (
@@ -290,6 +294,7 @@ export default function HrEmployeesPage() {
   const [compensation, setCompensation] = useState<CompensationFilter>(() =>
     parseCompensation(searchParams.get('compensation')),
   );
+  const [companyId, setCompanyId] = useState(() => searchParams.get('companyId') ?? '');
   const [pageSize, setPageSizeState] = useState(() =>
     parseListLimit(searchParams.get('pageSize'), HR_EMPLOYEE_PAGE_SIZE_OPTIONS),
   );
@@ -344,6 +349,11 @@ export default function HrEmployeesPage() {
     setPageState(1);
   }, []);
 
+  const setCompanyFilter = useCallback((next: string) => {
+    setCompanyId(next);
+    setPageState(1);
+  }, []);
+
   const setSearchQuery = useCallback((next: string) => {
     setQ(next);
     setPageState(1);
@@ -356,6 +366,7 @@ export default function HrEmployeesPage() {
       employeeType,
       portal,
       compensation,
+      companyId,
       page,
       pageSize,
       includeCompensation: canViewCompensation,
@@ -374,6 +385,7 @@ export default function HrEmployeesPage() {
     employeeType,
     portal,
     compensation,
+    companyId,
     page,
     pageSize,
     canViewCompensation,
@@ -393,6 +405,7 @@ export default function HrEmployeesPage() {
       status,
       employeeType,
       portal,
+      ...(companyId.trim() ? { companyId: companyId.trim() } : {}),
       ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
     },
     { skip: !canView },
@@ -448,7 +461,7 @@ export default function HrEmployeesPage() {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <Alert>
-          <AlertDescription>You do not have permission to view employee records for this company.</AlertDescription>
+          <AlertDescription>You do not have permission to view employee records for accessible companies.</AlertDescription>
         </Alert>
       </div>
     );
@@ -477,7 +490,7 @@ export default function HrEmployeesPage() {
           <div
             className={cn(
               'grid min-w-0 flex-1 gap-4 sm:grid-cols-2',
-              canViewCompensation ? 'xl:grid-cols-5' : 'xl:grid-cols-4',
+              canViewCompensation ? 'xl:grid-cols-6' : 'xl:grid-cols-5',
             )}
           >
             <div className="space-y-2 sm:col-span-2 xl:col-span-1">
@@ -486,6 +499,15 @@ export default function HrEmployeesPage() {
                 value={q}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name, employee code, or mobile number"
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2 xl:col-span-1">
+              <HrCompanySearchSelect
+                value={companyId}
+                onChange={setCompanyFilter}
+                allowClear
+                label="Company"
+                placeholder="All companies"
               />
             </div>
             <div className="space-y-2">
@@ -575,6 +597,7 @@ export default function HrEmployeesPage() {
           status,
           employeeType: selectedEmployeeType,
           portal,
+          ...(companyId.trim() ? { companyId: companyId.trim() } : {}),
           ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
         }}
         employeeTypeChoices={employeeTypeChoices}
@@ -608,6 +631,7 @@ export default function HrEmployeesPage() {
                   <tr>
                   {[
                     'Employee name',
+                    'Company',
                     'Designation',
                     'Type',
                     ...(canViewCompensation ? ['Compensation'] : []),
@@ -625,7 +649,7 @@ export default function HrEmployeesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <TableSkeleton rows={6} columns={canViewCompensation ? 7 : 6} />
+                  <TableSkeleton rows={6} columns={canViewCompensation ? 8 : 7} />
                 </tbody>
               </table>
             </div>
@@ -634,7 +658,7 @@ export default function HrEmployeesPage() {
           <div className="px-6 py-12 text-center">
             <h3 className="text-lg font-semibold text-foreground">No employees found</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Try adjusting the search or status filter, or create the first employee record for this company.
+              Try adjusting the search or filters, or create the first employee record for your accessible companies.
             </p>
             {canCreate ? (
               <div className="mt-5 flex justify-center">
@@ -668,6 +692,9 @@ export default function HrEmployeesPage() {
                 <tr>
                   <th className="px-5 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Employee name
+                  </th>
+                  <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Company
                   </th>
                   <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Designation
@@ -710,6 +737,7 @@ export default function HrEmployeesPage() {
                         </div>
                       </div>
                     </td>
+                    <td className="px-4 py-4">{employee.company?.name || 'Not set'}</td>
                     <td className="px-4 py-4">{employee.designation || 'Not set'}</td>
                     <td className="px-4 py-4">
                       <div>

@@ -5,11 +5,18 @@ import { countLeaveDaysInclusive } from '@/lib/hr/leaveTypes';
 import { ensureLeaveTypesReady } from '@/lib/hr/seedLeaveTypes';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm, hasPerm } from '@/lib/hr/requireCompanySession';
+import {
+  companyIdWhere,
+  requireHrSession,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
+const companySelect = { id: true, name: true, slug: true } as const;
+
 const CreateSchema = z.object({
+  companyId: z.string().min(1).optional(),
   employeeId: z.string().min(1),
   leaveTypeId: z.string().min(1),
   startDate: z.string().min(1),
@@ -21,30 +28,38 @@ const CreateSchema = z.object({
 });
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-
   const { searchParams } = new URL(req.url);
-  const status = searchParams.get('status');
-  const employeeId = searchParams.get('employeeId');
   const workDateRaw = searchParams.get('workDate');
   const fromRaw = searchParams.get('from');
   const toRaw = searchParams.get('to');
 
-  const canPreviewForAttendance =
-    (Boolean(workDateRaw) || (Boolean(fromRaw) && Boolean(toRaw))) &&
-    (hasPerm(session.user, P.HR_ATTENDANCE_VIEW) || hasPerm(session.user, P.HR_ATTENDANCE_EDIT));
+  const canPreviewForAttendance = Boolean(workDateRaw) || (Boolean(fromRaw) && Boolean(toRaw));
 
-  if (
-    !canPreviewForAttendance &&
-    !hasPerm(session.user, P.HR_LEAVE_VIEW) &&
-    !hasPerm(session.user, P.HR_LEAVE_APPROVE) &&
-    !hasPerm(session.user, P.HR_LEAVE_EDIT) &&
-    !hasPerm(session.user, P.HR_LEAVE_DELETE)
-  ) {
-    return errorResponse('Forbidden', 403);
+  const permOrder = canPreviewForAttendance
+    ? [
+        P.HR_LEAVE_VIEW,
+        P.HR_LEAVE_APPROVE,
+        P.HR_LEAVE_EDIT,
+        P.HR_LEAVE_DELETE,
+        P.HR_ATTENDANCE_VIEW,
+        P.HR_ATTENDANCE_EDIT,
+      ]
+    : [P.HR_LEAVE_VIEW, P.HR_LEAVE_APPROVE, P.HR_LEAVE_EDIT, P.HR_LEAVE_DELETE];
+
+  let ctx: Awaited<ReturnType<typeof requireHrSession>> | null = null;
+  for (const permission of permOrder) {
+    const attempt = await requireHrSession({
+      permission,
+      companyId: searchParams.get('companyId'),
+    });
+    ctx = attempt;
+    if (attempt.ok) break;
   }
+  if (!ctx?.ok) return ctx?.response ?? errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
+
+  const status = searchParams.get('status');
+  const employeeId = searchParams.get('employeeId');
 
   let workDateFilter: { startDate?: { lte: Date }; endDate?: { gte: Date } } = {};
   if (workDateRaw) {
@@ -66,12 +81,13 @@ export async function GET(req: Request) {
 
   const rows = await prisma.leaveRequest.findMany({
     where: {
-      companyId,
+      ...companyIdWhere(companyIds),
       ...workDateFilter,
       ...(status ? { status: status as 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' } : {}),
       ...(employeeId ? { employeeId } : {}),
     },
     include: {
+      company: { select: companySelect },
       employee: {
         select: { id: true, fullName: true, preferredName: true, employeeCode: true },
       },
@@ -82,15 +98,17 @@ export async function GET(req: Request) {
     take: 200,
   });
 
-  await ensureLeaveTypesReady(prisma, companyId);
+  for (const companyId of companyIds) {
+    await ensureLeaveTypesReady(prisma, companyId);
+  }
 
   const balanceCache = new Map<string, Awaited<ReturnType<typeof getOrCreateLeaveBalance>>>();
   const enriched = await Promise.all(
     rows.map(async (row) => {
-      const cacheKey = row.employeeId;
+      const cacheKey = `${row.companyId}:${row.employeeId}`;
       let balance = balanceCache.get(cacheKey);
       if (!balance) {
-        balance = await getOrCreateLeaveBalance(prisma, companyId, row.employeeId);
+        balance = await getOrCreateLeaveBalance(prisma, row.companyId, row.employeeId);
         balanceCache.set(cacheKey, balance);
       }
       return {
@@ -110,14 +128,21 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_LEAVE_APPROVE)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const ctx = await requireHrSession({ permission: P.HR_LEAVE_APPROVE });
+  if (!ctx.ok) return ctx.response;
+  const { session } = ctx;
+
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: ctx.session.user.activeCompanyId,
+  });
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
 
   try {
     const row = await createLeaveRequest(prisma, {
@@ -142,8 +167,9 @@ export async function POST(req: Request) {
     }
 
     const created = await prisma.leaveRequest.findFirst({
-      where: { id: row.id, companyId },
+      where: { id: row.id, ...companyIdWhere([companyId]) },
       include: {
+        company: { select: companySelect },
         employee: {
           select: { id: true, fullName: true, preferredName: true, employeeCode: true },
         },

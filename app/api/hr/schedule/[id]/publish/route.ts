@@ -5,14 +5,13 @@ import {
   validateScheduleForPublish,
 } from '@/lib/hr/schedulePublishValidation';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_PUBLISH });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_PUBLISH)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   let acknowledgeLowHours = false;
@@ -24,11 +23,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const sch = await prisma.workSchedule.findFirst({
-    where: { id, companyId },
-    select: { id: true, status: true },
+    where: { id, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true, status: true },
   });
   if (!sch) return errorResponse('Not found', 404);
   if (sch.status !== 'DRAFT') return errorResponse('Only draft schedules can be published', 400);
+  const companyId = sch.companyId;
 
   const assignments = await prisma.workAssignment.findMany({
     where: { workScheduleId: id },

@@ -2,15 +2,21 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/db/prisma';
 import { runScheduleCsvImport } from '@/lib/hr/runScheduleCsvImport';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_EDIT)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id: scheduleId } = await params;
+
+  const sch = await prisma.workSchedule.findFirst({
+    where: { id: scheduleId, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true },
+  });
+  if (!sch) return errorResponse('Not found', 404);
+  const companyId = sch.companyId;
 
   const ct = req.headers.get('content-type') ?? '';
   if (!ct.includes('multipart/form-data')) {

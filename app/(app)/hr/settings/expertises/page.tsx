@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { Button } from '@/components/ui/shadcn/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import Modal from '@/components/ui/Modal';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
 import { useGetHrExpertisesQuery } from '@/store/api/endpoints/hr';
 
@@ -30,16 +32,40 @@ export default function HrExpertisesPage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView = isSA || perms.includes('hr.employee.view') || perms.includes('hr.employee.edit');
   const canEdit = isSA || perms.includes('hr.employee.edit');
-  const { data: list = [], isLoading: loading, refetch } = useGetHrExpertisesQuery(undefined, {
-    skip: !canView,
-  });
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState('');
+  const { data: list = [], isLoading: loading, refetch } = useGetHrExpertisesQuery(
+    companyId ? { companyId } : undefined,
+    { skip: !canView || !companyId },
+  );
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
 
   const onCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canEdit || saving) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     const fd = new FormData(e.currentTarget);
     const body = {
+      companyId,
       name: String(fd.get('name') ?? '').trim(),
       sortOrder: Number(fd.get('sortOrder') ?? 0) || 0,
       isActive: fd.get('isActive') === 'on',
@@ -141,11 +167,16 @@ export default function HrExpertisesPage() {
             Skills used in employee matching and schedule suggestions.
           </p>
         </div>
-        {canEdit ? (
-          <Button type="button" size="sm" onClick={() => setShowCreate(true)}>
-            New expertise
-          </Button>
-        ) : null}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="w-full max-w-xs">
+            <HrCompanySearchSelect value={companyId} onChange={handleCompanyChange} required label="Company" />
+          </div>
+          {canEdit ? (
+            <Button type="button" size="sm" onClick={() => setShowCreate(true)} disabled={!companyId}>
+              New expertise
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       {showCreate && canEdit ? (

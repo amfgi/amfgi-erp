@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -10,12 +10,14 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect';
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { GENDER_OPTIONS, visaHoldingOptions, workforceRoleTypeOptions } from '@/lib/hr/employeeFieldOptions';
 import { createEmployeeRecord } from '@/lib/hr/createEmployeeClient';
 import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
 import { todayYmdLocal } from '@/lib/hr/employeeLeavePeriod';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
 import { readHrEmployeesDirectoryUrl } from '@/lib/hr/employeesDirectoryUrl';
 import { useAppDispatch } from '@/store/hooks';
@@ -37,6 +39,24 @@ export default function NewEmployeePage() {
   const [hireDate, setHireDate] = useState(() => todayYmdLocal());
   const [employeeType, setEmployeeType] = useState<'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER'>('LABOUR_WORKER');
   const [visaHolding, setVisaHolding] = useState('');
+  const [companyId, setCompanyId] = useState('');
+  const { options: companyOptions } = useHrAccessibleCompanies();
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -55,9 +75,14 @@ export default function NewEmployeePage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     try {
       const employee = await createEmployeeRecord({
+        companyId,
         fullName,
         preferredName: preferredName.trim() || null,
         nationality: nationality || null,
@@ -113,6 +138,15 @@ export default function NewEmployeePage() {
         <CardContent>
           <form onSubmit={submit} className="space-y-5">
             <div className={fieldGrid}>
+              <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+                <HrCompanySearchSelect
+                  value={companyId}
+                  onChange={handleCompanyChange}
+                  required
+                  label="Company"
+                  inputClassName={searchInputClass}
+                />
+              </div>
               <div className="space-y-1 sm:col-span-2 lg:col-span-3">
                 <span className={labelClass}>Full legal name</span>
                 <Input

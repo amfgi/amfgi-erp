@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -48,14 +48,13 @@ const PatchSchema = z.object({
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_VIEW)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   const sch = await prisma.workSchedule.findFirst({
-    where: { id, companyId },
+    where: { id, ...companyIdWhere(companyIds) },
     select: scheduleInclude,
   });
   if (!sch) return errorResponse('Not found', 404);
@@ -63,18 +62,18 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_SCHEDULE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_EDIT)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   const existing = await prisma.workSchedule.findFirst({
-    where: { id, companyId },
-    select: { id: true, status: true },
+    where: { id, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true, status: true },
   });
   if (!existing) return errorResponse('Not found', 404);
   if (existing.status === 'LOCKED') return errorResponse('Schedule is locked', 403);
+  const companyId = existing.companyId;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);

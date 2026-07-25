@@ -39,10 +39,12 @@ export default function PayFormulaLivePreview({
   config,
   formulaScript,
   mode,
+  companyId,
 }: {
   config: PayTypeConfig;
   formulaScript: string;
   mode: PayTypeConfig['mode'];
+  companyId?: string;
 }) {
   const [month, setMonth] = useState('2026-06');
   const [source, setSource] = useState<'dummy' | 'employee'>('dummy');
@@ -68,7 +70,8 @@ export default function PayFormulaLivePreview({
 
   const loadEmployees = useCallback(async () => {
     setLoadingEmployees(true);
-    const res = await fetch('/api/hr/employees?status=ACTIVE&limit=500', { cache: 'no-store' });
+    const companyQuery = companyId ? `&companyId=${encodeURIComponent(companyId)}` : '';
+    const res = await fetch(`/api/hr/employees?status=ACTIVE&limit=500${companyQuery}`, { cache: 'no-store' });
     const json = await readApiJson<
       | Array<{ id: string; fullName: string; preferredName: string | null; employeeCode: string }>
       | { items: Array<{ id: string; fullName: string; preferredName: string | null; employeeCode: string }> }
@@ -85,7 +88,7 @@ export default function PayFormulaLivePreview({
       );
     }
     setLoadingEmployees(false);
-  }, []);
+  }, [companyId]);
 
   useEffect(() => {
     void loadEmployees();
@@ -105,6 +108,7 @@ export default function PayFormulaLivePreview({
         config: { mode: 'MONTHLY_CALENDAR_DEDUCT' },
         source: 'employee',
         employeeId,
+        ...(companyId ? { companyId } : {}),
       }),
     });
     const json = await readApiJson<{ context: PreviewContext }>(res);
@@ -117,7 +121,7 @@ export default function PayFormulaLivePreview({
       }
     }
     setLoadingContext(false);
-  }, [employeeId, month, overrideEnabled]);
+  }, [companyId, employeeId, month, overrideEnabled]);
 
   useEffect(() => {
     if (source === 'employee') void fetchEmployeeContext();

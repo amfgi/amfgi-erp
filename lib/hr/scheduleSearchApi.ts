@@ -191,10 +191,14 @@ export async function searchEmployeesApi(params: {
   return readApiItems<ScheduleEmployeeRow>(res);
 }
 
-export async function fetchEmployeesByIds(ids: string[]): Promise<ScheduleEmployeeRow[]> {
+export async function fetchEmployeesByIds(
+  ids: string[],
+  options?: { companyId?: string },
+): Promise<ScheduleEmployeeRow[]> {
   const unique = [...new Set(ids.filter(Boolean))].slice(0, HYDRATE_IDS_LIMIT);
   if (unique.length === 0) return [];
   const sp = new URLSearchParams({ ids: unique.join(',') });
+  if (options?.companyId?.trim()) sp.set('companyId', options.companyId.trim());
   const res = await fetch(`/api/hr/employees?${sp.toString()}`, { cache: 'no-store' });
   return readApiItems<ScheduleEmployeeRow>(res);
 }

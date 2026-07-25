@@ -16,6 +16,7 @@ export type CreateEmployeeClientInput = {
   hireDate?: string | null;
   employeeType?: WorkforceEmployeeType;
   visaHolding?: VisaHolding;
+  companyId?: string;
 };
 
 export type CreatedEmployeeClientRecord = {
@@ -40,6 +41,7 @@ export async function createEmployeeRecord(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      ...(input.companyId?.trim() ? { companyId: input.companyId.trim() } : {}),
       employeeCode: generateEmployeeCode(),
       fullName: legalName,
       preferredName: displayName || null,

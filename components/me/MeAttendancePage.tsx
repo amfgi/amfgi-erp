@@ -12,7 +12,7 @@ import {
   jobNumberLabel,
   MetricCard,
   monthBounds,
-  statusTone,
+  portalAttendanceStatusTone,
   workLocationLabel,
 } from './shared';
 import {
@@ -20,6 +20,7 @@ import {
   resolveDisplayedOvertimeMinutes,
   workedMinutesFromIsoPunches,
 } from '@/lib/hr/attendanceDuration';
+import { portalAttendanceDisplay } from '@/lib/hr/portalAttendanceDisplay';
 
 type AttendanceViewMode = 'table' | 'grid';
 
@@ -96,15 +97,17 @@ export default function MeAttendancePage() {
     return attendanceRows.reduce(
       (acc, row) => {
         const { workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
+        const { kind } = portalAttendanceDisplay(row);
         acc.days += 1;
-        if (row.status === 'PRESENT') acc.present += 1;
-        if (row.status === 'ABSENT') acc.absent += 1;
-        if (row.status === 'LEAVE') acc.leave += 1;
+        if (kind === 'present') acc.present += 1;
+        if (kind === 'absent') acc.absent += 1;
+        if (kind === 'leave') acc.leave += 1;
+        if (kind === 'sunday') acc.sunday += 1;
         acc.workedMinutes += workedMinutes;
         acc.overtimeMinutes += overtimeMinutes;
         return acc;
       },
-      { days: 0, present: 0, absent: 0, leave: 0, workedMinutes: 0, overtimeMinutes: 0 }
+      { days: 0, present: 0, absent: 0, leave: 0, sunday: 0, workedMinutes: 0, overtimeMinutes: 0 }
     );
   }, [attendanceRows]);
 
@@ -129,10 +132,12 @@ export default function MeAttendancePage() {
           </label>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
           <MetricCard label="Attendance days" value={String(attendanceSummary.days)} />
           <MetricCard label="Present" value={String(attendanceSummary.present)} tone="emerald" />
           <MetricCard label="Absent" value={String(attendanceSummary.absent)} tone="rose" />
+          <MetricCard label="Leave" value={String(attendanceSummary.leave)} tone="amber" />
+          <MetricCard label="Sundays" value={String(attendanceSummary.sunday)} tone="amber" />
           <MetricCard label="Worked hours" value={formatHours(attendanceSummary.workedMinutes)} />
           <MetricCard label="Overtime" value={formatHours(attendanceSummary.overtimeMinutes)} tone="sky" />
         </div>
@@ -232,7 +237,7 @@ function AttendanceTableView({ rows }: { rows: AttendanceRow[] }) {
         <p className="mb-2 text-xs text-slate-500 lg:hidden dark:text-slate-400">Swipe horizontally to see all columns.</p>
         <div className="relative -mx-4 sm:-mx-5">
           <div className="overflow-x-auto overscroll-x-contain px-4 pb-1 sm:px-5 [scrollbar-width:thin]">
-            <table className="min-w-[56rem] w-full divide-y divide-slate-200 text-sm dark:divide-slate-800 lg:min-w-full">
+            <table className="min-w-[62rem] w-full divide-y divide-slate-200 text-sm dark:divide-slate-800 lg:min-w-full">
               <thead className="bg-slate-50 dark:bg-slate-900/90">
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 lg:text-xs lg:tracking-[0.16em] dark:text-slate-400">
                   <th className="sticky left-0 z-20 bg-slate-50 px-3 py-2.5 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.12)] lg:px-4 lg:py-3 dark:bg-slate-900/90 dark:shadow-[4px_0_8px_-4px_rgba(0,0,0,0.35)]">
@@ -247,6 +252,7 @@ function AttendanceTableView({ rows }: { rows: AttendanceRow[] }) {
                   <th className="hidden whitespace-nowrap px-3 py-2.5 lg:table-cell lg:px-4 lg:py-3">Break</th>
                   <th className="hidden whitespace-nowrap px-3 py-2.5 lg:table-cell lg:px-4 lg:py-3">Worked</th>
                   <th className="hidden whitespace-nowrap px-3 py-2.5 xl:table-cell lg:px-4 lg:py-3">OT</th>
+                  <th className="max-w-[12rem] px-3 py-2.5 lg:px-4 lg:py-3">Notes</th>
                   <th className="sticky right-0 z-20 bg-slate-50 px-3 py-2.5 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.12)] lg:px-4 lg:py-3 dark:bg-slate-900/90 dark:shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.35)]">
                     Status
                   </th>
@@ -269,6 +275,7 @@ function AttendanceTableCompactRow({ row }: { row: AttendanceRow }) {
   const { breakMinutes, workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
   const location = workLocationLabel(row);
   const jobNo = jobNumberLabel(row);
+  const notes = row.remarks?.trim() || '';
 
   return (
     <article className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
@@ -279,7 +286,7 @@ function AttendanceTableCompactRow({ row }: { row: AttendanceRow }) {
             <p className="mt-0.5 line-clamp-2 text-xs text-slate-600 dark:text-slate-400">{location}</p>
           ) : null}
         </div>
-        <StatusBadge status={row.status} />
+        <StatusBadge row={row} />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
@@ -295,6 +302,13 @@ function AttendanceTableCompactRow({ row }: { row: AttendanceRow }) {
         <span>Worked {workedMinutes ? formatHours(workedMinutes) : '-'}</span>
         {overtimeMinutes > 0 ? <span>OT {formatHours(overtimeMinutes)}</span> : null}
       </div>
+
+      {notes ? (
+        <p className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-400">
+          <span className="font-medium text-slate-500 dark:text-slate-500">Notes: </span>
+          {notes}
+        </p>
+      ) : null}
     </article>
   );
 }
@@ -302,6 +316,7 @@ function AttendanceTableCompactRow({ row }: { row: AttendanceRow }) {
 function AttendanceGridCard({ row }: { row: AttendanceRow }) {
   const { breakMinutes, workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
   const location = workLocationLabel(row);
+  const notes = row.remarks?.trim() || '';
 
   return (
     <article className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4 dark:border-slate-700 dark:bg-slate-800/40">
@@ -312,7 +327,7 @@ function AttendanceGridCard({ row }: { row: AttendanceRow }) {
             <p className="mt-0.5 line-clamp-2 break-words text-xs text-slate-600 sm:text-sm dark:text-slate-400">{location}</p>
           ) : null}
         </div>
-        <StatusBadge status={row.status} />
+        <StatusBadge row={row} />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
@@ -328,12 +343,20 @@ function AttendanceGridCard({ row }: { row: AttendanceRow }) {
         <SummaryField label="Worked" value={workedMinutes ? formatHours(workedMinutes) : '-'} />
         <SummaryField label="Overtime" value={overtimeMinutes > 0 ? formatHours(overtimeMinutes) : '-'} />
       </div>
+
+      {notes ? (
+        <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-400">
+          <span className="font-medium text-slate-500 dark:text-slate-500">Notes: </span>
+          {notes}
+        </p>
+      ) : null}
     </article>
   );
 }
 
 function AttendanceTableRow({ row }: { row: AttendanceRow }) {
   const { breakMinutes, workedMinutes, overtimeMinutes } = attendanceRowMetrics(row);
+  const notes = row.remarks?.trim() || '';
 
   return (
     <tr className="group hover:bg-slate-50/80 dark:hover:bg-slate-900/50">
@@ -353,17 +376,26 @@ function AttendanceTableRow({ row }: { row: AttendanceRow }) {
       <td className="hidden whitespace-nowrap px-3 py-2.5 xl:table-cell lg:px-4 lg:py-3">
         {overtimeMinutes > 0 ? formatHours(overtimeMinutes) : '-'}
       </td>
+      <td
+        className="max-w-[12rem] truncate px-3 py-2.5 text-slate-600 lg:px-4 lg:py-3 dark:text-slate-300"
+        title={notes || undefined}
+      >
+        {notes || '-'}
+      </td>
       <td className="sticky right-0 z-10 bg-white px-3 py-2.5 shadow-[-4px_0_8px_-4px_rgba(15,23,42,0.08)] group-hover:bg-slate-50/80 lg:px-4 lg:py-3 dark:bg-slate-950/40 dark:shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.3)] dark:group-hover:bg-slate-900/50">
-        <StatusBadge status={row.status} />
+        <StatusBadge row={row} />
       </td>
     </tr>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ row }: { row: AttendanceRow }) {
+  const { label, kind } = portalAttendanceDisplay(row);
   return (
-    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset sm:px-2.5 sm:py-1 sm:text-xs ${statusTone(status)}`}>
-      {status.replaceAll('_', ' ')}
+    <span
+      className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset sm:px-2.5 sm:py-1 sm:text-xs ${portalAttendanceStatusTone(kind)}`}
+    >
+      {label}
     </span>
   );
 }

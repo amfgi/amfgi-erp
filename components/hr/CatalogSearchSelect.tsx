@@ -19,6 +19,8 @@ type CatalogSearchSelectProps = {
   placeholder?: string;
   /** Include the current value when it is not in `options` (legacy catalog values). */
   allowLegacyValue?: boolean;
+  /** Open the option list as soon as the field is focused or clicked. */
+  openOnFocus?: boolean;
 };
 
 export function CatalogSearchSelect({
@@ -32,6 +34,7 @@ export function CatalogSearchSelect({
   inputClassName,
   placeholder = 'Search…',
   allowLegacyValue = true,
+  openOnFocus = true,
 }: CatalogSearchSelectProps) {
   const items = useMemo(() => {
     const base = options.map((option) => ({
@@ -57,6 +60,8 @@ export function CatalogSearchSelect({
         disabled={disabled || loading}
         loading={loading}
         minCharactersToSearch={0}
+        openOnFocus={openOnFocus}
+        browseAllOnOpen={openOnFocus}
         dropdownInPortal
         allowClearButton={false}
         clearOnEmptyInput

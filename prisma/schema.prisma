@@ -462,6 +462,9 @@ model Material {
   currentStock             Decimal                  @default(0) @db.Decimal(18, 3)
   reorderLevel             Decimal?                 @db.Decimal(18, 3)
   unitCost                 Decimal?                 @db.Decimal(18, 4)
+  netWeight                Decimal?                 @db.Decimal(18, 3)
+  grossWeight              Decimal?                 @db.Decimal(18, 3)
+  dimension                String?
   assemblyOutputQuantity   Decimal                  @default(1) @db.Decimal(18, 3)
   assemblyOverheadPercent  Decimal                  @default(0) @db.Decimal(8, 3)
   assemblyUseDynamicCost   Boolean                  @default(true)

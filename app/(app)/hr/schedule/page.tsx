@@ -1,16 +1,18 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import Modal from '@/components/ui/Modal';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
 import { useGetHrSchedulesForMonthQuery } from '@/store/api/endpoints/hr';
 
@@ -41,6 +43,35 @@ function monthFromSearchParams(searchParams: URLSearchParams | null) {
 function workDateFromSearchParams(searchParams: URLSearchParams | null) {
   const raw = searchParams?.get('workDate')?.trim().slice(0, 10) ?? '';
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+}
+
+function buildScheduleSearchParams(input: {
+  month: string;
+  companyId: string;
+  workDate?: string;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+  if (input.month.trim()) params.set('month', input.month.trim());
+  if (input.companyId.trim()) params.set('companyId', input.companyId.trim());
+  if (input.workDate?.trim()) params.set('workDate', input.workDate.trim());
+  return params;
+}
+
+function scheduleDayHref(workDateYmd: string, companyId: string) {
+  const params = new URLSearchParams();
+  if (companyId.trim()) params.set('companyId', companyId.trim());
+  const query = params.toString();
+  return query ? `/hr/schedule/${workDateYmd}?${query}` : `/hr/schedule/${workDateYmd}`;
+}
+
+function scheduleListHref(input: { month?: string; companyId: string; workDate?: string }) {
+  const params = buildScheduleSearchParams({
+    month: input.month ?? '',
+    companyId: input.companyId,
+    workDate: input.workDate,
+  });
+  const query = params.toString();
+  return query ? `/hr/schedule?${query}` : '/hr/schedule';
 }
 
 function formatDateLabel(ymd: string) {
@@ -89,8 +120,11 @@ export default function HrScheduleListPage() {
   const searchParams = useSearchParams();
   const linkedWorkDate = workDateFromSearchParams(searchParams);
   const linkedMonth = monthFromSearchParams(searchParams);
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
   const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
   const [month, setMonth] = useState(() => linkedMonth || linkedWorkDate.slice(0, 7) || currentMonthYmd());
+  const [companyId, setCompanyId] = useState(linkedCompanyId);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createDate, setCreateDate] = useState(todayYmd());
   const [creating, setCreating] = useState(false);
@@ -106,15 +140,54 @@ export default function HrScheduleListPage() {
   }, [linkedMonth, linkedWorkDate]);
 
   useEffect(() => {
+    if (linkedCompanyId) setCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
     if (linkedWorkDate) setCreateDate(linkedWorkDate);
   }, [linkedWorkDate]);
+
+  const setCompanyFilter = useCallback((nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  }, []);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !companyId) return;
+    const params = buildScheduleSearchParams({
+      month,
+      companyId,
+      workDate: linkedWorkDate || undefined,
+    });
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/schedule?${next}` : '/hr/schedule';
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [month, companyId, linkedWorkDate, router, searchParams, companyOptions.length]);
 
   const {
     data: schedules = [],
     isLoading: loading,
     isFetching: refreshing,
     refetch,
-  } = useGetHrSchedulesForMonthQuery({ month }, { skip: !canView });
+  } = useGetHrSchedulesForMonthQuery(
+    { month, companyId },
+    { skip: !canView || !companyId },
+  );
 
   const openCreateModal = () => {
     setCreateDate(linkedWorkDate || todayYmd());
@@ -123,6 +196,10 @@ export default function HrScheduleListPage() {
 
   const createSchedule = async () => {
     const ymd = createDate.trim();
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     if (!ymd) {
       toast.error('Choose a work date');
       return;
@@ -131,7 +208,7 @@ export default function HrScheduleListPage() {
     const res = await fetch('/api/hr/schedule', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workDate: ymd }),
+      body: JSON.stringify({ workDate: ymd, companyId }),
     });
     const json = await readApiEnvelope<{ id: string; workDate: string }>(res);
     setCreating(false);
@@ -144,7 +221,7 @@ export default function HrScheduleListPage() {
     const createdMonth = ymd.slice(0, 7);
     if (createdMonth !== month) setMonth(createdMonth);
     await refetch();
-    router.push(`/hr/schedule?workDate=${encodeURIComponent(ymd)}`);
+    router.push(scheduleListHref({ month: createdMonth, companyId, workDate: ymd }));
   };
 
   if (!canView) {
@@ -194,17 +271,26 @@ export default function HrScheduleListPage() {
               {refreshing ? ' · refreshing…' : ''}
             </p>
           </div>
-          <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
-            <label htmlFor="schedule-list-month" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Month
-            </label>
-            <Input
-              id="schedule-list-month"
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="h-10 w-full min-w-42 sm:w-auto"
+          <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end">
+            <HrCompanySearchSelect
+              value={companyId}
+              onChange={setCompanyFilter}
+              required
+              label="Company"
+              className="min-w-56"
             />
+            <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+              <label htmlFor="schedule-list-month" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Month
+              </label>
+              <Input
+                id="schedule-list-month"
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="h-10 w-full min-w-42 sm:w-auto"
+              />
+            </div>
           </div>
         </div>
 
@@ -227,6 +313,10 @@ export default function HrScheduleListPage() {
                 <TableSkeleton rows={6} columns={5} />
               </tbody>
             </table>
+          </div>
+        ) : !companyId ? (
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
+            Select a company to load schedules.
           </div>
         ) : schedules.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-muted-foreground">
@@ -261,7 +351,7 @@ export default function HrScheduleListPage() {
                   return (
                     <tr
                       key={row.id}
-                      onDoubleClick={() => router.push(`/hr/schedule/${workDateYmd}`)}
+                      onDoubleClick={() => router.push(scheduleDayHref(workDateYmd, companyId))}
                       title="Double-click to open"
                       className={cn(
                         'cursor-pointer select-none transition-colors hover:bg-muted/40',
@@ -320,17 +410,25 @@ export default function HrScheduleListPage() {
           </>
         }
       >
-        <div className="space-y-2">
-          <label htmlFor="schedule-create-date" className="text-sm font-medium text-foreground">
-            Work date
-          </label>
-          <Input
-            id="schedule-create-date"
-            type="date"
-            value={createDate}
-            onChange={(e) => setCreateDate(e.target.value)}
-            className="h-11 w-full text-base sm:text-sm"
+        <div className="space-y-4">
+          <HrCompanySearchSelect
+            value={companyId}
+            onChange={setCompanyFilter}
+            required
+            label="Company"
           />
+          <div className="space-y-2">
+            <label htmlFor="schedule-create-date" className="text-sm font-medium text-foreground">
+              Work date
+            </label>
+            <Input
+              id="schedule-create-date"
+              type="date"
+              value={createDate}
+              onChange={(e) => setCreateDate(e.target.value)}
+              className="h-11 w-full text-base sm:text-sm"
+            />
+          </div>
         </div>
       </Modal>
     </div>

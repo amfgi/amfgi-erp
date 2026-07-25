@@ -29,6 +29,7 @@ export type EmployeeDirectoryFilterParams = {
   signatureGroup?: string;
   visaHolding?: string;
   expertise?: string;
+  companyId?: string;
 };
 
 type EmploymentStringField = 'designation' | 'department' | 'employmentType' | 'signatureGroup';
@@ -78,10 +79,15 @@ function applyOptionalEmploymentField(
 }
 
 export function buildEmployeeListWhere(
-  companyId: string,
+  companyId: string | string[],
   filters: EmployeeListFilterParams
 ): Prisma.EmployeeWhereInput {
-  const where: Prisma.EmployeeWhereInput = { companyId };
+  const where: Prisma.EmployeeWhereInput =
+    typeof companyId === 'string'
+      ? { companyId }
+      : companyId.length === 1
+        ? { companyId: companyId[0] }
+        : { companyId: { in: companyId } };
   const statuses = parseEmployeeFilterValues(filters.status);
   const portals = parseEmployeeFilterValues(filters.portal);
   const q = filters.q?.trim();
@@ -233,6 +239,7 @@ export function appendEmployeeDirectorySearchParams(
   setFilter('signatureGroup', params.signatureGroup);
   setFilter('visaHolding', params.visaHolding);
   setFilter('expertise', params.expertise);
+  if (params.companyId?.trim()) search.set('companyId', params.companyId.trim());
 }
 
 export function directoryFilterValueToArray(value?: string | null): string[] {
@@ -255,7 +262,8 @@ export function hasEmployeeDirectoryFilters(filters: EmployeeDirectoryFilterPara
       parseEmployeeFilterValues(filters.employmentType).length > 0 ||
       parseEmployeeFilterValues(filters.signatureGroup).length > 0 ||
       parseEmployeeFilterValues(filters.visaHolding).length > 0 ||
-      parseEmployeeFilterValues(filters.expertise).length > 0
+      parseEmployeeFilterValues(filters.expertise).length > 0 ||
+      Boolean(filters.companyId?.trim())
   );
 }
 

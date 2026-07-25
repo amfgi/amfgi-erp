@@ -90,6 +90,47 @@ export function isLeavePaidForPay(line: PayLineInput): boolean {
   return isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY');
 }
 
+/** Day row for a leave line: pays dailyRate x leavePayPercent when the leave type is paid. */
+export function buildLeavePayDayRow(line: PayLineInput, dailyRate: number): PayDayBreakdown {
+  const label = line.leaveTypeLabel
+    ? `Leave (${line.leaveTypeLabel})`
+    : line.leaveType
+      ? `Leave (${line.leaveType.replace(/_/g, ' ')})`
+      : 'Leave';
+
+  if (!isLeavePaidForPay(line)) {
+    return finishPayDayBreakdown({
+      date: line.workDate,
+      status: label,
+      basicHours: 0,
+      otHours: 0,
+      basicHourRate: 0,
+      basicHourSalary: 0,
+      otHourRate: 0,
+      otHourSalary: 0,
+      allowance: 0,
+      totalSalary: 0,
+      detail: 'Unpaid leave',
+    });
+  }
+
+  const pct = line.leavePayPercent ?? 100;
+  const dayPay = roundMoney(dailyRate * (pct / 100));
+  return finishPayDayBreakdown({
+    date: line.workDate,
+    status: label,
+    basicHours: 0,
+    otHours: 0,
+    basicHourRate: dailyRate,
+    basicHourSalary: dayPay,
+    otHourRate: 0,
+    otHourSalary: 0,
+    allowance: 0,
+    totalSalary: dayPay,
+    detail: pct < 100 ? `${pct}% paid leave` : 'Paid leave',
+  });
+}
+
 export function sortPayDayBreakdowns(rows: PayDayBreakdown[]): PayDayBreakdown[] {
   return [...rows].sort((a, b) => a.date.localeCompare(b.date));
 }

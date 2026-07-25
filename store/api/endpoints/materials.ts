@@ -53,6 +53,9 @@ export interface Material {
   currentStock: number;
   reorderLevel?: number;
   unitCost?: number;
+  netWeight?: number | null;
+  grossWeight?: number | null;
+  dimension?: string | null;
   assemblyOutputQuantity?: number;
   assemblyOverheadPercent?: number;
   assemblyUseDynamicCost?: boolean;

@@ -3,7 +3,8 @@ import {
   canHrCompensationDelete,
   canHrCompensationEdit,
 } from '@/lib/hr/compensationPermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
+import { P } from '@/lib/permissions';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
@@ -19,11 +20,17 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; allowanceId: string }> }
 ) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationEdit(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId, allowanceId } = await params;
+
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
+  if (!emp) return errorResponse('Not found', 404);
+  const companyId = emp.companyId;
 
   const existing = await prisma.employeeAllowance.findFirst({
     where: { id: allowanceId, companyId, employeeId },
@@ -78,11 +85,17 @@ export async function DELETE(
   _: Request,
   { params }: { params: Promise<{ id: string; allowanceId: string }> }
 ) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationDelete(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId, allowanceId } = await params;
+
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
+  if (!emp) return errorResponse('Not found', 404);
+  const companyId = emp.companyId;
 
   const existing = await prisma.employeeAllowance.findFirst({
     where: { id: allowanceId, companyId, employeeId },

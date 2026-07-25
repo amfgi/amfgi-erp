@@ -11,9 +11,17 @@ import {
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
-import { hasPerm, requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  companyIdWhere,
+  hasPerm,
+  requireHrSession,
+  requirePerm,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
+
+const companySelect = { id: true, name: true, slug: true } as const;
 
 const criteriaFields = {
   employmentTypes: z.array(z.string().min(1).max(80)).optional(),
@@ -28,6 +36,7 @@ const HolidayPayTypeLinkSchema = z.object({
 });
 
 const CreateSchema = z.object({
+  companyId: z.string().min(1).optional(),
   holidayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   name: z.string().min(1).max(160),
   isPaid: z.boolean().optional(),
@@ -65,43 +74,57 @@ function resolvePayTypeLinksInput(data: {
 }
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
+  const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_PAYROLL_SETTINGS,
+    companyId: searchParams.get('companyId'),
+  });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!hasPerm(session.user, P.HR_PAYROLL_SETTINGS)) {
     return errorResponse('Forbidden', 403);
   }
 
-  const { searchParams } = new URL(req.url);
   const year = parseYearParam(searchParams.get('year'));
   const where =
     year != null
       ? {
-          companyId,
+          ...companyIdWhere(companyIds),
           holidayDate: {
             gte: new Date(`${year}-01-01T00:00:00.000Z`),
             lte: new Date(`${year}-12-31T00:00:00.000Z`),
           },
         }
-      : { companyId };
+      : companyIdWhere(companyIds);
 
   const list = await prisma.companyHoliday.findMany({
     where,
     orderBy: [{ holidayDate: 'asc' }, { name: 'asc' }],
-    include: holidayPayTypeInclude,
+    include: {
+      ...holidayPayTypeInclude,
+      company: { select: companySelect },
+    },
   });
   return successResponse(list.map(serializeCompanyHoliday));
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const authCtx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
+  if (!authCtx.ok) return authCtx.response;
+  const { session } = authCtx;
+  if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+
+  const writeCompanyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: session.user.activeCompanyId,
+  });
+  if (!writeCompanyId) return errorResponse('companyId is required', 400);
+  if (!authCtx.companyIds.includes(writeCompanyId)) return errorResponse('Forbidden', 403);
+  const companyId = writeCompanyId;
 
   try {
     const payTypeLinks = resolvePayTypeLinksInput(parsed.data);

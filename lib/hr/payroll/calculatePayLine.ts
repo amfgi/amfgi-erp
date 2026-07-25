@@ -26,11 +26,11 @@ import { evaluateCustomFormula } from '@/lib/hr/payroll/evaluateCustomFormula';
 import { resolveWorkedMinutesFromAttendance } from '@/lib/hr/payroll/resolveWorkedMinutes';
 import { lineBasicHours } from '@/lib/hr/payroll/lineBasicHours';
 import {
+  buildLeavePayDayRow,
   emptyPayDayBreakdown,
   finishPayDayBreakdown,
   formatPayDayStatus,
   isExcludedWeekdayLine,
-  isLeavePaidForPay,
   mergeCustomDayTrace,
   resolveDayHoursForBreakdown,
   sortPayDayBreakdowns,
@@ -306,7 +306,11 @@ function buildDailyWageDayRow(
     });
   }
 
-  if ((line.status === 'ABSENT' || isPayrollLeaveLine(line)) && !isLeavePaidForPay(line)) {
+  if (isPayrollLeaveLine(line)) {
+    return buildLeavePayDayRow(line, dailyRate);
+  }
+
+  if (line.status === 'ABSENT') {
     return emptyPayDayBreakdown(line);
   }
 
@@ -375,10 +379,8 @@ function buildHourlySplitDayRow(
   }
 
   if (isPayrollLeaveLine(line)) {
-    if (!isLeavePaidForPay(line)) {
-      return emptyPayDayBreakdown(line);
-    }
-    return emptyPayDayBreakdown(line);
+    const dailyRate = params.denom > 0 ? params.basic / params.denom : 0;
+    return buildLeavePayDayRow(line, dailyRate);
   }
 
   const lineBasic = lineBasicHours(line);
@@ -519,44 +521,7 @@ function buildCalendarDeductDayRow(
   }
 
   if (isPayrollLeaveLine(line)) {
-    const paid =
-      line.leavePayPercent != null
-        ? line.leavePayPercent > 0
-        : isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY');
-    const label = line.leaveTypeLabel
-      ? `Leave (${line.leaveTypeLabel})`
-      : line.leaveType
-        ? `Leave (${line.leaveType.replace(/_/g, ' ')})`
-        : 'Leave';
-    if (!paid) {
-      return finishPayDayBreakdown({
-        date: line.workDate,
-        status: label,
-        basicHours: 0,
-        otHours: 0,
-        basicHourRate: 0,
-        basicHourSalary: 0,
-        otHourRate: 0,
-        otHourSalary: 0,
-        allowance: 0,
-        totalSalary: 0,
-        detail: 'Unpaid leave',
-      });
-    }
-    const pct = line.leavePayPercent ?? 100;
-    return finishPayDayBreakdown({
-      date: line.workDate,
-      status: label,
-      basicHours: 0,
-      otHours: 0,
-      basicHourRate: dailyRate,
-      basicHourSalary: dayPay,
-      otHourRate: 0,
-      otHourSalary: 0,
-      allowance: 0,
-      totalSalary: dayPay,
-      detail: pct < 100 ? `${pct}% paid leave` : 'Paid leave',
-    });
+    return buildLeavePayDayRow(line, dailyRate);
   }
 
   if (line.status === 'ABSENT') {
@@ -888,8 +853,10 @@ export function calculatePayLine(params: {
         continue;
       }
       if (isPayrollLeaveLine(line)) {
-        dayRows.push(emptyPayDayBreakdown(line));
-        if (isLeavePaidForPay(line)) continue;
+        const dailyRate = denom > 0 ? basic / denom : 0;
+        const row = buildLeavePayDayRow(line, dailyRate);
+        dayRows.push(row);
+        gross += row.totalSalary;
         continue;
       }
       if (line.status === 'ABSENT') {

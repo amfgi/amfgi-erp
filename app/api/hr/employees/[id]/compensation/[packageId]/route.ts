@@ -8,8 +8,9 @@ import {
   listCompensationPackages,
   updateCompensationPackage,
 } from '@/lib/hr/payroll/compensationPackages';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { resolveRouteEmployeeId } from '@/lib/hr/resolveRouteEmployeeId';
+import { P } from '@/lib/permissions';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -34,9 +35,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; packageId: string }> }
 ) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationEdit(session.user)) {
     return errorResponse('Forbidden', 403);
   }
@@ -45,8 +46,11 @@ export async function PATCH(
   if (!employeeId) return errorResponse('Employee id required', 400);
   const { packageId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   const body = await req.json();
   const parsed = UpdateSchema.safeParse(body);
@@ -80,9 +84,9 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string; packageId: string }> }
 ) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationDelete(session.user)) {
     return errorResponse('Forbidden', 403);
   }
@@ -91,8 +95,11 @@ export async function DELETE(
   if (!employeeId) return errorResponse('Employee id required', 400);
   const { packageId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   try {
     await deleteCompensationPackage(prisma, companyId, employeeId, packageId);

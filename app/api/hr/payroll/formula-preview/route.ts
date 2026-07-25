@@ -1,5 +1,9 @@
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  requireHrSession,
+  requirePerm,
+  resolveHrWriteCompanyId,
+} from '@/lib/hr/requireHrSession';
 import {
   dummyFormulaPreviewContext,
   employeeFormulaPreviewContext,
@@ -11,6 +15,7 @@ import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
 const BodySchema = z.object({
+  companyId: z.string().min(1).optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/),
   config: z.record(z.string(), z.unknown()),
   source: z.enum(['dummy', 'employee']),
@@ -26,18 +31,26 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) {
-    return errorResponse('Forbidden', 403);
-  }
-
   const body = await req.json();
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) {
     return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
   }
+
+  const authCtx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
+  if (!authCtx.ok) return authCtx.response;
+  const { session } = authCtx;
+  if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) {
+    return errorResponse('Forbidden', 403);
+  }
+
+  const writeCompanyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: session.user.activeCompanyId,
+  });
+  if (!writeCompanyId) return errorResponse('companyId is required', 400);
+  if (!authCtx.companyIds.includes(writeCompanyId)) return errorResponse('Forbidden', 403);
+  const companyId = writeCompanyId;
 
   let config;
   try {

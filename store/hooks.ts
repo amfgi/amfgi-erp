@@ -170,6 +170,7 @@ export {
   useGetStockAdjustmentsQuery,
   useGetStockCountSessionsReportQuery,
   useLazyGetMonthlyJobSummaryQuery,
+  useLazyGetMaterialConsumptionQuery,
   useUpdateStockExceptionApprovalMutation,
   type InventoryByWarehouseResponse,
   type InventoryByWarehouseRow,

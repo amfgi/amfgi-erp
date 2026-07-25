@@ -40,6 +40,14 @@ const REPORT_SECTIONS: Array<{
         tone: 'emerald',
       },
       {
+        href: '/reports/material-consumption',
+        title: 'Material consumption',
+        description:
+          'Stock outs and returns rolled up material-wise for a date range. Choose material name or external name labeling, then export net qty and cost to Excel.',
+        badge: 'Consumption',
+        tone: 'emerald',
+      },
+      {
         href: '/reports/job-profitability',
         title: 'Customer and job profitability',
         description:

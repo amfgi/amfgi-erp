@@ -224,6 +224,9 @@ function MaterialEditor({
   const [externalItemName, setExternalItemName] = useState(material?.externalItemName ?? '');
   const [reorderLevel, setReorderLevel] = useState(material?.reorderLevel?.toString() ?? '');
   const [unitCost, setUnitCost] = useState(material?.unitCost?.toString() ?? '');
+  const [netWeight, setNetWeight] = useState(material?.netWeight?.toString() ?? '');
+  const [grossWeight, setGrossWeight] = useState(material?.grossWeight?.toString() ?? '');
+  const [dimension, setDimension] = useState(material?.dimension ?? '');
   const [currentStock, setCurrentStock] = useState('0');
   const [deriveUnitId, setDeriveUnitId] = useState('');
   const [deriveParentId, setDeriveParentId] = useState('');
@@ -260,6 +263,9 @@ function MaterialEditor({
     setExternalItemName(material.externalItemName ?? '');
     setReorderLevel(material.reorderLevel?.toString() ?? '');
     setUnitCost(material.unitCost?.toString() ?? '');
+    setNetWeight(material.netWeight?.toString() ?? '');
+    setGrossWeight(material.grossWeight?.toString() ?? '');
+    setDimension(material.dimension ?? '');
     setAssemblyOutputQuantity(material.assemblyOutputQuantity?.toString() ?? '1');
     setAssemblyOverheadPercent(material.assemblyOverheadPercent?.toString() ?? '0');
     setAssemblyUseDynamicCost(material.assemblyUseDynamicCost ?? true);
@@ -492,6 +498,9 @@ function MaterialEditor({
         documentFiles,
         ...(isCreateMode && { currentStock: parseFloat(currentStock) || 0 }),
         reorderLevel: reorderLevel ? parseFloat(reorderLevel) : undefined,
+        netWeight: netWeight ? parseFloat(netWeight) : isCreateMode ? undefined : null,
+        grossWeight: grossWeight ? parseFloat(grossWeight) : isCreateMode ? undefined : null,
+        dimension: dimension.trim() || (isCreateMode ? undefined : null),
         unitCost: useAssemblyDynamicCost ? calculatedAssemblyUnitCost : unitCost ? parseFloat(unitCost) : undefined,
         assemblyOutputQuantity: parseFloat(assemblyOutputQuantity) || 1,
         assemblyOverheadPercent: parseFloat(assemblyOverheadPercent) || 0,
@@ -513,6 +522,9 @@ function MaterialEditor({
 
         if (description) changes.description = { from: null, to: description };
         if (reorderLevel) changes.reorderLevel = { from: null, to: reorderLevel };
+        if (netWeight) changes.netWeight = { from: null, to: netWeight };
+        if (grossWeight) changes.grossWeight = { from: null, to: grossWeight };
+        if (dimension.trim()) changes.dimension = { from: null, to: dimension.trim() };
         if (imageUrl) changes.imageUrl = { from: null, to: imageUrl };
         if (galleryFiles.length > 0) changes.photoGallery = { from: null, to: galleryFiles.length };
         if (documentFiles.length > 0) changes.documentFiles = { from: null, to: documentFiles.length };
@@ -599,6 +611,24 @@ function MaterialEditor({
         changes.reorderLevel = {
           from: material.reorderLevel ?? 0,
           to: parseFloat(reorderLevel) || 0,
+        };
+      }
+      if (netWeight !== (material.netWeight?.toString() ?? '')) {
+        changes.netWeight = {
+          from: material.netWeight ?? null,
+          to: netWeight ? parseFloat(netWeight) : null,
+        };
+      }
+      if (grossWeight !== (material.grossWeight?.toString() ?? '')) {
+        changes.grossWeight = {
+          from: material.grossWeight ?? null,
+          to: grossWeight ? parseFloat(grossWeight) : null,
+        };
+      }
+      if (dimension !== (material.dimension ?? '')) {
+        changes.dimension = {
+          from: material.dimension || null,
+          to: dimension.trim() || null,
         };
       }
       if ((material.imageUrl ?? '') !== (imageUrl ?? '')) {
@@ -1019,6 +1049,39 @@ function MaterialEditor({
                   value={reorderLevel}
                   onChange={(e) => setReorderLevel(e.target.value)}
                   className={inputClassName()}
+                />
+              </FieldShell>
+
+              <FieldShell label="Net weight" hint="Product weight without packaging (e.g. kg).">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={netWeight}
+                  onChange={(e) => setNetWeight(e.target.value)}
+                  className={inputClassName()}
+                  placeholder="e.g. 12.5"
+                />
+              </FieldShell>
+
+              <FieldShell label="Gross weight" hint="Weight including packaging (e.g. kg).">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={grossWeight}
+                  onChange={(e) => setGrossWeight(e.target.value)}
+                  className={inputClassName()}
+                  placeholder="e.g. 13.2"
+                />
+              </FieldShell>
+
+              <FieldShell label="Dimension" hint="Optional size label, e.g. L x W x H.">
+                <input
+                  value={dimension}
+                  onChange={(e) => setDimension(e.target.value)}
+                  className={inputClassName()}
+                  placeholder="e.g. 120 x 80 x 40 cm"
                 />
               </FieldShell>
             </div>

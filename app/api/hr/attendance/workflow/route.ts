@@ -1,23 +1,35 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
 const BodySchema = z.object({
+  companyId: z.string().min(1).optional(),
   workDate: z.string().min(1),
   action: z.enum(['submit', 'approve']),
 });
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-
   const body = await req.json();
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const ctx = await requireHrSession({
+    permission:
+      parsed.data.action === 'approve' ? P.HR_ATTENDANCE_APPROVE : P.HR_ATTENDANCE_EDIT,
+  });
+  if (!ctx.ok) return ctx.response;
+  const { session } = ctx;
+
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: ctx.session.user.activeCompanyId,
+  });
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
 
   let workDateYmd: string;
   try {
@@ -28,7 +40,6 @@ export async function POST(req: Request) {
   const workDate = dateFromYmd(workDateYmd);
 
   if (parsed.data.action === 'submit') {
-    if (!requirePerm(session.user, P.HR_ATTENDANCE_EDIT)) return errorResponse('Forbidden', 403);
     const result = await prisma.attendanceEntry.updateMany({
       where: { companyId, workDate, workflowStatus: 'DRAFT' },
       data: { workflowStatus: 'SUBMITTED' },
@@ -36,7 +47,6 @@ export async function POST(req: Request) {
     return successResponse({ updated: result.count });
   }
 
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_APPROVE)) return errorResponse('Forbidden', 403);
   const result = await prisma.attendanceEntry.updateMany({
     where: {
       companyId,

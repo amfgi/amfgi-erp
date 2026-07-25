@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
@@ -17,6 +19,7 @@ import {
   type WorkforceEmployeeType,
 } from '@/lib/hr/createEmployeeClient';
 import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
 import { useAppDispatch } from '@/store/hooks';
 
@@ -25,6 +28,7 @@ type CreateEmployeeModalProps = {
   onClose: () => void;
   initialFullName?: string;
   defaultEmployeeType?: WorkforceEmployeeType;
+  defaultCompanyId?: string;
   onCreated?: (employee: CreatedEmployeeClientRecord) => void;
 };
 
@@ -33,10 +37,14 @@ export default function CreateEmployeeModal({
   onClose,
   initialFullName = '',
   defaultEmployeeType = 'LABOUR_WORKER',
+  defaultCompanyId = '',
   onCreated,
 }: CreateEmployeeModalProps) {
   const dispatch = useAppDispatch();
+  const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
   const [saving, setSaving] = useState(false);
+  const [companyId, setCompanyId] = useState('');
   const [fullName, setFullName] = useState('');
   const [preferredName, setPreferredName] = useState('');
   const [nationality, setNationality] = useState('');
@@ -71,13 +79,33 @@ export default function CreateEmployeeModal({
     setEmploymentType('');
     setEmployeeType(defaultEmployeeType);
     setVisaHolding('COMPANY_PROVIDED');
-  }, [defaultEmployeeType, initialFullName, isOpen]);
+    if (companyOptions.length === 0) {
+      setCompanyId(defaultCompanyId.trim());
+      return;
+    }
+    const optionIds = companyOptions.map((option) => option.id);
+    const preferred =
+      defaultCompanyId.trim() && optionIds.includes(defaultCompanyId.trim())
+        ? defaultCompanyId.trim()
+        : resolveDefaultHrCompanyId(optionIds, session?.user?.activeCompanyId);
+    setCompanyId(preferred);
+  }, [companyOptions, defaultCompanyId, defaultEmployeeType, initialFullName, isOpen, session?.user?.activeCompanyId]);
+
+  const handleCompanyChange = (nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setSaving(true);
     try {
       const employee = await createEmployeeRecord({
+        companyId,
         fullName,
         preferredName: preferredName.trim() || null,
         nationality: nationality || null,
@@ -123,6 +151,15 @@ export default function CreateEmployeeModal({
       <form id="create-employee-modal-form" onSubmit={submit} className="space-y-4">
         <p className="font-mono text-xs text-emerald-600 dark:text-emerald-300">Code: {proposedCode}</p>
         <div className={fieldGrid}>
+          <div className="space-y-1 sm:col-span-2">
+            <HrCompanySearchSelect
+              value={companyId}
+              onChange={handleCompanyChange}
+              required
+              label="Company"
+              inputClassName={searchInputClass}
+            />
+          </div>
           <div className="space-y-1 sm:col-span-2">
             <span className={labelClass}>Full legal name</span>
             <Input

@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import HrPageChrome from '@/components/hr/HrPageChrome';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -13,6 +15,7 @@ import { Input } from '@/components/ui/shadcn/input';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { deductFromBalanceFromRules, parseLeaveTypeRules } from '@/lib/hr/leaveTypeRules';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
@@ -99,7 +102,12 @@ function rowDeductsBalance(row: LeaveRow): boolean {
 }
 
 export default function HrLeavePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
   const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState(linkedCompanyId);
   const perms = (session?.user?.permissions ?? []) as string[];
   const canApprove = session?.user?.isSuperAdmin || perms.includes('hr.leave.approve');
   const canEdit = session?.user?.isSuperAdmin || perms.includes('hr.leave.edit');
@@ -147,11 +155,44 @@ export default function HrLeavePage() {
   const [editSaving, setEditSaving] = useState(false);
   const [editBalance, setEditBalance] = useState<LeaveRow['balance'] | null>(null);
 
+  const setCompanyFilter = useCallback((nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  }, []);
+
   useEffect(() => {
-    if (!canView) return;
+    if (linkedCompanyId) setCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !companyId) return;
+    const params = new URLSearchParams();
+    if (companyId.trim()) params.set('companyId', companyId.trim());
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/leave?${next}` : '/hr/leave';
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [companyId, companyOptions.length, router, searchParams]);
+
+  useEffect(() => {
+    if (!canView || !companyId) return;
     void Promise.all([
-      fetch('/api/hr/employees?limit=500', { cache: 'no-store' }).then((r) => r.json()),
-      fetch('/api/hr/leave-types', { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/hr/employees?limit=500&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/hr/leave-types?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }).then((r) => r.json()),
     ]).then(([empJson, typesJson]) => {
       const empRows = Array.isArray(empJson?.data?.items)
         ? empJson.data.items
@@ -165,34 +206,38 @@ export default function HrLeavePage() {
         setRecordLeaveTypeId((prev) => prev || active[0]?.id || '');
       }
     });
-  }, [canView]);
+  }, [canView, companyId]);
 
   const loadData = useCallback(async () => {
-    const q = statusFilter === 'ALL' ? '' : `?status=${statusFilter}`;
+    if (!companyId) return;
+    const params = new URLSearchParams({ companyId });
+    if (statusFilter !== 'ALL') params.set('status', statusFilter);
+    const q = params.toString();
     const [reqRes, statsRes] = await Promise.all([
-      fetch(`/api/hr/leave-requests${q}`, { cache: 'no-store' }),
-      fetch('/api/hr/leave/stats', { cache: 'no-store' }),
+      fetch(`/api/hr/leave-requests?${q}`, { cache: 'no-store' }),
+      fetch(`/api/hr/leave/stats?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }),
     ]);
     const reqJson = await readApiJson<LeaveRow[]>(reqRes);
     const statsJson = await readApiJson<Stats>(statsRes);
     if (reqRes.ok && reqJson?.success) setRequests(reqJson.data as LeaveRow[]);
     if (statsRes.ok && statsJson?.success) setStats(statsJson.data as Stats);
-  }, [statusFilter]);
+  }, [companyId, statusFilter]);
 
   useEffect(() => {
-    if (!canView) return;
+    if (!canView || !companyId) return;
     setLoading(true);
     void loadData().finally(() => setLoading(false));
-  }, [canView, loadData]);
+  }, [canView, companyId, loadData]);
 
   useEffect(() => {
-    if (!recordEmployeeId || !recordStart) {
+    if (!recordEmployeeId || !recordStart || !companyId) {
       setRecordBalance(null);
       return;
     }
-    void fetch(`/api/hr/leave-balances?employeeId=${encodeURIComponent(recordEmployeeId)}`, {
-      cache: 'no-store',
-    })
+    void fetch(
+      `/api/hr/leave-balances?employeeId=${encodeURIComponent(recordEmployeeId)}&companyId=${encodeURIComponent(companyId)}`,
+      { cache: 'no-store' },
+    )
       .then((r) => r.json())
       .then((json) => {
         const row = Array.isArray(json?.data) ? json.data[0] : null;
@@ -208,16 +253,17 @@ export default function HrLeavePage() {
         }
       })
       .catch(() => setRecordBalance(null));
-  }, [recordEmployeeId, recordStart]);
+  }, [companyId, recordEmployeeId, recordStart]);
 
   useEffect(() => {
-    if (!editModal || !editStart) {
+    if (!editModal || !editStart || !companyId) {
       setEditBalance(null);
       return;
     }
-    void fetch(`/api/hr/leave-balances?employeeId=${encodeURIComponent(editModal.employee.id)}`, {
-      cache: 'no-store',
-    })
+    void fetch(
+      `/api/hr/leave-balances?employeeId=${encodeURIComponent(editModal.employee.id)}&companyId=${encodeURIComponent(companyId)}`,
+      { cache: 'no-store' },
+    )
       .then((r) => r.json())
       .then((json) => {
         const row = Array.isArray(json?.data) ? json.data[0] : null;
@@ -233,7 +279,7 @@ export default function HrLeavePage() {
         }
       })
       .catch(() => setEditBalance(null));
-  }, [editModal, editStart]);
+  }, [companyId, editModal, editStart]);
 
   const visibleRequests = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -287,6 +333,10 @@ export default function HrLeavePage() {
 
   const submitRecord = async () => {
     if (!canApprove) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     if (!recordEmployeeId || !recordLeaveTypeId || !recordStart) {
       toast.error('Employee, leave type, and start date are required');
       return;
@@ -296,6 +346,7 @@ export default function HrLeavePage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        companyId,
         employeeId: recordEmployeeId,
         leaveTypeId: recordLeaveTypeId,
         startDate: recordStart,
@@ -329,6 +380,10 @@ export default function HrLeavePage() {
 
   const submitEdit = async () => {
     if (!editModal || !canEdit) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     if (!editLeaveTypeId || !editStart) {
       toast.error('Leave type and start date are required');
       return;
@@ -338,6 +393,7 @@ export default function HrLeavePage() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        companyId,
         leaveTypeId: editLeaveTypeId,
         startDate: editStart,
         endDate: editEnd || editStart,
@@ -362,6 +418,7 @@ export default function HrLeavePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ...(companyId ? { companyId } : {}),
         action: reviewModal.action,
         reviewNote: reviewNote.trim() || undefined,
         allowInsufficientBalance: reviewModal.allowOverride,
@@ -419,7 +476,7 @@ export default function HrLeavePage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/hr/leave/balances">
+          <Link href={companyId ? `/hr/leave/balances?companyId=${encodeURIComponent(companyId)}` : '/hr/leave/balances'}>
             <Button variant="outline">Leave balances</Button>
           </Link>
           {canApprove ? (
@@ -452,6 +509,10 @@ export default function HrLeavePage() {
           </AlertDescription>
         </Alert>
       ) : null}
+
+      <div className="mb-5 max-w-xs">
+        <HrCompanySearchSelect value={companyId} onChange={setCompanyFilter} required label="Company" />
+      </div>
 
       {stats ? (
         <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

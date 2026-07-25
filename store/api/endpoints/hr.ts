@@ -32,6 +32,8 @@ export interface HrEmployee {
   portalEnabled: boolean;
   employeeType: string;
   basicHoursPerDay: number;
+  companyId?: string;
+  company?: { id: string; name: string; slug: string } | null;
   defaultTiming:
     | {
         dutyStart: string | null;
@@ -106,6 +108,7 @@ export interface HrAttendanceOverview {
 export type HrAttendanceOverviewParams = {
   /** Calendar month to load (YYYY-MM). Defaults to current month on the server. */
   month: string;
+  companyId?: string;
 };
 
 export interface HrLeaveStats {
@@ -166,6 +169,7 @@ export interface HrExpertise {
 type HrEmployeesArg = {
   q?: string;
   status?: 'ALL' | HrEmployeeStatus;
+  companyId?: string;
 };
 
 export type HrEmployeesListParams = EmployeeDirectoryFilterParams & {
@@ -195,6 +199,7 @@ export const hrApi = appApi.injectEndpoints({
         const params = new URLSearchParams();
         if (arg?.q?.trim()) params.set('q', arg.q.trim());
         if (arg?.status && arg.status !== 'ALL') params.set('status', arg.status);
+        if (arg?.companyId?.trim()) params.set('companyId', arg.companyId.trim());
         const query = params.toString();
         return `/hr/employees${query ? `?${query}` : ''}`;
       },
@@ -219,7 +224,7 @@ export const hrApi = appApi.injectEndpoints({
 
     bulkImportEmployees: builder.mutation<
       { created: number; updated: number; skipped: number; warnings: string[] },
-      { newRows: unknown[]; updateRows: unknown[] }
+      { newRows: unknown[]; updateRows: unknown[]; companyId?: string }
     >({
       query: (body) => ({
         url: '/hr/employees/import/bulk',
@@ -253,8 +258,12 @@ export const hrApi = appApi.injectEndpoints({
           : [{ type: 'Employee', id: 'LIST' }],
     }),
 
-    getHrSchedules: builder.query<HrScheduleRow[], void>({
-      query: () => '/hr/schedule',
+    getHrSchedules: builder.query<HrScheduleRow[], { companyId: string }>({
+      query: ({ companyId }) => {
+        const params = new URLSearchParams();
+        params.set('companyId', companyId);
+        return `/hr/schedule?${params.toString()}`;
+      },
       transformResponse: (r: { data: HrScheduleRow[] }) => r.data,
       providesTags: (result) =>
         result
@@ -264,12 +273,13 @@ export const hrApi = appApi.injectEndpoints({
 
     getHrSchedulesPage: builder.query<
       { items: HrScheduleRow[]; total: number },
-      { limit: number; offset: number; q?: string; status?: string }
+      { limit: number; offset: number; companyId: string; q?: string; status?: string }
     >({
-      query: ({ limit, offset, q, status }) => {
+      query: ({ limit, offset, companyId, q, status }) => {
         const params = new URLSearchParams();
         params.set('limit', String(limit));
         params.set('offset', String(offset));
+        params.set('companyId', companyId);
         if (q?.trim()) params.set('q', q.trim());
         if (status && status !== 'ALL') params.set('status', status);
         return `/hr/schedule?${params.toString()}`;
@@ -284,8 +294,13 @@ export const hrApi = appApi.injectEndpoints({
           : [{ type: 'WorkSchedule', id: 'LIST' }],
     }),
 
-    getHrSchedulesForMonth: builder.query<HrScheduleRow[], { month: string }>({
-      query: ({ month }) => `/hr/schedule?month=${encodeURIComponent(month)}`,
+    getHrSchedulesForMonth: builder.query<HrScheduleRow[], { month: string; companyId: string }>({
+      query: ({ month, companyId }) => {
+        const params = new URLSearchParams();
+        params.set('month', month);
+        params.set('companyId', companyId);
+        return `/hr/schedule?${params.toString()}`;
+      },
       transformResponse: (r: { data: HrScheduleRow[] }) => r.data,
       providesTags: (result, _error, arg) =>
         result
@@ -300,6 +315,7 @@ export const hrApi = appApi.injectEndpoints({
       query: (arg) => {
         const params = new URLSearchParams();
         params.set('month', arg.month);
+        if (arg.companyId?.trim()) params.set('companyId', arg.companyId.trim());
         return `/hr/attendance/overview?${params.toString()}`;
       },
       transformResponse: (r: { data: HrAttendanceOverview }) => r.data,
@@ -309,8 +325,15 @@ export const hrApi = appApi.injectEndpoints({
       ],
     }),
 
-    getHrLeaveStats: builder.query<HrLeaveStats, void>({
-      query: () => '/hr/leave/stats',
+    getHrLeaveStats: builder.query<HrLeaveStats, { companyId?: string } | void>({
+      query: (arg) => {
+        const params = new URLSearchParams();
+        if (arg && typeof arg === 'object' && arg.companyId?.trim()) {
+          params.set('companyId', arg.companyId.trim());
+        }
+        const q = params.toString();
+        return q ? `/hr/leave/stats?${q}` : '/hr/leave/stats';
+      },
       transformResponse: (r: { data: HrLeaveStats }) => r.data,
       providesTags: [{ type: 'Employee', id: 'LEAVE_STATS' }],
     }),
@@ -324,8 +347,15 @@ export const hrApi = appApi.injectEndpoints({
       ],
     }),
 
-    getHrDocumentTypes: builder.query<HrDocumentType[], void>({
-      query: () => '/hr/document-types',
+    getHrDocumentTypes: builder.query<HrDocumentType[], { companyId?: string } | void>({
+      query: (arg) => {
+        const params = new URLSearchParams();
+        if (arg && typeof arg === 'object' && arg.companyId?.trim()) {
+          params.set('companyId', arg.companyId.trim());
+        }
+        const q = params.toString();
+        return q ? `/hr/document-types?${q}` : '/hr/document-types';
+      },
       transformResponse: (r: { data: HrDocumentType[] }) => r.data,
       providesTags: (result) =>
         result
@@ -333,14 +363,28 @@ export const hrApi = appApi.injectEndpoints({
           : [{ type: 'HrDocumentType', id: 'LIST' }],
     }),
 
-    getHrEmployeeTypeSettings: builder.query<HrEmployeeTypeSettings, void>({
-      query: () => '/hr/employee-type-settings',
+    getHrEmployeeTypeSettings: builder.query<HrEmployeeTypeSettings, { companyId?: string } | void>({
+      query: (arg) => {
+        const params = new URLSearchParams();
+        if (arg && typeof arg === 'object' && arg.companyId?.trim()) {
+          params.set('companyId', arg.companyId.trim());
+        }
+        const q = params.toString();
+        return q ? `/hr/employee-type-settings?${q}` : '/hr/employee-type-settings';
+      },
       transformResponse: (r: { data: HrEmployeeTypeSettings }) => r.data,
       providesTags: [{ type: 'HrEmployeeTypeSettings', id: 'SETTINGS' }],
     }),
 
-    getHrExpertises: builder.query<HrExpertise[], void>({
-      query: () => '/hr/expertises',
+    getHrExpertises: builder.query<HrExpertise[], { companyId?: string } | void>({
+      query: (arg) => {
+        const params = new URLSearchParams();
+        if (arg && typeof arg === 'object' && arg.companyId?.trim()) {
+          params.set('companyId', arg.companyId.trim());
+        }
+        const q = params.toString();
+        return q ? `/hr/expertises?${q}` : '/hr/expertises';
+      },
       transformResponse: (r: { data: HrExpertise[] }) => r.data,
       providesTags: (result) =>
         result

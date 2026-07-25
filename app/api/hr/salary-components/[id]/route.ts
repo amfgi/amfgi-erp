@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession, requirePerm } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -17,18 +17,21 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
+  if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
 
-  const existing = await prisma.allowanceType.findFirst({ where: { id, companyId } });
+  const existing = await prisma.allowanceType.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   const row = await prisma.allowanceType.update({
     where: { id },
@@ -51,14 +54,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_PAYROLL_SETTINGS });
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
+  if (!requirePerm(session.user, P.HR_PAYROLL_SETTINGS)) return errorResponse('Forbidden', 403);
   const { id } = await params;
 
-  const existing = await prisma.allowanceType.findFirst({ where: { id, companyId } });
+  const existing = await prisma.allowanceType.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   const inUse = await prisma.employeeAllowance.count({
     where: { companyId, allowanceTypeId: id },

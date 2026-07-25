@@ -1,6 +1,7 @@
 import { loadEmployeesPendingCompensation } from '@/lib/hr/payroll/employeesPendingCompensation';
 import { P } from '@/lib/permissions';
-import { hasPerm, requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { hasPerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 
 function currentMonthYmd() {
@@ -32,15 +33,26 @@ function canViewPendingCompensationDashboard(
 }
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
+  const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_COMPENSATION_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
 
   if (!canViewPendingCompensationDashboard(session.user)) {
     return errorResponse('Forbidden', 403);
   }
 
-  const { searchParams } = new URL(req.url);
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: searchParams.get('companyId'),
+    activeCompanyId: session.user.activeCompanyId,
+  });
+  if (!companyId || !companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
+
   const month = parseMonthParam(searchParams.get('month')) ?? currentMonthYmd();
 
   const employees = await loadEmployeesPendingCompensation(companyId, month);

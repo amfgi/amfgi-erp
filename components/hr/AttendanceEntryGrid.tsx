@@ -109,6 +109,8 @@ interface AttendanceEntryGridProps {
   onRemoveRow?: (rowKey: string) => void;
   /** Database + localStorage key for column layout; use a distinct key per attendance screen. */
   gridPreferenceKey?: string;
+  /** HR company scope for grid prefs (falls back to session active company). */
+  preferenceCompanyId?: string | null;
   canEdit: boolean;
   emptyMessage: string;
   /** Left side of the day-sheet chrome row (search, scope, add employee). */
@@ -503,6 +505,7 @@ export default function AttendanceEntryGrid({
   onWorkDateChange,
   onRemoveRow,
   gridPreferenceKey = ATTENDANCE_DAY_SHEET_GRID_PREFERENCE_KEY,
+  preferenceCompanyId,
   canEdit,
   emptyMessage,
   filters,
@@ -514,7 +517,7 @@ export default function AttendanceEntryGrid({
   onAllJobsChange,
 }: AttendanceEntryGridProps) {
   const { data: session, status: sessionStatus } = useSession();
-  const companyId = session?.user?.activeCompanyId;
+  const companyId = preferenceCompanyId?.trim() || session?.user?.activeCompanyId;
   const storageKey = useMemo(
     () => (companyId ? getAttendanceGridLocalStorageKey(companyId, gridPreferenceKey) : null),
     [companyId, gridPreferenceKey]

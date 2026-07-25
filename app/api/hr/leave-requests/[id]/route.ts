@@ -6,7 +6,7 @@ import {
   updateLeaveRequest,
 } from '@/lib/hr/leaveRequestService';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -25,11 +25,16 @@ const PutSchema = z.object({
 });
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_LEAVE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_LEAVE_EDIT)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
   const { id } = await params;
+
+  const existing = await prisma.leaveRequest.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true },
+  });
+  if (!existing) return errorResponse('Not found', 404);
 
   const body = await req.json();
   const parsed = PutSchema.safeParse(body);
@@ -46,7 +51,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   try {
     const row = await updateLeaveRequest(prisma, {
-      companyId,
+      companyId: existing.companyId,
       requestId: id,
       editorId: session.user.id,
       leaveTypeId: parsed.data.leaveTypeId,
@@ -69,11 +74,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_LEAVE_APPROVE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_LEAVE_APPROVE)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
   const { id } = await params;
+
+  const existing = await prisma.leaveRequest.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true },
+  });
+  if (!existing) return errorResponse('Not found', 404);
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
@@ -83,13 +93,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const row =
       parsed.data.action === 'reject'
         ? await rejectLeaveRequest(prisma, {
-            companyId,
+            companyId: existing.companyId,
             requestId: id,
             reviewerId: session.user.id,
             reviewNote: parsed.data.reviewNote,
           })
         : await approveLeaveRequest(prisma, {
-            companyId,
+            companyId: existing.companyId,
             requestId: id,
             reviewerId: session.user.id,
             reviewNote: parsed.data.reviewNote,
@@ -104,14 +114,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_LEAVE_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { companyId } = ctx;
-  if (!requirePerm(ctx.session.user, P.HR_LEAVE_DELETE)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
+  const existing = await prisma.leaveRequest.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true },
+  });
+  if (!existing) return errorResponse('Not found', 404);
+
   try {
-    const row = await cancelLeaveRequest(prisma, companyId, id);
+    const row = await cancelLeaveRequest(prisma, existing.companyId, id);
     return successResponse(row);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Delete failed';

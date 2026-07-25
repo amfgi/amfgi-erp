@@ -4,7 +4,7 @@ import { formatZodImportError } from '@/lib/import-export/formatImportErrors';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { prisma } from '@/lib/db/prisma';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -38,16 +38,12 @@ const EmployeeImportRowSchema = z.object({
 });
 
 const BulkSchema = z.object({
+  companyId: z.string().min(1).optional(),
   newRows: z.array(EmployeeImportRowSchema),
   updateRows: z.array(EmployeeImportRowSchema),
 });
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_CREATE)) return errorResponse('Forbidden', 403);
-
   let body: unknown;
   try {
     body = await req.json();
@@ -58,6 +54,20 @@ export async function POST(req: Request) {
   const parsed = BulkSchema.safeParse(body);
   if (!parsed.success) {
     return errorResponse(formatZodImportError(parsed.error, 'Employee import'), 422);
+  }
+
+  const authCtx = await requireHrSession({ permission: P.HR_EMPLOYEE_CREATE });
+  if (!authCtx.ok) return authCtx.response;
+
+  const companyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: authCtx.session.user.activeCompanyId,
+  });
+  if (!companyId) {
+    return errorResponse('companyId is required', 400);
+  }
+  if (!authCtx.companyIds.includes(companyId)) {
+    return errorResponse('Forbidden', 403);
   }
 
   const normalize = (row: z.infer<typeof EmployeeImportRowSchema>): EmployeeImportRow => ({

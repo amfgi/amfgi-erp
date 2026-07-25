@@ -1,7 +1,8 @@
 import { employeeDocumentDisplayName } from '@/lib/hr/employeeDocumentDisplay';
 import { canHrDocumentEdit } from '@/lib/hr/documentPermissions';
 import { prisma } from '@/lib/db/prisma';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { P } from '@/lib/permissions';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { buildEmployeeDriveFolderName, deleteFromDrive, uploadToDrive } from '@/lib/utils/googleDrive';
 import { extractGoogleDriveFileId } from '@/lib/utils/googleDriveUrl';
@@ -15,14 +16,14 @@ const ALLOWED = new Map([
 ]);
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_DOCUMENT_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrDocumentEdit(session.user)) return errorResponse('Forbidden', 403);
   const { id: documentId } = await params;
 
   const doc = await prisma.employeeDocument.findFirst({
-    where: { id: documentId, companyId },
+    where: { id: documentId, ...companyIdWhere(companyIds) },
     include: {
       employee: { select: { employeeCode: true, fullName: true, id: true } },
       documentType: { select: { name: true, slug: true } },
@@ -30,6 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
   });
   if (!doc) return errorResponse('Document not found', 404);
+  const companyId = doc.companyId;
 
   try {
     const formData = await req.formData();

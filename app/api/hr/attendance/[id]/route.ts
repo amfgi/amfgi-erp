@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession, requirePerm } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { readEmployeeTypeSettingsFromCompanyData } from '@/lib/hr/employeeTypeSettings';
 import {
@@ -34,20 +34,20 @@ function parseDt(s: string | null): Date | null {
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_ATTENDANCE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_EDIT)) return errorResponse('Forbidden', 403);
+  const { session, companyIds } = ctx;
   const { id } = await params;
 
   const existing = await prisma.attendanceEntry.findFirst({
-    where: { id, companyId },
+    where: { id, ...companyIdWhere(companyIds) },
     include: {
       employee: { select: { profileExtension: true } },
       workAssignment: { select: { shiftStart: true, shiftEnd: true } },
     },
   });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
 
   const body = await req.json();
   const parsed = PatchSchema.safeParse(body);
@@ -150,17 +150,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_ATTENDANCE_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_EDIT)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   const existing = await prisma.attendanceEntry.findFirst({
-    where: { id, companyId },
-    select: { id: true, leaveRequestId: true },
+    where: { id, ...companyIdWhere(companyIds) },
+    select: { id: true, companyId: true, leaveRequestId: true },
   });
   if (!existing) return errorResponse('Not found', 404);
+  const companyId = existing.companyId;
   if (existing.leaveRequestId) {
     return errorResponse('This row is linked to a leave request. Remove it from leave management instead.', 403);
   }

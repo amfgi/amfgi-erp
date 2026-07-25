@@ -11,7 +11,11 @@ import {
   formatEmployeeDeleteBlockMessage,
 } from '@/lib/hr/checkEmployeeDeleteEligibility';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import {
+  companyIdWhere,
+  getHrAccessibleCompanyIds,
+  requireHrSession,
+} from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { mergeProfileExtensionForStatusChange } from '@/lib/hr/employeeLeavePeriod';
 import {
@@ -64,15 +68,15 @@ function patchHasNonAccountEmployeeFields(d: z.infer<typeof PatchSchema>): boole
 }
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_EMPLOYEE_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_VIEW)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
   const emp = await prisma.employee.findFirst({
-    where: { id, companyId },
+    where: { id, ...companyIdWhere(companyIds) },
     include: {
+      company: { select: { id: true, name: true, slug: true } },
       visaPeriods: { orderBy: { endDate: 'desc' } },
       documents: {
         include: {
@@ -90,9 +94,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireCompanySession();
-    if (!ctx.ok) return ctx.response;
-    const { session, companyId } = ctx;
+    const viewCtx = await requireHrSession({ permission: P.HR_EMPLOYEE_VIEW });
+    if (!viewCtx.ok) return viewCtx.response;
+    const { session, companyIds: viewCompanyIds } = viewCtx;
     const { id } = await params;
 
     let body: unknown;
@@ -107,20 +111,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const touchesEmployee = patchHasNonAccountEmployeeFields(d);
     const touchesAccount = employeePatchTouchesAccountFields(d);
-    if (touchesEmployee && !requirePerm(session.user, P.HR_EMPLOYEE_EDIT)) {
-      return errorResponse('Forbidden', 403);
+
+    const existing = await prisma.employee.findFirst({
+      where: { id, ...companyIdWhere(viewCompanyIds) },
+      include: { userLink: { select: { id: true } } },
+    });
+    if (!existing) return errorResponse('Not found', 404);
+
+    const companyId = existing.companyId;
+    if (touchesEmployee) {
+      const editIds = await getHrAccessibleCompanyIds(session.user, P.HR_EMPLOYEE_EDIT);
+      if (!editIds.includes(companyId)) return errorResponse('Forbidden', 403);
     }
     if (!touchesEmployee && touchesAccount && !canHrAccountAccessView(session.user)) {
       return errorResponse('Forbidden', 403);
     }
     const accountForbidden = assertCanPatchEmployeeAccountFields(session.user, d);
     if (accountForbidden) return errorResponse(accountForbidden, 403);
-
-    const existing = await prisma.employee.findFirst({
-      where: { id, companyId },
-      include: { userLink: { select: { id: true } } },
-    });
-    if (!existing) return errorResponse('Not found', 404);
 
     const emailNorm = d.email !== undefined && d.email ? d.email.trim().toLowerCase() : d.email;
 
@@ -265,15 +272,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_EMPLOYEE_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_EMPLOYEE_DELETE)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
-  const existing = await prisma.employee.findFirst({ where: { id, companyId } });
+  const existing = await prisma.employee.findFirst({
+    where: { id, ...companyIdWhere(companyIds) },
+  });
   if (!existing) return errorResponse('Not found', 404);
 
+  const companyId = existing.companyId;
   const eligibility = await checkEmployeeDeleteEligibility(prisma, companyId, id);
   if (!eligibility.canDelete) {
     return errorResponse(formatEmployeeDeleteBlockMessage(eligibility), 400);

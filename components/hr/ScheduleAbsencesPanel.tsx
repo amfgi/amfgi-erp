@@ -19,6 +19,7 @@ type LeaveOnDate = {
 type Props = {
   scheduleId: string | null;
   workDate: string;
+  companyId?: string;
   initialAbsences: AbsenceRow[];
   employees: Array<{ id: string; fullName: string; employeeCode: string }>;
   disabled?: boolean;
@@ -27,6 +28,7 @@ type Props = {
 export default function ScheduleAbsencesPanel({
   scheduleId,
   workDate,
+  companyId,
   initialAbsences,
   employees,
   disabled,
@@ -38,13 +40,15 @@ export default function ScheduleAbsencesPanel({
 
   useEffect(() => {
     if (!workDate) return;
-    void fetch(`/api/hr/leave-requests?workDate=${encodeURIComponent(workDate)}`, { cache: 'no-store' })
+    const params = new URLSearchParams({ workDate });
+    if (companyId?.trim()) params.set('companyId', companyId.trim());
+    void fetch(`/api/hr/leave-requests?${params.toString()}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((json) => {
         if (json?.success) setLeaveOnDate((json.data as LeaveOnDate[]).filter((l) => l.status !== 'CANCELLED'));
       })
       .catch(() => setLeaveOnDate([]));
-  }, [workDate]);
+  }, [companyId, workDate]);
 
   useEffect(() => {
     setAbsentIds(new Set(initialAbsences.map((a) => a.employeeId)));

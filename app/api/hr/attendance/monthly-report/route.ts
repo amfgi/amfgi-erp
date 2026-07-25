@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { P } from '@/lib/permissions';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession, resolveHrWriteCompanyId } from '@/lib/hr/requireHrSession';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { formatHoursFromMinutes, getMonthlyAttendanceReports } from '@/lib/hr/attendanceReports';
 import {
@@ -29,12 +29,24 @@ function sanitizeSheetName(name: string, used: Set<string>) {
 }
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_ATTENDANCE_VIEW)) return errorResponse('Forbidden', 403);
-
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_ATTENDANCE_VIEW,
+    companyId: searchParams.get('companyId'),
+  });
+  if (!ctx.ok) return ctx.response;
+
+  let companyId = ctx.companyId;
+  if (!companyId) {
+    companyId = resolveHrWriteCompanyId({
+      requestedCompanyId: searchParams.get('companyId'),
+      activeCompanyId: ctx.session.user.activeCompanyId,
+    });
+  }
+  if (!companyId || !ctx.companyIds.includes(companyId)) {
+    return errorResponse('companyId is required', 400);
+  }
+
   const month = String(searchParams.get('month') ?? '').trim();
   if (!month) return errorResponse('month query required (YYYY-MM)', 400);
 

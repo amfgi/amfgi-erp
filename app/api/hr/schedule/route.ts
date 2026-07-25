@@ -3,7 +3,7 @@ import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
-import { requireCompanySession, requirePerm } from '@/lib/hr/requireCompanySession';
+import { requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -46,12 +46,15 @@ const scheduleDetailSelect = {
 } as const;
 
 export async function GET(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_VIEW)) return errorResponse('Forbidden', 403);
-
   const { searchParams } = new URL(req.url);
+  const ctx = await requireHrSession({
+    permission: P.HR_SCHEDULE_VIEW,
+    companyId: searchParams.get('companyId'),
+    requireCompanyId: true,
+  });
+  if (!ctx.ok) return ctx.response;
+  const companyId = ctx.companyId!;
+
   const workDateRaw = searchParams.get('workDate');
 
   if (!workDateRaw) {
@@ -183,19 +186,24 @@ export async function GET(req: Request) {
 }
 
 const PostSchema = z.object({
+  companyId: z.string().min(1).optional(),
   workDate: z.string().min(1),
   clientDisplayName: z.string().max(200).optional().nullable(),
 });
 
 export async function POST(req: Request) {
-  const ctx = await requireCompanySession();
-  if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!requirePerm(session.user, P.HR_SCHEDULE_EDIT)) return errorResponse('Forbidden', 403);
-
   const body = await req.json();
   const parsed = PostSchema.safeParse(body);
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const ctx = await requireHrSession({
+    permission: P.HR_SCHEDULE_EDIT,
+    companyId: parsed.data.companyId,
+    requireCompanyId: true,
+  });
+  if (!ctx.ok) return ctx.response;
+  const { session } = ctx;
+  const companyId = ctx.companyId!;
 
   let workDateYmd: string;
   try {

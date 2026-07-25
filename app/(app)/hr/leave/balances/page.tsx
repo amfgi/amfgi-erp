@@ -2,15 +2,18 @@
 
 import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
+import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import HrPageChrome from '@/components/hr/HrPageChrome';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import Modal from '@/components/ui/Modal';
+import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
@@ -64,7 +67,12 @@ function formatDays(value: number) {
 }
 
 export default function LeaveBalancesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const linkedCompanyId = searchParams.get('companyId')?.trim() ?? '';
   const { data: session } = useSession();
+  const { options: companyOptions } = useHrAccessibleCompanies();
+  const [companyId, setCompanyId] = useState(linkedCompanyId);
   const perms = (session?.user?.permissions ?? []) as string[];
   const canView =
     session?.user?.isSuperAdmin ||
@@ -83,10 +91,48 @@ export default function LeaveBalancesPage() {
   const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
 
+  const setCompanyFilter = useCallback((nextCompanyId: string) => {
+    setCompanyId(nextCompanyId);
+    writeHrPreferredCompanyId(nextCompanyId || null);
+  }, []);
+
+  useEffect(() => {
+    if (linkedCompanyId) setCompanyId(linkedCompanyId);
+  }, [linkedCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length === 0) return;
+    setCompanyId((current) => {
+      if (current && companyOptions.some((option) => option.id === current)) return current;
+      return resolveDefaultHrCompanyId(
+        companyOptions.map((option) => option.id),
+        session?.user?.activeCompanyId,
+      );
+    });
+  }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (companyOptions.length > 0 && !companyId) return;
+    const params = new URLSearchParams();
+    if (companyId.trim()) params.set('companyId', companyId.trim());
+    const next = params.toString();
+    const current =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).toString() : searchParams.toString();
+    const href = next ? `/hr/leave/balances?${next}` : '/hr/leave/balances';
+    if (next !== current) {
+      router.replace(href, { scroll: false });
+    }
+  }, [companyId, companyOptions.length, router, searchParams]);
+
   const load = useCallback(async () => {
+    if (!companyId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const res = await fetch(
-      `/api/hr/leave-balances?includeAllEmployees=1`,
+      `/api/hr/leave-balances?includeAllEmployees=1&companyId=${encodeURIComponent(companyId)}`,
       { cache: 'no-store' },
     );
     const json = await readApiJson<BalanceRow[]>(res);
@@ -97,7 +143,7 @@ export default function LeaveBalancesPage() {
       setRows([]);
     }
     setLoading(false);
-  }, []);
+  }, [companyId]);
 
   useEffect(() => {
     if (!canView) {
@@ -145,6 +191,10 @@ export default function LeaveBalancesPage() {
 
   const submitAdjustment = async () => {
     if (!adjustModal || !canManage) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     const delta = Number(adjustDelta);
     if (!Number.isFinite(delta) || delta === 0) {
       toast.error('Enter a non-zero day adjustment');
@@ -155,6 +205,7 @@ export default function LeaveBalancesPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        companyId,
         employeeId: adjustModal.employeeId,
         adjustmentDelta: delta,
       }),
@@ -176,11 +227,16 @@ export default function LeaveBalancesPage() {
 
   const recalculateEntitlement = async (row: BalanceRow) => {
     if (!canManage) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
     setRecalculatingId(row.employeeId);
     const res = await fetch('/api/hr/leave-balances', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        companyId,
         employeeId: row.employeeId,
         recalculateEntitlement: true,
       }),
@@ -223,10 +279,14 @@ export default function LeaveBalancesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/hr/leave">
+          <Link href={companyId ? `/hr/leave?companyId=${encodeURIComponent(companyId)}` : '/hr/leave'}>
             <Button variant="outline">Leave requests</Button>
           </Link>
         </div>
+      </div>
+
+      <div className="mb-5 max-w-xs">
+        <HrCompanySearchSelect value={companyId} onChange={setCompanyFilter} required label="Company" />
       </div>
 
       <Alert className="mb-5 border-sky-500/25 bg-sky-500/5">

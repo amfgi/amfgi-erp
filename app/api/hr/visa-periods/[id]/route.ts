@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
-import { canHrVisaDelete, canHrVisaEdit } from '@/lib/hr/visaPermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { P } from '@/lib/permissions';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
@@ -16,13 +16,12 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_VISA_EDIT });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!canHrVisaEdit(session.user)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
-  const existing = await prisma.visaPeriod.findFirst({ where: { id, companyId } });
+  const existing = await prisma.visaPeriod.findFirst({ where: { id, ...companyIdWhere(companyIds) } });
   if (!existing) return errorResponse('Not found', 404);
 
   const body = await req.json();
@@ -44,13 +43,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_VISA_DELETE });
   if (!ctx.ok) return ctx.response;
-  const { session, companyId } = ctx;
-  if (!canHrVisaDelete(session.user)) return errorResponse('Forbidden', 403);
+  const { companyIds } = ctx;
   const { id } = await params;
 
-  const existing = await prisma.visaPeriod.findFirst({ where: { id, companyId } });
+  const existing = await prisma.visaPeriod.findFirst({ where: { id, ...companyIdWhere(companyIds) } });
   if (!existing) return errorResponse('Not found', 404);
 
   await prisma.visaPeriod.delete({ where: { id } });

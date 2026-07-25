@@ -3,7 +3,8 @@ import {
   canHrCompensationCreate,
   canHrCompensationView,
 } from '@/lib/hr/compensationPermissions';
-import { requireCompanySession } from '@/lib/hr/requireCompanySession';
+import { companyIdWhere, requireHrSession } from '@/lib/hr/requireHrSession';
+import { P } from '@/lib/permissions';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
@@ -17,14 +18,17 @@ const CreateSchema = z.object({
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_VIEW });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationView(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   const rows = await prisma.employeeAllowance.findMany({
     where: { companyId, employeeId },
@@ -48,14 +52,17 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireCompanySession();
+  const ctx = await requireHrSession({ permission: P.HR_COMPENSATION_CREATE });
   if (!ctx.ok) return ctx.response;
-  const { companyId, session } = ctx;
+  const { session, companyIds } = ctx;
   if (!canHrCompensationCreate(session.user)) return errorResponse('Forbidden', 403);
   const { id: employeeId } = await params;
 
-  const emp = await prisma.employee.findFirst({ where: { id: employeeId, companyId } });
+  const emp = await prisma.employee.findFirst({
+    where: { id: employeeId, ...companyIdWhere(companyIds) },
+  });
   if (!emp) return errorResponse('Employee not found', 404);
+  const companyId = emp.companyId;
 
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);

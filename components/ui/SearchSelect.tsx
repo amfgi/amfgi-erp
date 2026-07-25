@@ -31,6 +31,8 @@ interface SearchSelectProps<T extends { id: string; label: string; searchText?: 
   minCharactersToSearch?: number;
   showMinCharactersHint?: boolean;
   openOnFocus?: boolean;
+  /** With `openOnFocus`, show the whole list (not just matches for the selected label) until the user types. */
+  browseAllOnOpen?: boolean;
   clearInputOnFocus?: boolean;
   inputProps?: InputHTMLAttributes<HTMLInputElement>;
   dropdownInPortal?: boolean;
@@ -71,6 +73,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     minCharactersToSearch = 0,
     showMinCharactersHint = false,
     openOnFocus = false,
+    browseAllOnOpen = false,
     clearInputOnFocus = false,
     inputProps,
     dropdownInPortal = true,
@@ -87,6 +90,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
 
   const [input, setInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [browsingAll, setBrowsingAll] = useState(false);
   const [highlightedIdx, setHighlightedIdx] = useState(0);
   const [dropdownStyle, setDropdownStyle] = useState<{
     left: number;
@@ -99,19 +103,23 @@ export default function SearchSelect<T extends { id: string; label: string; sear
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const ignoreBlurRef = useRef(false);
+  const browseHighlightMovedRef = useRef(false);
   const listboxId = useId();
   const mergedInputClassName = ['w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-white', inputProps?.className]
     .filter(Boolean)
     .join(' ');
 
-  const hasEnoughInput = input.trim().length >= minCharactersToSearch;
-  const filteredItems = hasEnoughInput
-    ? serverFiltered
-      ? items
-      : searchFilter
-        ? searchFilter(items, input)
-        : searchItems(items, input, 0.2)
-    : [];
+  const isBrowsing = browsingAll && isOpen;
+  const hasEnoughInput = isBrowsing || input.trim().length >= minCharactersToSearch;
+  const filteredItems = isBrowsing
+    ? items
+    : hasEnoughInput
+      ? serverFiltered
+        ? items
+        : searchFilter
+          ? searchFilter(items, input)
+          : searchItems(items, input, 0.2)
+      : [];
   const selectedItem = items.find((item) => item.id === value);
 
   useEffect(() => {
@@ -126,6 +134,10 @@ export default function SearchSelect<T extends { id: string; label: string; sear
       inputRef.current?.focus();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    browseHighlightMovedRef.current = false;
+  }, [isOpen, browsingAll]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -181,6 +193,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
       setInput(item.label);
     }
     setIsOpen(false);
+    setBrowsingAll(false);
     setHighlightedIdx(0);
     onAfterSelect?.(itemId, method);
   };
@@ -193,6 +206,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     }
     onInputChange?.(newValue);
     setIsOpen(true);
+    setBrowsingAll(false);
     setHighlightedIdx(0);
   };
 
@@ -201,21 +215,26 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     const isSubmitKey = e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey);
     const activelySearching = input.trim().length >= minCharactersToSearch;
     const highlightedItem = filteredItems[highlightedIdx];
+    // While simply browsing the full list, Enter/Tab must not grab the first option;
+    // the user has to move the highlight (or click) to pick one.
+    const canSubmitHighlight =
+      Boolean(highlightedItem) && (!isBrowsing || browseHighlightMovedRef.current);
 
     if (passThroughArrowKeys && !isOpen && isVerticalArrow) {
       return;
     }
 
-    if (!passThroughArrowKeys && !isOpen && filteredItems.length > 0 && isVerticalArrow) {
+    if (!passThroughArrowKeys && !isOpen && isVerticalArrow && (filteredItems.length > 0 || browseAllOnOpen)) {
       e.preventDefault();
       setIsOpen(true);
+      setBrowsingAll(browseAllOnOpen);
       return;
     }
 
-    if (isSubmitKey && isOpen && activelySearching && highlightedItem) {
+    if (isSubmitKey && isOpen && activelySearching && canSubmitHighlight) {
       e.preventDefault();
       e.stopPropagation();
-      handleSelect(highlightedItem.id, e.key === 'Tab' ? 'tab' : 'enter');
+      handleSelect(highlightedItem!.id, e.key === 'Tab' ? 'tab' : 'enter');
       return;
     }
 
@@ -235,12 +254,14 @@ export default function SearchSelect<T extends { id: string; label: string; sear
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
+        browseHighlightMovedRef.current = true;
         setHighlightedIdx((prev) =>
           prev < filteredItems.length - 1 ? prev + 1 : 0
         );
         break;
       case 'ArrowUp':
         e.preventDefault();
+        browseHighlightMovedRef.current = true;
         setHighlightedIdx((prev) =>
           prev > 0 ? prev - 1 : Math.max(0, filteredItems.length - 1)
         );
@@ -248,20 +269,21 @@ export default function SearchSelect<T extends { id: string; label: string; sear
       case 'Enter':
         e.preventDefault();
         e.stopPropagation();
-        if (highlightedItem) {
-          handleSelect(highlightedItem.id, 'enter');
+        if (canSubmitHighlight) {
+          handleSelect(highlightedItem!.id, 'enter');
         }
         break;
       case 'Tab':
-        if (highlightedItem) {
+        if (canSubmitHighlight) {
           e.preventDefault();
           e.stopPropagation();
-          handleSelect(highlightedItem.id, 'tab');
+          handleSelect(highlightedItem!.id, 'tab');
         }
         break;
       case 'Escape':
         e.preventDefault();
         setIsOpen(false);
+        setBrowsingAll(false);
         break;
       default:
         break;
@@ -277,6 +299,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
         !dropdownRef.current?.contains(target)
       ) {
         setIsOpen(false);
+        setBrowsingAll(false);
       }
     };
 
@@ -353,11 +376,13 @@ export default function SearchSelect<T extends { id: string; label: string; sear
             setInput(nextInput);
             if (openOnFocus) {
               setIsOpen(true);
+              setBrowsingAll(browseAllOnOpen);
               setHighlightedIdx(0);
             }
             const selectAllOnFocus =
               // Custom data attribute used by dispatch line grid keyboard nav; allow via any-cast.
-              (inputProps as any)?.['data-line-grid-nav'] === 'true';
+              (inputProps as any)?.['data-line-grid-nav'] === 'true' ||
+              (browseAllOnOpen && nextInput.length > 0);
             requestAnimationFrame(() => {
               if (!inputRef.current) return;
               if (selectAllOnFocus) {
@@ -369,6 +394,17 @@ export default function SearchSelect<T extends { id: string; label: string; sear
             });
             inputProps?.onFocus?.(e);
           }}
+          onClick={(e) => {
+            if (openOnFocus && !disabled && !isOpen) {
+              setIsOpen(true);
+              setBrowsingAll(browseAllOnOpen);
+              setHighlightedIdx(0);
+              if (browseAllOnOpen) {
+                inputRef.current?.select();
+              }
+            }
+            inputProps?.onClick?.(e);
+          }}
           onBlur={(e) => {
             if (ignoreBlurRef.current) {
               ignoreBlurRef.current = false;
@@ -376,6 +412,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
               return;
             }
             setIsOpen(false);
+            setBrowsingAll(false);
             if (selectedItem) {
               setInput(selectedItem.label);
             } else if (!value) {
@@ -465,7 +502,7 @@ export default function SearchSelect<T extends { id: string; label: string; sear
           )
         : null}
 
-      {isOpen && hasEnoughInput && !loading && input && filteredItems.length === 0
+      {isOpen && hasEnoughInput && !isBrowsing && !loading && input && filteredItems.length === 0
         ? renderFloatingPanel(
             <div>
               <p className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
