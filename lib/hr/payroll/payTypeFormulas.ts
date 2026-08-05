@@ -113,13 +113,21 @@ export function describePayTypeRow(config: Record<string, unknown>) {
   if (fields.mode === 'HOURLY_SPLIT' || fields.mode === 'CUSTOM') {
     parameters.push(`Excluded: ${formatExcludedWeekdaysLabel(fields.excludedWeekdays)}`);
   }
+  const paysWeeklyOff = fields.weeklyOffPayRule === 'SANDWICHED';
   if (fields.mode === 'MONTHLY_CALENDAR_DEDUCT') {
     const denom =
-      fields.deductDenominator === 'CALENDAR_DAYS' ? 'all calendar days' : 'working days';
+      paysWeeklyOff || fields.deductDenominator === 'CALENDAR_DAYS'
+        ? 'all calendar days'
+        : 'working days';
     parameters.push(`Divide by: ${denom}`);
-    if (fields.deductDenominator !== 'CALENDAR_DAYS') {
+    if (!paysWeeklyOff && fields.deductDenominator !== 'CALENDAR_DAYS') {
       parameters.push(`Weekly off: ${formatExcludedWeekdaysLabel(fields.excludedWeekdays)}`);
     }
+  }
+  if (paysWeeklyOff) {
+    parameters.push(
+      `Paid weekly off: ${formatExcludedWeekdaysLabel(fields.excludedWeekdays)} when sandwiched by paid days`
+    );
   }
   if (fields.mode === 'CUSTOM' && fields.formulaScript) {
     return {

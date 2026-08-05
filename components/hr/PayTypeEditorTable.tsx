@@ -24,8 +24,16 @@ import {
   slugifyPayTypeCode,
 } from '@/lib/hr/payroll/payTypeForm';
 import { describePayTypeRow } from '@/lib/hr/payroll/payTypeFormulas';
-import { WEEKDAY_OPTIONS } from '@/lib/hr/payroll/payTypeConfigHelpers';
-import type { DeductDenominator, PayCalculationMode, PayTypeConfig } from '@/lib/hr/payroll/types';
+import {
+  WEEKDAY_OPTIONS,
+  supportsWeeklyOffPay,
+} from '@/lib/hr/payroll/payTypeConfigHelpers';
+import type {
+  DeductDenominator,
+  PayCalculationMode,
+  PayTypeConfig,
+  WeeklyOffPayRule,
+} from '@/lib/hr/payroll/types';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
 export type PayTypeRecord = {
@@ -73,6 +81,7 @@ export default function PayTypeEditorTable({
   const [excludedWeekdays, setExcludedWeekdays] = useState<number[]>([0]);
   const [deductDenominator, setDeductDenominator] = useState<DeductDenominator>('WORKING_DAYS');
   const [payExcludedWeekdayWorkAtOt, setPayExcludedWeekdayWorkAtOt] = useState(false);
+  const [weeklyOffPayRule, setWeeklyOffPayRule] = useState<WeeklyOffPayRule>('NONE');
   const [sortOrder, setSortOrder] = useState('100');
   const [isActive, setIsActive] = useState(true);
   const [formulaScript, setFormulaScript] = useState('');
@@ -88,6 +97,10 @@ export default function PayTypeEditorTable({
     mode === 'CUSTOM' ||
     mode === 'MONTHLY_CALENDAR_DEDUCT';
   const usesOfficeDeductDenominator = mode === 'MONTHLY_CALENDAR_DEDUCT';
+  const paysWeeklyOff =
+    weeklyOffPayRule === 'SANDWICHED' &&
+    supportsWeeklyOffPay(mode) &&
+    excludedWeekdays.length > 0;
 
   const modeMeta = PAY_CALCULATION_MODE_OPTIONS.find((o) => o.value === mode);
 
@@ -105,6 +118,7 @@ export default function PayTypeEditorTable({
         deductDenominator: usesOfficeDeductDenominator ? deductDenominator : undefined,
         payExcludedWeekdayWorkAtOt:
           mode === 'MONTHLY_CALENDAR_DEDUCT' ? payExcludedWeekdayWorkAtOt : undefined,
+        weeklyOffPayRule,
         formulaScript: mode === 'CUSTOM' ? formulaScript : null,
       }),
     [
@@ -113,6 +127,7 @@ export default function PayTypeEditorTable({
       excludedWeekdays,
       deductDenominator,
       payExcludedWeekdayWorkAtOt,
+      weeklyOffPayRule,
       formulaScript,
       usesWorkingDayExclusions,
       usesOfficeDeductDenominator,
@@ -128,6 +143,7 @@ export default function PayTypeEditorTable({
     setExcludedWeekdays([0]);
     setDeductDenominator('WORKING_DAYS');
     setPayExcludedWeekdayWorkAtOt(false);
+    setWeeklyOffPayRule('NONE');
     setSortOrder('100');
     setIsActive(true);
     setFormulaScript('');
@@ -144,6 +160,7 @@ export default function PayTypeEditorTable({
     setExcludedWeekdays(fields.excludedWeekdays);
     setDeductDenominator(fields.deductDenominator);
     setPayExcludedWeekdayWorkAtOt(fields.payExcludedWeekdayWorkAtOt);
+    setWeeklyOffPayRule(fields.weeklyOffPayRule);
     setSortOrder(String(row.sortOrder));
     setIsActive(row.isActive);
     setFormulaScript(
@@ -442,16 +459,18 @@ export default function PayTypeEditorTable({
                 <div>
                   <label className={labelClass}>Divide monthly basic by</label>
                   <select
-                    className="mt-1 flex h-9 w-full max-w-md rounded-md border border-input bg-background px-3 text-sm"
-                    value={deductDenominator}
+                    className="mt-1 flex h-9 w-full max-w-md rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60"
+                    value={paysWeeklyOff ? 'CALENDAR_DAYS' : deductDenominator}
+                    disabled={paysWeeklyOff}
                     onChange={(e) => setDeductDenominator(e.target.value as DeductDenominator)}
                   >
                     <option value="WORKING_DAYS">Working days (recommended)</option>
                     <option value="CALENDAR_DAYS">All calendar days in the month</option>
                   </select>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Working days excludes the weekly off-days below when calculating how much one absent
-                    day costs. Public holidays are handled separately in Company holidays.
+                    {paysWeeklyOff
+                      ? 'Locked to calendar days because weekly off-days are paid below. Paid rest days have to be inside the divisor, otherwise a full month would pay more than the monthly salary.'
+                      : 'Working days excludes the weekly off-days below when calculating how much one absent day costs. Public holidays are handled separately in Company holidays.'}
                   </p>
                 </div>
               ) : null}
@@ -495,19 +514,49 @@ export default function PayTypeEditorTable({
               ) : null}
 
               {usesOfficeDeductDenominator ? (
+                <div className="space-y-3">
+                  <div className="rounded-md border border-border bg-muted/20 p-3">
+                    <label className="inline-flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 size-4 rounded border-border"
+                        checked={payExcludedWeekdayWorkAtOt}
+                        onChange={(e) => setPayExcludedWeekdayWorkAtOt(e.target.checked)}
+                      />
+                      <span>
+                        <span className="font-medium text-foreground">Pay weekly off work at OT rate</span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          When off, Sunday and other weekly off work is shown in payroll preview but earns no extra pay.
+                          Enable this to pay worked hours on weekly off-days at the OT rate above.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+
+              {supportsWeeklyOffPay(mode) && excludedWeekdays.length > 0 ? (
                 <div className="rounded-md border border-border bg-muted/20 p-3">
                   <label className="inline-flex items-start gap-2 text-sm">
                     <input
                       type="checkbox"
                       className="mt-0.5 size-4 rounded border-border"
-                      checked={payExcludedWeekdayWorkAtOt}
-                      onChange={(e) => setPayExcludedWeekdayWorkAtOt(e.target.checked)}
+                      checked={paysWeeklyOff}
+                      onChange={(e) =>
+                        setWeeklyOffPayRule(e.target.checked ? 'SANDWICHED' : 'NONE')
+                      }
                     />
                     <span>
-                      <span className="font-medium text-foreground">Pay weekly off work at OT rate</span>
+                      <span className="font-medium text-foreground">
+                        Pay weekly off-days between worked days
+                      </span>
                       <span className="mt-1 block text-xs text-muted-foreground">
-                        When off, Sunday and other weekly off work is shown in payroll preview but earns no extra pay.
-                        Enable this to pay worked hours on weekly off-days at the OT rate above.
+                        Pays a weekly off (e.g. Sunday) at the normal daily rate when the nearest
+                        working day before and after it are both paid.{' '}
+                        {mode === 'DAILY_WAGE'
+                          ? 'Absent or unpaid neighbours leave the rest day unpaid.'
+                          : 'Monthly basic and allowance are then spread over every calendar day, so a full month still pays exactly the monthly salary.'}{' '}
+                        Worked weekly off-days keep their OT-only treatment.
                       </span>
                     </span>
                   </label>

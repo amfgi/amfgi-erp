@@ -1,4 +1,4 @@
-import { isPayrollLeaveLine } from '@/lib/hr/attendanceLeavePay';
+import { isPayrollLeaveLine, leavePayFraction } from '@/lib/hr/attendanceLeavePay';
 import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
 import { holidayDayPayAmount } from '@/lib/hr/payroll/resolveHolidayPayStructure';
 import {
@@ -12,7 +12,6 @@ import {
   buildExcludedWeekdayWorkDayRowWithOtRate,
   shouldPayExcludedWeekdayWorkAtOtOnly,
 } from '@/lib/hr/payroll/excludedWeekdayOtPay';
-import { isPaidLeaveType } from '@/lib/hr/leaveTypes';
 import type { Prisma } from '@prisma/client';
 import {
   daysInMonth,
@@ -42,13 +41,14 @@ import {
   resolveOtPercent,
   resolveCalendarDeductDayCount,
   resolveDeductDenominator,
+  resolvePayPeriodDenomDays,
 } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import {
   applySalaryComponentsToGross,
+  attendanceComponentDayWeight,
   buildAttendanceComponentSplitMap,
   distributeMoneyByContribution,
   fixedSalaryComponentNet,
-  lineEarnsAttendanceComponentInPay,
   prorateSalaryComponentTotals,
   resolvePackagePeriodAttendanceNet,
   resolvePerDayAllowance,
@@ -140,16 +140,15 @@ function isInsideCalendarDeductBasicRow(
 ): boolean {
   if (row.basicHourSalary <= 0) return false;
   if (shouldPayHolidayWorkedOt(line)) return false;
+  // Paid weekly-off basic stays inside the monthly basic cap; OT (if any) is outside.
+  if (line.isPaidWeeklyOff) return true;
   if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) return false;
   if (isPayrollHolidayLine(line) && line.holidayPayTypeConfig) return false;
   return true;
 }
 
 function calendarDeductBasicWeight(line: PayLineInput): number {
-  if (isPayrollLeaveLine(line)) {
-    return (line.leavePayPercent ?? 100) / 100;
-  }
-  return 1;
+  return isPayrollLeaveLine(line) ? leavePayFraction(line) : 1;
 }
 
 function redistributeCalendarDeductBasicOnRows(
@@ -229,12 +228,15 @@ function syncCalendarDeductAllowanceOnRows(
     if (!splitMap) continue;
 
     const allowanceRowIndices: number[] = [];
+    let earnedEligibleWeight = 0;
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
       if ((lineCtx(line).packageId ?? 'default') !== packageKey) continue;
-      if (!lineEarnsAttendanceComponentInPay(line, ctx.config)) continue;
+      const weight = attendanceComponentDayWeight(line, ctx.config);
+      if (weight <= 0) continue;
       const split = splitMap.get(line.workDate);
       if (!split) continue;
+      earnedEligibleWeight += weight;
 
       const row = dayRows[index];
       const nextAllowance = roundMoney(split.earning - split.deduction);
@@ -254,9 +256,10 @@ function syncCalendarDeductAllowanceOnRows(
 
     const periodAllowanceNet = resolvePackagePeriodAttendanceNet({
       compensation: ctx.compensation,
-      earnedEligibleDays: allowanceRowIndices.length,
+      earnedEligibleDays: earnedEligibleWeight,
       month,
       excludedWeekdays: resolveExcludedWeekdays(ctx.config),
+      config: ctx.config,
     });
     const currentAllowanceNet = sumMoney(allowanceRowIndices.map((index) => dayRows[index].allowance));
     const drift = roundMoney(periodAllowanceNet - currentAllowanceNet);
@@ -308,6 +311,10 @@ function buildDailyWageDayRow(
 
   if (isPayrollLeaveLine(line)) {
     return buildLeavePayDayRow(line, dailyRate);
+  }
+
+  if (line.isPaidWeeklyOff) {
+    return buildPaidWeeklyOffDayRow(line, dailyRate, config, month, compensation);
   }
 
   if (line.status === 'ABSENT') {
@@ -380,7 +387,19 @@ function buildHourlySplitDayRow(
 
   if (isPayrollLeaveLine(line)) {
     const dailyRate = params.denom > 0 ? params.basic / params.denom : 0;
-    return buildLeavePayDayRow(line, dailyRate);
+    return buildLeavePayDayRow(
+      line,
+      dailyRate,
+      resolvePerDayComponentSplit({
+        line,
+        compensation,
+        month,
+        excludedWeekdays,
+        lines: packageLines,
+        config,
+        splitMap,
+      })
+    );
   }
 
   const lineBasic = lineBasicHours(line);
@@ -463,13 +482,11 @@ function calendarDeductDayPay(
   }
 
   if (isPayrollLeaveLine(line)) {
-    const paid =
-      line.leavePayPercent != null
-        ? line.leavePayPercent > 0
-        : isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY');
-    if (!paid) return 0;
-    const pct = line.leavePayPercent ?? 100;
-    return roundMoney(dailyRate * (pct / 100));
+    return roundMoney(dailyRate * leavePayFraction(line));
+  }
+
+  if (line.isPaidWeeklyOff) {
+    return roundMoney(dailyRate);
   }
 
   if (line.status === 'ABSENT') {
@@ -478,6 +495,64 @@ function calendarDeductDayPay(
   }
 
   return roundMoney(dailyRate);
+}
+
+function buildPaidWeeklyOffDayRow(
+  line: PayLineInput,
+  dailyRate: number,
+  config: PayTypeConfig,
+  month: string,
+  compensation: CompensationInput,
+  splitMap?: Map<string, AttendanceComponentSplit>,
+  packageLines?: PayLineInput[]
+): PayDayBreakdown {
+  const dayPay = roundMoney(dailyRate);
+  const { earning: componentEarning, deduction: componentDeduction } = resolvePerDayComponentSplit({
+    line,
+    compensation,
+    month,
+    excludedWeekdays: resolveExcludedWeekdays(config),
+    lines: packageLines,
+    config,
+    splitMap,
+  });
+  const allowance = roundMoney(componentEarning - componentDeduction);
+  let otHourSalary = 0;
+  let otHours = 0;
+  let otHourRate = 0;
+  let totalHours = 0;
+
+  if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) {
+    const lineBasic = lineBasicHours(line);
+    const basicHourRate = lineBasic ? dailyRate / lineBasic : 0;
+    const otRow = buildExcludedWeekdayWorkDayRow(
+      line,
+      basicHourRate,
+      resolveOtPercent(config),
+      config
+    );
+    otHourSalary = otRow.otHourSalary;
+    otHours = otRow.otHours;
+    otHourRate = otRow.otHourRate;
+    totalHours = otRow.totalHours;
+  }
+
+  return finishPayDayBreakdown({
+    date: line.workDate,
+    status: formatPayDayStatus(line, config),
+    totalHours,
+    basicHours: 0,
+    otHours,
+    basicHourRate: dailyRate,
+    basicHourSalary: dayPay,
+    otHourRate,
+    otHourSalary,
+    allowance,
+    componentEarning,
+    componentDeduction,
+    totalSalary: roundMoney(dayPay + allowance + otHourSalary),
+    detail: otHourSalary > 0 ? 'Weekly off — paid + OT' : 'Weekly off — paid',
+  });
 }
 
 function buildCalendarDeductDayRow(
@@ -506,6 +581,18 @@ function buildCalendarDeductDayRow(
     });
   }
 
+  if (line.isPaidWeeklyOff) {
+    return buildPaidWeeklyOffDayRow(
+      line,
+      dailyRate,
+      config,
+      month,
+      compensation,
+      splitMap,
+      packageLines
+    );
+  }
+
   if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) {
     const lineBasic = lineBasicHours(line);
     const basicHourRate = lineBasic ? dailyRate / lineBasic : 0;
@@ -521,7 +608,19 @@ function buildCalendarDeductDayRow(
   }
 
   if (isPayrollLeaveLine(line)) {
-    return buildLeavePayDayRow(line, dailyRate);
+    return buildLeavePayDayRow(
+      line,
+      dailyRate,
+      resolvePerDayComponentSplit({
+        line,
+        compensation,
+        month,
+        excludedWeekdays: resolveExcludedWeekdays(config),
+        lines: packageLines,
+        config,
+        splitMap,
+      })
+    );
   }
 
   if (line.status === 'ABSENT') {
@@ -700,6 +799,9 @@ export function calculatePayLine(params: {
       if (shouldPayHolidayWorkedOt(line)) {
         bucket.outsideCapGross += row.otHourSalary;
         bucket.accrualGross += row.basicHourSalary + row.otHourSalary;
+      } else if (line.isPaidWeeklyOff && shouldPayExcludedWeekdayWorkAtOtOnly(line, ctx.config)) {
+        bucket.outsideCapGross += row.otHourSalary;
+        bucket.accrualGross += row.basicHourSalary + row.otHourSalary;
       } else if (shouldPayExcludedWeekdayWorkAtOtOnly(line, ctx.config)) {
         bucket.outsideCapGross += row.totalSalary;
         bucket.accrualGross += row.totalSalary;
@@ -710,6 +812,7 @@ export function calculatePayLine(params: {
       if (row.totalSalary > 0) earnedDays += 1;
       if (
         line.status === 'ABSENT' &&
+        !line.isPaidWeeklyOff &&
         !isPayrollLeaveLine(line) &&
         !isPayrollHolidayLine(line) &&
         !isWeeklyOffAbsentLine(line, ctx.config)
@@ -727,6 +830,8 @@ export function calculatePayLine(params: {
       const row = dayRows[index];
       const ctx = lineCtx(line);
       if (shouldPayHolidayWorkedOt(line)) {
+        outsideCapGross += row.otHourSalary;
+      } else if (line.isPaidWeeklyOff && shouldPayExcludedWeekdayWorkAtOtOnly(line, ctx.config)) {
         outsideCapGross += row.otHourSalary;
       } else if (shouldPayExcludedWeekdayWorkAtOtOnly(line, ctx.config)) {
         outsideCapGross += row.totalSalary;
@@ -821,7 +926,7 @@ export function calculatePayLine(params: {
     for (const line of lines) {
       const ctx = lineCtx(line);
       const excludedWeekdays = resolveExcludedWeekdays(ctx.config);
-      const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
+      const denom = resolvePayPeriodDenomDays(month, ctx.config);
       const basic = ctx.compensation.monthlyBasic;
       const comps = ctx.compensation.salaryComponents;
       const packageKey = ctx.packageId ?? 'default';
@@ -854,7 +959,33 @@ export function calculatePayLine(params: {
       }
       if (isPayrollLeaveLine(line)) {
         const dailyRate = denom > 0 ? basic / denom : 0;
-        const row = buildLeavePayDayRow(line, dailyRate);
+        const row = buildLeavePayDayRow(
+          line,
+          dailyRate,
+          resolvePerDayComponentSplit({
+            line,
+            compensation: ctx.compensation,
+            month,
+            excludedWeekdays,
+            lines: packageLines,
+            config: ctx.config,
+            splitMap,
+          })
+        );
+        dayRows.push(row);
+        gross += row.totalSalary;
+        continue;
+      }
+      if (line.isPaidWeeklyOff) {
+        const row = buildPaidWeeklyOffDayRow(
+          line,
+          denom > 0 ? basic / denom : 0,
+          ctx.config,
+          month,
+          ctx.compensation,
+          splitMap,
+          packageLines
+        );
         dayRows.push(row);
         gross += row.totalSalary;
         continue;

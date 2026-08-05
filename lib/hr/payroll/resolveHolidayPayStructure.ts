@@ -1,8 +1,8 @@
 import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
-import { denomDaysExcludingWeekdays, roundMoney } from '@/lib/hr/payroll/calendar';
+import { roundMoney } from '@/lib/hr/payroll/calendar';
 import {
   resolveCalendarDeductDayCount,
-  resolveExcludedWeekdays,
+  resolvePayPeriodDenomDays,
 } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import type { CompensationInput, PayLineInput, PayTypeConfig } from '@/lib/hr/payroll/types';
 
@@ -50,7 +50,7 @@ export function holidayDayPayAmount(params: {
   }
 
   if (holidayConfig.mode === 'HOURLY_SPLIT') {
-    const denom = denomDaysExcludingWeekdays(month, resolveExcludedWeekdays(holidayConfig));
+    const denom = resolvePayPeriodDenomDays(month, holidayConfig);
     if (compensation.monthlyBasic <= 0 || denom <= 0) return 0;
     return roundMoney(compensation.monthlyBasic / denom);
   }

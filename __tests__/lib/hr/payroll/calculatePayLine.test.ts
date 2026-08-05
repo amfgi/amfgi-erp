@@ -4,6 +4,8 @@ import {
 } from '@/lib/hr/payroll/calculatePayLine';
 import { daysInMonth, denomDaysExcludingSundays, roundMoney, sumMoney, weekdayIndexYmd } from '@/lib/hr/payroll/calendar';
 import { evaluatePayHealthCheck } from '@/lib/hr/payroll/payHealthCheck';
+import { annotatePaidWeeklyOffLines } from '@/lib/hr/payroll/weeklyOffPay';
+import type { PayLineInput, PayTypeConfig } from '@/lib/hr/payroll/types';
 
 describe('payroll calendar', () => {
   it('uses actual days in month', () => {
@@ -294,6 +296,134 @@ describe('calculatePayLine', () => {
     expect(result.days[1]?.detail).toBe('Unpaid leave');
   });
 
+  it('hourly split pays the per-day allowance on paid sick leave days', () => {
+    const result = calculatePayLine({
+      month: '2026-07',
+      config: { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] },
+      compensation: { monthlyBasic: 900, monthlyAllowance: 540, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-07-01',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 9,
+          workedMinutes: 9 * 60,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-07-20',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-1',
+          leavePayPercent: 100,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    const denom = 27; // July 2026 minus 4 Sundays
+    const allowancePerDay = 540 / denom;
+    const daily = 900 / denom;
+    const leaveDay = result.days[1];
+    expect(leaveDay?.allowance).toBeCloseTo(allowancePerDay, 2);
+    expect(leaveDay?.allowance).toBeCloseTo(result.days[0]?.allowance ?? 0, 2);
+    expect(leaveDay?.totalSalary).toBeCloseTo(daily + allowancePerDay, 2);
+    expect(result.gross).toBeCloseTo(2 * (daily + allowancePerDay), 1);
+  });
+
+  it('hourly split prorates the leave-day allowance by the leave pay tier', () => {
+    const result = calculatePayLine({
+      month: '2026-07',
+      config: { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] },
+      compensation: { monthlyBasic: 900, monthlyAllowance: 540, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-07-01',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 9,
+          workedMinutes: 9 * 60,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-07-20',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-1',
+          leavePayPercent: 50,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-07-21',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-2',
+          leavePayPercent: 0,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    const allowancePerDay = 540 / 27;
+    expect(result.days[0]?.allowance).toBeCloseTo(allowancePerDay, 2);
+    expect(result.days[1]?.allowance).toBeCloseTo(allowancePerDay / 2, 2);
+    expect(result.days[2]?.allowance).toBe(0);
+  });
+
+  it('office pays the per-day allowance on paid sick leave days', () => {
+    const daily = 3000 / 26;
+    const allowancePerDay = 260 / 26;
+    const result = calculatePayLine({
+      month: '2026-06',
+      config: { mode: 'MONTHLY_CALENDAR_DEDUCT', deductDenominator: 'WORKING_DAYS', excludedWeekdays: [0] },
+      compensation: {
+        monthlyBasic: 3000,
+        monthlyAllowance: 0,
+        dailyRate: 0,
+        salaryComponents: {
+          fixedEarnings: 0,
+          fixedDeductions: 0,
+          attendanceEarningPerDay: allowancePerDay,
+          attendanceDeductionPerDay: 0,
+          attendanceEarningsMonthly: 260,
+          attendanceDeductionsMonthly: 0,
+        },
+      },
+      lines: [
+        {
+          workDate: '2026-06-04',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 9,
+          workedMinutes: 9 * 60,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-06-05',
+          status: 'ABSENT',
+          leaveType: 'SICK',
+          leaveTypeId: 'lt-sick',
+          leaveRequestId: 'lr-1',
+          leavePayPercent: 100,
+          basicHours: 9,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    const leaveDay = result.days[1];
+    expect(leaveDay?.allowance).toBeCloseTo(allowancePerDay, 2);
+    expect(leaveDay?.totalSalary).toBeCloseTo(daily + allowancePerDay, 2);
+    expect(result.gross).toBeCloseTo(2 * (daily + allowancePerDay), 2);
+  });
+
   it('daily wage pays approved paid sick leave at the daily rate', () => {
     const result = calculatePayLine({
       month: '2026-07',
@@ -315,6 +445,191 @@ describe('calculatePayLine', () => {
     });
     expect(result.gross).toBe(120);
     expect(result.days[0]?.detail).toBe('Paid leave');
+  });
+
+  /** Sabbir EMP0070 July 2026 attendance: present Jul 1–4 and 6–8, Sunday Jul 5 absent. */
+  function sabbirJulyLines(): PayLineInput[] {
+    const present = ['01', '02', '03', '04', '06', '07', '08'];
+    return [
+      ...present.map((d) => ({
+        workDate: `2026-07-${d}`,
+        status: 'PRESENT' as const,
+        leaveType: null,
+        basicHours: 8,
+        workedMinutes: 8 * 60,
+        isSunday: false,
+      })),
+      {
+        workDate: '2026-07-05',
+        status: 'ABSENT',
+        leaveType: null,
+        basicHours: 8,
+        workedMinutes: 0,
+        isSunday: true,
+      },
+    ];
+  }
+
+  it('working-days office pay for Sabbir July stays at 777.78 (unchanged)', () => {
+    const config: PayTypeConfig = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT',
+      deductDenominator: 'WORKING_DAYS',
+      excludedWeekdays: [0],
+    };
+    const result = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation: { monthlyBasic: 1500, monthlyAllowance: 1500, dailyRate: 0 },
+      lines: annotatePaidWeeklyOffLines(sabbirJulyLines(), config),
+    });
+    expect(result.gross).toBeCloseTo(777.78, 2);
+    expect(result.breakdown.earnedDays).toBe(7);
+    expect(result.breakdown.deductDaysInMonth).toBe(27);
+  });
+
+  it('calendar-days + sandwiched weekly off matches sheet (~774.20) for Sabbir July', () => {
+    const config: PayTypeConfig = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT',
+      deductDenominator: 'CALENDAR_DAYS',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+    };
+    const lines = annotatePaidWeeklyOffLines(sabbirJulyLines(), config);
+    expect(lines.find((l) => l.workDate === '2026-07-05')?.isPaidWeeklyOff).toBe(true);
+
+    const result = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation: { monthlyBasic: 1500, monthlyAllowance: 1500, dailyRate: 0 },
+      lines,
+    });
+    // Sheet: 3000 * 8 / 31 = 774.193…; engine rounds each day then sums → 774.20
+    expect(result.gross).toBeCloseTo(774.2, 2);
+    expect(result.breakdown.earnedDays).toBe(8);
+    expect(result.breakdown.deductDaysInMonth).toBe(31);
+
+    const restDay = result.days.find((d) => d.date === '2026-07-05');
+    const presentDay = result.days.find((d) => d.date === '2026-07-01');
+    expect(restDay?.detail).toBe('Weekly off — paid');
+    // Cent redistribution may shift a day by ±0.01 vs the raw daily rate.
+    expect(restDay?.basicHourSalary).toBeCloseTo(presentDay?.basicHourSalary ?? 0, 1);
+    expect(restDay?.allowance).toBeCloseTo(presentDay?.allowance ?? 0, 1);
+    expect(restDay?.totalSalary).toBeCloseTo(presentDay?.basicHourSalary! + presentDay?.allowance!, 1);
+  });
+
+  it('full month on calendar-days + sandwiched weekly off totals monthly basic + allowance', () => {
+    const config: PayTypeConfig = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT',
+      deductDenominator: 'CALENDAR_DAYS',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+    };
+    const lines = annotatePaidWeeklyOffLines(
+      Array.from({ length: 31 }, (_, index) => {
+        const day = index + 1;
+        const workDate = `2026-07-${String(day).padStart(2, '0')}`;
+        const isSunday = weekdayIndexYmd(workDate) === 0;
+        return {
+          workDate,
+          status: isSunday ? 'ABSENT' : 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: isSunday ? 0 : 8 * 60,
+          isSunday,
+        };
+      }),
+      config
+    );
+    const result = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation: { monthlyBasic: 1500, monthlyAllowance: 1500, dailyRate: 0 },
+      lines,
+    });
+    // 27 working + 4 sandwiched Sundays = 31 paid days → full month
+    expect(result.breakdown.earnedDays).toBe(31);
+    expect(result.gross).toBeCloseTo(3000, 2);
+  });
+
+  function fullJulyLines(): PayLineInput[] {
+    return Array.from({ length: 31 }, (_, index) => {
+      const workDate = `2026-07-${String(index + 1).padStart(2, '0')}`;
+      const isSunday = weekdayIndexYmd(workDate) === 0;
+      return {
+        workDate,
+        status: isSunday ? 'ABSENT' : 'PRESENT',
+        leaveType: null,
+        basicHours: 8,
+        workedMinutes: isSunday ? 0 : 8 * 60,
+        isSunday,
+      };
+    });
+  }
+
+  it('hourly split pays sandwiched Sundays and still totals the monthly amount', () => {
+    const config: PayTypeConfig = {
+      mode: 'HOURLY_SPLIT',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+    };
+    const compensation = { monthlyBasic: 1500, monthlyAllowance: 1500, dailyRate: 0 };
+
+    const partial = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation,
+      lines: annotatePaidWeeklyOffLines(sabbirJulyLines(), config),
+    });
+    // Same 8 paid days out of 31 as the office calendar-days pay type
+    expect(partial.gross).toBeCloseTo(774.2, 1);
+    expect(partial.days.find((d) => d.date === '2026-07-05')?.detail).toBe('Weekly off — paid');
+
+    const full = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation,
+      lines: annotatePaidWeeklyOffLines(fullJulyLines(), config),
+    });
+    expect(full.gross).toBeCloseTo(3000, 1);
+  });
+
+  it('hourly split without the rule keeps the working-day divisor and unpaid Sundays', () => {
+    const config: PayTypeConfig = { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] };
+    const result = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation: { monthlyBasic: 1500, monthlyAllowance: 1500, dailyRate: 0 },
+      lines: annotatePaidWeeklyOffLines(sabbirJulyLines(), config),
+    });
+    // 7 worked days over a 27-day divisor
+    expect(result.gross).toBeCloseTo((3000 * 7) / 27, 1);
+    expect(result.days.find((d) => d.date === '2026-07-05')?.totalSalary).toBe(0);
+  });
+
+  it('daily wage pays a sandwiched Sunday at the daily rate', () => {
+    const config: PayTypeConfig = {
+      mode: 'DAILY_WAGE',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+    };
+    const compensation = { monthlyBasic: 0, monthlyAllowance: 0, dailyRate: 100 };
+    const result = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation,
+      lines: annotatePaidWeeklyOffLines(sabbirJulyLines(), config),
+    });
+    // 7 worked days + 1 paid Sunday
+    expect(result.gross).toBeCloseTo(800, 2);
+    expect(result.days.find((d) => d.date === '2026-07-05')?.totalSalary).toBeCloseTo(100, 2);
+
+    const withoutRule = calculatePayLine({
+      month: '2026-07',
+      config: { mode: 'DAILY_WAGE', excludedWeekdays: [0] },
+      compensation,
+      lines: sabbirJulyLines(),
+    });
+    expect(withoutRule.gross).toBeCloseTo(700, 2);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { PayTypeConfig } from '@/lib/hr/payroll/types';
+import type { PayCalculationMode, PayTypeConfig } from '@/lib/hr/payroll/types';
 import { daysInMonth, denomDaysExcludingWeekdays } from '@/lib/hr/payroll/calendar';
 
 export const WEEKDAY_OPTIONS: Array<{ value: number; label: string; short: string }> = [
@@ -12,6 +12,20 @@ export const WEEKDAY_OPTIONS: Array<{ value: number; label: string; short: strin
 ];
 
 const DEFAULT_EXCLUDED_WEEKDAYS = [0];
+
+/**
+ * Modes where paying weekly-off days is meaningful. MONTHLY_FIXED already pays the
+ * whole month, and CUSTOM decides its own day pay in the formula script.
+ */
+export const WEEKLY_OFF_PAY_MODES = new Set<PayCalculationMode>([
+  'MONTHLY_CALENDAR_DEDUCT',
+  'HOURLY_SPLIT',
+  'DAILY_WAGE',
+]);
+
+export function supportsWeeklyOffPay(mode: PayCalculationMode): boolean {
+  return WEEKLY_OFF_PAY_MODES.has(mode);
+}
 
 /** OT hourly rate = basic hourly rate × (otPercent / 100). Migrates legacy otDivisor when needed. */
 export function resolveOtPercent(
@@ -56,8 +70,22 @@ export function resolveDeductDenominator(
 }
 
 export function resolveCalendarDeductDayCount(month: string, config: PayTypeConfig): number {
+  if (config.weeklyOffPayRule === 'SANDWICHED') return daysInMonth(month);
   if (resolveDeductDenominator(config) === 'WORKING_DAYS') {
     return denomDaysExcludingWeekdays(month, resolveExcludedWeekdays(config));
   }
   return daysInMonth(month);
+}
+
+/**
+ * Days the monthly basic / allowance is spread over, for any pay mode.
+ * Paying weekly-off days only balances when those days are also in the divisor,
+ * so SANDWICHED always spreads over the full calendar month.
+ */
+export function resolvePayPeriodDenomDays(month: string, config: PayTypeConfig): number {
+  if (config.weeklyOffPayRule === 'SANDWICHED') return daysInMonth(month);
+  if (config.mode === 'MONTHLY_CALENDAR_DEDUCT') {
+    return resolveCalendarDeductDayCount(month, config);
+  }
+  return denomDaysExcludingWeekdays(month, resolveExcludedWeekdays(config));
 }

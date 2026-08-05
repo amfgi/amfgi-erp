@@ -1,6 +1,9 @@
 import type { PayCalculationMode, PayTypeConfig } from '@/lib/hr/payroll/types';
 
-import { resolveExcludedWeekdays } from '@/lib/hr/payroll/payTypeConfigHelpers';
+import {
+  resolveExcludedWeekdays,
+  supportsWeeklyOffPay,
+} from '@/lib/hr/payroll/payTypeConfigHelpers';
 
 
 
@@ -105,6 +108,11 @@ export function parsePayTypeConfig(raw: unknown): PayTypeConfig {
       o.payExcludedWeekdayWorkAtOt === true &&
       (mode === 'MONTHLY_CALENDAR_DEDUCT' || mode === 'MONTHLY_FIXED')
         ? true
+        : undefined,
+
+    weeklyOffPayRule:
+      o.weeklyOffPayRule === 'SANDWICHED' && supportsWeeklyOffPay(mode)
+        ? 'SANDWICHED'
         : undefined,
 
   };

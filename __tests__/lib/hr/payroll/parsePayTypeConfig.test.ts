@@ -33,4 +33,41 @@ describe('parsePayTypeConfig', () => {
   it('throws on invalid mode', () => {
     expect(() => parsePayTypeConfig({ mode: 'INVALID' })).toThrow(/Invalid pay type config/);
   });
+
+  it('parses SANDWICHED weeklyOffPayRule for every attendance-driven mode', () => {
+    const office = parsePayTypeConfig({
+      mode: 'MONTHLY_CALENDAR_DEDUCT',
+      deductDenominator: 'CALENDAR_DAYS',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+    });
+    expect(office.weeklyOffPayRule).toBe('SANDWICHED');
+    expect(office.deductDenominator).toBe('CALENDAR_DAYS');
+
+    for (const mode of ['HOURLY_SPLIT', 'DAILY_WAGE']) {
+      const config = parsePayTypeConfig({
+        mode,
+        excludedWeekdays: [0],
+        weeklyOffPayRule: 'SANDWICHED',
+      });
+      expect(config.weeklyOffPayRule).toBe('SANDWICHED');
+    }
+  });
+
+  it('ignores weeklyOffPayRule for modes that do not pay per attendance day', () => {
+    const fixed = parsePayTypeConfig({
+      mode: 'MONTHLY_FIXED',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+    });
+    expect(fixed.weeklyOffPayRule).toBeUndefined();
+
+    const custom = parsePayTypeConfig({
+      mode: 'CUSTOM',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+      formulaScript: 'gross = monthly_basic',
+    });
+    expect(custom.weeklyOffPayRule).toBeUndefined();
+  });
 });

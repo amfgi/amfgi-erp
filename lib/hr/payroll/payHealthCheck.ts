@@ -164,7 +164,7 @@ export function evaluatePayHealthCheck(params: {
   const componentEarningsPaid = componentTotals.earnings;
   const componentDeductionsPaid = componentTotals.deductions;
   const allowancePaid = roundMoney(componentEarningsPaid - componentDeductionsPaid);
-  const allowanceCap = resolveMonthlyAllowanceCap(compensation, month, excludedWeekdays);
+  const allowanceCap = resolveMonthlyAllowanceCap(compensation, month, excludedWeekdays, config);
   const basicCap = compensation.monthlyBasic;
   const excessTolerance = moneyExcessTolerance(lines);
 
@@ -261,7 +261,8 @@ export function evaluateTimelinePayHealthCheck(params: {
       basicCap + pkg.compensation.monthlyBasic * pkg.fixedMonthlyProrationFactor
     );
     allowanceCap = roundMoney(
-      allowanceCap + resolveMonthlyAllowanceCap(proratedCompensation, month, excludedWeekdays)
+      allowanceCap +
+        resolveMonthlyAllowanceCap(proratedCompensation, month, excludedWeekdays, pkg.config)
     );
 
     const pkgDayRows = result.days.filter((day) =>

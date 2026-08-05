@@ -1,6 +1,8 @@
+import { isPayrollLeaveLine, leavePayFraction } from '@/lib/hr/attendanceLeavePay';
 import { dedupeAllowancesByType } from '@/lib/hr/payroll/allowanceTotals';
 import {
   centsToMoney,
+  daysInMonth,
   denomDaysExcludingWeekdays,
   moneyToCents,
   roundMoney,
@@ -8,8 +10,26 @@ import {
 } from '@/lib/hr/payroll/calendar';
 import { shouldPayExcludedWeekdayWorkAtOtOnly } from '@/lib/hr/payroll/excludedWeekdayOtPay';
 import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
+import { resolveCalendarDeductDayCount } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import type { CompensationInput, PayLineInput, PayTypeConfig } from '@/lib/hr/payroll/types';
 import type { EmployeeAllowanceItem } from '@/lib/hr/payroll/resolveEmployeeAllowances';
+
+/**
+ * Days used to spread attendance-based allowances. Follows the basic pay denominator
+ * so allowance and basic prorate over the same day count.
+ */
+export function allowanceDenomDays(
+  month: string,
+  excludedWeekdays: number[],
+  config?: PayTypeConfig
+): number {
+  // Paid weekly-off days have to sit inside the divisor, otherwise a full month overpays.
+  if (config?.weeklyOffPayRule === 'SANDWICHED') return daysInMonth(month);
+  if (config?.mode === 'MONTHLY_CALENDAR_DEDUCT') {
+    return resolveCalendarDeductDayCount(month, config);
+  }
+  return denomDaysExcludingWeekdays(month, excludedWeekdays);
+}
 
 export type SalaryComponentKind = 'EARNING' | 'DEDUCTION';
 export type SalaryComponentApplication = 'FIXED_MONTHLY' | 'ATTENDANCE_PRESENT';
@@ -108,27 +128,39 @@ export function countPresentDays(lines: PayLineInput[]): number {
   return lines.filter((line) => line.status === 'PRESENT').length;
 }
 
-/** Days that earn per-day attendance allowance (present, half day, paid holiday). */
+/** Days that earn per-day attendance allowance (present, half day, paid holiday, paid leave). */
 export function countAllowanceDays(lines: PayLineInput[]): number {
-  return lines.filter(
-    (line) =>
-      line.status === 'PRESENT' ||
-      line.status === 'HALF_DAY' ||
-      isPayrollHolidayLine(line)
-  ).length;
+  return lines.filter((line) => lineEarnsAttendanceComponentInPay(line)).length;
+}
+
+/**
+ * Share of a full day's attendance-based components this line earns.
+ * Paid leave earns in proportion to its pay tier, matching how basic pay is prorated.
+ */
+export function attendanceComponentDayWeight(
+  line: PayLineInput,
+  config?: PayTypeConfig
+): number {
+  if (line.isPaidWeeklyOff) return 1;
+  if (config && shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) return 0;
+  if (isPayrollHolidayLine(line)) return 1;
+  if (isPayrollLeaveLine(line)) return leavePayFraction(line);
+  if (line.status === 'PRESENT' || line.status === 'HALF_DAY') return 1;
+  return 0;
+}
+
+export function sumAttendanceComponentWeight(
+  lines: PayLineInput[],
+  config?: PayTypeConfig
+): number {
+  return lines.reduce((sum, line) => sum + attendanceComponentDayWeight(line, config), 0);
 }
 
 export function lineEarnsAttendanceComponentInPay(
   line: PayLineInput,
   config?: PayTypeConfig
 ): boolean {
-  const earnsDay =
-    line.status === 'PRESENT' ||
-    line.status === 'HALF_DAY' ||
-    isPayrollHolidayLine(line);
-  if (!earnsDay) return false;
-  if (config && shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) return false;
-  return true;
+  return attendanceComponentDayWeight(line, config) > 0;
 }
 
 export type AttendanceComponentSplit = { earning: number; deduction: number };
@@ -215,9 +247,10 @@ export function resolvePackagePeriodAttendanceNet(params: {
   earnedEligibleDays: number;
   month: string;
   excludedWeekdays: number[];
+  config?: PayTypeConfig;
 }): number {
-  const { compensation, earnedEligibleDays, month, excludedWeekdays } = params;
-  const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
+  const { compensation, earnedEligibleDays, month, excludedWeekdays, config } = params;
+  const denom = allowanceDenomDays(month, excludedWeekdays, config);
   const comps = compensation.salaryComponents;
   if (!comps) {
     return resolvePeriodAttendanceAmount(compensation.monthlyAllowance, earnedEligibleDays, denom);
@@ -246,32 +279,42 @@ export function buildAttendanceComponentSplitMap(params: {
   const map = new Map<string, AttendanceComponentSplit>();
   if (eligible.length === 0) return map;
 
-  const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
+  const weights = eligible.map((line) => attendanceComponentDayWeight(line, config));
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  const fullDayWeights = weights.every((weight) => weight === 1);
+  const denom = allowanceDenomDays(month, excludedWeekdays, config);
   const comps = compensation.salaryComponents;
+
+  /** Even split keeps existing full-day rounding; weighted split handles partial-pay leave. */
+  const spread = (total: number): number[] =>
+    fullDayWeights
+      ? distributeMoneyAcrossUnits(total, eligible.length)
+      : distributeMoneyByContribution(total, weights);
+
   let earningAmounts: number[];
   let deductionAmounts: number[];
 
   if (!comps) {
     const periodEarnings = resolvePeriodAttendanceAmount(
       compensation.monthlyAllowance,
-      eligible.length,
+      weightSum,
       denom
     );
-    earningAmounts = distributeMoneyAcrossUnits(periodEarnings, eligible.length);
+    earningAmounts = spread(periodEarnings);
     deductionAmounts = eligible.map(() => 0);
   } else {
     const periodEarnings = resolvePeriodAttendanceAmount(
       resolveAttendanceEarningsMonthly(comps, month, excludedWeekdays),
-      eligible.length,
+      weightSum,
       denom
     );
     const periodDeductions = resolvePeriodAttendanceAmount(
       resolveAttendanceDeductionsMonthly(comps, month, excludedWeekdays),
-      eligible.length,
+      weightSum,
       denom
     );
-    earningAmounts = distributeMoneyAcrossUnits(periodEarnings, eligible.length);
-    deductionAmounts = distributeMoneyAcrossUnits(periodDeductions, eligible.length);
+    earningAmounts = spread(periodEarnings);
+    deductionAmounts = spread(periodDeductions);
   }
 
   eligible.forEach((line, index) => {
@@ -313,7 +356,7 @@ export function resolvePerDayComponentSplit(params: {
   }
 
   const comps = compensation.salaryComponents;
-  const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
+  const denom = allowanceDenomDays(month, excludedWeekdays, config);
   let earning = 0;
   let deduction = 0;
 
@@ -321,8 +364,16 @@ export function resolvePerDayComponentSplit(params: {
     earning += compensation.monthlyAllowance / denom;
   }
   if (comps) {
-    earning += comps.attendanceEarningPerDay;
-    deduction += comps.attendanceDeductionPerDay;
+    if (config?.mode === 'MONTHLY_CALENDAR_DEDUCT' && comps.attendanceEarningsMonthly > 0) {
+      earning += comps.attendanceEarningsMonthly / denom;
+      deduction +=
+        comps.attendanceDeductionsMonthly > 0
+          ? comps.attendanceDeductionsMonthly / denom
+          : comps.attendanceDeductionPerDay;
+    } else {
+      earning += comps.attendanceEarningPerDay;
+      deduction += comps.attendanceDeductionPerDay;
+    }
   }
 
   return {
@@ -350,13 +401,13 @@ export function resolveSalaryComponentCaps(params: {
 }): { earningsCap: number; deductionsCap: number } {
   const { compensation, lines, month, excludedWeekdays, config } = params;
   const comps = compensation.salaryComponents;
-  const eligibleCount = lines.filter((line) => lineEarnsAttendanceComponentInPay(line, config)).length;
-  const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
+  const eligibleWeight = sumAttendanceComponentWeight(lines, config);
+  const denom = allowanceDenomDays(month, excludedWeekdays, config);
 
   if (!comps) {
     const periodEarnings = resolvePeriodAttendanceAmount(
       compensation.monthlyAllowance,
-      eligibleCount,
+      eligibleWeight,
       denom
     );
     return { earningsCap: periodEarnings, deductionsCap: 0 };
@@ -364,12 +415,12 @@ export function resolveSalaryComponentCaps(params: {
 
   const periodAttendanceEarnings = resolvePeriodAttendanceAmount(
     resolveAttendanceEarningsMonthly(comps, month, excludedWeekdays),
-    eligibleCount,
+    eligibleWeight,
     denom
   );
   const periodAttendanceDeductions = resolvePeriodAttendanceAmount(
     resolveAttendanceDeductionsMonthly(comps, month, excludedWeekdays),
-    eligibleCount,
+    eligibleWeight,
     denom
   );
 
@@ -383,13 +434,14 @@ export function resolveSalaryComponentCaps(params: {
 export function resolveMonthlyAllowanceCap(
   compensation: CompensationInput,
   month: string,
-  excludedWeekdays: number[]
+  excludedWeekdays: number[],
+  config?: PayTypeConfig
 ): number {
   const comps = compensation.salaryComponents;
   if (!comps) {
     return roundMoney(Math.max(0, compensation.monthlyAllowance));
   }
-  const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
+  const denom = allowanceDenomDays(month, excludedWeekdays, config);
   const attendanceEarningsMonthly =
     comps.attendanceEarningsMonthly ??
     roundMoney(comps.attendanceEarningPerDay * denom);
@@ -491,10 +543,8 @@ export function applySalaryComponentsToGross(params: {
   const totals = params.compensation.salaryComponents;
   if (!totals) return params.gross;
 
-  const earnedEligibleDays = params.lines.filter((line) =>
-    lineEarnsAttendanceComponentInPay(line, params.config)
-  ).length;
-  const denom = denomDaysExcludingWeekdays(params.month, params.excludedWeekdays);
+  const earnedEligibleDays = sumAttendanceComponentWeight(params.lines, params.config);
+  const denom = allowanceDenomDays(params.month, params.excludedWeekdays, params.config);
   const fixedNet = fixedSalaryComponentNet(totals);
   const attendanceNet = attendanceSalaryComponentNet(
     totals,

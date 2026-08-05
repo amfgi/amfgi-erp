@@ -1,11 +1,10 @@
-import { isPayrollLeaveLine } from '@/lib/hr/attendanceLeavePay';
-import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
-import { isPaidLeaveType } from '@/lib/hr/leaveTypes';
+import { isLeavePaidForPay } from '@/lib/hr/attendanceLeavePay';
 import { roundMoney } from '@/lib/hr/payroll/calendar';
 import { lineBasicHours } from '@/lib/hr/payroll/lineBasicHours';
 import { formatPayDayStatus } from '@/lib/hr/payroll/payDayStatus';
 import type { PayDayBreakdown, PayLineInput } from '@/lib/hr/payroll/types';
 
+export { isLeavePaidForPay } from '@/lib/hr/attendanceLeavePay';
 export { formatPayDayStatus, isAttendancePresentLine, isExcludedWeekdayLine } from '@/lib/hr/payroll/payDayStatus';
 
 export function workedHoursFromMinutes(minutes: number): number {
@@ -84,14 +83,15 @@ function roundHours(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export function isLeavePaidForPay(line: PayLineInput): boolean {
-  if (!isPayrollLeaveLine(line)) return false;
-  if (line.leavePayPercent != null) return line.leavePayPercent > 0;
-  return isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY');
-}
-
-/** Day row for a leave line: pays dailyRate x leavePayPercent when the leave type is paid. */
-export function buildLeavePayDayRow(line: PayLineInput, dailyRate: number): PayDayBreakdown {
+/**
+ * Day row for a leave line: pays dailyRate x leavePayPercent when the leave type is paid,
+ * plus the day's share of attendance-based salary components.
+ */
+export function buildLeavePayDayRow(
+  line: PayLineInput,
+  dailyRate: number,
+  componentSplit?: { earning: number; deduction: number }
+): PayDayBreakdown {
   const label = line.leaveTypeLabel
     ? `Leave (${line.leaveTypeLabel})`
     : line.leaveType
@@ -116,6 +116,10 @@ export function buildLeavePayDayRow(line: PayLineInput, dailyRate: number): PayD
 
   const pct = line.leavePayPercent ?? 100;
   const dayPay = roundMoney(dailyRate * (pct / 100));
+  const componentEarning = componentSplit?.earning ?? 0;
+  const componentDeduction = componentSplit?.deduction ?? 0;
+  const allowance = roundMoney(componentEarning - componentDeduction);
+
   return finishPayDayBreakdown({
     date: line.workDate,
     status: label,
@@ -125,8 +129,10 @@ export function buildLeavePayDayRow(line: PayLineInput, dailyRate: number): PayD
     basicHourSalary: dayPay,
     otHourRate: 0,
     otHourSalary: 0,
-    allowance: 0,
-    totalSalary: dayPay,
+    allowance,
+    componentEarning: componentSplit ? componentEarning : undefined,
+    componentDeduction: componentSplit ? componentDeduction : undefined,
+    totalSalary: roundMoney(dayPay + allowance),
     detail: pct < 100 ? `${pct}% paid leave` : 'Paid leave',
   });
 }

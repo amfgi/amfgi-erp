@@ -46,6 +46,10 @@ import {
   resolveVisaSponsorForPayroll,
   type VisaPeriodSponsorSource,
 } from '@/lib/hr/payroll/resolveVisaSponsorForPayroll';
+import {
+  annotatePaidWeeklyOffLines,
+  resolvePaidWeeklyOffDates,
+} from '@/lib/hr/payroll/weeklyOffPay';
 import type { CompensationInput, LinePayContext, PayLineInput, PayLineResult, PayTypeConfig } from '@/lib/hr/payroll/types';
 import { parseWorkforceProfile, workforceEmployeeTypeShortNameFromProfile, workforceVisaHoldingLabelFromProfile } from '@/lib/hr/workforceProfile';
 
@@ -225,6 +229,39 @@ function stripLeaveFromAttendanceRows(rows: AttendanceRow[]): AttendanceRow[] {
     ...row,
     status: row.status === 'LEAVE' ? 'ABSENT' : row.status,
   }));
+}
+
+/** Stamp isPaidWeeklyOff so calculatePayLine and health checks see the same annotated lines. */
+function annotateLinesForWeeklyOffPay(
+  lines: PayLineInput[],
+  primaryConfig: PayTypeConfig,
+  resolveLineContext?: (line: PayLineInput) => LinePayContext
+): PayLineInput[] {
+  if (!resolveLineContext) {
+    return annotatePaidWeeklyOffLines(lines, primaryConfig);
+  }
+
+  const paidEligibleDates = new Set<string>();
+  const configsSeen = new Set<string>();
+  for (const line of lines) {
+    const ctx = resolveLineContext(line);
+    const key = `${ctx.config.weeklyOffPayRule ?? 'NONE'}:${(ctx.config.excludedWeekdays ?? []).join(',')}`;
+    if (configsSeen.has(key)) continue;
+    configsSeen.add(key);
+    if (ctx.config.weeklyOffPayRule !== 'SANDWICHED') continue;
+    for (const date of resolvePaidWeeklyOffDates(lines, ctx.config)) {
+      paidEligibleDates.add(date);
+    }
+  }
+
+  return lines.map((line) => {
+    const ctx = resolveLineContext(line);
+    return {
+      ...line,
+      isPaidWeeklyOff:
+        ctx.config.weeklyOffPayRule === 'SANDWICHED' && paidEligibleDates.has(line.workDate),
+    };
+  });
 }
 
 async function buildMergedPayLinesForEmployee(
@@ -431,11 +468,13 @@ function computeEmployeePayPreviewRow(
     resolveExcludedWeekdays(config)
   );
 
+  const annotatedLines = annotateLinesForWeeklyOffPay(lines, config, resolveLineContext);
+
   const result = calculatePayLine({
     month,
     config,
     compensation: compensationInput,
-    lines,
+    lines: annotatedLines,
     resolveLineContext,
   });
 
@@ -463,7 +502,7 @@ function computeEmployeePayPreviewRow(
           };
         }),
         result,
-        lines,
+        lines: annotatedLines,
         resolvePackageId: (line) =>
           resolveCompensationPackageForDate(monthPackages, line.workDate)?.id ?? '',
       })
@@ -472,7 +511,7 @@ function computeEmployeePayPreviewRow(
         config,
         compensation: compensationInput,
         result,
-        lines,
+        lines: annotatedLines,
       });
 
   let salaryComponentEarnings = 0;
@@ -496,7 +535,7 @@ function computeEmployeePayPreviewRow(
         ),
         prorationFactor
       );
-      const pkgLines = lines.filter(
+      const pkgLines = annotatedLines.filter(
         (line) => resolveCompensationPackageForDate(monthPackages, line.workDate)?.id === pkg.id
       );
       const pkgDayRows = result.days.filter((day) =>
@@ -518,7 +557,7 @@ function computeEmployeePayPreviewRow(
   } else {
     const totals = resolveSalaryComponentDisplayTotals({
       compensation: compensationInput,
-      lines,
+      lines: annotatedLines,
       month,
       excludedWeekdays: resolveExcludedWeekdays(config),
       dayRows: result.days,

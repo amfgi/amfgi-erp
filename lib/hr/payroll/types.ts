@@ -8,6 +8,9 @@ export type PayCalculationMode =
 /** How office calendar-deduct spreads monthly basic when calculating per-day deductions. */
 export type DeductDenominator = 'CALENDAR_DAYS' | 'WORKING_DAYS';
 
+/** How weekly-off (excluded weekday) days are paid. Default NONE. */
+export type WeeklyOffPayRule = 'NONE' | 'SANDWICHED';
+
 export type PayTypeConfig = {
   mode: PayCalculationMode;
   /** Office calendar deduct: divide monthly basic by all month days or working days only. */
@@ -20,6 +23,12 @@ export type PayTypeConfig = {
   excludedWeekdays?: number[];
   /** Fixed monthly: when true, work on weekly off-days earns OT pay. Default false. */
   payExcludedWeekdayWorkAtOt?: boolean;
+  /**
+   * How weekly-off days are paid, for MONTHLY_CALENDAR_DEDUCT / HOURLY_SPLIT / DAILY_WAGE.
+   * SANDWICHED = pay when nearest non-weekly-off day before and after are both paid.
+   * Monthly basic and allowance then spread over calendar days so a full month still pays 100%.
+   */
+  weeklyOffPayRule?: WeeklyOffPayRule;
   /** @deprecated Legacy only — basic hours come from each attendance row */
   defaultBasicHours?: number;
   /** Multi-line formula script; required when mode = CUSTOM */
@@ -59,6 +68,11 @@ export type PayLineInput = {
   holidayPayWorkedHoursAtOt?: boolean;
   /** Optional holiday-specific OT % for worked hours; null uses salary structure default. */
   holidayOtPercent?: number | null;
+  /**
+   * When true, this excluded weekday is a paid rest day (weeklyOffPayRule = SANDWICHED).
+   * Stamped by buildPayPreview before calculatePayLine.
+   */
+  isPaidWeeklyOff?: boolean;
   basicHours: number;
   workedMinutes: number;
   isSunday: boolean;

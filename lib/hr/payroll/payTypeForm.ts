@@ -1,8 +1,14 @@
-import type { PayCalculationMode, DeductDenominator, PayTypeConfig } from '@/lib/hr/payroll/types';
+import type {
+  PayCalculationMode,
+  DeductDenominator,
+  PayTypeConfig,
+  WeeklyOffPayRule,
+} from '@/lib/hr/payroll/types';
 import {
   resolveDeductDenominator,
   resolveExcludedWeekdays,
   resolveOtPercent,
+  supportsWeeklyOffPay,
 } from '@/lib/hr/payroll/payTypeConfigHelpers';
 
 export const PAY_CALCULATION_MODE_OPTIONS: Array<{
@@ -55,6 +61,7 @@ export function buildPayTypeConfigFromFields(input: {
   excludedWeekdays?: number[] | null;
   deductDenominator?: DeductDenominator | null;
   payExcludedWeekdayWorkAtOt?: boolean | null;
+  weeklyOffPayRule?: WeeklyOffPayRule | null;
   formulaScript?: string | null;
   customParams?: Record<string, number> | null;
 }): PayTypeConfig {
@@ -86,6 +93,9 @@ export function buildPayTypeConfigFromFields(input: {
     if (input.payExcludedWeekdayWorkAtOt) {
       config.payExcludedWeekdayWorkAtOt = true;
     }
+  }
+  if (input.weeklyOffPayRule === 'SANDWICHED' && supportsWeeklyOffPay(input.mode)) {
+    config.weeklyOffPayRule = 'SANDWICHED';
   }
   if (input.mode === 'CUSTOM') {
     const script = input.formulaScript?.trim();
@@ -121,6 +131,7 @@ export function payTypeConfigFields(config: Record<string, unknown>) {
     formulaScript: typeof config.formulaScript === 'string' ? config.formulaScript : '',
     customParams,
     payExcludedWeekdayWorkAtOt: config.payExcludedWeekdayWorkAtOt === true ? true : undefined,
+    weeklyOffPayRule: config.weeklyOffPayRule === 'SANDWICHED' ? 'SANDWICHED' : undefined,
   };
   return {
     mode,
@@ -130,5 +141,6 @@ export function payTypeConfigFields(config: Record<string, unknown>) {
     formulaScript: parsed.formulaScript ?? '',
     customParams,
     payExcludedWeekdayWorkAtOt: parsed.payExcludedWeekdayWorkAtOt === true,
+    weeklyOffPayRule: (parsed.weeklyOffPayRule === 'SANDWICHED' ? 'SANDWICHED' : 'NONE') as WeeklyOffPayRule,
   };
 }
