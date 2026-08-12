@@ -606,6 +606,33 @@ describe('calculatePayLine', () => {
     expect(result.days.find((d) => d.date === '2026-07-05')?.totalSalary).toBe(0);
   });
 
+  it('hourly split tops up fils lost when OT-day basic is rounded down (Alif July shape)', () => {
+    // Each day: 9h basic + 3h OT. Basic is computed as round(dayTotal − OT), which
+    // floors to 55.55 on most days; without redistribution 27 days sum to 1499.89.
+    const config: PayTypeConfig = { mode: 'HOURLY_SPLIT', excludedWeekdays: [0] };
+    const lines = Array.from({ length: 31 }, (_, index) => {
+      const workDate = `2026-07-${String(index + 1).padStart(2, '0')}`;
+      const isSunday = weekdayIndexYmd(workDate) === 0;
+      return {
+        workDate,
+        status: isSunday ? 'ABSENT' : 'PRESENT',
+        leaveType: null,
+        basicHours: 9,
+        workedMinutes: isSunday ? 0 : 12 * 60,
+        isSunday,
+      };
+    });
+    const result = calculatePayLine({
+      month: '2026-07',
+      config,
+      compensation: { monthlyBasic: 1500, monthlyAllowance: 0, dailyRate: 0 },
+      lines,
+    });
+    const basicSum = roundMoney(result.days.reduce((sum, d) => sum + d.basicHourSalary, 0));
+    expect(basicSum).toBe(1500);
+    expect(result.days.filter((d) => d.basicHourSalary > 0)).toHaveLength(27);
+  });
+
   it('daily wage pays a sandwiched Sunday at the daily rate', () => {
     const config: PayTypeConfig = {
       mode: 'DAILY_WAGE',

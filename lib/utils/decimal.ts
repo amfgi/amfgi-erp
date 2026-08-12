@@ -23,6 +23,21 @@ export function decimalToNumberOrZero(value: unknown): number {
   return decimalToNumber(value) ?? 0;
 }
 
+/** Stock qty columns use `@db.Decimal(18, 3)`. Normalize before gte/decrement so JS floats like 95.4 are not sent as 95.400000000000005684. */
+export const STOCK_QTY_DECIMAL_PLACES = 3;
+
+export function toStockQtyDecimal(value: unknown): Prisma.Decimal {
+  const numeric = decimalToNumberOrZero(value);
+  return new Prisma.Decimal(numeric).toDecimalPlaces(
+    STOCK_QTY_DECIMAL_PLACES,
+    Prisma.Decimal.ROUND_HALF_UP
+  );
+}
+
+export function roundStockQty(value: unknown): number {
+  return toStockQtyDecimal(value).toNumber();
+}
+
 export function decimalEqualsNullable(
   left: Prisma.Decimal | number | string | null | undefined,
   right: Prisma.Decimal | number | string | null | undefined

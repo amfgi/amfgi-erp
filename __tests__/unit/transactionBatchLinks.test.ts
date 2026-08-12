@@ -1,4 +1,5 @@
 import { consumeTransactionBatchQuantitiesBestEffort } from '@/lib/utils/transactionBatchLinks';
+import { toStockQtyDecimal } from '@/lib/utils/decimal';
 
 describe('consumeTransactionBatchQuantitiesBestEffort', () => {
   it('consumes only remaining batch quantity when stock was partially cleared', async () => {
@@ -14,12 +15,20 @@ describe('consumeTransactionBatchQuantitiesBestEffort', () => {
             where,
             data,
           }: {
-            where: { id: string; quantityAvailable: { gte: number } };
-            data: { quantityAvailable: { decrement: number } };
+            where: { id: string; quantityAvailable: { gte: { toNumber: () => number } | number } };
+            data: { quantityAvailable: { decrement: { toNumber: () => number } | number } };
           }) => {
             const current = batches.get(where.id) ?? 0;
-            if (current < where.quantityAvailable.gte) return { count: 0 };
-            batches.set(where.id, current - data.quantityAvailable.decrement);
+            const gte =
+              typeof where.quantityAvailable.gte === 'number'
+                ? where.quantityAvailable.gte
+                : where.quantityAvailable.gte.toNumber();
+            const decrement =
+              typeof data.quantityAvailable.decrement === 'number'
+                ? data.quantityAvailable.decrement
+                : data.quantityAvailable.decrement.toNumber();
+            if (current < gte) return { count: 0 };
+            batches.set(where.id, current - decrement);
             return { count: 1 };
           }
         ),
@@ -60,5 +69,11 @@ describe('consumeTransactionBatchQuantitiesBestEffort', () => {
 
     expect(consumed).toBe(0);
     expect(tx.stockBatch.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('normalizes float quantities so Decimal gte matches stock qty precision', () => {
+    const qty = toStockQtyDecimal(95.4);
+    expect(qty.toString()).toBe('95.4');
+    expect(qty.toFixed()).not.toContain('000000');
   });
 });

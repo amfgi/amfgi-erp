@@ -562,7 +562,6 @@ export default function DispatchMaterialsPage() {
       setExistingEntry(null);
     } catch (err: any) {
       toast.error(err?.data?.error ?? 'Dispatch failed');
-      throw err;
     }
   };
 

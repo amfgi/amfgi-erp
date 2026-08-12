@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import { decimalToNumberOrZero } from './decimal';
+import { decimalToNumberOrZero, roundStockQty, toStockQtyDecimal } from './decimal';
 
 type Tx = PrismaClient | Prisma.TransactionClient;
 
@@ -19,18 +19,18 @@ export async function restoreTransactionBatchQuantities(
   links: readonly TransactionBatchLinkInput[]
 ) {
   if (links.length === 0) return;
-  await Promise.all(
-    links.map((link) =>
-      tx.stockBatch.update({
-        where: { id: link.batchId },
-        data: {
-          quantityAvailable: {
-            increment: link.quantityFromBatch,
-          },
+  for (const link of links) {
+    const quantity = toStockQtyDecimal(link.quantityFromBatch);
+    if (quantity.lte(0)) continue;
+    await tx.stockBatch.update({
+      where: { id: link.batchId },
+      data: {
+        quantityAvailable: {
+          increment: quantity,
         },
-      })
-    )
-  );
+      },
+    });
+  }
 }
 
 export async function consumeTransactionBatchQuantities(
@@ -39,25 +39,25 @@ export async function consumeTransactionBatchQuantities(
   errorMessage: string
 ) {
   if (links.length === 0) return;
-  const results = await Promise.all(
-    links.map((link) =>
-      tx.stockBatch.updateMany({
-        where: {
-          id: link.batchId,
-          quantityAvailable: {
-            gte: link.quantityFromBatch,
-          },
+  for (const link of links) {
+    const quantity = toStockQtyDecimal(link.quantityFromBatch);
+    if (quantity.lte(0)) continue;
+    const result = await tx.stockBatch.updateMany({
+      where: {
+        id: link.batchId,
+        quantityAvailable: {
+          gte: quantity,
         },
-        data: {
-          quantityAvailable: {
-            decrement: link.quantityFromBatch,
-          },
+      },
+      data: {
+        quantityAvailable: {
+          decrement: quantity,
         },
-      })
-    )
-  );
-  if (results.some((result) => result.count === 0)) {
-    throw new Error(errorMessage);
+      },
+    });
+    if (result.count === 0) {
+      throw new Error(errorMessage);
+    }
   }
 }
 
@@ -82,7 +82,11 @@ export async function consumeTransactionBatchQuantitiesBestEffort(
     const available = decimalToNumberOrZero(batch.quantityAvailable);
     if (available <= EPSILON) continue;
 
-    const quantityToConsume = Math.min(link.quantityFromBatch, available);
+    const quantityToConsume = toStockQtyDecimal(
+      Math.min(roundStockQty(link.quantityFromBatch), available)
+    );
+    if (quantityToConsume.lte(0)) continue;
+
     const result = await tx.stockBatch.updateMany({
       where: {
         id: link.batchId,
@@ -93,7 +97,7 @@ export async function consumeTransactionBatchQuantitiesBestEffort(
       },
     });
     if (result.count > 0) {
-      totalConsumed += quantityToConsume;
+      totalConsumed += quantityToConsume.toNumber();
     }
   }
 
@@ -132,7 +136,7 @@ export function normalizeTransactionBatchLinks<
   return links.map((link) => ({
     batchId: link.batchId,
     batchNumber: link.batchNumber,
-    quantityFromBatch: decimalToNumberOrZero(link.quantityFromBatch),
+    quantityFromBatch: roundStockQty(link.quantityFromBatch),
     unitCost: decimalToNumberOrZero(link.unitCost),
     costAmount: decimalToNumberOrZero(link.costAmount),
   }));

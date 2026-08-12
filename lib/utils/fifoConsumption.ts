@@ -1,3 +1,5 @@
+import { roundStockQty } from './decimal';
+
 interface StockBatch {
   _id?: any; // Can be ObjectId (MongoDB) or string (Prisma)
   id?: string; // Prisma ID
@@ -41,14 +43,16 @@ export function calculateFIFOConsumption(
   );
 
   const batchesUsed: BatchConsumption[] = [];
-  let remainingQuantity = quantityNeeded;
+  let remainingQuantity = roundStockQty(quantityNeeded);
   let totalCost = 0;
 
   for (const batch of sortedBatches) {
     if (remainingQuantity <= 0) break;
 
     // How much can we take from this batch?
-    const quantityFromBatch = Math.min(remainingQuantity, batch.quantityAvailable);
+    const quantityFromBatch = roundStockQty(
+      Math.min(remainingQuantity, roundStockQty(batch.quantityAvailable))
+    );
 
     if (quantityFromBatch > 0) {
       const costAmount = quantityFromBatch * batch.unitCost;
@@ -62,7 +66,7 @@ export function calculateFIFOConsumption(
       });
 
       totalCost += costAmount;
-      remainingQuantity -= quantityFromBatch;
+      remainingQuantity = roundStockQty(remainingQuantity - quantityFromBatch);
     }
   }
 

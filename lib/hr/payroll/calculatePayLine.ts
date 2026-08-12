@@ -186,10 +186,18 @@ function redistributeCalendarDeductBasicOnRows(
   }
 }
 
+/**
+ * OT-day basic is computed as round(dayTotal − OT), which often floors a few fils
+ * below the true daily share. Summing those days can undershoot monthly basic even
+ * when every working day was present (e.g. 27 × ~55.555 → 1499.89 instead of 1500).
+ * Redistribute to the exact unrounded period total (capped at monthly basic), same
+ * idea as calendar-deduct redistribution — both top-up and cap.
+ */
 function redistributeHourlySplitBasicOnRows(
   lines: PayLineInput[],
   dayRows: PayDayBreakdown[],
-  lineCtx: (line: PayLineInput) => LinePayContext
+  lineCtx: (line: PayLineInput) => LinePayContext,
+  month: string
 ): void {
   const rowsByPackage = groupLinesByPackage(lines, lineCtx);
 
@@ -199,13 +207,36 @@ function redistributeHourlySplitBasicOnRows(
       .filter((index) => dayRows[index].basicHourSalary > 0);
     if (rowIndices.length === 0) continue;
 
-    const monthlyBasic = lineCtx(packageLines[0]).compensation.monthlyBasic;
-    const contributions = rowIndices.map((index) => dayRows[index].basicHourSalary);
-    const uncappedTotal = roundMoney(contributions.reduce((sum, value) => sum + value, 0));
-    const cappedTotal = roundMoney(Math.min(uncappedTotal, monthlyBasic));
-    if (cappedTotal >= uncappedTotal) continue;
+    const ctx = lineCtx(packageLines[0]);
+    const monthlyBasic = ctx.compensation.monthlyBasic;
+    const denom = resolvePayPeriodDenomDays(month, ctx.config);
+    if (monthlyBasic <= 0 || denom <= 0) continue;
 
-    const amounts = distributeMoneyByContribution(cappedTotal, contributions);
+    let unroundedSum = 0;
+    const contributions: number[] = [];
+    for (const index of rowIndices) {
+      const line = lines[index];
+      const row = dayRows[index];
+      const dailyShare = monthlyBasic / denom;
+      let unrounded: number;
+      if (isPayrollLeaveLine(line) || line.isPaidWeeklyOff) {
+        unrounded = dailyShare * (isPayrollLeaveLine(line) ? leavePayFraction(line) : 1);
+      } else {
+        const lineBasic = lineBasicHours(line);
+        unrounded =
+          lineBasic && lineBasic > 0 && row.basicHours > 0
+            ? row.basicHours * (dailyShare / lineBasic)
+            : row.basicHourSalary;
+      }
+      unroundedSum += unrounded;
+      contributions.push(row.basicHourSalary);
+    }
+
+    const target = roundMoney(Math.min(unroundedSum, monthlyBasic));
+    const current = roundMoney(contributions.reduce((sum, value) => sum + value, 0));
+    if (current === target) continue;
+
+    const amounts = distributeMoneyByContribution(target, contributions);
     rowIndices.forEach((rowIndex, amountIndex) => {
       const row = dayRows[rowIndex];
       const delta = roundMoney(amounts[amountIndex] - row.basicHourSalary);
@@ -1019,7 +1050,7 @@ export function calculatePayLine(params: {
       }
     }
 
-    redistributeHourlySplitBasicOnRows(lines, dayRows, lineCtx);
+    redistributeHourlySplitBasicOnRows(lines, dayRows, lineCtx, month);
     gross = roundMoney(dayRows.reduce((sum, row) => sum + row.totalSalary, 0));
 
     let fixedNet = 0;

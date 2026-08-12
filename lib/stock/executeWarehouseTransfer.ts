@@ -3,6 +3,11 @@ import { buildTransactionActorFields, type AuditActorUser } from '@/lib/utils/au
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 import { resolveQuantityToBase } from '@/lib/utils/materialUomDb';
 import { createBatchData } from '@/lib/utils/stockBatchManagement';
+import {
+  consumeTransactionBatchQuantities,
+  createTransactionBatchRecords,
+  type TransactionBatchLinkInput,
+} from '@/lib/utils/transactionBatchLinks';
 import { applyMaterialWarehouseDelta, resolveEffectiveWarehouse } from '@/lib/warehouses/stockWarehouses';
 import {
   WAREHOUSE_TRANSFER_REFERENCE_TYPE,
@@ -178,31 +183,19 @@ export async function executeWarehouseTransferBatch(
       },
     });
 
-    for (const batchUsed of fifoResult.batchesUsed) {
-      const batchUpdateResult = await tx.stockBatch.updateMany({
-        where: {
-          id: String(batchUsed.batchId),
-          quantityAvailable: { gte: batchUsed.quantityFromBatch },
-        },
-        data: {
-          quantityAvailable: { decrement: batchUsed.quantityFromBatch },
-        },
-      });
-      if (batchUpdateResult.count === 0) {
-        throw new Error(`Stock changed while transferring ${material.name}. Please refresh and retry.`);
-      }
-
-      await tx.transactionBatch.create({
-        data: {
-          transactionId: transferOutTxn.id,
-          batchId: String(batchUsed.batchId),
-          batchNumber: batchUsed.batchNumber,
-          quantityFromBatch: batchUsed.quantityFromBatch,
-          unitCost: batchUsed.unitCost,
-          costAmount: batchUsed.costAmount,
-        },
-      });
-    }
+    const batchLinkData: TransactionBatchLinkInput[] = fifoResult.batchesUsed.map((batchUsed) => ({
+      batchId: String(batchUsed.batchId),
+      batchNumber: batchUsed.batchNumber,
+      quantityFromBatch: batchUsed.quantityFromBatch,
+      unitCost: batchUsed.unitCost,
+      costAmount: batchUsed.costAmount,
+    }));
+    await consumeTransactionBatchQuantities(
+      tx,
+      batchLinkData,
+      `Stock changed while transferring ${material.name}. Please refresh and retry.`
+    );
+    await createTransactionBatchRecords(tx, transferOutTxn.id, batchLinkData);
 
     await applyMaterialWarehouseDelta(tx, companyId, line.materialId, sourceWarehouse.warehouseId, -qtyBase);
 

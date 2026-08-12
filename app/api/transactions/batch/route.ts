@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { heavyTransactionOptions } from '@/lib/db/transactionOptions';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { buildTransactionActorFields } from '@/lib/utils/auditActor';
-import { decimalEqualsNullable, decimalToNumber, decimalToNumberOrZero } from '@/lib/utils/decimal';
+import { decimalEqualsNullable, decimalToNumber, decimalToNumberOrZero, toStockQtyDecimal } from '@/lib/utils/decimal';
 import { z } from 'zod';
 import { calculateFIFOConsumption } from '@/lib/utils/fifoConsumption';
 import { createBatchData } from '@/lib/utils/stockBatchManagement';
@@ -880,12 +880,12 @@ export async function POST(req: Request) {
               where: {
                 id: line.materialId,
                 currentStock: {
-                  gte: baseQuantity,
+                  gte: toStockQtyDecimal(baseQuantity),
                 },
               },
               data: {
                 currentStock: {
-                  decrement: baseQuantity,
+                  decrement: toStockQtyDecimal(baseQuantity),
                 },
               },
             });
