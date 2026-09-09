@@ -1,7 +1,12 @@
+import * as XLSX from 'xlsx';
+
 import { daysInMonth } from '@/lib/hr/payroll/calendar';
 import { formatPayMoney } from '@/lib/hr/payroll/payslipFormatting';
 import { isPayPreviewPendingCompensationRow } from '@/lib/hr/payroll/payPreviewRowStatus';
-import { downloadWorkbook, sanitizeSheetName } from '@/lib/import-export/xlsx';
+import { sanitizeSheetName } from '@/lib/import-export/xlsx';
+
+const SUMMARY_SHEET_NAME = 'Summary';
+const SUMMARY_EMPLOYEE_HEADER_ROW = 4;
 
 export type PayPreviewExportDayDetail = {
   date: string;
@@ -177,6 +182,37 @@ function formatBreakdownValue(key: string, value: number) {
   return formatPayMoney(value);
 }
 
+function excelSheetReference(sheetName: string) {
+  const needsQuotes = /[\s'[\]\\/?*:]|^'|'$/.test(sheetName);
+  if (!needsQuotes) return sheetName;
+  return `'${sheetName.replace(/'/g, "''")}'`;
+}
+
+function excelInternalSheetLink(sheetName: string) {
+  return `#${excelSheetReference(sheetName)}!A1`;
+}
+
+function escapeExcelFormulaString(value: string) {
+  return value.replace(/"/g, '""');
+}
+
+function setWorksheetHyperlink(
+  worksheet: XLSX.WorkSheet,
+  row: number,
+  col: number,
+  display: string,
+  targetSheetName: string
+) {
+  const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+  const target = excelInternalSheetLink(targetSheetName);
+  worksheet[cellRef] = {
+    t: 's',
+    v: display,
+    f: `=HYPERLINK("${escapeExcelFormulaString(target)}","${escapeExcelFormulaString(display)}")`,
+    l: { Target: target, Tooltip: `Open ${display}` },
+  };
+}
+
 function buildSummarySheet(payload: PayPreviewExportPayload): Array<Array<string | number>> {
   const included = payload.employees.filter((row) => !row.skipped);
   const pendingCompensation = payload.employees.filter((row) => isPayPreviewPendingCompensationRow(row));
@@ -275,7 +311,7 @@ function buildEmployeeDetailSheet(
   const preferred = row.employeePreferredName?.trim() || '';
 
   const rows: Array<Array<string | number | null>> = [
-    ['Payroll breakdown', resolveDisplayFullName(row)],
+    ['Payroll breakdown', resolveDisplayFullName(row), 'Summary'],
     [],
     ['Full name', resolveDisplayFullName(row)],
     ['Preferred name', preferred || null],
@@ -409,7 +445,7 @@ export function buildPayPreviewWorkbookSheets(payload: PayPreviewExportPayload) 
   const usedNames = new Set<string>();
   const sheets: Array<{ name: string; rows: Array<Array<string | number | boolean | null>> }> = [
     {
-      name: sanitizeSheetName('Summary', usedNames),
+      name: sanitizeSheetName(SUMMARY_SHEET_NAME, usedNames),
       rows: buildSummarySheet(payload),
     },
   ];
@@ -424,7 +460,41 @@ export function buildPayPreviewWorkbookSheets(payload: PayPreviewExportPayload) 
   return sheets;
 }
 
-export function downloadPayPreviewXlsx(payload: PayPreviewExportPayload) {
+export function buildPayPreviewWorkbook(payload: PayPreviewExportPayload) {
   const sheets = buildPayPreviewWorkbookSheets(payload);
-  downloadWorkbook(`payroll-preview-${payload.month}.xlsx`, sheets);
+  const workbook = XLSX.utils.book_new();
+  const included = payload.employees.filter((row) => !row.skipped);
+
+  for (const sheet of sheets) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(sheet.rows), sheet.name);
+  }
+
+  const summarySheet = workbook.Sheets[sheets[0]?.name ?? SUMMARY_SHEET_NAME];
+  if (summarySheet) {
+    for (let index = 0; index < included.length; index += 1) {
+      const employeeSheet = sheets[index + 1];
+      if (!employeeSheet) continue;
+      setWorksheetHyperlink(
+        summarySheet,
+        SUMMARY_EMPLOYEE_HEADER_ROW + 1 + index,
+        0,
+        resolveDisplayFullName(included[index]!),
+        employeeSheet.name
+      );
+    }
+  }
+
+  for (let index = 0; index < included.length; index += 1) {
+    const employeeSheet = sheets[index + 1];
+    if (!employeeSheet) continue;
+    const worksheet = workbook.Sheets[employeeSheet.name];
+    if (!worksheet) continue;
+    setWorksheetHyperlink(worksheet, 0, 2, 'Summary', SUMMARY_SHEET_NAME);
+  }
+
+  return workbook;
+}
+
+export function downloadPayPreviewXlsx(payload: PayPreviewExportPayload) {
+  XLSX.writeFile(buildPayPreviewWorkbook(payload), `payroll-preview-${payload.month}.xlsx`);
 }

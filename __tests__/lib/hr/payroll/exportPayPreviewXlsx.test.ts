@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 
 import {
+  buildPayPreviewWorkbook,
   buildPayPreviewWorkbookSheets,
   type PayPreviewExportPayload,
 } from '@/lib/hr/payroll/exportPayPreviewXlsx';
@@ -138,5 +139,25 @@ describe('buildPayPreviewWorkbookSheets', () => {
     expect(parsed.SheetNames).toEqual(['Summary', 'Jane Doe']);
     const summary = sheetToRows(parsed.Sheets.Summary);
     expect(summary[5]?.[0]).toBe('Jane Doe');
+  });
+
+  it('links each employee on the Summary index to their sheet', () => {
+    const workbook = buildPayPreviewWorkbook(samplePayload);
+    const summarySheet = workbook.Sheets.Summary;
+    const employeeLink = summarySheet.A6;
+    expect(employeeLink?.v).toBe('Jane Doe');
+    expect(employeeLink?.f).toBe("=HYPERLINK(\"#'Jane Doe'!A1\",\"Jane Doe\")");
+    expect(employeeLink?.l?.Target).toBe("#'Jane Doe'!A1");
+
+    const backLink = workbook.Sheets['Jane Doe']?.C1;
+    expect(backLink?.v).toBe('Summary');
+    expect(backLink?.f).toBe('=HYPERLINK("#Summary!A1","Summary")');
+    expect(backLink?.l?.Target).toBe('#Summary!A1');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const xml = buffer.toString('utf8');
+    expect(xml).toContain('<hyperlink');
+    expect(xml).toContain("Jane Doe");
+    expect(xml).toContain('!A1');
   });
 });
