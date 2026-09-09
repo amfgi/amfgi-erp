@@ -49,12 +49,14 @@ export function hasNonExcludedWeekdayInMonth(
 
 /**
  * Dates of weekly-off (excluded weekday) lines that should be paid as rest days.
- * SANDWICHED: there must be a paid non-weekly-off day somewhere before AND after
- * in the month (unpaid absences in between are skipped). That is the Sunday that
- * falls between the employee's worked/paid stretch — e.g. Fri present + Sat absent
- * + Sun + Mon present still pays Sunday.
- * At month edges (no non-excluded weekday left on that side), only the existing
- * side is required. Missing attendance rows count as unpaid (no paid neighbour).
+ * SANDWICHED:
+ * - Pay when a paid working day exists before and after (unpaid absences in between
+ *   are skipped) — e.g. Fri present + Sat absent + Sun + Mon present.
+ * - Also pay at the start of a work stretch when the next working day after the
+ *   weekly off is paid, even with no paid day before it — e.g. Sat absent + Sun +
+ *   Mon present (Faseela 2 Aug).
+ * - Do not pay Sundays after the employee's last paid day (trailing unpaid stretch).
+ * - At true calendar month-end (no working day left after), pay if a paid day exists before.
  */
 export function resolvePaidWeeklyOffDates(
   lines: PayLineInput[],
@@ -80,16 +82,27 @@ export function resolvePaidWeeklyOffDates(
     const needAfter = hasNonExcludedWeekdayInMonth(line.workDate, excluded, 'after');
     if (!needBefore && !needAfter) continue;
 
-    // Skip unpaid absences — look for the nearest *paid* working day on each side.
-    const before = [...nonExcluded]
+    const nearestAfter = nonExcluded.find((n) => n.workDate > line.workDate);
+    const beforePaid = [...nonExcluded]
       .reverse()
       .find((n) => n.workDate < line.workDate && isPaidNeighbourDay(n));
-    const after = nonExcluded.find((n) => n.workDate > line.workDate && isPaidNeighbourDay(n));
+    const afterPaid = nonExcluded.find(
+      (n) => n.workDate > line.workDate && isPaidNeighbourDay(n)
+    );
 
-    if (needBefore && !before) continue;
-    if (needAfter && !after) continue;
+    if (afterPaid) {
+      // Mid-stretch: paid day on both sides (absences skipped), or start-of-stretch
+      // when Monday (nearest working day after) is itself paid.
+      if (beforePaid || (nearestAfter && isPaidNeighbourDay(nearestAfter))) {
+        paid.add(line.workDate);
+      }
+      continue;
+    }
 
-    paid.add(line.workDate);
+    // No paid day after: only month-end Sundays keep pay when before is paid.
+    if (!needAfter && beforePaid) {
+      paid.add(line.workDate);
+    }
   }
 
   return paid;

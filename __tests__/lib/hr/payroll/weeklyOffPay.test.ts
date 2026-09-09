@@ -87,6 +87,27 @@ describe('resolvePaidWeeklyOffDates', () => {
     expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual([]);
   });
 
+  it('pays Sunday at month start when Monday is present (Faseela Aug shape)', () => {
+    // Sat 1 absent, Sun 2, Mon 3 present — Sunday is paid even with no paid day before it.
+    const lines = [
+      line('2026-08-01', 'ABSENT', { isSunday: false }),
+      line('2026-08-02', 'ABSENT', { isSunday: true }),
+      line('2026-08-03', 'PRESENT', { isSunday: false }),
+    ];
+    expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual(['2026-08-02']);
+  });
+
+  it('does not pay an early Sunday when the next working day is still unpaid', () => {
+    // First present is much later — Sun 2 is not adjacent to the start of work.
+    const lines = [
+      line('2026-08-01', 'ABSENT', { isSunday: false }),
+      line('2026-08-02', 'ABSENT', { isSunday: true }),
+      line('2026-08-03', 'ABSENT', { isSunday: false }),
+      line('2026-08-17', 'PRESENT', { isSunday: false }),
+    ];
+    expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual([]);
+  });
+
   it('pays month-edge Sunday when only one neighbour exists and it is paid', () => {
     // Sunday July 5 at start of a short span that only has Mon after — wait, Jul 5 has Jul 4 before.
     // Use a Sunday as first day of month with only after neighbour.

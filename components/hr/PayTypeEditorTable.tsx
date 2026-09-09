@@ -552,9 +552,10 @@ export default function PayTypeEditorTable({
                       </span>
                       <span className="mt-1 block text-xs text-muted-foreground">
                         Pays a weekly off (e.g. Sunday) at the normal daily rate when there is a
-                        paid working day before and after it in the month. An unpaid Saturday
-                        between Friday and Monday work does not block Sunday pay; Sundays after
-                        the employee&apos;s last worked day stay unpaid.{' '}
+                        paid working day after it and either a paid day before it, or the next
+                        working day (e.g. Monday) is paid — so Sat absent + Sun + Mon present
+                        pays Sunday, including at month start. Sundays after the employee&apos;s
+                        last worked day stay unpaid.{' '}
                         {mode === 'DAILY_WAGE'
                           ? null
                           : 'Monthly basic and allowance are then spread over every calendar day, so a full month still pays exactly the monthly salary. '}
