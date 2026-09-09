@@ -126,7 +126,7 @@ export function describePayTypeRow(config: Record<string, unknown>) {
   }
   if (paysWeeklyOff) {
     parameters.push(
-      `Paid weekly off: ${formatExcludedWeekdaysLabel(fields.excludedWeekdays)} when sandwiched by paid days`
+      `Paid weekly off: ${formatExcludedWeekdaysLabel(fields.excludedWeekdays)} between paid days in the month`
     );
   }
   if (fields.mode === 'CUSTOM' && fields.formulaScript) {

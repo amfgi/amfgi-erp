@@ -23,7 +23,7 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
-function formatApprovalType(value: 'DISPATCH_OVERRIDE' | 'RECEIPT_ADJUSTMENT' | 'RECEIPT_CANCELLATION' | 'MANUAL_STOCK_ADJUSTMENT') {
+function formatApprovalType(value: 'DISPATCH_OVERRIDE' | 'RECEIPT_ADJUSTMENT' | 'RECEIPT_CANCELLATION' | 'RECEIPT_LINE_CORRECTION' | 'MANUAL_STOCK_ADJUSTMENT') {
   switch (value) {
     case 'DISPATCH_OVERRIDE':
       return 'Dispatch override';
@@ -31,6 +31,8 @@ function formatApprovalType(value: 'DISPATCH_OVERRIDE' | 'RECEIPT_ADJUSTMENT' | 
       return 'Receipt adjustment';
     case 'RECEIPT_CANCELLATION':
       return 'Receipt cancellation';
+    case 'RECEIPT_LINE_CORRECTION':
+      return 'Receipt line correction';
     case 'MANUAL_STOCK_ADJUSTMENT':
       return 'Manual stock adjustment';
     default:
@@ -86,7 +88,13 @@ export default function StockExceptionsPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
-  const canView = isSA || perms.includes('report.view');
+  const canApproveReceiptCorrection =
+    isSA || perms.includes('transaction.receipt_correction.approve');
+  const canView =
+    isSA ||
+    perms.includes('report.view') ||
+    perms.includes('transaction.receipt_correction.approve') ||
+    perms.includes('transaction.receipt_correction.request');
 
   const { data, isFetching, isError, refetch } = useGetStockExceptionsQuery(undefined, {
     skip: !canView,
@@ -183,20 +191,45 @@ export default function StockExceptionsPage() {
   ]);
 
   async function handleApprovalAction(
-    row: { id: string; requiresDecisionNote: boolean },
+    row: { id: string; requiresDecisionNote: boolean; status?: string; exceptionType?: string },
     status: 'APPROVED' | 'REJECTED'
   ) {
+    if (row.status && row.status !== 'PENDING') {
+      toast.error('This request was already decided. Refresh the list and try another pending item.');
+      await refetchApprovals();
+      return;
+    }
+
     const decisionNote = decisionNotes[row.id]?.trim();
     if (status === 'APPROVED' && row.requiresDecisionNote && !decisionNote) {
       toast.error('This approval requires a decision note.');
       return;
     }
-    await updateApproval({
-      id: row.id,
-      status,
-      ...(decisionNote ? { decisionNote } : {}),
-    }).unwrap();
-    await refetchApprovals();
+
+    try {
+      await updateApproval({
+        id: row.id,
+        status,
+        ...(decisionNote ? { decisionNote } : {}),
+      }).unwrap();
+      toast.success(status === 'APPROVED' ? 'Request approved.' : 'Request rejected.');
+      setDecisionNotes((current) => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
+      await refetchApprovals();
+    } catch (error: unknown) {
+      const message =
+        typeof error === 'object' &&
+        error !== null &&
+        'data' in error &&
+        typeof (error as { data?: { error?: unknown } }).data?.error === 'string'
+          ? (error as { data: { error: string } }).data.error
+          : 'Failed to update approval';
+      toast.error(message);
+      await refetchApprovals();
+    }
   }
 
   if (!canView) {
@@ -358,6 +391,7 @@ export default function StockExceptionsPage() {
                 <option value="all">All types</option>
                 <option value="DISPATCH_OVERRIDE">Dispatch override</option>
                 <option value="RECEIPT_ADJUSTMENT">Receipt adjustment</option>
+                <option value="RECEIPT_LINE_CORRECTION">Receipt line correction</option>
                 <option value="RECEIPT_CANCELLATION">Receipt cancellation</option>
                 <option value="MANUAL_STOCK_ADJUSTMENT">Manual adjustment</option>
               </Select>
@@ -479,7 +513,10 @@ export default function StockExceptionsPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        {isSA && row.status === 'PENDING' ? (
+                        {(isSA ||
+                          (canApproveReceiptCorrection &&
+                            row.exceptionType === 'RECEIPT_LINE_CORRECTION')) &&
+                        row.status === 'PENDING' ? (
                           <div className="space-y-2">
                             <textarea
                               value={decisionNotes[row.id] ?? ''}
@@ -498,7 +535,7 @@ export default function StockExceptionsPage() {
                                 size="sm"
                                 className="bg-emerald-600 text-white hover:bg-emerald-700"
                                 onClick={() => void handleApprovalAction(row, 'APPROVED')}
-                                disabled={approvalSaving}
+                                disabled={approvalSaving || row.status !== 'PENDING'}
                               >
                                 Approve
                               </Button>
@@ -507,14 +544,16 @@ export default function StockExceptionsPage() {
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => void handleApprovalAction(row, 'REJECTED')}
-                                disabled={approvalSaving}
+                                disabled={approvalSaving || row.status !== 'PENDING'}
                               >
                                 Reject
                               </Button>
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground">No action</span>
+                          <span className="text-xs text-muted-foreground">
+                            {row.status === 'PENDING' ? 'Awaiting approver' : 'Already decided'}
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -526,7 +565,8 @@ export default function StockExceptionsPage() {
         </div>
 
         <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5">
-          Pending dispatch overrides can now be approved or rejected here. Receipt adjustments and cancellations are recorded as approved under the current policy trail.
+          Pending receipt line corrections and dispatch overrides can be approved or rejected here. Stock changes for
+          receipt line corrections apply only after approval.
         </div>
       </section>
 

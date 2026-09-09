@@ -551,11 +551,13 @@ export default function PayTypeEditorTable({
                         Pay weekly off-days between worked days
                       </span>
                       <span className="mt-1 block text-xs text-muted-foreground">
-                        Pays a weekly off (e.g. Sunday) at the normal daily rate when the nearest
-                        working day before and after it are both paid.{' '}
+                        Pays a weekly off (e.g. Sunday) at the normal daily rate when there is a
+                        paid working day before and after it in the month. An unpaid Saturday
+                        between Friday and Monday work does not block Sunday pay; Sundays after
+                        the employee&apos;s last worked day stay unpaid.{' '}
                         {mode === 'DAILY_WAGE'
-                          ? 'Absent or unpaid neighbours leave the rest day unpaid.'
-                          : 'Monthly basic and allowance are then spread over every calendar day, so a full month still pays exactly the monthly salary.'}{' '}
+                          ? null
+                          : 'Monthly basic and allowance are then spread over every calendar day, so a full month still pays exactly the monthly salary. '}
                         Worked weekly off-days keep their OT-only treatment.
                       </span>
                     </span>

@@ -227,7 +227,12 @@ export interface StockExceptionsResponse {
 
 export interface StockExceptionApprovalRow {
   id: string;
-  exceptionType: 'DISPATCH_OVERRIDE' | 'RECEIPT_ADJUSTMENT' | 'RECEIPT_CANCELLATION' | 'MANUAL_STOCK_ADJUSTMENT';
+  exceptionType:
+    | 'DISPATCH_OVERRIDE'
+    | 'RECEIPT_ADJUSTMENT'
+    | 'RECEIPT_CANCELLATION'
+    | 'RECEIPT_LINE_CORRECTION'
+    | 'MANUAL_STOCK_ADJUSTMENT';
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   warehouseNames: string[];
   lineCount: number;
@@ -260,6 +265,8 @@ export interface StockExceptionApprovalsResponse {
     pendingOver24h: number;
     manualAdjustmentPendingCount: number;
     dispatchOverridePendingCount: number;
+    receiptLineCorrectionPendingCount?: number;
+    receiptLineCorrectionApprovedCount?: number;
   };
   rows: StockExceptionApprovalRow[];
 }

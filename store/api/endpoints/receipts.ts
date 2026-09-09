@@ -11,9 +11,11 @@ export interface ReceiptMaterial {
   warehouseName?: string | null;
   quantityReceived: number;
   quantityAvailable: number;
+  quantityConsumed?: number;
   unitCost: number;
   totalCost: number;
   batchNumber: string;
+  batchId?: string;
   /** Alternate UOM used when the receipt was posted (empty = material base unit). */
   quantityUomId?: string;
   /** Quantity as entered on the receipt form (purchase UOM). */
@@ -68,6 +70,8 @@ export interface ReceiptAdjustmentImpactRow {
   quantityAvailable: number;
   quantityConsumed: number;
   quantityAdjusted: number;
+  unitCost: number;
+  totalCost: number;
   linkedTransactions: ReceiptAdjustmentImpactTransaction[];
 }
 
@@ -106,6 +110,66 @@ export type ReceiptEntriesListResponse = {
   items: ReceiptEntry[];
   total: number;
 };
+
+export interface ReceiptLineCorrectionInput {
+  batchId: string;
+  quantityReceived?: number;
+  unitCost?: number;
+  displayQuantity?: number;
+  displayUnitCost?: number;
+}
+
+export interface ReceiptLineCorrectionResponse {
+  corrected: boolean;
+  dryRun: boolean;
+  requested?: boolean;
+  approvalId?: string | null;
+  status?: 'PENDING' | 'APPROVED' | null;
+  receiptNumber: string;
+  correctedAt: string | null;
+  reason: string;
+  lines: Array<{
+    batchId: string;
+    materialId: string;
+    materialName: string;
+    unit: string;
+    before: {
+      quantityReceived: number;
+      quantityAvailable: number;
+      unitCost: number;
+      totalCost: number;
+      quantityConsumed: number;
+    };
+    after: {
+      quantityReceived: number;
+      quantityAvailable: number;
+      unitCost: number;
+      totalCost: number;
+    };
+    stockDelta: number;
+    downstreamTransactions: Array<{
+      transactionId: string;
+      type: string;
+      jobNumber: string | null;
+      costBefore: number;
+      costAfter: number;
+      costDelta: number;
+    }>;
+  }>;
+}
+
+export interface ReceiptCorrectionHistoryRow {
+  id: string;
+  exceptionType: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reason: string;
+  payload?: Record<string, unknown> | null;
+  createdByName: string | null;
+  createdAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
 
 export const receiptsApi = appApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -227,6 +291,42 @@ export const receiptsApi = appApi.injectEndpoints({
         { type: 'StockExceptionApproval' },
       ],
     }),
+    correctReceiptLines: builder.mutation<
+      ReceiptLineCorrectionResponse,
+      {
+        receiptNumber: string;
+        reason: string;
+        lines: ReceiptLineCorrectionInput[];
+        dryRun?: boolean;
+      }
+    >({
+      query: ({ receiptNumber, reason, lines, dryRun }) => ({
+        url: `/materials/receipt-history-entries/${encodeURIComponent(receiptNumber)}/correct-receipt-lines`,
+        method: 'POST',
+        body: { reason, lines, dryRun },
+      }),
+      transformResponse: (r: { data: ReceiptLineCorrectionResponse }) => r.data,
+      invalidatesTags: (result, error, arg) =>
+        arg.dryRun
+          ? []
+          : [
+              { type: 'ReceiptEntry' },
+              { type: 'StockExceptionApproval' },
+            ],
+    }),
+    getReceiptCorrectionHistory: builder.query<
+      { receiptNumber: string; rows: ReceiptCorrectionHistoryRow[] },
+      string
+    >({
+      query: (receiptNumber) =>
+        `/materials/receipt-history-entries/${encodeURIComponent(receiptNumber)}/correction-history`,
+      transformResponse: (r: { data: { receiptNumber: string; rows: ReceiptCorrectionHistoryRow[] } }) =>
+        r.data,
+      providesTags: (result, error, arg) => [
+        { type: 'ReceiptEntry', id: arg },
+        { type: 'StockExceptionApproval' },
+      ],
+    }),
   }),
 });
 
@@ -238,4 +338,6 @@ export const {
   useDeleteReceiptEntryMutation,
   useCancelReceiptEntryMutation,
   useAdjustReceiptEntryMutation,
+  useCorrectReceiptLinesMutation,
+  useGetReceiptCorrectionHistoryQuery,
 } = receiptsApi;

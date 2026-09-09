@@ -314,6 +314,7 @@ interface GoodsReceiptLineGridProps {
   onUpdateLine: (id: string, field: keyof GoodsReceiptLineGridRow, value: string) => void;
   canCreateMaterial?: boolean;
   onRequestCreateMaterial?: (lineId: string, suggestedName: string) => void;
+  correctionMode?: boolean;
 }
 
 export default function GoodsReceiptLineGrid({
@@ -329,6 +330,7 @@ export default function GoodsReceiptLineGrid({
   onUpdateLine,
   canCreateMaterial = false,
   onRequestCreateMaterial,
+  correctionMode = false,
 }: GoodsReceiptLineGridProps) {
   const duplicateMaterialIdSet = useMemo(() => {
     if (!duplicateMaterialIds?.length) return null;
@@ -600,26 +602,37 @@ export default function GoodsReceiptLineGrid({
                       case 'material':
                         return (
                           <div key={column.key} className={cellClassName}>
-                            <ReceiptMaterialSelectCell
-                              lineId={line.id}
-                              materialId={line.materialId}
-                              material={mat}
-                              searchMaterials={searchMaterials}
-                              resolveMaterialById={resolveMaterialById}
-                              onUpdateLine={onUpdateLine}
-                              onMaterialResolved={onMaterialResolved}
-                              isDuplicateRow={isDuplicateRow}
-                              materialNavInputProps={cellNavInputProps(idx, 'material')}
-                              canCreateMaterial={canCreateMaterial}
-                              onRequestCreateMaterial={onRequestCreateMaterial}
-                            />
+                            {correctionMode && mat ? (
+                              <div className="px-2 py-1.5 text-sm text-foreground">{mat.name}</div>
+                            ) : (
+                              <ReceiptMaterialSelectCell
+                                lineId={line.id}
+                                materialId={line.materialId}
+                                material={mat}
+                                searchMaterials={searchMaterials}
+                                resolveMaterialById={resolveMaterialById}
+                                onUpdateLine={onUpdateLine}
+                                onMaterialResolved={onMaterialResolved}
+                                isDuplicateRow={isDuplicateRow}
+                                materialNavInputProps={cellNavInputProps(idx, 'material')}
+                                canCreateMaterial={canCreateMaterial}
+                                onRequestCreateMaterial={onRequestCreateMaterial}
+                              />
+                            )}
                           </div>
                         );
                       case 'uom':
                         return (
                           <div key={column.key} className={cellClassName}>
                             {line.materialId ? (
-                              <SearchSelect
+                              correctionMode ? (
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                  {getMaterialUomOptions(mat).find((uom) => uom.value === line.quantityUomId)?.label ||
+                                    mat?.unit ||
+                                    'UOM'}
+                                </div>
+                              ) : (
+                                <SearchSelect
                                 value={line.quantityUomId}
                                 onChange={(id) => onUpdateLine(line.id, 'quantityUomId', id)}
                                 placeholder="UOM"
@@ -636,6 +649,7 @@ export default function GoodsReceiptLineGrid({
                                     '!rounded-none !border-0 !bg-transparent !px-2 !py-1.5 !text-xs focus:!ring-0 min-w-0',
                                 })}
                               />
+                              )
                             ) : (
                               <div className="px-2 py-1.5 text-xs text-muted-foreground">UOM</div>
                             )}
@@ -687,6 +701,12 @@ export default function GoodsReceiptLineGrid({
                       case 'warehouse':
                         return (
                           <div key={column.key} className={cellClassName}>
+                            {correctionMode ? (
+                              <div className="px-2 py-1.5 text-sm text-foreground">
+                                {warehouses.find((warehouse) => warehouse.id === line.warehouseId)?.name || '—'}
+                              </div>
+                            ) : (
+                              <>
                             <SearchSelect
                               value={line.warehouseId}
                               onChange={(id) => onUpdateLine(line.id, 'warehouseId', id)}
@@ -727,6 +747,8 @@ export default function GoodsReceiptLineGrid({
                                 ? `${selectedWarehouse.name}: ${stockDisplay.quantity.toFixed(3)} ${selectedUom.unitName}`
                                 : 'Warehouse stock'}
                             </div>
+                              </>
+                            )}
                           </div>
                         );
                       case 'unitCost':

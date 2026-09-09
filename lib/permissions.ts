@@ -45,6 +45,8 @@ export const P = {
   TXN_TRANSFER:  'transaction.transfer',
   TXN_RECONCILE: 'transaction.reconcile',
   TXN_ADJUST:    'transaction.adjust',
+  TXN_RECEIPT_CORRECTION_REQUEST: 'transaction.receipt_correction.request',
+  TXN_RECEIPT_CORRECTION_APPROVE: 'transaction.receipt_correction.approve',
 
   // Stock modules (assign per role in Admin → Roles; not separate system roles)
   STOCK_JOB_BUDGET_VIEW: 'stock.job_budget.view',
@@ -135,6 +137,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.CUSTOMER_VIEW, P.CUSTOMER_CREATE, P.CUSTOMER_EDIT,
     P.SUPPLIER_VIEW, P.SUPPLIER_CREATE, P.SUPPLIER_EDIT,
     P.TXN_STOCK_IN,  P.TXN_STOCK_OUT,   P.TXN_RETURN, P.TXN_TRANSFER, P.TXN_RECONCILE, P.TXN_ADJUST,
+    P.TXN_RECEIPT_CORRECTION_REQUEST, P.TXN_RECEIPT_CORRECTION_APPROVE,
     P.REPORT_VIEW,
     P.USER_VIEW,
     P.SETTINGS_MANAGE,
@@ -169,8 +172,19 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
   store_keeper: [
     P.MATERIAL_VIEW,
     P.JOB_VIEW,
+    P.TXN_STOCK_IN,
     P.TXN_STOCK_OUT,
     P.TXN_RETURN,
+    P.TXN_RECEIPT_CORRECTION_REQUEST,
+  ],
+
+  /** Approves goods-receipt line corrections before stock is updated. */
+  receipt_correction_approver: [
+    P.MATERIAL_VIEW,
+    P.TXN_STOCK_IN,
+    P.TXN_RECEIPT_CORRECTION_REQUEST,
+    P.TXN_RECEIPT_CORRECTION_APPROVE,
+    P.REPORT_VIEW,
   ],
 
   employee_self: [
@@ -227,6 +241,7 @@ export const ROLE_PRESET_LABELS: Record<keyof typeof ROLE_PRESETS, string> = {
   super_admin: 'Admin (full access)',
   manager: 'Manager',
   store_keeper: 'Store keeper',
+  receipt_correction_approver: 'Receipt correction approver',
   employee_self: 'Employee self-service',
   hr: 'HR',
 };
@@ -281,6 +296,8 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.TXN_TRANSFER,  label: 'Inter-Company Transfer' },
       { key: P.TXN_RECONCILE, label: 'Issue Reconcile'  },
       { key: P.TXN_ADJUST,    label: 'Manual Adjustment' },
+      { key: P.TXN_RECEIPT_CORRECTION_REQUEST, label: 'Request receipt line correction' },
+      { key: P.TXN_RECEIPT_CORRECTION_APPROVE, label: 'Approve receipt line correction' },
     ],
   },
   {

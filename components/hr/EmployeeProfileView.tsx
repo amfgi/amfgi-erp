@@ -59,6 +59,7 @@ import {
   isEmployeeDocumentCustomTitle,
   readEmployeeDocumentCustomTitle,
 } from '@/lib/hr/employeeDocumentDisplay';
+import { tenureLabel } from '@/lib/hr/employeeTenure';
 import { useGlobalContextMenu } from '@/providers/ContextMenuProvider';
 import { cn } from '@/lib/utils';
 import { driveStoredUrlToOpenUrl } from '@/lib/utils/googleDriveUrl';
@@ -166,23 +167,6 @@ async function readApiJson(res: Response): Promise<{ success?: boolean; error?: 
 
 function driveFileWebViewUrl(url: string | null | undefined): string | null {
   return driveStoredUrlToOpenUrl(url);
-}
-
-function tenureLabel(hire: string | null | undefined) {
-  if (!hire) return null;
-  const h = new Date(hire);
-  if (Number.isNaN(h.getTime())) return null;
-  const now = new Date();
-  let years = now.getFullYear() - h.getFullYear();
-  let months = now.getMonth() - h.getMonth();
-  if (months < 0) {
-    years -= 1;
-    months += 12;
-  }
-  if (years <= 0 && months <= 0) return 'Joined this year';
-  if (years <= 0) return `${months} mo. with company`;
-  if (months === 0) return `${years} yr. with company`;
-  return `${years} yr. ${months} mo. with company`;
 }
 
 function daysUntil(iso: string | null | undefined): number | null {
@@ -986,7 +970,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     );
   }
 
-  const tenure = tenureLabel(emp.hireDate);
+  const tenure = tenureLabel(emp.hireDate, {
+    terminationDate: emp.terminationDate,
+    status: emp.status,
+  });
   const photoUrl = emp.photoUrl?.trim() || null;
   const tabs: { id: Tab; label: string; hint: string }[] = [
     { id: 'overview', label: 'Overview', hint: 'Identity, employment, emergency' },

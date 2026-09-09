@@ -44,7 +44,11 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
 
-  const canView = session.user.isSuperAdmin || session.user.permissions.includes('report.view');
+  const canView =
+    session.user.isSuperAdmin ||
+    session.user.permissions.includes('report.view') ||
+    session.user.permissions.includes('transaction.receipt_correction.approve') ||
+    session.user.permissions.includes('transaction.receipt_correction.request');
   if (!canView) return errorResponse('Forbidden', 403);
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
 
@@ -104,6 +108,12 @@ export async function GET(req: Request) {
         ).length,
         dispatchOverridePendingCount: rows.filter(
           (row) => row.status === 'PENDING' && row.exceptionType === 'DISPATCH_OVERRIDE'
+        ).length,
+        receiptLineCorrectionPendingCount: rows.filter(
+          (row) => row.status === 'PENDING' && row.exceptionType === 'RECEIPT_LINE_CORRECTION'
+        ).length,
+        receiptLineCorrectionApprovedCount: rows.filter(
+          (row) => row.status === 'APPROVED' && row.exceptionType === 'RECEIPT_LINE_CORRECTION'
         ).length,
       },
       rows: rows.map((row) => ({

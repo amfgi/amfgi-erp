@@ -49,9 +49,12 @@ export function hasNonExcludedWeekdayInMonth(
 
 /**
  * Dates of weekly-off (excluded weekday) lines that should be paid as rest days.
- * SANDWICHED: nearest non-weekly-off day before AND after must both be paid.
- * At month edges (no non-excluded weekday left in the month on that side), only the
- * existing side is required. Missing attendance rows count as unpaid neighbours.
+ * SANDWICHED: there must be a paid non-weekly-off day somewhere before AND after
+ * in the month (unpaid absences in between are skipped). That is the Sunday that
+ * falls between the employee's worked/paid stretch — e.g. Fri present + Sat absent
+ * + Sun + Mon present still pays Sunday.
+ * At month edges (no non-excluded weekday left on that side), only the existing
+ * side is required. Missing attendance rows count as unpaid (no paid neighbour).
  */
 export function resolvePaidWeeklyOffDates(
   lines: PayLineInput[],
@@ -77,11 +80,14 @@ export function resolvePaidWeeklyOffDates(
     const needAfter = hasNonExcludedWeekdayInMonth(line.workDate, excluded, 'after');
     if (!needBefore && !needAfter) continue;
 
-    const before = [...nonExcluded].reverse().find((n) => n.workDate < line.workDate);
-    const after = nonExcluded.find((n) => n.workDate > line.workDate);
+    // Skip unpaid absences — look for the nearest *paid* working day on each side.
+    const before = [...nonExcluded]
+      .reverse()
+      .find((n) => n.workDate < line.workDate && isPaidNeighbourDay(n));
+    const after = nonExcluded.find((n) => n.workDate > line.workDate && isPaidNeighbourDay(n));
 
-    if (needBefore && (!before || !isPaidNeighbourDay(before))) continue;
-    if (needAfter && (!after || !isPaidNeighbourDay(after))) continue;
+    if (needBefore && !before) continue;
+    if (needAfter && !after) continue;
 
     paid.add(line.workDate);
   }

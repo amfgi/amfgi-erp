@@ -146,6 +146,8 @@ export async function GET(
         quantityAvailable,
         quantityConsumed,
         quantityAdjusted,
+        unitCost: decimalToNumberOrZero(batch.unitCost),
+        totalCost: decimalToNumberOrZero(batch.totalCost),
         linkedTransactions,
       };
     });

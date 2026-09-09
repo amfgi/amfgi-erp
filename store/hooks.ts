@@ -254,6 +254,8 @@ export {
   useDeleteReceiptEntryMutation,
   useCancelReceiptEntryMutation,
   useAdjustReceiptEntryMutation,
+  useCorrectReceiptLinesMutation,
+  useGetReceiptCorrectionHistoryQuery,
 } from './api/endpoints/receipts';
 
 export {

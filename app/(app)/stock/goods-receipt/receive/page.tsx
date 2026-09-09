@@ -17,6 +17,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
   useAddBatchTransactionMutation,
+  useCorrectReceiptLinesMutation,
   useDeleteReceiptEntryMutation,
   useGetReceiptEntryQuery,
   useGetWarehousesQuery,
@@ -31,11 +32,15 @@ import { cn } from '@/lib/utils';
 
 interface LineItem {
   id: string;
+  batchId: string;
   materialId: string;
   quantity: string;
   quantityUomId: string;
   unitCost: string;
   warehouseId: string;
+  originalQuantity: string;
+  originalUnitCost: string;
+  quantityConsumed: number;
 }
 
 const TAX_RATE = 0.05;
@@ -56,15 +61,27 @@ function buildDraftReceiptNumber() {
 }
 
 function emptyLine(): LineItem {
-  return { id: uid(), materialId: '', quantity: '', quantityUomId: '', unitCost: '', warehouseId: '' };
+  return {
+    id: uid(),
+    batchId: '',
+    materialId: '',
+    quantity: '',
+    quantityUomId: '',
+    unitCost: '',
+    warehouseId: '',
+    originalQuantity: '',
+    originalUnitCost: '',
+    quantityConsumed: 0,
+  };
 }
 
 function isLineEmpty(line: LineItem) {
   return !line.materialId && !line.quantity && !line.quantityUomId && !line.unitCost;
 }
 
-function normalizeLines(lines: LineItem[]) {
+function normalizeLines(lines: LineItem[], keepFixedRows = false) {
   const nonEmptyLines = lines.filter((line) => !isLineEmpty(line));
+  if (keepFixedRows) return nonEmptyLines;
   const requiredEmptyRows = Math.max(MIN_EMPTY_ROWS, MIN_VISIBLE_ROWS - nonEmptyLines.length);
   return [...nonEmptyLines, ...Array.from({ length: requiredEmptyRows }, () => emptyLine())];
 }
@@ -98,6 +115,7 @@ function ReceiptEditor({
   initialLines,
   isEditMode,
   editReceiptNumber,
+  isCorrectionMode = false,
 }: {
   initialReceiptNumber: string;
   initialSupplierName: string;
@@ -108,6 +126,7 @@ function ReceiptEditor({
   initialLines: LineItem[];
   isEditMode: boolean;
   editReceiptNumber: string | null;
+  isCorrectionMode?: boolean;
 }) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -117,9 +136,12 @@ function ReceiptEditor({
   const { data: warehouses = [] } = useGetWarehousesQuery();
   const [addBatchTransaction] = useAddBatchTransactionMutation();
   const [deleteReceiptEntry] = useDeleteReceiptEntryMutation();
+  const [correctReceiptLines] = useCorrectReceiptLinesMutation();
 
   const [lines, setLines] = useState<LineItem[]>(() =>
-    normalizeLines(initialLines.length > 0 ? initialLines : [emptyLine()])
+    isCorrectionMode
+      ? initialLines
+      : normalizeLines(initialLines.length > 0 ? initialLines : [emptyLine()])
   );
   const [receiptNumber] = useState(initialReceiptNumber);
   const [supplierId, setSupplierId] = useState('');
@@ -128,6 +150,7 @@ function ReceiptEditor({
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState(initialSupplierInvoiceNumber);
   const [date, setDate] = useState(initialDate);
   const [notes, setNotes] = useState(initialNotes);
+  const [correctionReason, setCorrectionReason] = useState('');
   const [includeTax, setIncludeTax] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [materialsById, setMaterialsById] = useState<Record<string, Material>>({});
@@ -222,6 +245,7 @@ function ReceiptEditor({
   );
 
   const updateLine = (id: string, field: keyof LineItem, value: string) => {
+    if (isCorrectionMode && field !== 'quantity' && field !== 'unitCost') return;
     setLines((prev) =>
       normalizeLines(
         prev.map((line) => {
@@ -261,7 +285,8 @@ function ReceiptEditor({
           }
 
           return updated;
-        })
+        }),
+        isCorrectionMode
       )
     );
   };
@@ -299,6 +324,11 @@ function ReceiptEditor({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isCorrectionMode) {
+      await handleCorrectionSubmit();
+      return;
+    }
 
     if (!canPost) {
       toast.error('You do not have permission to post receipts');
@@ -388,8 +418,68 @@ function ReceiptEditor({
     }
   };
 
+  const handleCorrectionSubmit = async () => {
+    if (!editReceiptNumber) return;
+
+    const reason = correctionReason.trim();
+    if (reason.length < 3) {
+      toast.error('Correction reason is required');
+      return;
+    }
+
+    const changedLines = validLines
+      .filter((line) => line.batchId)
+      .filter((line) => {
+        const quantity = parseFloat(line.quantity);
+        const unitCost = parseFloat(line.unitCost);
+        const originalQuantity = parseFloat(line.originalQuantity);
+        const originalUnitCost = parseFloat(line.originalUnitCost);
+        return (
+          Math.abs(quantity - originalQuantity) > 0.0005 ||
+          Math.abs(unitCost - originalUnitCost) > 0.0005
+        );
+      })
+      .map((line) => ({
+        batchId: line.batchId,
+        quantityReceived: parseFloat(line.quantity),
+        unitCost: parseFloat(line.unitCost),
+        displayQuantity: parseFloat(line.quantity),
+        displayUnitCost: parseFloat(line.unitCost),
+      }));
+
+    if (changedLines.length === 0) {
+      toast.error('Change at least one line quantity or unit cost');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await correctReceiptLines({
+        receiptNumber: editReceiptNumber,
+        reason,
+        lines: changedLines,
+      }).unwrap();
+      toast.success('Correction request submitted for approval. Stock will update after approval.');
+      router.push('/stock/goods-receipt');
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, 'Failed to submit correction request'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
+      {isCorrectionMode ? (
+        <Alert>
+          <AlertTitle>Request receipt line correction</AlertTitle>
+          <AlertDescription>
+            Material from this bill has already been consumed. Update quantity or unit cost in the line table, then
+            submit a correction request. Stock and job costs change only after an approver accepts the request.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <Link
@@ -399,12 +489,14 @@ function ReceiptEditor({
             Receiving ledger
           </Link>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {isEditMode ? 'Edit goods receipt' : 'Receive stock'}
+            {isCorrectionMode ? 'Request correction' : isEditMode ? 'Edit goods receipt' : 'Receive stock'}
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            {isEditMode
-              ? 'Adjust the receipt header, quantities, and costs before reposting inventory.'
-              : 'Build one receipt with all incoming lines, then post stock and cost updates together.'}
+            {isCorrectionMode
+              ? 'Submit qty/unit-cost changes for approval. Nothing hits stock until an approver confirms.'
+              : isEditMode
+                ? 'Adjust the receipt header, quantities, and costs before reposting inventory.'
+                : 'Build one receipt with all incoming lines, then post stock and cost updates together.'}
           </p>
         </div>
 
@@ -412,9 +504,15 @@ function ReceiptEditor({
           <Link href="/stock/goods-receipt" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
             Back to history
           </Link>
-          <Button type="submit" form="goods-receipt-receive-form" size="sm" disabled={submitting}>
-            {submitting ? 'Posting…' : isEditMode ? 'Update receipt' : 'Post receipt'}
-          </Button>
+          {!isCorrectionMode ? (
+            <Button type="submit" form="goods-receipt-receive-form" size="sm" disabled={submitting}>
+              {submitting ? 'Posting…' : isEditMode ? 'Update receipt' : 'Post receipt'}
+            </Button>
+          ) : (
+            <Button type="submit" form="goods-receipt-receive-form" size="sm" disabled={submitting}>
+              {submitting ? 'Submitting…' : 'Submit for approval'}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -431,6 +529,7 @@ function ReceiptEditor({
         }}
         className="flex flex-col gap-0 overflow-x-auto rounded-lg border border-border bg-card pb-8 shadow-sm sm:pb-10"
       >
+        <fieldset disabled={isCorrectionMode} className="min-w-0 border-0 p-0 m-0">
         <div className="border-b border-border p-4 sm:p-5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <div>
@@ -522,6 +621,7 @@ function ReceiptEditor({
             rows stay ready while you work
           </p>
         </div>
+        </fieldset>
 
         <GoodsReceiptLineGrid
           lines={lines}
@@ -534,9 +634,25 @@ function ReceiptEditor({
           emptyMessage="No receipt lines yet. Search for a material on the first row to start."
           duplicateMaterialIds={duplicateMaterials}
           onUpdateLine={updateLine}
-          canCreateMaterial={canCreateMaterial}
+          canCreateMaterial={canCreateMaterial && !isCorrectionMode}
           onRequestCreateMaterial={handleRequestCreateMaterial}
+          correctionMode={isCorrectionMode}
         />
+
+        {isCorrectionMode ? (
+          <div className="border-t border-border px-5 py-4">
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Correction reason
+            </label>
+            <textarea
+              value={correctionReason}
+              onChange={(event) => setCorrectionReason(event.target.value)}
+              rows={3}
+              placeholder="Required reason for correcting this receipt"
+              className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        ) : null}
 
         <QuickCreateMaterialModal
           isOpen={createMaterialContext !== null}
@@ -551,6 +667,7 @@ function ReceiptEditor({
             <h2 className={sectionHeadingClassName()}>Posting summary</h2>
           </div>
 
+          <fieldset disabled={isCorrectionMode} className="min-w-0 border-0 p-0 m-0">
           <div className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-start">
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
@@ -586,9 +703,15 @@ function ReceiptEditor({
               </div>
 
               <div className="flex flex-col gap-2 md:min-w-40">
-                <Button type="submit" size="sm" disabled={submitting || !canPost}>
-                  {submitting ? 'Posting…' : isEditMode ? 'Update receipt' : 'Post receipt'}
-                </Button>
+                {!isCorrectionMode ? (
+                  <Button type="submit" size="sm" disabled={submitting || !canPost}>
+                    {submitting ? 'Posting…' : isEditMode ? 'Update receipt' : 'Post receipt'}
+                  </Button>
+                ) : (
+                  <Button type="submit" size="sm" disabled={submitting}>
+                    {submitting ? 'Submitting…' : 'Submit for approval'}
+                  </Button>
+                )}
                 <Link
                   href="/stock/goods-receipt"
                   className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-full justify-center')}
@@ -597,6 +720,7 @@ function ReceiptEditor({
                 </Link>
               </div>
             </div>
+          </fieldset>
         </div>
       </form>
     </div>
@@ -614,14 +738,22 @@ export default function ReceiveStockPage() {
 
   const initialLines = useMemo<LineItem[]>(() => {
     if (!receiptEntry?.materials?.length) return [emptyLine()];
-    return receiptEntry.materials.map((line, index) => ({
-      id: `line-${index}`,
-      materialId: line.materialId || '',
-      quantity: String(line.displayQuantity ?? line.quantityReceived ?? ''),
-      quantityUomId: line.quantityUomId ?? '',
-      unitCost: String(line.displayUnitCost ?? line.unitCost ?? ''),
-      warehouseId: line.warehouseId || '',
-    }));
+    return receiptEntry.materials.map((line) => {
+      const quantity = String(line.displayQuantity ?? line.quantityReceived ?? '');
+      const unitCost = String(line.displayUnitCost ?? line.unitCost ?? '');
+      return {
+        id: line.batchId || uid(),
+        batchId: line.batchId || '',
+        materialId: line.materialId || '',
+        quantity,
+        quantityUomId: line.quantityUomId ?? '',
+        unitCost,
+        warehouseId: line.warehouseId || '',
+        originalQuantity: quantity,
+        originalUnitCost: unitCost,
+        quantityConsumed: line.quantityConsumed ?? Math.max(0, line.quantityReceived - line.quantityAvailable),
+      };
+    });
   }, [receiptEntry]);
 
   if (isEditMode && isLoading) {
@@ -662,6 +794,11 @@ export default function ReceiveStockPage() {
     );
   }
 
+  const hasConsumedLines =
+    receiptEntry?.materials?.some(
+      (material) => material.quantityAvailable < material.quantityReceived - 0.0005
+    ) ?? false;
+
   return (
     <ReceiptEditor
       key={editReceiptNumber ?? 'new'}
@@ -674,6 +811,7 @@ export default function ReceiveStockPage() {
       initialLines={initialLines}
       isEditMode={isEditMode}
       editReceiptNumber={editReceiptNumber}
+      isCorrectionMode={isEditMode && hasConsumedLines}
     />
   );
 }

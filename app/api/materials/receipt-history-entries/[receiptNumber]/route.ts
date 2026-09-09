@@ -63,51 +63,30 @@ export async function GET(
     const adjustmentMetadata = parseReceiptAdjustmentMetadata(firstBatch?.notes);
     const headerMetadata = parseReceiptHeaderMetadata(firstBatch?.meta);
 
-    const grouped = new Map<string, {
-      materialId: string;
-      materialName: string;
-      unit: string;
-      warehouseId: string | null;
-      warehouseName: string | null;
-      quantityReceived: number;
-      quantityAvailable: number;
-      unitCost: number;
-      totalCost: number;
-      batchNumber: string;
-      quantityUomId?: string;
-      displayQuantity?: number;
-      displayUnitCost?: number;
-    }>();
-    for (const batch of batches) {
-      const materialId = batch.materialId;
-      const warehouseId = batch.warehouse?.id ?? null;
+    const materials = batches.map((batch) => {
       const unitCost = decimalToNumberOrZero(batch.unitCost);
       const lineMeta = parseReceiptLineMetadata(batch.meta);
-      const key = `${materialId}::${warehouseId ?? 'none'}::${unitCost}`;
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.quantityReceived += decimalToNumberOrZero(batch.quantityReceived);
-        existing.quantityAvailable += decimalToNumberOrZero(batch.quantityAvailable);
-        existing.totalCost += decimalToNumberOrZero(batch.totalCost);
-      } else {
-        grouped.set(key, {
-          materialId,
-          materialName: batch.material?.name ?? 'Unknown',
-          unit: batch.material?.unit ?? '—',
-          warehouseId,
-          warehouseName: batch.warehouse?.name ?? null,
-          quantityReceived: decimalToNumberOrZero(batch.quantityReceived),
-          quantityAvailable: decimalToNumberOrZero(batch.quantityAvailable),
-          unitCost,
-          totalCost: decimalToNumberOrZero(batch.totalCost),
-          batchNumber: batch.batchNumber,
-          ...(lineMeta.quantityUomId ? { quantityUomId: lineMeta.quantityUomId } : {}),
-          ...(lineMeta.displayQuantity != null ? { displayQuantity: lineMeta.displayQuantity } : {}),
-          ...(lineMeta.displayUnitCost != null ? { displayUnitCost: lineMeta.displayUnitCost } : {}),
-        });
-      }
-    }
-    const materials = Array.from(grouped.values());
+      const quantityReceived = decimalToNumberOrZero(batch.quantityReceived);
+      const quantityAvailable = decimalToNumberOrZero(batch.quantityAvailable);
+
+      return {
+        batchId: batch.id,
+        materialId: batch.materialId,
+        materialName: batch.material?.name ?? 'Unknown',
+        unit: batch.material?.unit ?? '—',
+        warehouseId: batch.warehouse?.id ?? null,
+        warehouseName: batch.warehouse?.name ?? null,
+        quantityReceived,
+        quantityAvailable,
+        quantityConsumed: Math.max(0, quantityReceived - quantityAvailable),
+        unitCost,
+        totalCost: decimalToNumberOrZero(batch.totalCost),
+        batchNumber: batch.batchNumber,
+        ...(lineMeta.quantityUomId ? { quantityUomId: lineMeta.quantityUomId } : {}),
+        ...(lineMeta.displayQuantity != null ? { displayQuantity: lineMeta.displayQuantity } : {}),
+        ...(lineMeta.displayUnitCost != null ? { displayUnitCost: lineMeta.displayUnitCost } : {}),
+      };
+    });
 
     const totalValue = batches.reduce((sum, b) => sum + decimalToNumberOrZero(b.totalCost), 0);
     const billAmount = resolveReceiptBillAmount(headerMetadata, totalValue);

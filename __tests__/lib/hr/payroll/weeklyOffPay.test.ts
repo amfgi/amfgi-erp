@@ -55,11 +55,34 @@ describe('resolvePaidWeeklyOffDates', () => {
     expect([...dates].sort()).toEqual(['2026-07-05']);
   });
 
-  it('does not pay Sunday when a neighbour is absent', () => {
+  it('does not pay Sunday when there is no paid day after it', () => {
     const lines = [
       line('2026-07-04', 'PRESENT'),
       line('2026-07-05', 'ABSENT'),
       line('2026-07-06', 'ABSENT'),
+    ];
+    expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual([]);
+  });
+
+  it('pays Sunday when an unpaid Saturday sits between Friday and Monday work (Farha Aug shape)', () => {
+    // Sat absent must not block Sunday if work continues on both sides of the week.
+    const lines = [
+      line('2026-08-14', 'PRESENT'), // Fri
+      line('2026-08-15', 'ABSENT'), // Sat
+      line('2026-08-16', 'ABSENT', { isSunday: true }), // Sun
+      line('2026-08-17', 'PRESENT', { isSunday: false }), // Mon
+    ];
+    expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual(['2026-08-16']);
+  });
+
+  it('does not pay Sunday inside a trailing unpaid stretch with no return to work', () => {
+    const lines = [
+      line('2026-08-19', 'PRESENT'),
+      line('2026-08-20', 'ABSENT'),
+      line('2026-08-21', 'ABSENT'),
+      line('2026-08-22', 'ABSENT'),
+      line('2026-08-23', 'ABSENT', { isSunday: true }),
+      line('2026-08-24', 'ABSENT', { isSunday: false }),
     ];
     expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual([]);
   });

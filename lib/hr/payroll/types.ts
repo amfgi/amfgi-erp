@@ -25,7 +25,8 @@ export type PayTypeConfig = {
   payExcludedWeekdayWorkAtOt?: boolean;
   /**
    * How weekly-off days are paid, for MONTHLY_CALENDAR_DEDUCT / HOURLY_SPLIT / DAILY_WAGE.
-   * SANDWICHED = pay when nearest non-weekly-off day before and after are both paid.
+   * SANDWICHED = pay when a paid working day exists before and after in the month
+   * (unpaid absences between them are skipped).
    * Monthly basic and allowance then spread over calendar days so a full month still pays 100%.
    */
   weeklyOffPayRule?: WeeklyOffPayRule;

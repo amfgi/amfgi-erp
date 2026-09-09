@@ -29,6 +29,7 @@ import type {
   ReceiptAdjustmentImpactResponse,
   ReceiptEntry,
 } from '@/store/api/endpoints/receipts';
+import { ReceiptCorrectionHistoryPanel } from '@/components/stock/ReceiptCorrectionHistoryPanel';
 
 function formatMoney(value: number, currencyCode: string) {
   return `${currencyCode} ${value.toLocaleString('en-AE', {
@@ -58,6 +59,12 @@ function extractErrorMessage(error: unknown, fallback: string) {
 
 function formatReceiptStatus(status: ReceiptEntry['status']) {
   return status === 'cancelled' ? 'Cancelled' : 'Active';
+}
+
+function receiptHasConsumedLines(entry: ReceiptEntry) {
+  return entry.materials.some(
+    (material) => material.quantityAvailable < material.quantityReceived - 0.0005
+  );
 }
 
 function receiptBillAmount(entry: ReceiptEntry) {
@@ -298,6 +305,23 @@ export default function GoodsReceiptPage() {
                 strokeLinejoin="round"
                 strokeWidth={2}
                 d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          ),
+          action: () => router.push(`/stock/goods-receipt/receive?edit=${entry.receiptNumber}`),
+        });
+      }
+
+      if (entry.status === 'active' && receiptHasConsumedLines(entry)) {
+        options.push({
+          label: 'Correct receipt lines',
+          icon: (
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h10m-6 6h16"
               />
             </svg>
           ),
@@ -797,6 +821,8 @@ export default function GoodsReceiptPage() {
               </div>
             </div>
 
+            <ReceiptCorrectionHistoryPanel receiptNumber={viewEntry.receiptNumber} />
+
             <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
               <Button type="button" variant="ghost" size="sm" onClick={() => setViewEntry(null)}>
                 Close
@@ -807,7 +833,7 @@ export default function GoodsReceiptPage() {
                   size="sm"
                   onClick={() => router.push(`/stock/goods-receipt/receive?edit=${viewEntry.receiptNumber}`)}
                 >
-                  Edit receipt
+                  {receiptHasConsumedLines(viewEntry) ? 'Open bill' : 'Edit receipt'}
                 </Button>
               ) : null}
             </div>
@@ -869,8 +895,35 @@ export default function GoodsReceiptPage() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
                   {adjustmentImpactModal.data.canCancel
                     ? 'This receipt is still untouched at the batch level and can be cancelled directly.'
-                    : 'This receipt already has downstream batch consumption. Review the linked jobs, customers, and stock moves before posting any correction.'}
+                    : 'This receipt already has downstream batch consumption. Use line correction to fix quantity or unit cost without deleting the bill.'}
                 </div>
+
+                {adjustmentImpactModal.data.needsAdjustmentReview ? (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Correct receipt line quantities or unit costs
+                    </p>
+                    <p className="mt-1 text-sm text-blue-800 dark:text-blue-200">
+                      Fix swapped or wrong entries on consumed lines. Stock balances and linked job dispatch costs are
+                      recalculated automatically.
+                    </p>
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          if (!adjustmentImpactModal.entry) return;
+                          setAdjustmentImpactModal({ open: false, entry: null, data: null, reason: '' });
+                          router.push(
+                            `/stock/goods-receipt/receive?edit=${adjustmentImpactModal.entry.receiptNumber}`
+                          );
+                        }}
+                      >
+                        Open bill to correct
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
 
                 {adjustmentImpactModal.data.adjustedAt ? (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">

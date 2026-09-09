@@ -26,6 +26,7 @@ import {
   useGetHrLeaveStatsQuery,
   useGetHrPendingCompensationQuery,
   useGetStockDashboardStatsQuery,
+  useGetStockExceptionApprovalsQuery,
   useGetStockIntegrityQuery,
   useGetStockValuationQuery,
 } from '@/store/hooks';
@@ -171,9 +172,17 @@ function DashboardContent({
   const canSeeMaterials = isSuperAdmin || permissions.includes('material.view');
   const canSeeBatches =
     isSuperAdmin || permissions.includes('material.view') || permissions.includes('transaction.stock_in');
+  const canViewReceiptCorrections =
+    isSuperAdmin ||
+    permissions.includes('transaction.receipt_correction.approve') ||
+    permissions.includes('transaction.receipt_correction.request') ||
+    permissions.includes('report.view') ||
+    permissions.includes('transaction.stock_in');
+
   const canViewStock =
     canSeeMaterials ||
     canSeeBatches ||
+    canViewReceiptCorrections ||
     isSuperAdmin ||
     permissions.includes('transaction.stock_out') ||
     permissions.includes('transaction.reconcile') ||
@@ -208,6 +217,12 @@ function DashboardContent({
   const { data: integrity, isFetching: integrityLoading } = useGetStockIntegrityQuery(undefined, {
     skip: !canViewStock,
   });
+  const { data: stockApprovals, isFetching: stockApprovalsLoading } = useGetStockExceptionApprovalsQuery(
+    undefined,
+    {
+      skip: !canViewReceiptCorrections,
+    },
+  );
 
   const { data: attendance, isFetching: attendanceLoading } = useGetHrAttendanceOverviewQuery(
     { month },
@@ -321,7 +336,60 @@ function DashboardContent({
     [pendingCompensation?.employees],
   );
 
-  const stockLoading = stockStatsLoading || valuationLoading || integrityLoading;
+  const receiptCorrectionRows = useMemo(
+    () =>
+      (stockApprovals?.rows ?? []).filter(
+        (row) =>
+          row.exceptionType === 'RECEIPT_LINE_CORRECTION' ||
+          (row.exceptionType === 'RECEIPT_ADJUSTMENT' && row.referenceId.includes('line-correction'))
+      ),
+    [stockApprovals?.rows]
+  );
+
+  const pendingReceiptCorrectionFeedItems: DashboardFeedItem[] = useMemo(
+    () =>
+      receiptCorrectionRows
+        .filter((row) => row.status === 'PENDING')
+        .slice(0, 8)
+        .map((row) => ({
+          key: row.id,
+          primary: row.referenceNumber || row.referenceId,
+          secondary: row.reason,
+          meta: `Requested by ${row.createdByName || 'Unknown'}`,
+          href: '/reports/stock-exceptions',
+          badge: { label: 'Pending', tone: 'amber' as const },
+        })),
+    [receiptCorrectionRows]
+  );
+
+  const approvedReceiptCorrectionFeedItems: DashboardFeedItem[] = useMemo(
+    () =>
+      receiptCorrectionRows
+        .filter((row) => row.status === 'APPROVED')
+        .slice(0, 8)
+        .map((row) => ({
+          key: row.id,
+          primary: row.referenceNumber || row.referenceId,
+          secondary: row.reason,
+          meta: row.decidedAt
+            ? `Approved ${new Date(row.decidedAt).toLocaleDateString()} by ${row.decidedByName || 'Unknown'}`
+            : `Approved by ${row.decidedByName || 'Unknown'}`,
+          href: row.referenceNumber
+            ? `/stock/goods-receipt/receive?edit=${encodeURIComponent(row.referenceNumber)}`
+            : '/reports/stock-exceptions',
+          badge: { label: 'Approved', tone: 'emerald' as const },
+        })),
+    [receiptCorrectionRows]
+  );
+
+  const pendingReceiptCorrectionCount =
+    stockApprovals?.summary.receiptLineCorrectionPendingCount ??
+    pendingReceiptCorrectionFeedItems.length;
+  const approvedReceiptCorrectionCount =
+    stockApprovals?.summary.receiptLineCorrectionApprovedCount ??
+    receiptCorrectionRows.filter((row) => row.status === 'APPROVED').length;
+
+  const stockLoading = stockStatsLoading || valuationLoading || integrityLoading || stockApprovalsLoading;
   const hrEmployeesLoading =
     activeEmployeesLoading || onLeaveEmployeesLoading || suspendedEmployeesLoading || exitedEmployeesLoading;
   const hrLoading = attendanceLoading || leaveStatsLoading || hrEmployeesLoading || pendingCompensationLoading;
@@ -365,7 +433,7 @@ function DashboardContent({
           {stockLoading && !stockStats && !valuation ? (
             <StatCardsSkeleton />
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
               <DashboardStatCard
                 label="Stock value"
                 value={formatMoney(stockValue, currencyCode)}
@@ -399,8 +467,49 @@ function DashboardContent({
                 tone={integrityIssues > 0 ? 'rose' : undefined}
                 href="/stock/integrity"
               />
+              {canViewReceiptCorrections ? (
+                <>
+                  <DashboardStatCard
+                    label="Correction requests"
+                    value={formatCount(pendingReceiptCorrectionCount)}
+                    hint="Pending receipt line corrections"
+                    tone={pendingReceiptCorrectionCount > 0 ? 'amber' : undefined}
+                    href="/reports/stock-exceptions"
+                  />
+                  <DashboardStatCard
+                    label="Corrections approved"
+                    value={formatCount(approvedReceiptCorrectionCount)}
+                    hint="Applied after approval"
+                    tone="emerald"
+                    href="/reports/stock-exceptions"
+                  />
+                </>
+              ) : null}
             </div>
           )}
+
+          {canViewReceiptCorrections ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <DashboardFeedPanel
+                title="Pending receipt corrections"
+                description="Requests waiting for approval before stock is updated."
+                emptyMessage="No pending receipt line corrections."
+                loading={stockApprovalsLoading && pendingReceiptCorrectionFeedItems.length === 0}
+                href="/reports/stock-exceptions"
+                linkLabel="Open approval queue"
+                items={pendingReceiptCorrectionFeedItems}
+              />
+              <DashboardFeedPanel
+                title="Approved receipt corrections"
+                description="Recently applied qty / unit-cost corrections."
+                emptyMessage="No approved receipt line corrections yet."
+                loading={stockApprovalsLoading && approvedReceiptCorrectionFeedItems.length === 0}
+                href="/reports/stock-exceptions"
+                linkLabel="View all"
+                items={approvedReceiptCorrectionFeedItems}
+              />
+            </div>
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <BarChartPanel

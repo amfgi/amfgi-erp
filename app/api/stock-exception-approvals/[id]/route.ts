@@ -11,6 +11,10 @@ import {
 import {
   validateManualStockAdjustmentRequest,
 } from '@/lib/utils/manualStockAdjustmentPolicy';
+import {
+  applyReceiptLineCorrections,
+  type ReceiptLineCorrectionInput,
+} from '@/lib/utils/receiptLineCorrection';
 import { readStockControlSettingsFromCompanySettings } from '@/lib/stock-control/settings';
 import { z } from 'zod';
 
@@ -25,7 +29,6 @@ export async function PATCH(
 ) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
-  if (!session.user.isSuperAdmin) return errorResponse('Only super admins can approve stock exceptions', 403);
   if (!session.user.activeCompanyId) return errorResponse('No active company selected', 400);
 
   const parsed = PatchSchema.safeParse(await req.json().catch(() => ({})));
@@ -48,6 +51,86 @@ export async function PATCH(
     if (!existing) return errorResponse('Stock exception approval not found', 404);
     if (existing.status !== 'PENDING') {
       return errorResponse('Only pending stock exception approvals can be updated', 409);
+    }
+
+    const canApproveReceiptCorrection =
+      session.user.isSuperAdmin ||
+      session.user.permissions.includes('transaction.receipt_correction.approve');
+
+    if (existing.exceptionType === 'RECEIPT_LINE_CORRECTION') {
+      if (!canApproveReceiptCorrection) {
+        return errorResponse('You do not have permission to approve receipt line corrections', 403);
+      }
+    } else if (!session.user.isSuperAdmin) {
+      return errorResponse('Only super admins can approve stock exceptions', 403);
+    }
+
+    if (
+      parsed.data.status === 'APPROVED' &&
+      existing.exceptionType === 'RECEIPT_LINE_CORRECTION'
+    ) {
+      const payload = existing.payload as {
+        receiptNumber?: string;
+        inputLines?: ReceiptLineCorrectionInput[];
+        lines?: Array<{ batchId: string; after?: { quantityReceived?: number; unitCost?: number } }>;
+      } | null;
+
+      const receiptNumber = payload?.receiptNumber || existing.referenceNumber;
+      if (!receiptNumber) {
+        throw new Error('Receipt number is missing from the correction request');
+      }
+
+      const inputLines: ReceiptLineCorrectionInput[] = payload?.inputLines?.length
+        ? payload.inputLines
+        : (payload?.lines ?? []).map((line) => ({
+            batchId: line.batchId,
+            quantityReceived: line.after?.quantityReceived,
+            unitCost: line.after?.unitCost,
+            displayQuantity: line.after?.quantityReceived,
+            displayUnitCost: line.after?.unitCost,
+          }));
+
+      if (!inputLines.length) {
+        throw new Error('Receipt line correction payload is missing');
+      }
+
+      await prisma.$transaction(async (tx) =>
+        applyReceiptLineCorrections({
+          tx,
+          companyId,
+          receiptNumber,
+          reason: existing.reason,
+          lines: inputLines,
+          approvalId: existing.id,
+          actor: {
+            id: session.user.id ?? null,
+            name: actorName,
+            isSuperAdmin: session.user.isSuperAdmin,
+          },
+          decidedBy: {
+            id: session.user.id ?? null,
+            name: actorName,
+          },
+          decisionNote: parsed.data.decisionNote || 'Approved receipt line correction.',
+        })
+      );
+
+      publishLiveUpdate({
+        companyId,
+        channel: 'stock',
+        entity: 'receipt',
+        action: 'changed',
+      });
+
+      const updatedApproval = await prisma.stockExceptionApproval.findUnique({ where: { id } });
+      return successResponse({
+        id: updatedApproval?.id ?? id,
+        status: updatedApproval?.status ?? 'APPROVED',
+        decidedById: updatedApproval?.decidedById ?? null,
+        decidedByName: updatedApproval?.decidedByName ?? null,
+        decidedAt: updatedApproval?.decidedAt?.toISOString() ?? null,
+        decisionNote: updatedApproval?.decisionNote ?? null,
+      });
     }
 
     const decidedAt = new Date();
