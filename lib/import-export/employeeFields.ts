@@ -340,8 +340,8 @@ export function downloadEmployeeImportTemplate() {
     ['Expertises', 'No', 'Comma-separated names from HR → Expertise catalog.'],
     ['Nationality', 'No', 'Use country names (e.g. India, United Arab Emirates). Legacy demonyms like Indian or Emirati are accepted on import.'],
     ['Gender', 'No', 'Male, Female, or Prefer not to say (M/F/X also accepted).'],
-    ['Employment Type', 'No', 'From HR → Employment options (e.g. Permanent).'],
-    ['Signature Group', 'No', 'From HR → Employment options (e.g. Steel Section). Used for attendance signature sheets.'],
+    ['Employment Type', 'No', 'From Employee Setup → Employment options (e.g. Permanent).'],
+    ['Signature Group', 'No', 'From Employee Setup → Employment options (e.g. Steel Section). Used for attendance signature sheets.'],
     ['Hire Date', 'No', 'Use YYYY-MM-DD.'],
     ['Updates', '—', 'Only mapped columns with values are changed; blank cells keep existing data.'],
   ];

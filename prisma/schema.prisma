@@ -26,6 +26,8 @@ model Company {
   letterheadUrl            String?
   printTemplates           Json?
   hrEmployeeTypeSettings   Json?
+  /// Employee ID prefix + counting style (sequential / yearly / monthly)
+  hrEmployeeCodeSettings   Json?
   phone                    String?
   warehouseMode            WarehouseMode               @default(REQUIRED)
   stockFallbackWarehouseId String?

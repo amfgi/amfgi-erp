@@ -17,6 +17,7 @@ import {
   type LeaveTypeOption,
 } from '@/lib/hr/attendanceDraftStatus';
 import { employeeSortLabel } from '@/lib/hr/employeeListQuery';
+import { draftDiffersFromScheduleBaseline, draftStatusDiffersFromScheduleBaseline, draftTimingDiffersFromScheduleBaseline } from '@/lib/hr/attendanceSheetModel';
 import TimeEntryInput, { TIME_ENTRY_FLAT_INPUT_CLASS } from '@/components/hr/TimeEntryInput';
 import { cn } from '@/lib/utils';
 
@@ -30,7 +31,20 @@ export interface AttendanceGridEmployee {
   employeeType?: 'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER';
   /** HR employment option — used to group workers on the day attendance sheet. */
   signatureGroup?: string | null;
+  defaultTiming?: {
+    dutyStart?: string;
+    dutyEnd?: string;
+    breakStart?: string;
+    breakEnd?: string;
+  } | null;
 }
+
+export type AttendanceScheduleTimingBaseline = {
+  checkInAt: string;
+  checkOutAt: string;
+  breakInAt: string;
+  breakOutAt: string;
+};
 
 export interface AttendanceGridDraftRow {
   employeeId: string;
@@ -50,6 +64,16 @@ export interface AttendanceGridDraftRow {
   checkOutAt: string;
   breakInAt: string;
   breakOutAt: string;
+  /**
+   * Punch times originally loaded from schedule / employee default timing.
+   * Used to highlight rows the user (or a prior save) changed from that baseline.
+   */
+  scheduleTimingBaseline?: AttendanceScheduleTimingBaseline | null;
+  /**
+   * Present/Absent originally loaded from schedule defaults.
+   * Used to highlight rows whose status was changed from that baseline.
+   */
+  scheduleStatusBaseline?: 'PRESENT' | 'ABSENT' | null;
   remarks?: string;
   source: 'existing' | 'schedule' | 'manual';
   leaveRequestId?: string | null;
@@ -220,6 +244,13 @@ const ABSENT_ROW_TONE =
 
 const LEAVE_SECTION_ROW_TONE =
   'border-l-[3px] border-l-amber-500 bg-amber-100/70 dark:border-l-amber-400 dark:bg-amber-950/50';
+
+/** Rows whose punches or status differ from schedule / default baseline. */
+const MODIFIED_FROM_SCHEDULE_ROW_TONE =
+  'relative shadow-[inset_0_0_0_2px_rgba(234,88,12,0.55)] dark:shadow-[inset_0_0_0_2px_rgba(251,146,60,0.55)]';
+
+const EDITED_TAG_CLASS =
+  'border-orange-600/50 bg-orange-200/90 text-orange-950 dark:border-orange-400/50 dark:bg-orange-900/80 dark:text-orange-100';
 
 type EmployeeTypeKey = NonNullable<AttendanceGridEmployee['employeeType']>;
 
@@ -788,11 +819,27 @@ export default function AttendanceEntryGrid({
       overtimeMinutes: number;
       sourceBadgeVariant: 'default' | 'secondary' | 'outline';
       assignmentMeta: AttendanceGridAssignmentMeta | undefined;
+      timingModified?: boolean;
+      statusModified?: boolean;
+      showMetaTags?: boolean;
     }
   ) => {
     const cellClassName = 'min-w-0 border-r border-border/80 last:border-r-0';
-    const { draft, idx, navRowIndex, employee, employeeType, basicMinutes, workedMinutes, overtimeMinutes, sourceBadgeVariant, assignmentMeta } =
-      ctx;
+    const {
+      draft,
+      idx,
+      navRowIndex,
+      employee,
+      employeeType,
+      basicMinutes,
+      workedMinutes,
+      overtimeMinutes,
+      sourceBadgeVariant,
+      assignmentMeta,
+      timingModified,
+      statusModified,
+      showMetaTags,
+    } = ctx;
     const rowKey = resolveDraftRowKey(draft, resolveRowKey);
     const rowAssignmentOptions = assignmentOptionsForRow?.(draft) ?? assignmentOptions;
 
@@ -830,9 +877,27 @@ export default function AttendanceEntryGrid({
                 ) : null}
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                <Badge variant={sourceBadgeVariant} className={cn(COMPACT_TAG_BASE, 'uppercase')}>
-                  {draft.source}
-                </Badge>
+                {showMetaTags ? (
+                  <Badge variant={sourceBadgeVariant} className={cn(COMPACT_TAG_BASE, 'uppercase')}>
+                    {draft.source}
+                  </Badge>
+                ) : null}
+                {timingModified ? (
+                  <span
+                    className={cn(COMPACT_TAG_BASE, EDITED_TAG_CLASS)}
+                    title="Times differ from schedule / default timing"
+                  >
+                    Times edited
+                  </span>
+                ) : null}
+                {statusModified ? (
+                  <span
+                    className={cn(COMPACT_TAG_BASE, EDITED_TAG_CLASS)}
+                    title="Status differs from schedule default"
+                  >
+                    Status edited
+                  </span>
+                ) : null}
                 {onRemoveRow && canEdit ? (
                   <button
                     type="button"
@@ -857,19 +922,40 @@ export default function AttendanceEntryGrid({
               <p className="min-w-0 truncate text-sm font-semibold text-foreground">
                 {employeeDisplayName(employee) || 'Unknown employee'}
               </p>
-              <EmployeeTypeTag type={employeeType} />
+              {showMetaTags ? <EmployeeTypeTag type={employeeType} /> : null}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-[9px] font-medium text-foreground/75">{employee?.employeeCode ?? ''}</span>
-              {employee?.status && employee.status !== 'ACTIVE' ? (
-                <Badge variant="outline" className={cn(COMPACT_TAG_BASE, 'normal-case')}>
-                  {employee.status.replace('_', ' ')}
-                </Badge>
-              ) : null}
-              <Badge variant={sourceBadgeVariant} className={cn(COMPACT_TAG_BASE, 'uppercase')}>
-                {draft.source}
-              </Badge>
-            </div>
+            {showMetaTags || timingModified || statusModified ? (
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                {showMetaTags ? (
+                  <>
+                    {employee?.status && employee.status !== 'ACTIVE' ? (
+                      <Badge variant="outline" className={cn(COMPACT_TAG_BASE, 'normal-case')}>
+                        {employee.status.replace('_', ' ')}
+                      </Badge>
+                    ) : null}
+                    <Badge variant={sourceBadgeVariant} className={cn(COMPACT_TAG_BASE, 'uppercase')}>
+                      {draft.source}
+                    </Badge>
+                  </>
+                ) : null}
+                {timingModified ? (
+                  <span
+                    className={cn(COMPACT_TAG_BASE, EDITED_TAG_CLASS)}
+                    title="Times differ from schedule / default timing"
+                  >
+                    Times edited
+                  </span>
+                ) : null}
+                {statusModified ? (
+                  <span
+                    className={cn(COMPACT_TAG_BASE, EDITED_TAG_CLASS)}
+                    title="Status differs from schedule default"
+                  >
+                    Status edited
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         );
       case 'job':
@@ -1161,6 +1247,9 @@ export default function AttendanceEntryGrid({
     const workedMinutes = calculateWorkedMinutes(draft);
     const overtimeMinutes = isDraftNonWorking(draft) ? 0 : Math.max(0, workedMinutes - basicMinutes);
     const employeeType = employee?.employeeType ?? 'LABOUR_WORKER';
+    const timingModified = draftTimingDiffersFromScheduleBaseline(draft);
+    const statusModified = draftStatusDiffersFromScheduleBaseline(draft);
+    const scheduleModified = draftDiffersFromScheduleBaseline(draft);
     const rowTone = isDraftNonWorking(draft) ? ABSENT_ROW_TONE : EMPLOYEE_TYPE_ROW_TONE[employeeType];
     const sourceBadgeVariant: 'default' | 'secondary' | 'outline' =
       draft.source === 'existing' ? 'default' : draft.source === 'schedule' ? 'secondary' : 'outline';
@@ -1173,8 +1262,23 @@ export default function AttendanceEntryGrid({
     return (
       <div
         key={rowKey}
-        className={cn('grid border-b border-border', rowTone, leaveAccent && LEAVE_SECTION_ROW_TONE)}
+        className={cn(
+          'grid border-b border-border',
+          rowTone,
+          leaveAccent && LEAVE_SECTION_ROW_TONE,
+          scheduleModified && MODIFIED_FROM_SCHEDULE_ROW_TONE
+        )}
         style={{ gridTemplateColumns }}
+        title={
+          scheduleModified
+            ? [
+                timingModified ? 'Times differ from schedule / default timing' : null,
+                statusModified ? 'Status differs from schedule default' : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            : undefined
+        }
       >
         {visibleGridColumns.map((column) =>
           renderGridCell(column.key as AttendanceGridColumnKey, {
@@ -1188,6 +1292,9 @@ export default function AttendanceEntryGrid({
             overtimeMinutes,
             sourceBadgeVariant,
             assignmentMeta,
+            timingModified,
+            statusModified,
+            showMetaTags: leaveAccent,
           })
         )}
       </div>
@@ -1226,6 +1333,13 @@ export default function AttendanceEntryGrid({
 									aria-hidden
 								/>
 								&gt; 14 h
+							</span>
+							<span className='inline-flex items-center gap-1'>
+								<span
+									className='size-2 rounded-sm bg-orange-500'
+									aria-hidden
+								/>
+								Edited
 							</span>
 						</div>
 						{chromeStats ? (

@@ -20,6 +20,7 @@ function labelForSegment(segment: string, previous?: string) {
   const mapped: Record<string, string> = {
     hr: 'HR',
     employees: 'Employees',
+    'employee-setup': 'Employee Setup',
     new: 'New Employee',
     schedule: 'Schedule',
     attendance: 'Attendance',
@@ -33,6 +34,7 @@ function labelForSegment(segment: string, previous?: string) {
     expertises: 'Expertises',
     'employment-options': 'Employment options',
     'employee-types': 'Employee Types',
+    'employee-codes': 'Employee ID format',
     'salary-structure': 'Salary structure',
     'pay-types': 'Salary structure',
     'salary-component': 'Salary components',
@@ -75,6 +77,7 @@ function buildBreadcrumbs(pathname: string) {
 const CLICKABLE_HR_ROUTES = new Set([
   '/hr',
   '/hr/employees',
+  '/hr/employee-setup',
   '/hr/schedule',
   '/hr/attendance',
   '/hr/attendance/employee',

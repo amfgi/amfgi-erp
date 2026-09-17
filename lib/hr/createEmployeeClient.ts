@@ -1,5 +1,3 @@
-import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
-
 export type WorkforceEmployeeType = 'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER';
 export type VisaHolding = 'COMPANY_PROVIDED' | 'SELF_OWN' | 'NO_VISA';
 
@@ -42,7 +40,6 @@ export async function createEmployeeRecord(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ...(input.companyId?.trim() ? { companyId: input.companyId.trim() } : {}),
-      employeeCode: generateEmployeeCode(),
       fullName: legalName,
       preferredName: displayName || null,
       nationality: input.nationality?.trim() || null,

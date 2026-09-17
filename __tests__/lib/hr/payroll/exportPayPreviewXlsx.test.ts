@@ -141,6 +141,101 @@ describe('buildPayPreviewWorkbookSheets', () => {
     expect(summary[5]?.[0]).toBe('Jane Doe');
   });
 
+  it('omits unselected summary columns and employee sheets when disabled', () => {
+    const sheets = buildPayPreviewWorkbookSheets(samplePayload, {
+      summaryColumns: ['employeeCode', 'gross'],
+      sections: ['skippedEmployees'],
+      dayColumns: [],
+    });
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]?.rows[4]).toEqual(['Employee', 'Employee code', 'Gross (AED)']);
+    expect(sheets[0]?.rows[5]).toEqual(['Jane Doe', 'EMP001', 3500]);
+    expect(sheets[0]?.rows.some((row) => row[0] === 'Skipped employees')).toBe(true);
+  });
+
+  it('limits daily breakdown columns when selected', () => {
+    const sheets = buildPayPreviewWorkbookSheets(samplePayload, {
+      summaryColumns: ['gross'],
+      sections: ['employeeSheets', 'dailyBreakdown'],
+      dayColumns: ['totalHours', 'status'],
+    });
+    const detailRows = sheets[1]?.rows ?? [];
+    const dailyHeaderIndex = detailRows.findIndex((row) => row[0] === 'Date');
+    expect(detailRows[dailyHeaderIndex]).toEqual(['Date', 'Total h', 'Status']);
+    expect(detailRows[dailyHeaderIndex + 1]).toEqual(['2026-06-02', 9, 'Present']);
+  });
+
+  it('exports only selected employee-sheet fields', () => {
+    const sheets = buildPayPreviewWorkbookSheets(samplePayload, {
+      summaryColumns: ['gross'],
+      sections: ['employeeSheets'],
+      detailFields: ['employeeCode', 'gross'],
+      salaryComponentFields: ['fixedEarnings'],
+      breakdownFields: ['monthlyBasic'],
+      healthFields: ['status'],
+      dayColumns: [],
+    });
+    const detailRows = sheets[1]?.rows ?? [];
+    expect(detailRows.some((row) => row[0] === 'Employee code' && row[1] === 'EMP001')).toBe(true);
+    expect(detailRows.some((row) => row[0] === 'Preferred name')).toBe(false);
+    expect(detailRows.some((row) => row[0] === 'Fixed earnings')).toBe(true);
+    expect(detailRows.some((row) => row[0] === 'Attendance earnings')).toBe(false);
+    expect(detailRows.some((row) => row[0] === 'Monthly basic')).toBe(true);
+    expect(detailRows.some((row) => row[0] === 'Absence deductions')).toBe(false);
+    expect(detailRows.some((row) => row[0] === 'Status' && row[1] === 'OK')).toBe(true);
+    expect(detailRows.some((row) => row[0] === 'Basic paid / cap')).toBe(false);
+    expect(detailRows.some((row) => row[0] === 'Daily breakdown')).toBe(false);
+  });
+
+  it('omits exited or suspended employees with no attendance from export workbook', () => {
+    const sheets = buildPayPreviewWorkbookSheets({
+      month: '2026-06',
+      totalGross: 4500,
+      employees: [
+        {
+          ...samplePayload.employees[0]!,
+          employeeStatus: 'ACTIVE',
+        },
+        {
+          employeeId: 'e3',
+          employeeCode: 'EMP003',
+          employeeName: 'Exited Worker',
+          employeeFullName: 'Exited Worker',
+          employeeStatus: 'EXITED',
+          payTypeName: 'Office',
+          payTypeCode: 'OFFICE',
+          gross: 1000,
+          breakdown: {},
+          approvedAttendanceRows: 0,
+          draftAttendanceRows: 0,
+          skipped: false,
+          skipReason: null,
+        },
+        {
+          employeeId: 'e4',
+          employeeCode: 'EMP004',
+          employeeName: 'Suspended Worker',
+          employeeFullName: 'Suspended Worker',
+          employeeStatus: 'SUSPENDED',
+          payTypeName: 'Office',
+          payTypeCode: 'OFFICE',
+          gross: 900,
+          breakdown: {},
+          approvedAttendanceRows: 2,
+          draftAttendanceRows: 0,
+          skipped: false,
+          skipReason: null,
+          dayDetails: samplePayload.employees[0]!.dayDetails,
+        },
+      ],
+    });
+
+    expect(sheets[0]?.rows.some((row) => row[0] === 'Exited Worker')).toBe(false);
+    expect(sheets[0]?.rows.some((row) => row[0] === 'Suspended Worker')).toBe(true);
+    expect(sheets[0]?.rows.some((row) => row[0] === 'Jane Doe')).toBe(true);
+    expect(sheets.map((sheet) => sheet.name)).toEqual(['Summary', 'Jane Doe', 'Suspended Worker']);
+  });
+
   it('links each employee on the Summary index to their sheet', () => {
     const workbook = buildPayPreviewWorkbook(samplePayload);
     const summarySheet = workbook.Sheets.Summary;
@@ -159,5 +254,15 @@ describe('buildPayPreviewWorkbookSheets', () => {
     expect(xml).toContain('<hyperlink');
     expect(xml).toContain("Jane Doe");
     expect(xml).toContain('!A1');
+  });
+
+  it('applies workbook styles to title and header cells', () => {
+    const workbook = buildPayPreviewWorkbook(samplePayload);
+    const summary = workbook.Sheets.Summary;
+    expect(summary.A1?.s?.font?.bold).toBe(true);
+    expect(summary.A1?.s?.fill?.fgColor?.rgb).toBe('1E3A5F');
+    expect(summary.A5?.s?.font?.bold).toBe(true);
+    expect(summary.A5?.s?.fill?.fgColor?.rgb).toBe('334155');
+    expect(summary.A6?.s?.font?.color?.rgb).toBe('1D4ED8');
   });
 });

@@ -1843,7 +1843,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                 >
                   <form onSubmit={addDocument} className="space-y-4">
                     {!canAddDocuments ? (
-                      <p className="text-sm text-amber-200/90">No document types yet. Add them from HR Settings {'>'} Document types.</p>
+                      <p className="text-sm text-amber-200/90">No document types yet. Add them from Employee Setup {'>'} Document types.</p>
                     ) : (
                     <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block">

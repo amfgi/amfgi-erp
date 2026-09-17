@@ -18,7 +18,6 @@ import {
   type VisaHolding,
   type WorkforceEmployeeType,
 } from '@/lib/hr/createEmployeeClient';
-import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
 import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
 import { useAppDispatch } from '@/store/hooks';
@@ -55,6 +54,7 @@ export default function CreateEmployeeModal({
   const [employmentType, setEmploymentType] = useState('');
   const [employeeType, setEmployeeType] = useState<WorkforceEmployeeType>(defaultEmployeeType);
   const [visaHolding, setVisaHolding] = useState<VisaHolding>('COMPANY_PROVIDED');
+  const [proposedCode, setProposedCode] = useState('…');
 
   const labelClass = 'text-xs font-medium uppercase tracking-wider text-muted-foreground';
   const fieldGrid = 'grid gap-3 sm:grid-cols-2';
@@ -64,7 +64,6 @@ export default function CreateEmployeeModal({
     'border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-ring';
   const workforceRoleOptions = useMemo(() => workforceRoleTypeOptions(), []);
   const visaHoldingOptionList = useMemo(() => visaHoldingOptions(), []);
-  const proposedCode = useMemo(() => generateEmployeeCode(), [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,6 +89,37 @@ export default function CreateEmployeeModal({
         : resolveDefaultHrCompanyId(optionIds, session?.user?.activeCompanyId);
     setCompanyId(preferred);
   }, [companyOptions, defaultCompanyId, defaultEmployeeType, initialFullName, isOpen, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (!isOpen || !companyId) {
+      setProposedCode('…');
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/hr/employee-code-settings?companyId=${encodeURIComponent(companyId)}`,
+          { cache: 'no-store' },
+        );
+        const json = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          data?: { nextCodePreview?: string };
+        } | null;
+        if (cancelled) return;
+        if (res.ok && json?.success && json.data?.nextCodePreview) {
+          setProposedCode(json.data.nextCodePreview);
+        } else {
+          setProposedCode('Auto');
+        }
+      } catch {
+        if (!cancelled) setProposedCode('Auto');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, isOpen]);
 
   const handleCompanyChange = (nextCompanyId: string) => {
     setCompanyId(nextCompanyId);

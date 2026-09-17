@@ -2,6 +2,7 @@ import {
   isPayPreviewPendingCompensationRow,
   PAY_PREVIEW_NO_ACTIVE_COMPENSATION_REASON,
   resolveNoActiveCompensationSkipReason,
+  shouldOmitInactiveEmployeeFromPayExport,
 } from '@/lib/hr/payroll/payPreviewRowStatus';
 
 describe('payPreviewRowStatus', () => {
@@ -37,6 +38,33 @@ describe('payPreviewRowStatus', () => {
         skipped: true,
         approvedAttendanceRows: 2,
         skipReason: 'Invalid pay type configuration',
+      })
+    ).toBe(false);
+  });
+
+  it('omits exited or suspended employees with no attendance from payroll export', () => {
+    expect(
+      shouldOmitInactiveEmployeeFromPayExport({
+        employeeStatus: 'EXITED',
+        approvedAttendanceRows: 0,
+      })
+    ).toBe(true);
+    expect(
+      shouldOmitInactiveEmployeeFromPayExport({
+        employeeStatus: 'SUSPENDED',
+        approvedAttendanceRows: 0,
+      })
+    ).toBe(true);
+    expect(
+      shouldOmitInactiveEmployeeFromPayExport({
+        employeeStatus: 'EXITED',
+        approvedAttendanceRows: 1,
+      })
+    ).toBe(false);
+    expect(
+      shouldOmitInactiveEmployeeFromPayExport({
+        employeeStatus: 'ACTIVE',
+        approvedAttendanceRows: 0,
       })
     ).toBe(false);
   });

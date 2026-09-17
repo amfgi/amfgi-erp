@@ -26,7 +26,14 @@ import {
   type ScheduleJobRow,
 } from '@/lib/hr/scheduleSearchApi';
 import { useJobLiveUpdate } from '@/lib/jobs/jobLiveUpdate';
-import { combineAttendancePunchTimesToIso, incompletePunchPatternReason } from '@/lib/hr/attendanceSheetModel';
+import {
+  combineAttendancePunchTimesToIso,
+  incompletePunchPatternReason,
+  attachScheduleTimingBaseline,
+  attachScheduleBaselines,
+  resolveScheduleDefaultPunchTimes,
+  resolveScheduleDefaultStatus,
+} from '@/lib/hr/attendanceSheetModel';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
@@ -489,24 +496,27 @@ function buildDraftFromDefaults(
   const basicHours = employee.basicHoursPerDay ?? 8;
 
   if (assigned && absentEmployeeIds.has(employee.id)) {
-    return sanitizeAbsentDraft({
-      employeeId: employee.id,
-      workAssignmentId: '',
-      jobNumber: '',
-      status: 'ABSENT',
-      leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
-      basicHours,
-      checkInAt: '',
-      checkOutAt: '',
-      breakInAt: '',
-      breakOutAt: '',
-      remarks: '',
-      source: 'schedule',
-    });
+    return attachScheduleTimingBaseline(
+      sanitizeAbsentDraft({
+        employeeId: employee.id,
+        workAssignmentId: '',
+        jobNumber: '',
+        status: 'ABSENT',
+        leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
+        basicHours,
+        checkInAt: '',
+        checkOutAt: '',
+        breakInAt: '',
+        breakOutAt: '',
+        remarks: '',
+        source: 'schedule',
+      }),
+      null
+    );
   }
 
   if (employeeType === 'OFFICE_STAFF' || employeeType === 'DRIVER') {
-    return {
+    return attachScheduleTimingBaseline({
       employeeId: employee.id,
       workAssignmentId: assigned?.id ?? '',
       jobNumber: employeeType === 'DRIVER' ? assigned?.jobNumberSnapshot ?? '' : '',
@@ -518,11 +528,11 @@ function buildDraftFromDefaults(
       breakOutAt: defaultTiming?.breakEnd || '',
       remarks: '',
       source: assigned ? 'schedule' : 'manual',
-    };
+    });
   }
 
   if (employeeType === 'HYBRID_STAFF') {
-    return {
+    return attachScheduleTimingBaseline({
       employeeId: employee.id,
       workAssignmentId: assigned?.id ?? '',
       jobNumber: assigned?.jobNumberSnapshot ?? '',
@@ -534,10 +544,10 @@ function buildDraftFromDefaults(
       breakOutAt: assigned ? scheduledBreak.breakOutAt : defaultTiming?.breakEnd || '',
       remarks: '',
       source: assigned ? 'schedule' : 'manual',
-    };
+    });
   }
 
-  return {
+  return attachScheduleTimingBaseline({
     employeeId: employee.id,
     workAssignmentId: assigned?.id ?? '',
     jobNumber: assigned?.jobNumberSnapshot ?? '',
@@ -550,7 +560,7 @@ function buildDraftFromDefaults(
     breakOutAt: scheduledBreak.breakOutAt,
     remarks: '',
     source: assigned ? 'schedule' : 'manual',
-  };
+  });
 }
 
 function buildDraftForOnLeavePeriodEmployee(
@@ -559,20 +569,23 @@ function buildDraftForOnLeavePeriodEmployee(
   _assigned?: AssignmentRow
 ): AttendanceDraftRow {
   const basicHours = employee.basicHoursPerDay ?? 8;
-  return sanitizeAbsentDraft({
-    employeeId: employee.id,
-    workAssignmentId: '',
-    jobNumber: '',
-    status: 'ABSENT',
-    leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
-    basicHours,
-    checkInAt: '',
-    checkOutAt: '',
-    breakInAt: '',
-    breakOutAt: '',
-    remarks: '',
-    source: 'manual',
-  });
+  return attachScheduleTimingBaseline(
+    sanitizeAbsentDraft({
+      employeeId: employee.id,
+      workAssignmentId: '',
+      jobNumber: '',
+      status: 'ABSENT',
+      leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
+      basicHours,
+      checkInAt: '',
+      checkOutAt: '',
+      breakInAt: '',
+      breakOutAt: '',
+      remarks: '',
+      source: 'manual',
+    }),
+    null
+  );
 }
 
 function isEmployeeMarkedOnLeave(employee: { status?: string } | null | undefined): boolean {
@@ -592,24 +605,41 @@ function buildDraftFromExistingRow(
   const snapBasic = Number(row.basicHours);
   const basicHours = Number.isFinite(snapBasic) && snapBasic > 0 ? snapBasic : employee.basicHoursPerDay ?? 8;
 
+  const assignmentForBaseline = existingAssignment
+    ? {
+        shiftStart: (existingAssignment.shiftStart as string | null | undefined) ?? null,
+        shiftEnd: (existingAssignment.shiftEnd as string | null | undefined) ?? null,
+        breakWindow: (existingAssignment.breakWindow as string | null | undefined) ?? null,
+      }
+    : null;
+
   // Existing rows must show stored punches only — do not refill from schedule/default
   // timing, or cleared break/duty times reappear after save + reload.
-  return sanitizeAbsentDraft({
-    employeeId: employee.id,
-    workAssignmentId: String((existingAssignment?.id as string | undefined) ?? ''),
-    jobNumber: String((existingAssignment?.jobNumberSnapshot as string | undefined) ?? ''),
-    status: normalized.status,
-    leaveTypeId: normalized.leaveTypeId,
-    basicHours,
-    checkInAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkInAt as string | null) ?? null),
-    checkOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkOutAt as string | null) ?? null),
-    breakInAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakStartAt as string | null) ?? null),
-    breakOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakEndAt as string | null) ?? null),
-    remarks: String((row.remarks as string | null | undefined) ?? ''),
-    source: 'existing',
-    leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
-    attendanceSource: (row.source as string | null | undefined) ?? null,
-  });
+  const workAssignmentId = String((existingAssignment?.id as string | undefined) ?? '');
+  return attachScheduleBaselines(
+    sanitizeAbsentDraft({
+      employeeId: employee.id,
+      workAssignmentId,
+      jobNumber: String((existingAssignment?.jobNumberSnapshot as string | undefined) ?? ''),
+      status: normalized.status,
+      leaveTypeId: normalized.leaveTypeId,
+      basicHours,
+      checkInAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkInAt as string | null) ?? null),
+      checkOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkOutAt as string | null) ?? null),
+      breakInAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakStartAt as string | null) ?? null),
+      breakOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakEndAt as string | null) ?? null),
+      remarks: String((row.remarks as string | null | undefined) ?? ''),
+      source: 'existing',
+      leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
+      attendanceSource: (row.source as string | null | undefined) ?? null,
+    }),
+    {
+      timingBaseline: shouldClearTiming
+        ? null
+        : resolveScheduleDefaultPunchTimes(employee, assignmentForBaseline, 'daySheet'),
+      statusBaseline: resolveScheduleDefaultStatus(employee, Boolean(workAssignmentId)),
+    }
+  );
 }
 
 export default function AttendanceCreatePage() {

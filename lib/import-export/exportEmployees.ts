@@ -36,7 +36,7 @@ export function exportEmployeesToXlsx(
         ['Employee export'],
         ['Re-import using Import on the employee directory. Match updates by ID or Employee Code.'],
         ['Only columns present in your import file are updated; export → edit → import is supported.'],
-        ['Signature Group must match a name from HR → Settings → Employment options.'],
+        ['Signature Group must match a name from Employee Setup → Employment options.'],
         [
           'Compensation columns are report-only on export — map them to Skip Column if re-importing a spreadsheet.',
         ],

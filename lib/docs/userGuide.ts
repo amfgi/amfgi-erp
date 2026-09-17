@@ -1018,7 +1018,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
         blocks: [
           {
             type: 'paragraph',
-            text: 'HR in AMFGI is organized into five sidebar groups: Schedule & Attendance, Employees, Leave Management, Payroll, and My HR (self-service for linked employees). The legacy /hr URL redirects to schedule planning. Daily operations flow from published schedules → attendance capture → leave approvals → payroll preview.',
+            text: 'HR in AMFGI is organized into sidebar groups: Schedule & Attendance, Employees, Employee Setup, Leave Management, Payroll, and My HR (self-service for linked employees). The legacy /hr URL redirects to schedule planning. Daily operations flow from published schedules → attendance capture → leave approvals → payroll preview.',
           },
           {
             type: 'callout',
@@ -1304,12 +1304,51 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
         ],
       },
       {
+        id: 'employee-setup',
+        title: 'Employee setup',
+        blocks: [
+          {
+            type: 'paragraph',
+            text: 'Route: Employee Setup (/hr/employee-setup). Hub for employee master-data catalogs. Open each catalog from the hub page cards.',
+          },
+          {
+            type: 'list',
+            items: [
+              'Employment options — designation, department, employment type, signature group lists.',
+              'Employee ID format — company-wise prefix, padding, and counting style (sequential / yearly / monthly) for new employee codes.',
+              'Employee type timings — basic hours and duty/break windows by workforce role.',
+              'Expertise catalog — skills/trade tags for profiles and schedule filters.',
+              'Document types — employee file categories with expiry rules.',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'employee-id-format',
+        title: 'Employee ID format',
+        blocks: [
+          {
+            type: 'paragraph',
+            text: 'Route: Employee Setup → Employee ID format (/hr/settings/employee-codes). Configure how new employee codes are generated per company.',
+          },
+          {
+            type: 'list',
+            items: [
+              'Prefix — letters, numbers, and symbols (e.g. EMP, AMF#, ID@).',
+              'Counting style — Sequential (EMP-0001), Yearly (EMP-2026-0001), or Monthly (EMP-202609-0001).',
+              'Padding and Start from — numeric width and first number when no matching codes exist.',
+              'New employee create allocates the next code on the server from existing matching IDs. Requires hr.employee.edit to save; hr.employee.view to browse.',
+            ],
+          },
+        ],
+      },
+      {
         id: 'employment-options',
         title: 'Employment options',
         blocks: [
           {
             type: 'paragraph',
-            text: 'Route: Employees → Employment options (/hr/settings/employment-options). Company catalogs for dropdown fields used on employee profiles: departments, designations, workforce roles, visa sponsors, banks, and similar meta options.',
+            text: 'Route: Employee Setup → Employment options (/hr/settings/employment-options). Company catalogs for dropdown fields used on employee profiles: departments, designations, workforce roles, visa sponsors, banks, and similar meta options.',
           },
           {
             type: 'list',
@@ -1327,7 +1366,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
         blocks: [
           {
             type: 'paragraph',
-            text: 'Route: Employees → Employee type timings (/hr/settings/employee-types). Defines default duty windows and basicHoursPerDay per employee type (office, driver, hybrid, worker).',
+            text: 'Route: Employee Setup → Employee type timings (/hr/settings/employee-types). Defines default duty windows and basicHoursPerDay per employee type (office, driver, hybrid, worker).',
           },
           {
             type: 'steps',
@@ -1350,7 +1389,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
         blocks: [
           {
             type: 'paragraph',
-            text: 'Route: Employees → Expertise catalog (/hr/settings/expertises). Skills and trade labels (fiberglass, welding, driving, etc.) tagged on employee profiles for schedule filtering and reporting.',
+            text: 'Route: Employee Setup → Expertise catalog (/hr/settings/expertises). Skills and trade labels (fiberglass, welding, driving, etc.) tagged on employee profiles for schedule filtering and reporting.',
           },
         ],
       },
@@ -1360,7 +1399,7 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
         blocks: [
           {
             type: 'paragraph',
-            text: 'Route: Employees → Document types (/hr/settings/document-types). Templates for employee file categories: passport, visa, labour card, driving license, etc. Each type can require expiry date and renewal reminders.',
+            text: 'Route: Employee Setup → Document types (/hr/settings/document-types). Templates for employee file categories: passport, visa, labour card, driving license, etc. Each type can require expiry date and renewal reminders.',
           },
           {
             type: 'list',

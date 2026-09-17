@@ -59,6 +59,7 @@ export type EmployeePayPreviewRow = {
   employeeName: string;
   employeeFullName: string;
   employeePreferredName: string | null;
+  employeeStatus: string;
   payTypeId: string | null;
   payTypeName: string | null;
   payTypeCode: string | null;
@@ -142,6 +143,7 @@ type PayPreviewEmployeeSource = {
   fullName: string;
   preferredName: string | null;
   employmentType: string | null;
+  status: string;
   profileExtension: unknown;
 };
 
@@ -380,6 +382,7 @@ function computeEmployeePayPreviewRow(
       employeeName: name,
       employeeFullName: employee.fullName,
       employeePreferredName: employee.preferredName,
+      employeeStatus: employee.status,
       payTypeId: null,
       payTypeName: null,
       payTypeCode: null,
@@ -405,6 +408,7 @@ function computeEmployeePayPreviewRow(
       employeeName: name,
       employeeFullName: employee.fullName,
       employeePreferredName: employee.preferredName,
+      employeeStatus: employee.status,
       payTypeId: null,
       payTypeName: null,
       payTypeCode: null,
@@ -433,6 +437,7 @@ function computeEmployeePayPreviewRow(
       employeeName: name,
       employeeFullName: employee.fullName,
       employeePreferredName: employee.preferredName,
+      employeeStatus: employee.status,
       payTypeId: primaryPackage.payTypeId,
       payTypeName: primaryPackage.payType.name,
       payTypeCode: primaryPackage.payType.code,
@@ -573,6 +578,7 @@ function computeEmployeePayPreviewRow(
     employeeName: name,
     employeeFullName: employee.fullName,
     employeePreferredName: employee.preferredName,
+    employeeStatus: employee.status,
     payTypeId: primaryPackage.payTypeId,
     payTypeName: primaryPackage.payType.name,
     payTypeCode: primaryPackage.payType.code,
@@ -623,6 +629,7 @@ export async function buildEmployeePayPreview(
       fullName: true,
       preferredName: true,
       employmentType: true,
+      status: true,
       profileExtension: true,
     },
   });
@@ -705,6 +712,7 @@ export async function buildPayrollPreview(
             fullName: true,
             preferredName: true,
             employmentType: true,
+            status: true,
             profileExtension: true,
           },
         },
@@ -759,6 +767,7 @@ export async function buildPayrollPreview(
         fullName: true,
         preferredName: true,
         employmentType: true,
+        status: true,
         profileExtension: true,
       },
     });

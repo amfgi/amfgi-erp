@@ -26,3 +26,13 @@ export function resolveNoActiveCompensationSkipReason(attendanceRowCount: number
     ? PAY_PREVIEW_NO_ACTIVE_COMPENSATION_REASON
     : 'No active compensation for this month';
 }
+
+/** EXITED/SUSPENDED with no attendance for the month should not appear on payroll Excel. */
+export function shouldOmitInactiveEmployeeFromPayExport(row: {
+  employeeStatus?: string | null;
+  approvedAttendanceRows: number;
+}): boolean {
+  const status = row.employeeStatus?.trim().toUpperCase();
+  if (status !== 'EXITED' && status !== 'SUSPENDED') return false;
+  return (row.approvedAttendanceRows ?? 0) <= 0;
+}

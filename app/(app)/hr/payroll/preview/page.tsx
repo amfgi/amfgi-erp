@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { cn } from '@/lib/utils';
 import { daysInMonth, sumMoney } from '@/lib/hr/payroll/calendar';
-import { downloadPayPreviewXlsx } from '@/lib/hr/payroll/exportPayPreviewXlsx';
+import PayPreviewExportModal from '@/components/hr/PayPreviewExportModal';
 import { isPayPreviewPendingCompensationRow } from '@/lib/hr/payroll/payPreviewRowStatus';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
@@ -42,6 +42,7 @@ type PreviewEmployee = {
   employeeName: string;
   employeeFullName?: string;
   employeePreferredName?: string | null;
+  employeeStatus?: string;
   companyId?: string;
   companyName?: string;
   payTypeName: string | null;
@@ -537,6 +538,7 @@ export default function PayrollPreviewPage() {
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailEmployee, setDetailEmployee] = useState<PreviewEmployee | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const setCompanyFilter = useCallback((next: string) => {
     setCompanyId(next);
@@ -671,15 +673,17 @@ export default function PayrollPreviewPage() {
           size="sm"
           variant="outline"
           disabled={!preview || preview.employees.filter((e) => !e.skipped).length === 0}
-          onClick={() => {
-            if (!preview) return;
-            downloadPayPreviewXlsx(preview);
-            toast.success('Excel downloaded');
-          }}
+          onClick={() => setExportOpen(true)}
         >
           Export Excel
         </Button>
       </div>
+
+      <PayPreviewExportModal
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        payload={preview}
+      />
 
       {detailEmployee && preview ? (
         <EmployeeBreakdownModal

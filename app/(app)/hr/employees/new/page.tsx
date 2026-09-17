@@ -15,7 +15,6 @@ import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { GENDER_OPTIONS, visaHoldingOptions, workforceRoleTypeOptions } from '@/lib/hr/employeeFieldOptions';
 import { createEmployeeRecord } from '@/lib/hr/createEmployeeClient';
-import { generateEmployeeCode } from '@/lib/hr/generateEmployeeCode';
 import { todayYmdLocal } from '@/lib/hr/employeeLeavePeriod';
 import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
@@ -40,6 +39,7 @@ export default function NewEmployeePage() {
   const [employeeType, setEmployeeType] = useState<'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER'>('LABOUR_WORKER');
   const [visaHolding, setVisaHolding] = useState('');
   const [companyId, setCompanyId] = useState('');
+  const [proposedCode, setProposedCode] = useState<string>('…');
   const { options: companyOptions } = useHrAccessibleCompanies();
 
   useEffect(() => {
@@ -52,6 +52,37 @@ export default function NewEmployeePage() {
       );
     });
   }, [companyOptions, session?.user?.activeCompanyId]);
+
+  useEffect(() => {
+    if (!companyId) {
+      setProposedCode('…');
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/hr/employee-code-settings?companyId=${encodeURIComponent(companyId)}`,
+          { cache: 'no-store' },
+        );
+        const json = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          data?: { nextCodePreview?: string };
+        } | null;
+        if (cancelled) return;
+        if (res.ok && json?.success && json.data?.nextCodePreview) {
+          setProposedCode(json.data.nextCodePreview);
+        } else {
+          setProposedCode('Auto');
+        }
+      } catch {
+        if (!cancelled) setProposedCode('Auto');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   const handleCompanyChange = (nextCompanyId: string) => {
     setCompanyId(nextCompanyId);
@@ -70,7 +101,6 @@ export default function NewEmployeePage() {
     'border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-ring';
   const workforceRoleOptions = useMemo(() => workforceRoleTypeOptions(), []);
   const visaHoldingOptionList = useMemo(() => visaHoldingOptions(), []);
-  const proposedCode = useMemo(() => generateEmployeeCode(), []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

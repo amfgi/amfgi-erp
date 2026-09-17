@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import type { Employee, Prisma } from '@prisma/client';
+import { Prisma as PrismaNS } from '@prisma/client';
+import { allocateNextEmployeeCode } from '@/lib/hr/allocateEmployeeCode';
 import { provisionEmployeeUser } from '@/lib/hr/provisionEmployeeUser';
 import {
   checkEmployeeEmailUserConflict,
@@ -40,7 +42,8 @@ const employeeEmailField = z
 
 const CreateSchema = z.object({
   companyId: z.string().min(1).optional(),
-  employeeCode: z.string().min(1).max(80),
+  /** When omitted/blank, server allocates the next code from company employee-code settings. */
+  employeeCode: z.string().max(80).optional().nullable(),
   fullName: z.string().min(1).max(200),
   preferredName: z.string().max(200).optional().nullable(),
   email: employeeEmailField,
@@ -318,77 +321,99 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const emp = await tx.employee.create({
-        data: {
-          companyId,
-          employeeCode: d.employeeCode.trim(),
-          fullName: d.fullName.trim(),
-          preferredName: d.preferredName?.trim() || null,
-          email: emailNorm,
-          phone: d.phone?.trim() || null,
-          nationality,
-          dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
-          gender: d.gender?.trim() || null,
-          designation: d.designation?.trim() || null,
-          department: d.department?.trim() || null,
-          employmentType: d.employmentType?.trim() || null,
-          signatureGroup: d.signatureGroup?.trim() || null,
-          hireDate: d.hireDate ? new Date(d.hireDate) : null,
-          terminationDate: d.terminationDate ? new Date(d.terminationDate) : null,
-          status: d.status ?? 'ACTIVE',
-          emergencyContactName: d.emergencyContactName?.trim() || null,
-          emergencyContactPhone: d.emergencyContactPhone?.trim() || null,
-          bloodGroup: d.bloodGroup?.trim() || null,
-          photoUrl: d.photoUrl?.trim() || null,
-          portalEnabled: auto ? true : (d.portalEnabled ?? false),
-          adminNotes: d.adminNotes?.trim() || null,
-          profileExtension:
-            d.profileExtension === undefined
-              ? undefined
-              : (d.profileExtension as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput),
-        },
-      });
+    const requestedCode = d.employeeCode?.trim() || '';
+    const autoAllocate = !requestedCode;
+    let lastError: unknown = null;
 
-      let provision: { createdUser: boolean; userId: string } | null = null;
-      if (auto && emailNorm) {
-        const prov = await provisionEmployeeUser(tx, {
-          employeeId: emp.id,
-          companyId,
-          email: emailNorm,
-          fullName: emp.fullName,
+    for (let attempt = 0; attempt < (autoAllocate ? 5 : 1); attempt++) {
+      try {
+        const employeeCode = autoAllocate
+          ? (await allocateNextEmployeeCode(prisma, companyId)).code
+          : requestedCode;
+
+        const result = await prisma.$transaction(async (tx) => {
+          const emp = await tx.employee.create({
+            data: {
+              companyId,
+              employeeCode,
+              fullName: d.fullName.trim(),
+              preferredName: d.preferredName?.trim() || null,
+              email: emailNorm,
+              phone: d.phone?.trim() || null,
+              nationality,
+              dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
+              gender: d.gender?.trim() || null,
+              designation: d.designation?.trim() || null,
+              department: d.department?.trim() || null,
+              employmentType: d.employmentType?.trim() || null,
+              signatureGroup: d.signatureGroup?.trim() || null,
+              hireDate: d.hireDate ? new Date(d.hireDate) : null,
+              terminationDate: d.terminationDate ? new Date(d.terminationDate) : null,
+              status: d.status ?? 'ACTIVE',
+              emergencyContactName: d.emergencyContactName?.trim() || null,
+              emergencyContactPhone: d.emergencyContactPhone?.trim() || null,
+              bloodGroup: d.bloodGroup?.trim() || null,
+              photoUrl: d.photoUrl?.trim() || null,
+              portalEnabled: auto ? true : (d.portalEnabled ?? false),
+              adminNotes: d.adminNotes?.trim() || null,
+              profileExtension:
+                d.profileExtension === undefined
+                  ? undefined
+                  : (d.profileExtension as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput),
+            },
+          });
+
+          let provision: { createdUser: boolean; userId: string } | null = null;
+          if (auto && emailNorm) {
+            const prov = await provisionEmployeeUser(tx, {
+              employeeId: emp.id,
+              companyId,
+              email: emailNorm,
+              fullName: emp.fullName,
+            });
+            if (!prov.ok) {
+              throw new Error(`PROVISION:${prov.code}:${prov.message}`);
+            }
+            provision = { createdUser: prov.createdUser, userId: prov.userId };
+          }
+
+          return { emp, provision };
         });
-        if (!prov.ok) {
-          throw new Error(`PROVISION:${prov.code}:${prov.message}`);
-        }
-        provision = { createdUser: prov.createdUser, userId: prov.userId };
+
+        const full = await prisma.employee.findFirst({
+          where: { id: result.emp.id },
+          include: {
+            userLink: { select: { id: true, email: true, name: true } },
+            company: { select: companySelect },
+          },
+        });
+
+        publishLiveUpdate({
+          companyId,
+          channel: 'hr',
+          entity: 'employee',
+          action: 'created',
+        });
+
+        return successResponse(
+          {
+            ...full,
+            loginProvision: result.provision,
+          },
+          201,
+        );
+      } catch (e) {
+        lastError = e;
+        if (e instanceof Error && e.message.startsWith('PROVISION:')) throw e;
+        const isUnique =
+          e instanceof PrismaNS.PrismaClientKnownRequestError
+            ? e.code === 'P2002'
+            : e instanceof Error && e.message.includes('Unique constraint');
+        if (!autoAllocate || !isUnique) throw e;
       }
+    }
 
-      return { emp, provision };
-    });
-
-    const full = await prisma.employee.findFirst({
-      where: { id: result.emp.id },
-      include: {
-        userLink: { select: { id: true, email: true, name: true } },
-        company: { select: companySelect },
-      },
-    });
-
-    publishLiveUpdate({
-      companyId,
-      channel: 'hr',
-      entity: 'employee',
-      action: 'created',
-    });
-
-    return successResponse(
-      {
-        ...full,
-        loginProvision: result.provision,
-      },
-      201,
-    );
+    throw lastError instanceof Error ? lastError : new Error('Failed to allocate employee code');
   } catch (e) {
     if (e instanceof Error && e.message.startsWith('PROVISION:')) {
       const parts = e.message.split(':');
@@ -398,7 +423,10 @@ export async function POST(req: Request) {
       if (code === 'EMAIL_USER_CONFLICT') return errorResponse(msg, 422);
       return errorResponse(msg, 422);
     }
-    if (e instanceof Error && e.message.includes('Unique constraint')) {
+    if (
+      (e instanceof PrismaNS.PrismaClientKnownRequestError && e.code === 'P2002') ||
+      (e instanceof Error && e.message.includes('Unique constraint'))
+    ) {
       return errorResponse('Duplicate employee code or email for this company', 409);
     }
     throw e;

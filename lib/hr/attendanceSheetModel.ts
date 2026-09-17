@@ -1,4 +1,8 @@
-import type { AttendanceGridDraftRow, AttendanceGridEmployee } from '@/components/hr/AttendanceEntryGrid';
+import type {
+  AttendanceGridDraftRow,
+  AttendanceGridEmployee,
+  AttendanceScheduleTimingBaseline,
+} from '@/components/hr/AttendanceEntryGrid';
 import {
   defaultUnpaidLeaveTypeId,
   isDraftNonWorking,
@@ -86,6 +90,171 @@ export function parseBreakWindow(raw: string | null | undefined): { breakInAt: s
   const m = raw.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
   if (!m) return { breakInAt: '', breakOutAt: '' };
   return { breakInAt: m[1].padStart(5, '0'), breakOutAt: m[2].padStart(5, '0') };
+}
+
+function normalizeTimeCell(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    const [h, m] = raw.split(':');
+    return `${h.padStart(2, '0')}:${m}`;
+  }
+  return raw;
+}
+
+export function scheduleTimingBaselineFromPunchTimes(times: {
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  breakInAt?: string | null;
+  breakOutAt?: string | null;
+}): AttendanceScheduleTimingBaseline {
+  return {
+    checkInAt: normalizeTimeCell(times.checkInAt),
+    checkOutAt: normalizeTimeCell(times.checkOutAt),
+    breakInAt: normalizeTimeCell(times.breakInAt),
+    breakOutAt: normalizeTimeCell(times.breakOutAt),
+  };
+}
+
+export function scheduleTimingBaselineHasTimes(
+  baseline: AttendanceScheduleTimingBaseline | null | undefined
+): boolean {
+  if (!baseline) return false;
+  return [baseline.checkInAt, baseline.checkOutAt, baseline.breakInAt, baseline.breakOutAt].some(
+    (value) => String(value ?? '').trim() !== ''
+  );
+}
+
+/**
+ * Expected punch times from schedule assignment + employee default timing.
+ * `daySheet` matches /hr/attendance/create defaults; `employeeMonth` matches
+ * buildDraftForNewEmployeeDate (office/driver may use assignment shift).
+ */
+export function resolveScheduleDefaultPunchTimes(
+  employee: Pick<AttendanceSheetEmployee, 'employeeType' | 'defaultTiming'>,
+  assigned?: Pick<AttendanceAssignmentRow, 'shiftStart' | 'shiftEnd' | 'breakWindow'> | null,
+  mode: 'daySheet' | 'employeeMonth' = 'daySheet'
+): AttendanceScheduleTimingBaseline {
+  const employeeType = employee.employeeType ?? 'LABOUR_WORKER';
+  const defaultTiming = employee.defaultTiming ?? null;
+  const scheduledBreak = parseBreakWindow(assigned?.breakWindow);
+
+  if (employeeType === 'OFFICE_STAFF' || employeeType === 'DRIVER') {
+    if (mode === 'employeeMonth') {
+      return scheduleTimingBaselineFromPunchTimes({
+        checkInAt: assigned?.shiftStart || defaultTiming?.dutyStart || '',
+        checkOutAt: assigned?.shiftEnd || defaultTiming?.dutyEnd || '',
+        breakInAt: assigned ? scheduledBreak.breakInAt : defaultTiming?.breakStart || '',
+        breakOutAt: assigned ? scheduledBreak.breakOutAt : defaultTiming?.breakEnd || '',
+      });
+    }
+    // Day sheet loads office/driver from employee defaults (not assignment shift).
+    return scheduleTimingBaselineFromPunchTimes({
+      checkInAt: defaultTiming?.dutyStart || '',
+      checkOutAt: defaultTiming?.dutyEnd || '',
+      breakInAt: defaultTiming?.breakStart || '',
+      breakOutAt: defaultTiming?.breakEnd || '',
+    });
+  }
+
+  if (employeeType === 'HYBRID_STAFF') {
+    return scheduleTimingBaselineFromPunchTimes({
+      checkInAt: assigned?.shiftStart || defaultTiming?.dutyStart || '',
+      checkOutAt: assigned?.shiftEnd || defaultTiming?.dutyEnd || '',
+      breakInAt: assigned ? scheduledBreak.breakInAt : defaultTiming?.breakStart || '',
+      breakOutAt: assigned ? scheduledBreak.breakOutAt : defaultTiming?.breakEnd || '',
+    });
+  }
+
+  return scheduleTimingBaselineFromPunchTimes({
+    checkInAt: assigned?.shiftStart || '',
+    checkOutAt: assigned?.shiftEnd || '',
+    breakInAt: scheduledBreak.breakInAt,
+    breakOutAt: scheduledBreak.breakOutAt,
+  });
+}
+
+export function attachScheduleTimingBaseline(
+  draft: AttendanceGridDraftRow,
+  baseline?: AttendanceScheduleTimingBaseline | null
+): AttendanceGridDraftRow {
+  // One-arg call snapshots the draft's current times. Explicit `null` clears the baseline.
+  if (baseline !== undefined) {
+    return attachScheduleBaselines(draft, { timingBaseline: baseline });
+  }
+  return attachScheduleBaselines(draft);
+}
+
+export function resolveScheduleDefaultStatus(
+  employee: Pick<AttendanceSheetEmployee, 'employeeType' | 'status'>,
+  hasAssignment: boolean
+): 'PRESENT' | 'ABSENT' {
+  if (employee.status === 'ON_LEAVE') return 'ABSENT';
+  if (hasAssignment) return 'PRESENT';
+  const employeeType = employee.employeeType ?? 'LABOUR_WORKER';
+  if (employeeType === 'OFFICE_STAFF' || employeeType === 'DRIVER' || employeeType === 'HYBRID_STAFF') {
+    return 'PRESENT';
+  }
+  return 'ABSENT';
+}
+
+export function attachScheduleBaselines(
+  draft: AttendanceGridDraftRow,
+  options?: {
+    timingBaseline?: AttendanceScheduleTimingBaseline | null;
+    statusBaseline?: 'PRESENT' | 'ABSENT' | null;
+  }
+): AttendanceGridDraftRow {
+  const statusBaseline = options?.statusBaseline ?? draft.status;
+  const hasExplicitTimingBaseline = Boolean(options && 'timingBaseline' in options);
+
+  if (isDraftNonWorking(draft)) {
+    return {
+      ...draft,
+      scheduleTimingBaseline: hasExplicitTimingBaseline ? options?.timingBaseline ?? null : null,
+      scheduleStatusBaseline: statusBaseline,
+    };
+  }
+
+  const nextTimingBaseline = hasExplicitTimingBaseline
+    ? options?.timingBaseline ?? null
+    : scheduleTimingBaselineFromPunchTimes({
+        checkInAt: draft.checkInAt,
+        checkOutAt: draft.checkOutAt,
+        breakInAt: draft.breakInAt,
+        breakOutAt: draft.breakOutAt,
+      });
+
+  return {
+    ...draft,
+    scheduleTimingBaseline: scheduleTimingBaselineHasTimes(nextTimingBaseline)
+      ? nextTimingBaseline
+      : null,
+    scheduleStatusBaseline: statusBaseline,
+  };
+}
+
+export function draftTimingDiffersFromScheduleBaseline(draft: AttendanceGridDraftRow): boolean {
+  if (isDraftNonWorking(draft)) return false;
+  const baseline = draft.scheduleTimingBaseline;
+  if (!scheduleTimingBaselineHasTimes(baseline) || !baseline) return false;
+  return (
+    normalizeTimeCell(draft.checkInAt) !== baseline.checkInAt ||
+    normalizeTimeCell(draft.checkOutAt) !== baseline.checkOutAt ||
+    normalizeTimeCell(draft.breakInAt) !== baseline.breakInAt ||
+    normalizeTimeCell(draft.breakOutAt) !== baseline.breakOutAt
+  );
+}
+
+export function draftStatusDiffersFromScheduleBaseline(draft: AttendanceGridDraftRow): boolean {
+  const baseline = draft.scheduleStatusBaseline;
+  if (baseline !== 'PRESENT' && baseline !== 'ABSENT') return false;
+  return draft.status !== baseline;
+}
+
+export function draftDiffersFromScheduleBaseline(draft: AttendanceGridDraftRow): boolean {
+  return draftTimingDiffersFromScheduleBaseline(draft) || draftStatusDiffersFromScheduleBaseline(draft);
 }
 
 export function combineDateAndTimeToIso(
@@ -178,26 +347,43 @@ export function buildDraftFromExistingAttendanceRow(
   const basicHours =
     Number.isFinite(snapBasic) && snapBasic > 0 ? snapBasic : employee.basicHoursPerDay ?? 8;
 
+  const assignmentForBaseline = existingAssignment
+    ? {
+        shiftStart: (existingAssignment.shiftStart as string | null | undefined) ?? null,
+        shiftEnd: (existingAssignment.shiftEnd as string | null | undefined) ?? null,
+        breakWindow: (existingAssignment.breakWindow as string | null | undefined) ?? null,
+      }
+    : null;
+
   // Existing rows must show stored punches only — do not refill from schedule/default
   // timing, or cleared break/duty times reappear after save + reload.
-  return sanitizeAbsentDraft({
-    employeeId: employee.id,
-    workDate: toDateYmd((row.workDate as string | Date) ?? ''),
-    entryId: String(row.id ?? '') || null,
-    workAssignmentId: String((existingAssignment?.id as string | undefined) ?? ''),
-    jobNumber: String((existingAssignment?.jobNumberSnapshot as string | undefined) ?? ''),
-    status: normalized.status,
-    leaveTypeId: normalized.leaveTypeId,
-    basicHours,
-    checkInAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkInAt as string | null) ?? null),
-    checkOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkOutAt as string | null) ?? null),
-    breakInAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakStartAt as string | null) ?? null),
-    breakOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakEndAt as string | null) ?? null),
-    remarks: String((row.remarks as string | null | undefined) ?? ''),
-    source: 'existing',
-    leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
-    attendanceSource: (row.source as string | null | undefined) ?? null,
-  });
+  const workAssignmentId = String((existingAssignment?.id as string | undefined) ?? '');
+  return attachScheduleBaselines(
+    sanitizeAbsentDraft({
+      employeeId: employee.id,
+      workDate: toDateYmd((row.workDate as string | Date) ?? ''),
+      entryId: String(row.id ?? '') || null,
+      workAssignmentId,
+      jobNumber: String((existingAssignment?.jobNumberSnapshot as string | undefined) ?? ''),
+      status: normalized.status,
+      leaveTypeId: normalized.leaveTypeId,
+      basicHours,
+      checkInAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkInAt as string | null) ?? null),
+      checkOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.checkOutAt as string | null) ?? null),
+      breakInAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakStartAt as string | null) ?? null),
+      breakOutAt: shouldClearTiming ? '' : toLocalTimeInput((row.breakEndAt as string | null) ?? null),
+      remarks: String((row.remarks as string | null | undefined) ?? ''),
+      source: 'existing',
+      leaveRequestId: (row.leaveRequestId as string | null | undefined) ?? null,
+      attendanceSource: (row.source as string | null | undefined) ?? null,
+    }),
+    {
+      timingBaseline: shouldClearTiming
+        ? null
+        : resolveScheduleDefaultPunchTimes(employee, assignmentForBaseline, 'employeeMonth'),
+      statusBaseline: resolveScheduleDefaultStatus(employee, Boolean(workAssignmentId)),
+    }
+  );
 }
 
 export function buildDraftForNewEmployeeDate(
@@ -212,26 +398,29 @@ export function buildDraftForNewEmployeeDate(
   const basicHours = employee.basicHoursPerDay ?? 8;
 
   if (employee.status === 'ON_LEAVE') {
-    return sanitizeAbsentDraft({
-      employeeId: employee.id,
-      workDate,
-      entryId: null,
-      workAssignmentId: '',
-      jobNumber: '',
-      status: 'ABSENT',
-      leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
-      basicHours,
-      checkInAt: '',
-      checkOutAt: '',
-      breakInAt: '',
-      breakOutAt: '',
-      remarks: '',
-      source: 'manual',
-    });
+    return attachScheduleTimingBaseline(
+      sanitizeAbsentDraft({
+        employeeId: employee.id,
+        workDate,
+        entryId: null,
+        workAssignmentId: '',
+        jobNumber: '',
+        status: 'ABSENT',
+        leaveTypeId: defaultUnpaidLeaveTypeId(leaveTypes),
+        basicHours,
+        checkInAt: '',
+        checkOutAt: '',
+        breakInAt: '',
+        breakOutAt: '',
+        remarks: '',
+        source: 'manual',
+      }),
+      null
+    );
   }
 
   if (employeeType === 'OFFICE_STAFF' || employeeType === 'DRIVER') {
-    return {
+    return attachScheduleTimingBaseline({
       employeeId: employee.id,
       workDate,
       entryId: null,
@@ -245,11 +434,11 @@ export function buildDraftForNewEmployeeDate(
       breakOutAt: assigned ? scheduledBreak.breakOutAt : defaultTiming?.breakEnd || '',
       remarks: '',
       source: assigned ? 'schedule' : 'manual',
-    };
+    });
   }
 
   if (employeeType === 'HYBRID_STAFF') {
-    return {
+    return attachScheduleTimingBaseline({
       employeeId: employee.id,
       workDate,
       entryId: null,
@@ -263,10 +452,10 @@ export function buildDraftForNewEmployeeDate(
       breakOutAt: assigned ? scheduledBreak.breakOutAt : defaultTiming?.breakEnd || '',
       remarks: '',
       source: assigned ? 'schedule' : 'manual',
-    };
+    });
   }
 
-  return {
+  return attachScheduleTimingBaseline({
     employeeId: employee.id,
     workDate,
     entryId: null,
@@ -281,7 +470,7 @@ export function buildDraftForNewEmployeeDate(
     breakOutAt: scheduledBreak.breakOutAt,
     remarks: '',
     source: assigned ? 'schedule' : 'manual',
-  };
+  });
 }
 
 function minutesFromTimeValue(timeVal: string): number | null {
