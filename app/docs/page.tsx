@@ -91,7 +91,7 @@ export default function UserGuideIndexPage() {
             </li>
             <li>
               <strong className="font-semibold text-slate-900 dark:text-white">4. Stock</strong> — master data → receipt
-              → budget → dispatch → production log → review.
+              → budget → dispatch → job tracking → review.
             </li>
             <li>
               <strong className="font-semibold text-slate-900 dark:text-white">5. HR</strong> — schedule → attendance

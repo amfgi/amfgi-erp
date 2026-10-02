@@ -64,6 +64,8 @@ model Company {
   jobItemProgressEntries   JobItemProgressEntry[]
   jobItemTrackableMaterialLinks JobItemTrackableMaterialLink[]
   productionStockPostings  ProductionStockPosting[]
+  factoryProductions       FactoryProduction[]
+  factoryProductionLines   FactoryProductionLine[]
   jobRequiredExpertises    JobRequiredExpertise[]
   employees                Employee[]
   employeeDocumentTypes    EmployeeDocumentType[]
@@ -136,6 +138,7 @@ model User {
   quantityLogAdhocJobsCreated QuantityLogAdhocJob[]
   dispatchEntryRevisionsWritten DispatchEntryRevision[] @relation("DispatchEntryRevisionActor")
   createdDeliveryNotes          DeliveryNote[]            @relation("DeliveryNoteCreatedBy")
+  factoryProductionsCreated    FactoryProduction[]       @relation("FactoryProductionCreatedBy")
   passwordResetTokens         PasswordResetToken[]
   reviewedLeaveRequests       LeaveRequest[]         @relation("LeaveRequestReviewedBy")
   scheduleEditorPresences     ScheduleEditorPresence[]
@@ -484,6 +487,7 @@ model Material {
   usedInAssemblies         MaterialAssemblyComponent[] @relation("ComponentMaterial")
   finishedGoodTrackableLinks JobItemTrackableMaterialLink[] @relation("TrackableFinishedGoodMaterial")
   productionStockPostings  ProductionStockPosting[] @relation("ProductionPostingMaterial")
+  factoryProductionLines   FactoryProductionLine[]
   deliveryNoteMaterialLines  DeliveryNoteMaterialLine[]
 
   @@unique([companyId, id])
@@ -559,6 +563,7 @@ model StockBatch {
   businessDocument  BusinessDocument?  @relation(fields: [companyId, businessDocumentId], references: [companyId, id], onDelete: SetNull)
   transactionLinks  TransactionBatch[]
   productionStockPostings ProductionStockPosting[]
+  factoryProductionLines FactoryProductionLine[]
 
   @@unique([companyId, batchNumber])
   @@index([companyId, materialId, receivedDate])
@@ -608,6 +613,7 @@ model Transaction {
   batchesUsed         TransactionBatch[]
   productionStockPostings ProductionStockPosting[] @relation("ProductionPostingTransaction")
   productionStockReversals ProductionStockPosting[] @relation("ProductionPostingReversalTransaction")
+  factoryProductionLines FactoryProductionLine[]
   businessDocument    BusinessDocument?  @relation(fields: [companyId, businessDocumentId], references: [companyId, id], onDelete: SetNull)
   deliveryNote        DeliveryNote?      @relation(fields: [deliveryNoteId], references: [id], onDelete: SetNull)
 
@@ -1157,6 +1163,7 @@ model Warehouse {
   stockCountSessions      StockCountSession[]
   finishedGoodTrackableLinks JobItemTrackableMaterialLink[] @relation("TrackableFinishedGoodWarehouse")
   productionStockPostings ProductionStockPosting[] @relation("ProductionPostingWarehouse")
+  factoryProductions       FactoryProduction[] @relation("FactoryProductionWarehouse")
   deliveryNoteSources      DeliveryNote[] @relation("DeliveryNoteSourceWarehouse")
   deliveryNoteTargets      DeliveryNote[] @relation("DeliveryNoteTargetWarehouse")
   subcontractLineSources   DeliveryNoteMaterialLine[] @relation("SubcontractLineSourceWarehouse")
@@ -1370,6 +1377,49 @@ model ProductionStockPosting {
   @@index([companyId, materialId, warehouseId])
   @@index([companyId, transactionId])
   @@index([companyId, stockBatchId])
+}
+
+/// Factory output received into stock for later jobs. Not a customer job quantity.
+model FactoryProduction {
+  id             String   @id @default(cuid())
+  companyId      String
+  productionDate DateTime @db.Date
+  warehouseId    String
+  notes          String?  @db.Text
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company   Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse Warehouse               @relation("FactoryProductionWarehouse", fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  createdBy User                    @relation("FactoryProductionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  lines     FactoryProductionLine[]
+
+  @@unique([companyId, id])
+  @@index([companyId, productionDate])
+}
+
+model FactoryProductionLine {
+  id                  String   @id @default(cuid())
+  companyId           String
+  factoryProductionId String
+  materialId          String
+  quantity            Decimal  @db.Decimal(18, 3)
+  transactionId       String
+  stockBatchId        String
+  createdAt           DateTime @default(now())
+
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  factoryProduction FactoryProduction @relation(fields: [companyId, factoryProductionId], references: [companyId, id], onDelete: Cascade)
+  material          Material          @relation(fields: [companyId, materialId], references: [companyId, id], onDelete: Restrict)
+  transaction       Transaction       @relation(fields: [companyId, transactionId], references: [companyId, id], onDelete: Restrict)
+  stockBatch        StockBatch        @relation(fields: [stockBatchId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@unique([transactionId])
+  @@unique([stockBatchId])
+  @@index([companyId, factoryProductionId])
+  @@index([companyId, materialId])
 }
 
 model JobCostingSnapshot {

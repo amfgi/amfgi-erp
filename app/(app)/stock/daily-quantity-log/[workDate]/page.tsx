@@ -14,6 +14,7 @@ import Spinner from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
 import {
   useAddJobItemProgressEntryMutation,
+  useAddJobTrackingItemMutation,
   useAddQuantityLogAdhocJobMutation,
   useFinalizeQuantityLogDayMutation,
   useGetDailyQuantityLogQuery,
@@ -360,7 +361,7 @@ export default function DailyQuantityLogEntryPage() {
       const errBody = (error as { data?: { error?: unknown } }).data;
       if (errBody && typeof errBody.error === 'string') return errBody.error;
     }
-    return 'Failed to load production log';
+    return 'Failed to load job tracking';
   }, [error]);
 
   const jobsAlreadyOnSheet = useMemo(() => {
@@ -371,7 +372,7 @@ export default function DailyQuantityLogEntryPage() {
     return set;
   }, [assignments]);
 
-  /** Server-side eligibility (jobs with ≥1 trackable budget item) minus jobs already on this day. */
+  /** Active and on-hold jobs, minus jobs already on this day. */
   const adhocJobOptions = useMemo(() => {
     const list = data?.eligibleJobs ?? [];
     return list
@@ -660,7 +661,7 @@ export default function DailyQuantityLogEntryPage() {
           href="/stock/daily-quantity-log"
           className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-8 px-2')}
         >
-          Production log
+          Job tracking
         </Link>
         <span aria-hidden>/</span>
         <span className="text-foreground">{workDateParam}</span>
@@ -669,7 +670,7 @@ export default function DailyQuantityLogEntryPage() {
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 max-w-3xl space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Production log entry</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Job tracking entry</p>
             {isFinalized ? (
               <Badge label="Finalized" variant="green" />
             ) : (
@@ -756,8 +757,7 @@ export default function DailyQuantityLogEntryPage() {
               </>
             ) : (
               <>
-                Search by job number, customer, or site. Jobs already on this day are hidden. If a job has no trackable budget lines yet,
-                open <strong className="font-medium text-foreground">Job costing</strong> from that job and add items with quantity tracking.
+                Search by job number, customer, or site. Jobs already on this day are hidden. If the job has no budget yet, add it here and create an unbudgeted tracking item on the card.
               </>
             )}
           </p>
@@ -858,7 +858,7 @@ export default function DailyQuantityLogEntryPage() {
                 {isFinalizingEmpty ? 'Finalizing…' : 'Mark day as finalized with no entries'}
               </Button>
               <p className="max-w-md text-xs text-muted-foreground">
-                Closes this date in the production log so it stops appearing as pending. You can still re-open the day later if entries become
+                Closes this date in job tracking so it stops appearing as pending. You can still re-open the day later if entries become
                 possible (it will move to edit-only mode).
               </p>
             </div>
@@ -986,6 +986,92 @@ function QueueFilter({
   );
 }
 
+function UnbudgetedTrackingForm({
+  jobId,
+  workDateYmd,
+  intro,
+}: {
+  jobId: string;
+  workDateYmd: string;
+  intro: string;
+}) {
+  const [name, setName] = useState('');
+  const [unit, setUnit] = useState('');
+  const [target, setTarget] = useState('');
+  const [addTrackingItem, { isLoading }] = useAddJobTrackingItemMutation();
+
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error('Enter a name for the item');
+      return;
+    }
+    const targetValue = target.trim() ? Number(target) : 0;
+    if (target.trim() && (!Number.isFinite(targetValue) || targetValue < 0)) {
+      toast.error('Target must be a number zero or greater. Leave it blank for open-ended quantity.');
+      return;
+    }
+    try {
+      await addTrackingItem({
+        jobId,
+        name: trimmed,
+        unit: unit.trim() || null,
+        targetValue,
+        workDate: workDateYmd,
+      }).unwrap();
+      toast.success('Tracking item added');
+      setName('');
+      setUnit('');
+      setTarget('');
+    } catch (err: unknown) {
+      const message =
+        typeof err === 'object' && err !== null && 'data' in err && typeof (err as { data?: { error?: unknown } }).data?.error === 'string'
+          ? (err as { data: { error: string } }).data.error
+          : 'Failed to add tracking item';
+      toast.error(message);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p>{intro}</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_7rem_8rem_auto] sm:items-end">
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Item</span>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            placeholder="Liner panel, grating, …"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Unit</span>
+          <input
+            value={unit}
+            onChange={(event) => setUnit(event.target.value)}
+            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            placeholder="m²"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Target</span>
+          <input
+            inputMode="decimal"
+            value={target}
+            onChange={(event) => setTarget(event.target.value)}
+            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            placeholder="Open"
+          />
+        </label>
+        <Button type="button" size="sm" onClick={() => void submit()} disabled={isLoading || !name.trim()}>
+          {isLoading ? 'Adding…' : 'Add item'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AssignmentCard({
   index,
   assignment,
@@ -1092,15 +1178,15 @@ function AssignmentCard({
 
       {assignment.items.length === 0 ? (
         <div className="space-y-3 px-5 py-8 text-sm text-slate-500 dark:text-slate-500">
-          <p>No tracking-enabled budget lines on this job yet. Add budget items with quantity tracking on the job costing screen, then return here.</p>
-          {job ? (
-            <Link
-              href={`/jobs/${job.id}/cost-engine`}
-              className="inline-flex text-sm font-semibold text-emerald-700 underline-offset-4 hover:underline dark:text-emerald-300"
-            >
-              Open job costing →
-            </Link>
-          ) : null}
+          {job && canAddNew ? (
+            <UnbudgetedTrackingForm
+              jobId={job.id}
+              workDateYmd={workDateYmd}
+              intro="No budget is required. Name what was produced, then enter the quantity on the new line."
+            />
+          ) : (
+            <p>No tracking items on this job yet.</p>
+          )}
         </div>
       ) : (
         <div className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -1118,6 +1204,15 @@ function AssignmentCard({
               onUpdateEditDraft={onUpdateEditDraft}
             />
           ))}
+          {job && canAddNew ? (
+            <div className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+              <UnbudgetedTrackingForm
+                jobId={job.id}
+                workDateYmd={workDateYmd}
+                intro="Add another item that does not have a budget yet."
+              />
+            </div>
+          ) : null}
         </div>
       )}
     </section>

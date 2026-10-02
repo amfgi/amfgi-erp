@@ -620,6 +620,19 @@ export const jobsApi = appApi.injectEndpoints({
       ],
     }),
 
+    addJobTrackingItem: builder.mutation<
+      { id: string; jobId: string; name: string; trackingEnabled: boolean },
+      { jobId: string; name: string; unit?: string | null; targetValue?: number | null; workDate?: string }
+    >({
+      query: ({ jobId, ...data }) => ({
+        url: `/jobs/${jobId}/tracking-items`,
+        method: 'POST',
+        body: data,
+      }),
+      transformResponse: (r: { data: { id: string; jobId: string; name: string; trackingEnabled: boolean } }) => r.data,
+      invalidatesTags: () => [{ type: 'JobDailyQuantityLog', id: 'LIST' }],
+    }),
+
     updateJobItem: builder.mutation<JobItem, { jobId: string; itemId: string; data: Partial<JobItem> }>({
       query: ({ jobId, itemId, data }) => ({
         url: `/jobs/${jobId}/items/${itemId}`,
@@ -1133,6 +1146,7 @@ export const {
   useGetJobMaterialsQuery,
   useGetJobItemsQuery,
   useAddJobItemMutation,
+  useAddJobTrackingItemMutation,
   useUpdateJobItemMutation,
   useDeleteJobItemMutation,
   useGetJobItemProgressEntriesQuery,

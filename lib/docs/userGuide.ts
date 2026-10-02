@@ -439,11 +439,11 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
       },
       {
         id: 'production-log',
-        title: 'Production log',
+        title: 'Job tracking',
         blocks: [
           {
             type: 'paragraph',
-            text: 'Routes: Stock → Production log (/stock/daily-quantity-log) and day editor (/stock/daily-quantity-log/[workDate]). Records daily output quantities per scheduled job — separate from material dispatch. Used for progress tracking and production reporting tied to the HR/work schedule.',
+            text: 'Routes: Stock → Job tracking (/stock/daily-quantity-log) and day editor (/stock/daily-quantity-log/[workDate]). Records daily output quantities for a customer job. A budget is optional: add an unbudgeted tracking item on the day when the job has no formula or material budget yet. This does not receive warehouse stock.',
           },
           {
             type: 'steps',
@@ -454,19 +454,19 @@ export const USER_GUIDE_PAGES: UserGuidePage[] = [
               },
               {
                 title: 'Day editor',
-                body: 'Jobs appear from schedule assignments for that work date. Enter quantity per job line (area, length, units produced, etc. per schedule definition). Save drafts while editing.',
+                body: 'Jobs appear from schedule assignments for that work date. Enter quantity per tracking line. If the job has no budget, add an unbudgeted item (name, unit, optional target) and then enter the quantity.',
               },
               {
                 title: 'Finalize',
-                body: 'Finalize locks the day — requires stock.production_log.edit. Finalized days cannot be casually edited; used as official production record.',
+                body: 'Finalize locks the day — requires stock.production_log.edit. Finalized days cannot be casually edited; used as the official job quantity record.',
               },
             ],
           },
           {
             type: 'callout',
             variant: 'note',
-            title: 'Schedule dependency',
-            body: 'If no schedule exists for a date, create schedule planning first under Schedule & Attendance. Production log reads assignments from that schedule.',
+            title: 'Factory stock is separate',
+            body: 'Material made for later jobs is received on Stock → Factory production. That increases warehouse stock and is not posted to a customer job. Dispatch it when a job uses it.',
           },
         ],
       },

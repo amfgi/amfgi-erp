@@ -21,6 +21,7 @@ const ROUTE_PERMISSIONS: RoutePermissionRule[] = [
   { prefix: '/reports', perm: 'report.view' },
   { prefix: '/stock/job-budget', perm: P.STOCK_JOB_BUDGET_VIEW },
   { prefix: '/stock/daily-quantity-log', perm: P.STOCK_PRODUCTION_LOG_VIEW },
+  { prefix: '/stock/factory-production', perm: 'transaction.stock_in' },
   { prefix: '/stock/warehouse-transfers', perm: P.STOCK_WAREHOUSE_TRANSFER_VIEW },
   { prefix: '/stock/count-session', perm: P.STOCK_COUNT_SESSION_VIEW },
   { prefix: '/stock/issue-reconcile', perm: 'transaction.reconcile' },

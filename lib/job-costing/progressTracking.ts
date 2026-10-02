@@ -41,7 +41,7 @@ export function parseTrackableItems(value: unknown): TrackableItem[] {
     const id = String(item.id ?? '').trim();
     const label = String(item.label ?? '').trim();
     const targetValue = Number(item.targetValue ?? 0);
-    if (!id || !label || !Number.isFinite(targetValue) || targetValue <= 0) return [];
+    if (!id || !label || !Number.isFinite(targetValue) || targetValue < 0) return [];
     return [{
       id,
       label,
@@ -75,7 +75,7 @@ export function calculateTrackedProgress(
     );
     const trackedDayCount = uniqueEntryDates.length;
     const averagePerDay = trackedDayCount > 0 ? completedValue / trackedDayCount : 0;
-    const remainingValue = Math.max(tracker.targetValue - completedValue, 0);
+    const remainingValue = tracker.targetValue > 0 ? Math.max(tracker.targetValue - completedValue, 0) : 0;
     const percentComplete = tracker.targetValue > 0
       ? Math.max(0, Math.min(100, (completedValue / tracker.targetValue) * 100))
       : 0;

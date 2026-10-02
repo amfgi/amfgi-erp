@@ -92,8 +92,13 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			},
 			{
 				href: '/stock/daily-quantity-log',
-				label: 'Production Log',
+				label: 'Job tracking',
 				perm: P.STOCK_PRODUCTION_LOG_VIEW,
+			},
+			{
+				href: '/stock/factory-production',
+				label: 'Factory production',
+				perm: 'transaction.stock_in',
 			},
 			{
 				href: '/stock/job-budget',

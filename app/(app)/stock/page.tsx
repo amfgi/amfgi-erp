@@ -184,6 +184,7 @@ export default function StockPage() {
     const actions: { href: string; label: string }[] = [];
     if (canSeeReceipts) {
       actions.push({ href: '/stock/goods-receipt/receive', label: 'New receipt' });
+      actions.push({ href: '/stock/factory-production/new', label: 'Factory production' });
     }
     if (canSeeDispatch) {
       actions.push({ href: '/stock/dispatch/entry', label: 'New dispatch' });
@@ -262,17 +263,30 @@ export default function StockPage() {
     {
       id: 'production',
       title: 'Production & planning',
-      description: 'Daily production progress and job material budgets.',
+      description: 'Job quantity tracking, factory stock production, and job material budgets.',
       links: [
         ...buildHubLinks(
           canSeeProductionLog
             ? [
                 {
                   href: '/stock/daily-quantity-log',
-                  title: 'Production log',
-                  description: 'Record daily production quantities from the work schedule for tracked jobs.',
-                  badge: 'Production',
+                  title: 'Job tracking',
+                  description: 'Record daily quantities against a job, including work that does not have a budget yet.',
+                  badge: 'Jobs',
                   tone: 'sky',
+                },
+              ]
+            : [],
+        ),
+        ...buildHubLinks(
+          canSeeReceipts
+            ? [
+                {
+                  href: '/stock/factory-production',
+                  title: 'Factory production',
+                  description: 'Receive reusable material made for later jobs into warehouse stock.',
+                  badge: 'Stock',
+                  tone: 'amber',
                 },
               ]
             : [],

@@ -80,6 +80,12 @@ export {
 } from './api/endpoints/stockBatches';
 
 export {
+  useGetFactoryProductionsQuery,
+  usePostFactoryProductionMutation,
+  type FactoryProductionEntry,
+} from './api/endpoints/factoryProduction';
+
+export {
   useGetJobsQuery,
   useGetJobsPageQuery,
   useLazyGetJobsForExportQuery,
@@ -88,6 +94,7 @@ export {
   useGetJobMaterialsQuery,
   useGetJobItemsQuery,
   useAddJobItemMutation,
+  useAddJobTrackingItemMutation,
   useUpdateJobItemMutation,
   useDeleteJobItemMutation,
   useGetJobItemProgressEntriesQuery,

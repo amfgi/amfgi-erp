@@ -315,7 +315,7 @@ export const PERMISSION_GROUPS: Array<{
     ],
   },
   {
-    group: 'Stock — Production log',
+    group: 'Stock — Job tracking',
     perms: [
       { key: P.STOCK_PRODUCTION_LOG_VIEW, label: 'View' },
       { key: P.STOCK_PRODUCTION_LOG_EDIT, label: 'Edit / finalize' },

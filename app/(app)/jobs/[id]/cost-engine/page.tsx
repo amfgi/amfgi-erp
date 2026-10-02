@@ -49,6 +49,7 @@ import {
   validateManualBudgetForSave,
   type JobItemManualBudget,
 } from '@/lib/job-costing/manualBudget';
+import { isTrackingOnlySpecifications } from '@/lib/job-costing/trackingOnlyBudget';
 import type {
   FormulaLibrary,
   Job,
@@ -2610,7 +2611,9 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
               <div>
                 <p className="font-semibold text-foreground">{item.name}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {item.formulaLibrary?.name ?? 'Manual budget'} {item.description ? `- ${item.description}` : ''}
+                  {item.formulaLibrary?.name ??
+                    (isTrackingOnlySpecifications(item.specifications) ? 'Unbudgeted tracking' : 'Manual budget')}{' '}
+                  {item.description ? `- ${item.description}` : ''}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                   {(item.trackingItems?.length ?? 0) > 0 ? (

@@ -1,5 +1,6 @@
 import { buildManualJobItemEstimate } from '@/lib/job-costing/manualJobItemEstimate';
 import { buildManualBudgetSpecifications } from '@/lib/job-costing/manualBudget';
+import { buildTrackingOnlySpecifications } from '@/lib/job-costing/trackingOnlyBudget';
 import type { MaterialPricingSnapshot } from '@/lib/job-costing/types';
 
 function estimateMaterialQuantity(specifications: ReturnType<typeof buildManualBudgetSpecifications>) {
@@ -26,6 +27,7 @@ function estimateMaterialQuantity(specifications: ReturnType<typeof buildManualB
     materialQty: result.materials[0]?.estimatedBaseQuantity ?? 0,
     laborDays: result.labor[0]?.estimatedDays ?? 0,
     quotedCost: result.totalQuotedMaterialCost,
+    formulaLibraryName: result.formulaLibraryName,
   };
 }
 
@@ -47,5 +49,29 @@ describe('manual budget items', () => {
     });
     const result = estimateMaterialQuantity(specs);
     expect(result.laborDays).toBe(1);
+  });
+
+  it('treats tracking-only lines as unbudgeted quantities', () => {
+    const result = buildManualJobItemEstimate({
+      postingDate: new Date('2026-01-01T00:00:00.000Z'),
+      nonWorkingWeekdays: [],
+      pricingMode: 'CURRENT',
+      jobItem: {
+        id: 'item-2',
+        name: 'Panel',
+        specifications: buildTrackingOnlySpecifications(),
+        assignedEmployeeIds: [],
+        trackingEnabled: true,
+        trackingItems: [{ id: 't1', label: 'Panel', unit: 'm2', targetValue: 0 }],
+      },
+      materialCatalog: new Map(),
+      materialPricing: new Map(),
+      materialFactorToBase: () => 1,
+      actualConsumption: new Map(),
+      teamProfiles: [],
+    });
+    expect(result.formulaLibraryName).toBe('Unbudgeted tracking');
+    expect(result.totalQuotedMaterialCost).toBe(0);
+    expect(result.warnings.join(' ')).toContain('Unbudgeted tracking');
   });
 });

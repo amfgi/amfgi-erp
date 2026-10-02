@@ -129,7 +129,7 @@ export default function DailyQuantityLogLandingPage() {
     return (
       <div className="flex w-full min-w-0 flex-col gap-5">
         <header className="border-b border-border pb-4">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Production log</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Job tracking</h1>
         </header>
         <Alert>
           <AlertDescription>You do not have permission to view jobs.</AlertDescription>
@@ -143,9 +143,9 @@ export default function DailyQuantityLogLandingPage() {
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stock workspace</p>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Production log</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Job tracking</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            One <strong className="font-medium text-foreground">production log entry</strong> per calendar day. Open a{' '}
+            One <strong className="font-medium text-foreground">job tracking entry</strong> per calendar day. Open a{' '}
             <strong className="font-medium text-foreground">Pending</strong> day to record quantities, or a{' '}
             <strong className="font-medium text-foreground">Finalized</strong> day to adjust saved values. Finalized days
             cannot accept new progress lines.
@@ -206,7 +206,7 @@ export default function DailyQuantityLogLandingPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {canEdit
               ? 'Use “Create new” above to open a date and start logging.'
-              : 'Ask an admin to schedule work or finalize a production log entry.'}
+              : 'Ask an admin to schedule work or finalize a job tracking entry.'}
           </p>
         </div>
       ) : (
@@ -285,7 +285,7 @@ export default function DailyQuantityLogLandingPage() {
       <Modal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        title="Create production log entry"
+        title="Create job tracking entry"
         size="sm"
         actions={
           <>
@@ -300,7 +300,7 @@ export default function DailyQuantityLogLandingPage() {
       >
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Pick a calendar date. We&apos;ll open the production log entry where you can add jobs and quantities. If the
+            Pick a calendar date. We&apos;ll open the job tracking entry where you can add jobs and quantities. If the
             date is already finalized, you&apos;ll land in edit mode.
           </p>
           <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">

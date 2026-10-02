@@ -15,6 +15,7 @@ export const appApi = createApi({
     'DispatchEntry',
     'DispatchEntryRevision',
     'ReceiptEntry',
+    'FactoryProduction',
     'StockValuation',
     'StockIntegrity',
     'Consumption',

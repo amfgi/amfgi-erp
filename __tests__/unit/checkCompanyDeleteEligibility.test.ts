@@ -35,6 +35,7 @@ function makePrisma(counts: Partial<Record<string, number>>) {
     quantityLogAdhocJob: { count: count('quantityLogAdhocJob') },
     apiCredential: { count: count('apiCredential') },
     productionStockPosting: { count: count('productionStockPosting') },
+    factoryProduction: { count: count('factoryProduction') },
   };
 }
 

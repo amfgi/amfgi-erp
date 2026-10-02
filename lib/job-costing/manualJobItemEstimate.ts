@@ -4,6 +4,7 @@ import {
   manualLaborEstimatedDays,
   parseManualBudgetSpecifications,
 } from '@/lib/job-costing/manualBudget';
+import { isTrackingOnlySpecifications } from '@/lib/job-costing/trackingOnlyBudget';
 import type {
   EmployeeExpertiseProfile,
   JobItemCostEstimate,
@@ -253,7 +254,10 @@ export function buildManualJobItemEstimate({
     }
   }
 
-  if (manualBudget.materials.length === 0 && manualBudget.labor.length === 0) {
+  const trackingOnly = isTrackingOnlySpecifications(jobItem.specifications);
+  if (trackingOnly) {
+    warnings.push('Unbudgeted tracking. No planned material or labor cost yet.');
+  } else if (manualBudget.materials.length === 0 && manualBudget.labor.length === 0) {
     warnings.push('Manual budget has no material or labor lines.');
   }
 
@@ -261,8 +265,8 @@ export function buildManualJobItemEstimate({
     itemId: jobItem.id,
     itemName: jobItem.name,
     formulaLibraryId: null,
-    formulaLibraryName: 'Manual budget',
-    fabricationType: 'Manual',
+    formulaLibraryName: trackingOnly ? 'Unbudgeted tracking' : 'Manual budget',
+    fabricationType: trackingOnly ? 'Tracking' : 'Manual',
     materials,
     labor,
     totalQuotedMaterialCost,

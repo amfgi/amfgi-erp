@@ -406,7 +406,9 @@ export async function buildDailyQuantityLogPayload(
       if ((entriesByItemId.get(item.id) ?? []).length > 0) return true;
       return !isItemFullyDone(item);
     });
-    if (items.length === 0) continue;
+    /** Fully logged budget lines stay hidden on scheduled days. An ad-hoc job stays visible so an unbudgeted item can be added. */
+    const adhocOnly = rows.every((row) => row.isAdhoc);
+    if (allItems.length > 0 && items.length === 0 && !adhocOnly) continue;
 
     const directRow = rows.find((r) => r.jobId === budgetJobId);
     const displayJob = directRow?.job ?? budgetJobInfoById.get(budgetJobId) ?? null;
@@ -498,76 +500,32 @@ export async function buildDailyQuantityLogPayload(
   };
 }
 
-/** Returns active/on-hold jobs (in the company) that have at least one tracking-enabled
- *  budget item with remaining quantity to log, resolved through the parent contract for variations. */
+/** Active and on-hold jobs that can be added to a day, including jobs with no budget yet. */
 async function loadEligibleJobs(
   db: PrismaClient,
   companyId: string
 ): Promise<DailyQuantityLogEligibleJob[]> {
-  const [allJobs, items] = await Promise.all([
-    db.job.findMany({
-      where: { companyId, status: { in: ['ACTIVE', 'ON_HOLD'] } },
-      orderBy: { jobNumber: 'asc' },
-      select: {
-        id: true,
-        jobNumber: true,
-        parentJobId: true,
-        site: true,
-        projectName: true,
-        status: true,
-        customer: { select: { name: true } },
-      },
-    }),
-    db.jobItem.findMany({
-      where: { companyId, isActive: true, trackingEnabled: true },
-      select: { id: true, jobId: true, trackingItems: true },
-    }),
-  ]);
+  const allJobs = await db.job.findMany({
+    where: { companyId, status: { in: ['ACTIVE', 'ON_HOLD'] } },
+    orderBy: { jobNumber: 'asc' },
+    select: {
+      id: true,
+      jobNumber: true,
+      parentJobId: true,
+      site: true,
+      projectName: true,
+      status: true,
+      customer: { select: { name: true } },
+    },
+  });
 
-  const itemIds = items.map((i) => i.id);
-  const cumulativeRows = itemIds.length
-    ? await db.jobItemProgressEntry.groupBy({
-        by: ['jobItemId', 'trackerId'],
-        where: { companyId, jobItemId: { in: itemIds } },
-        _sum: { quantity: true },
-      })
-    : [];
-
-  const cumByItemTracker = new Map<string, number>();
-  for (const row of cumulativeRows) {
-    if (!row.trackerId) continue;
-    cumByItemTracker.set(`${row.jobItemId}::${row.trackerId}`, decimalToNumberOrZero(row._sum.quantity ?? 0));
-  }
-
-  /** Budget jobs that still have at least one tracker with remaining qty. */
-  const incompleteBudgetJobIds = new Set<string>();
-  for (const item of items) {
-    const trackers = Array.isArray(item.trackingItems) ? item.trackingItems : [];
-    if (trackers.length === 0) continue;
-    for (const tracker of trackers) {
-      const target = Number((tracker as { targetValue?: unknown }).targetValue || 0);
-      const trackerId = String((tracker as { id?: unknown }).id ?? '');
-      if (target <= 0) {
-        incompleteBudgetJobIds.add(item.jobId);
-        break;
-      }
-      const cum = cumByItemTracker.get(`${item.id}::${trackerId}`) ?? 0;
-      if (cum < target) {
-        incompleteBudgetJobIds.add(item.jobId);
-        break;
-      }
-    }
-  }
-
-  return allJobs
-    .filter((job) => incompleteBudgetJobIds.has(job.parentJobId ?? job.id))
-    .map((job) => ({
-      id: job.id,
-      jobNumber: job.jobNumber,
-      parentJobId: job.parentJobId,
-      customerName: job.customer?.name ?? null,
-      site: job.site,
-      projectName: job.projectName,
-      status: job.status,
-    }));
+  return allJobs.map((job) => ({
+    id: job.id,
+    jobNumber: job.jobNumber,
+    parentJobId: job.parentJobId,
+    customerName: job.customer?.name ?? null,
+    site: job.site,
+    projectName: job.projectName,
+    status: job.status,
+  }));
 }

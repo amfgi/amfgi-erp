@@ -70,6 +70,7 @@ type PrismaLike = Pick<
   | 'quantityLogAdhocJob'
   | 'apiCredential'
   | 'productionStockPosting'
+  | 'factoryProduction'
 >;
 
 function pushLink(
@@ -148,6 +149,7 @@ export async function checkCompanyDeleteEligibility(
     quantityLogAdhocJobCount,
     apiCredentialCount,
     productionPostingCount,
+    factoryProductionCount,
   ] = await Promise.all([
     prisma.customer.count({ where: { companyId } }),
     prisma.supplier.count({ where: { companyId } }),
@@ -177,6 +179,7 @@ export async function checkCompanyDeleteEligibility(
     prisma.quantityLogAdhocJob.count({ where: { companyId } }),
     prisma.apiCredential.count({ where: { companyId } }),
     prisma.productionStockPosting.count({ where: { companyId } }),
+    prisma.factoryProduction.count({ where: { companyId } }),
   ]);
 
   const links: CompanyDeleteLinkSummary[] = [];
@@ -207,6 +210,7 @@ export async function checkCompanyDeleteEligibility(
   pushLink(links, 'masterData', 'Quantity log ad-hoc job', quantityLogAdhocJobCount);
   pushLink(links, 'integrations', 'API credential', apiCredentialCount);
   pushLink(links, 'stockBatches', 'Production stock posting', productionPostingCount);
+  pushLink(links, 'stockBatches', 'Factory production', factoryProductionCount);
 
   const totalLinkedCount = links.reduce((sum, link) => sum + link.count, 0);
 
