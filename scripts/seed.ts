@@ -2348,9 +2348,11 @@ async function seed() {
   const managerRole = await seedDemoCustomRole('manager', 'Manager', 'manager');
   const skRole = await seedDemoCustomRole('store-keeper', 'Store Keeper', 'store_keeper');
   const hrRole = await seedDemoCustomRole('hr', 'HR', 'hr');
+  const salesmanRole = await seedDemoCustomRole('salesman', 'Salesman', 'salesman');
   console.log(`  ✓ ${managerRole.name}`);
   console.log(`  ✓ ${skRole.name}`);
   console.log(`  ✓ ${hrRole.name}`);
+  console.log(`  ✓ ${salesmanRole.name}`);
 
   // ── Users ───────────────────────────────────────────────────────────────────
   console.log('\nCreating users…');

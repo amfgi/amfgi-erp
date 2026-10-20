@@ -6,8 +6,34 @@ export type InputPropsWithRef = InputHTMLAttributes<HTMLInputElement> & {
 
 const blockedInputs = new WeakSet<HTMLInputElement>();
 
-function isNumberInput(element: EventTarget | null): element is HTMLInputElement {
-  return element instanceof HTMLInputElement && element.type === 'number';
+const SPIN_INPUT_TYPES = new Set(['number', 'date', 'time', 'datetime-local', 'month', 'week']);
+
+function isSpinInput(element: EventTarget | null): element is HTMLInputElement {
+  return element instanceof HTMLInputElement && SPIN_INPUT_TYPES.has(element.type);
+}
+
+function isFormField(element: EventTarget | null): element is HTMLElement {
+  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+}
+
+function scrollableAncestor(start: Element | null): HTMLElement | null {
+  let node = start instanceof HTMLElement ? start.parentElement : null;
+  while (node) {
+    const style = getComputedStyle(node);
+    const canScrollY =
+      (style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+    const canScrollX =
+      (style.overflowX === 'auto' || style.overflowX === 'scroll') && node.scrollWidth > node.clientWidth + 1;
+    if (canScrollY || canScrollX) return node;
+    node = node.parentElement;
+  }
+  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : null;
+}
+
+function wheelDistance(event: WheelEvent, scroller: HTMLElement) {
+  if (event.deltaMode === 1) return { x: event.deltaX * 16, y: event.deltaY * 16 };
+  if (event.deltaMode === 2) return { x: event.deltaX * scroller.clientWidth, y: event.deltaY * scroller.clientHeight };
+  return { x: event.deltaX, y: event.deltaY };
 }
 
 function shouldBlockSpinKey(key: string) {
@@ -33,16 +59,38 @@ export function installGlobalNumberInputSpinBlock() {
   if (typeof document === 'undefined') return () => {};
 
   const onWheel = (event: WheelEvent) => {
-    if (isNumberInput(document.activeElement)) {
-      event.preventDefault();
+    const active = document.activeElement;
+    if (!isFormField(active) || !event.cancelable) return;
+    const origin = event.target instanceof Element ? event.target : active;
+    if (
+      active instanceof HTMLTextAreaElement &&
+      origin === active &&
+      active.scrollHeight > active.clientHeight + 1
+    ) {
+      return;
     }
+    const hovered = scrollableAncestor(origin);
+    const page = active.closest('main');
+    const pageScroller = page instanceof HTMLElement && page.scrollHeight > page.clientHeight + 1 ? page : null;
+    if (hovered && hovered !== pageScroller && hovered.contains(origin) && origin !== active) {
+      if (!isSpinInput(active)) return;
+      event.preventDefault();
+      const distance = wheelDistance(event, hovered);
+      hovered.scrollBy({ top: distance.y, left: distance.x });
+      return;
+    }
+    event.preventDefault();
+    const scroller = pageScroller ?? hovered;
+    if (!scroller) return;
+    const distance = wheelDistance(event, scroller);
+    scroller.scrollBy({ top: distance.y, left: distance.x });
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (!shouldBlockSpinKey(event.key)) return;
     const active = document.activeElement;
     const target = event.target;
-    if (isNumberInput(active) || isNumberInput(target)) {
+    if (isSpinInput(active) || isSpinInput(target)) {
       event.preventDefault();
     }
   };

@@ -106,6 +106,12 @@ model Company {
   dispatchEntryRevisions    DispatchEntryRevision[]
   deliveryNotes             DeliveryNote[]
   deliveryNoteMaterialLines DeliveryNoteMaterialLine[]
+  salesQueries              SalesQuery[]
+  salesQuotationOptions     SalesQuotationOption[]
+  salesQuotationLines       SalesQuotationLine[]
+  salesQuotationLineFields  SalesQuotationLineField[]
+  salesQuotationRevisions   SalesQuotationRevision[]
+  salesAttachments          SalesAttachment[]
 }
 
 model User {
@@ -142,6 +148,9 @@ model User {
   passwordResetTokens         PasswordResetToken[]
   reviewedLeaveRequests       LeaveRequest[]         @relation("LeaveRequestReviewedBy")
   scheduleEditorPresences     ScheduleEditorPresence[]
+  salesQueriesAsSalesman      SalesQuery[]                 @relation("SalesQuerySalesman")
+  salesQueriesCreated         SalesQuery[]                 @relation("SalesQueryCreatedBy")
+  salesAttachmentsUploaded    SalesAttachment[]            @relation("SalesAttachmentUploadedBy")
 
   @@index([activeCompanyId])
 }
@@ -810,6 +819,7 @@ model Job {
   dispatchEntryRevisions   DispatchEntryRevision[]
   deliveryNotes            DeliveryNote[]
   referenceDeliveryNotes   DeliveryNote[] @relation("DeliveryNoteReferenceJob")
+  salesQueries             SalesQuery[]
 
   @@unique([companyId, id])
   @@unique([companyId, jobNumber])
@@ -1035,6 +1045,7 @@ model Customer {
   company               Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   contacts              CustomerContact[]
   jobs                  Job[]
+  salesQueries          SalesQuery[]
 
   @@unique([companyId, id])
   @@unique([companyId, externalPartyId])
@@ -1061,6 +1072,172 @@ model CustomerContact {
 
   @@index([companyId, customerId, sortOrder])
   @@index([companyId, externalContactId])
+}
+
+enum SalesStage {
+  QUERY
+  QUOTATION
+  PURCHASE_ORDER
+}
+
+enum SalesClosure {
+  OPEN
+  LOST
+  CANCELLED
+  REJECTED
+}
+
+enum SalesQuotationMode {
+  SINGLE
+  MULTIPLE
+}
+
+enum SalesAttachmentKind {
+  CLIENT
+  PO
+}
+
+model SalesQuery {
+  id                 String             @id @default(cuid())
+  companyId          String
+  queryNumber        String             @db.VarChar(90)
+  queryNumberKey     String             @db.VarChar(90)
+  quotationNumber    String?            @db.VarChar(100)
+  quotationNumberKey String?            @db.VarChar(100)
+  customerId         String
+  customerName       String             @db.VarChar(100)
+  projectLocation    String             @db.VarChar(200)
+  projectDescription String             @db.VarChar(1000)
+  projectScope       String             @db.VarChar(120)
+  salesmanId         String
+  extraNotes         String?            @db.Text
+  stage              SalesStage         @default(QUERY)
+  closure            SalesClosure       @default(OPEN)
+  closureReason      String?            @db.Text
+  closedAt           DateTime?
+  quotationRevision  Int                @default(0)
+  quotationIssuedAt  DateTime?
+  startDate          DateTime?          @db.Date
+  quotationMode      SalesQuotationMode @default(SINGLE)
+  acceptedOptionId   String?            @unique
+  poNumber           String?            @db.VarChar(100)
+  poNumberKey        String?            @db.VarChar(100)
+  poDate             DateTime?          @db.Date
+  poValue            Decimal?           @db.Decimal(18, 2)
+  budgetDetails       String?            @db.Text
+  purchaseOrderNotes  String?            @db.Text
+  jobId              String?
+  createdById        String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company        Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer       Customer                @relation(fields: [companyId, customerId], references: [companyId, id])
+  salesman       User                    @relation("SalesQuerySalesman", fields: [salesmanId], references: [id])
+  createdBy      User                    @relation("SalesQueryCreatedBy", fields: [createdById], references: [id])
+  job            Job?                    @relation(fields: [companyId, jobId], references: [companyId, id])
+  options        SalesQuotationOption[]  @relation("SalesQueryOptions")
+  acceptedOption SalesQuotationOption?   @relation("SalesAcceptedOption", fields: [acceptedOptionId], references: [id])
+  revisions      SalesQuotationRevision[]
+  attachments    SalesAttachment[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, queryNumberKey])
+  @@unique([companyId, quotationNumberKey])
+  @@unique([companyId, poNumberKey])
+  @@unique([companyId, jobId])
+  @@index([companyId, stage, closure])
+  @@index([companyId, customerId])
+  @@index([companyId, salesmanId])
+}
+
+model SalesQuotationOption {
+  id           String   @id @default(cuid())
+  companyId    String
+  salesQueryId String
+  name         String   @db.VarChar(120)
+  sortOrder    Int      @default(0)
+  isAccepted   Boolean  @default(false)
+  vatAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery       SalesQuery           @relation("SalesQueryOptions", fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  lines            SalesQuotationLine[]
+  acceptedForQuery SalesQuery?          @relation("SalesAcceptedOption")
+
+  @@unique([companyId, id])
+  @@index([companyId, salesQueryId, sortOrder])
+}
+
+model SalesQuotationLine {
+  id          String   @id @default(cuid())
+  companyId   String
+  optionId    String
+  item        String   @db.VarChar(200)
+  description String?  @db.Text
+  unitPrice   Decimal  @db.Decimal(18, 2)
+  quantity    Decimal  @db.Decimal(18, 3)
+  lineTotal   Decimal  @db.Decimal(18, 2)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  option  SalesQuotationOption      @relation(fields: [companyId, optionId], references: [companyId, id], onDelete: Cascade)
+  fields  SalesQuotationLineField[]
+
+  @@index([companyId, optionId, sortOrder])
+}
+
+model SalesQuotationLineField {
+  id        String @id @default(cuid())
+  companyId String
+  lineId    String
+  label     String @db.VarChar(80)
+  value     String @db.VarChar(500)
+  sortOrder Int    @default(0)
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  line    SalesQuotationLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, lineId, sortOrder])
+}
+
+model SalesQuotationRevision {
+  id               String   @id @default(cuid())
+  companyId        String
+  salesQueryId     String
+  revision         Int
+  quotationLabel   String   @db.VarChar(120)
+  snapshot         Json
+  createdAt        DateTime @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+
+  @@unique([salesQueryId, revision])
+  @@index([companyId, salesQueryId])
+}
+
+model SalesAttachment {
+  id           String              @id @default(cuid())
+  companyId    String
+  salesQueryId String
+  kind         SalesAttachmentKind
+  fileName     String
+  mimeType     String
+  driveFileId  String
+  viewerUrl    String              @db.Text
+  uploadedById String
+  createdAt    DateTime            @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  uploadedBy User       @relation("SalesAttachmentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([companyId, salesQueryId, kind])
 }
 
 model Supplier {

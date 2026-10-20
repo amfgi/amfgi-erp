@@ -26,6 +26,14 @@ export const P = {
   JOB_EDIT:   'job.edit',
   JOB_DELETE: 'job.delete',
 
+  // Sales
+  SALES_QUERY_VIEW: 'sales.query.view',
+  SALES_QUERY_MANAGE: 'sales.query.manage',
+  SALES_QUOTATION_VIEW: 'sales.quotation.view',
+  SALES_QUOTATION_MANAGE: 'sales.quotation.manage',
+  SALES_PURCHASE_ORDERS_VIEW: 'sales.purchaseOrders.view',
+  SALES_PURCHASE_ORDERS_MANAGE: 'sales.purchaseOrders.manage',
+
   // Customers
   CUSTOMER_VIEW:   'customer.view',
   CUSTOMER_CREATE: 'customer.create',
@@ -167,6 +175,12 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.STOCK_WAREHOUSE_TRANSFER_TRANSFER,
     P.STOCK_COUNT_SESSION_VIEW,
     P.STOCK_COUNT_SESSION_EDIT,
+    P.SALES_QUERY_VIEW,
+    P.SALES_QUERY_MANAGE,
+    P.SALES_QUOTATION_VIEW,
+    P.SALES_QUOTATION_MANAGE,
+    P.SALES_PURCHASE_ORDERS_VIEW,
+    P.SALES_PURCHASE_ORDERS_MANAGE,
   ],
 
   store_keeper: [
@@ -235,6 +249,18 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.HR_ACCOUNT_ACCESS_EDIT,
     P.HR_ACCOUNT_ACCESS_DELETE,
   ],
+
+  /** Sales pipeline through purchase orders. Job creation stays a separate permission. */
+  salesman: [
+    P.SALES_QUERY_VIEW,
+    P.SALES_QUERY_MANAGE,
+    P.SALES_QUOTATION_VIEW,
+    P.SALES_QUOTATION_MANAGE,
+    P.SALES_PURCHASE_ORDERS_VIEW,
+    P.SALES_PURCHASE_ORDERS_MANAGE,
+    P.CUSTOMER_VIEW,
+    P.CUSTOMER_CREATE,
+  ],
 };
 
 export const ROLE_PRESET_LABELS: Record<keyof typeof ROLE_PRESETS, string> = {
@@ -244,6 +270,7 @@ export const ROLE_PRESET_LABELS: Record<keyof typeof ROLE_PRESETS, string> = {
   receipt_correction_approver: 'Receipt correction approver',
   employee_self: 'Employee self-service',
   hr: 'HR',
+  salesman: 'Salesman',
 };
 
 // ── Permission group labels (for UI checkboxes) ───────────────────────────────
@@ -276,6 +303,17 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.CUSTOMER_CREATE, label: 'Create' },
       { key: P.CUSTOMER_EDIT,   label: 'Edit'   },
       { key: P.CUSTOMER_DELETE, label: 'Delete' },
+    ],
+  },
+  {
+    group: 'Sales',
+    perms: [
+      { key: P.SALES_QUERY_VIEW, label: 'Queries view' },
+      { key: P.SALES_QUERY_MANAGE, label: 'Queries manage' },
+      { key: P.SALES_QUOTATION_VIEW, label: 'Quotations view' },
+      { key: P.SALES_QUOTATION_MANAGE, label: 'Quotations manage' },
+      { key: P.SALES_PURCHASE_ORDERS_VIEW, label: 'Purchase orders view' },
+      { key: P.SALES_PURCHASE_ORDERS_MANAGE, label: 'Purchase orders manage' },
     ],
   },
   {
