@@ -164,6 +164,19 @@ export {
 } from './api/endpoints/customers';
 
 export {
+  useGetSalesQueriesQuery,
+  useGetSalesQueryQuery,
+  useGetSalesmenQuery,
+  useCreateSalesQueryMutation,
+  useUpdateSalesQueryMutation,
+  useForwardSalesToQuotationMutation,
+  useReviseSalesQuotationMutation,
+  useReceivePurchaseOrderMutation,
+  useSetSalesClosureMutation,
+  useCreateJobFromSalesMutation,
+} from './api/endpoints/sales';
+
+export {
   useGetStockValuationQuery,
   useGetConsumptionQuery,
   useGetJobProfitabilityQuery,
