@@ -4,7 +4,10 @@ import { prisma } from '@/lib/db/prisma';
 import { readCompanyOperationalSettings } from '@/lib/utils/companyOperationalSettings';
 import { parsePartyListDateInput } from '@/lib/partyListsApi';
 
-import type { SalesAccess } from './access';
+import {
+  optionsFromDocument,
+  readQuotationDocument,
+} from './quotationDocument';
 import { canSeeStage, hidesPurchaseOrders } from './access';
 import {
   type DocumentKind,
@@ -54,6 +57,7 @@ const recordInclude = {
   revisions: { orderBy: { revision: 'asc' as const } },
   attachments: { orderBy: { createdAt: 'asc' as const } },
   job: { select: { id: true, jobNumber: true } },
+  company: { select: { letterheadUrl: true, name: true } },
 } satisfies Prisma.SalesQueryInclude;
 
 type SalesRecord = Prisma.SalesQueryGetPayload<{ include: typeof recordInclude }>;
@@ -538,6 +542,7 @@ export async function updateSalesQuery(params: {
   purchaseOrderNotes?: string | null;
   poDate?: string | null;
   poValue?: number | null;
+  quotationDocument?: unknown;
 }) {
   const current = await loadRecord(params.companyId, params.id);
   assertVisible(params.access, current.stage);
@@ -571,14 +576,21 @@ export async function updateSalesQuery(params: {
     });
   } else if (current.stage === 'QUOTATION') {
     if (!params.access.quotationManage) throw new SalesError('Forbidden', 403);
-    const mode = params.quotationMode ?? current.quotationMode;
-    if (params.options) assertOptions(mode, params.options, false);
+    const savedDocument = params.quotationDocument == null ? null : readQuotationDocument(params.quotationDocument);
+    if (params.quotationDocument != null && !savedDocument) {
+      throw new SalesError('The quotation document is incomplete');
+    }
+    const documentOptions = savedDocument ? optionsFromDocument(savedDocument) : null;
+    const mode = documentOptions ? (documentOptions.length > 1 ? 'MULTIPLE' : 'SINGLE') : params.quotationMode ?? current.quotationMode;
+    const options = documentOptions ?? params.options ?? null;
+    if (options) assertOptions(mode, options, false);
     await prisma.$transaction(async (tx) => {
-      if (params.options) await replaceOptions(tx, current, params.options);
+      if (options) await replaceOptions(tx, current, options);
       await tx.salesQuery.update({
         where: { id: current.id },
         data: {
           quotationMode: mode,
+          ...(savedDocument ? { quotationDocument: savedDocument as Prisma.InputJsonValue } : {}),
           ...(params.startDate !== undefined
             ? { startDate: params.startDate ? new Date(`${params.startDate}T00:00:00Z`) : null }
             : {}),
@@ -666,6 +678,7 @@ function quotationSnapshot(record: SalesRecord) {
   return {
     quotationMode: record.quotationMode,
     startDate: record.startDate,
+    quotationDocument: record.quotationDocument ?? null,
     options: record.options.map((option) => ({
       name: option.name,
       vatAmount: Number(option.vatAmount),

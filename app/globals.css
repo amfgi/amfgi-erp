@@ -527,3 +527,108 @@ html.light .to-emerald-950\/40 {
   --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-from), var(--tw-gradient-to));
 }
+
+/* Quotation pad stays a white printed page in both themes.
+   html uses user-select:none. Any ancestor with that value makes Chrome
+   drop the caret after one letter in these fields, including section titles. */
+html.quotation-editing,
+html.quotation-editing body {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.quotation-pad,
+.quotation-pad * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.quotation-pad {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  color-scheme: light;
+}
+
+.quotation-pad input,
+.quotation-pad select,
+.quotation-pad textarea,
+.quotation-pad [contenteditable='true'] {
+  background-color: transparent !important;
+  color: #111111 !important;
+  border-color: transparent !important;
+}
+
+.quotation-pad .quotation-link {
+  color: #0563c1 !important;
+  text-decoration: underline;
+}
+
+.quotation-pad ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+
+.quotation-pad ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+
+.quotation-page {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.quotation-section-hot {
+  outline: 2px solid #7eb4ea;
+  outline-offset: 3px;
+  background: rgba(204, 228, 247, 0.55);
+}
+
+.quotation-bubble,
+.quotation-format {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+.quotation-format button,
+.quotation-format select {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border-color: #d4d4d4 !important;
+}
+
+.quotation-format button[aria-pressed='true'] {
+  background-color: #cce4f7 !important;
+  border-color: #7eb4ea !important;
+}
+
+.quotation-format button.quotation-swatch {
+  background-color: var(--swatch) !important;
+  border-color: #bfbfbf !important;
+}
+
+.quotation-capturing .quotation-edit-only,
+.quotation-capturing .quotation-bubble {
+  display: none !important;
+}
+
+.quotation-capturing .quotation-draft-box {
+  border-color: transparent !important;
+  padding: 0 !important;
+}
+
+@media print {
+  .quotation-edit-only,
+  .quotation-bubble {
+    display: none !important;
+  }
+
+  .quotation-pages {
+    gap: 0 !important;
+  }
+
+  .quotation-page {
+    box-shadow: none !important;
+    break-after: page;
+  }
+}

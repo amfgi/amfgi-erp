@@ -28,12 +28,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!folderId) throw new SalesError('Google Drive folder not configured');
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const kindFolder = kind === 'PO'
+      ? { key: `drive-folder:sales-query:${record.id}:po`, name: 'Purchase order' }
+      : { key: `drive-folder:sales-query:${record.id}:client`, name: 'Client files' };
     const uploaded = await uploadToDrive(buffer, file.name, file.type, {
       companyId: session.companyId,
       rootFolderId: folderId,
       folderPath: [
         { key: 'drive-folder:sales-root', name: 'Sales' },
         { key: `drive-folder:sales-query:${record.id}`, name: `${record.queryNumber} - ${record.id}` },
+        kindFolder,
       ],
     });
 

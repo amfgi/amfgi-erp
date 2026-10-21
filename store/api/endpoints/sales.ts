@@ -1,4 +1,5 @@
 import { appApi } from '../appApi';
+import type { QuotationDocument } from '@/lib/sales/quotationDocument';
 
 export type SalesStage = 'QUERY' | 'QUOTATION' | 'PURCHASE_ORDER';
 export type SalesClosure = 'OPEN' | 'LOST' | 'CANCELLED' | 'REJECTED';
@@ -24,6 +25,7 @@ export type SalesRevision = {
   snapshot: {
     quotationMode: 'SINGLE' | 'MULTIPLE';
     startDate: string | null;
+    quotationDocument?: QuotationDocument | null;
     options: Array<{
       name: string;
       vatAmount: number;
@@ -105,6 +107,8 @@ export type SalesRecord = {
   options: SalesOption[];
   attachments: SalesAttachment[];
   job: { id: string; jobNumber: string } | null;
+  quotationDocument: QuotationDocument | null;
+  company: { letterheadUrl: string | null; name: string } | null;
   forwarded?: boolean;
 };
 

@@ -50,6 +50,7 @@ export const updateSalesSchema = z.object({
   purchaseOrderNotes: z.string().max(8000).optional().nullable(),
   poDate: z.string().optional().nullable(),
   poValue: z.number().finite().optional().nullable(),
+  quotationDocument: z.unknown().optional(),
 });
 
 export const receivePurchaseOrderSchema = z.object({
