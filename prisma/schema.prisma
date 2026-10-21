@@ -1126,6 +1126,7 @@ model SalesQuery {
   poValue            Decimal?           @db.Decimal(18, 2)
   budgetDetails       String?            @db.Text
   purchaseOrderNotes  String?            @db.Text
+  quotationDocument   Json?
   jobId              String?
   createdById        String
   createdAt          DateTime           @default(now())

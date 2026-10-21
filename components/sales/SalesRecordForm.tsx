@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { Download } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-import { Plus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/shadcn/button';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Modal from '@/components/ui/Modal';
+import { acceptedOptionId, QuotationSheet } from '@/components/sales/QuotationSheet';
 import { salesAccess } from '@/lib/sales/access';
 import { dateInputValue } from '@/lib/sales/format';
+import { downloadQuotationPdf } from '@/lib/sales/downloadQuotationPdf';
+import { documentFromRecord, optionBlocks, plainText, quotationFileName, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
 import {
   useCreateJobFromSalesMutation,
   useCreateSalesQueryMutation,
@@ -25,23 +27,45 @@ import {
   useUpdateSalesQueryMutation,
   type Customer,
 } from '@/store/hooks';
-import type { SalesOption, SalesRevision } from '@/store/api/endpoints/sales';
+import type { SalesAttachment, SalesRevision } from '@/store/api/endpoints/sales';
 
 const INPUT_CLASS =
   'mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
-const LINE_INPUT_CLASS = INPUT_CLASS.replace(' w-full', '');
 const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
 
-type FieldDraft = { label: string; value: string };
-type LineDraft = { item: string; description: string; unitPrice: string; quantity: string; fields: FieldDraft[] };
-type OptionDraft = { id?: string; name: string; vatAmount: string; lines: LineDraft[] };
-
-function emptyLine(): LineDraft {
-  return { item: '', description: '', unitPrice: '', quantity: '', fields: [] };
+function fileCountLabel(count: number) {
+  if (count === 0) return 'No files';
+  if (count === 1) return '1 file';
+  return `${count} files`;
 }
 
-function emptyOption(index: number): OptionDraft {
-  return { name: `Option ${index + 1}`, vatAmount: '0', lines: [emptyLine()] };
+function AttachmentFiles({ files, pending = [] }: { files: SalesAttachment[]; pending?: string[] }) {
+  const count = files.length + pending.length;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">{fileCountLabel(count)}</p>
+      {files.map((file) => (
+        <div key={file.id} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+          <span className="min-w-0 truncate text-sm">{file.fileName}</span>
+          <a
+            href={`/api/sales/attachments/${file.id}/download`}
+            download={file.fileName}
+            aria-label={`Download ${file.fileName}`}
+            title="Download"
+            className="inline-flex shrink-0 cursor-pointer items-center text-primary"
+          >
+            <Download className="size-4" />
+          </a>
+        </div>
+      ))}
+      {pending.map((name, index) => (
+        <div key={`${name}-${index}`} className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-3 py-2">
+          <span className="min-w-0 truncate text-sm">{name}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">Not saved</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function apiError(error: unknown): string {
@@ -57,14 +81,16 @@ function Section({
   title,
   description,
   children,
+  allowSticky = false,
 }: {
   eyebrow: string;
   title: string;
   description?: string;
   children: React.ReactNode;
+  allowSticky?: boolean;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <section className={`${allowSticky ? 'overflow-visible' : 'overflow-hidden'} rounded-lg border border-border bg-card shadow-sm`}>
       <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</p>
         <h2 className="mt-1 text-lg font-semibold text-foreground">{title}</h2>
@@ -108,15 +134,22 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const [salesmanId, setSalesmanId] = useState('');
   const [extraNotes, setExtraNotes] = useState('');
   const [startDate, setStartDate] = useState('');
-  const [quotationMode, setQuotationMode] = useState<'SINGLE' | 'MULTIPLE'>('SINGLE');
-  const [options, setOptions] = useState<OptionDraft[]>([emptyOption(0)]);
-  const [acceptedIndex, setAcceptedIndex] = useState(0);
+  const [acceptedIndex, setAcceptedIndex] = useState<number | null>(null);
+  const acceptedForRecord = useRef<string | null>(null);
   const [poDate, setPoDate] = useState('');
   const [poValue, setPoValue] = useState('');
   const [budgetDetails, setBudgetDetails] = useState('');
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState('');
   const [viewRevision, setViewRevision] = useState<SalesRevision | null>(null);
-  const [activeExtra, setActiveExtra] = useState<string | null>(null);
+  const [quotationDocument, setQuotationDocument] = useState<QuotationDocument | null>(null);
+  const [quotationSaveState, setQuotationSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const quotationDirty = useRef(false);
+  const quotationReady = useRef(false);
+  const savedQuotationKey = useRef('');
+  const saveGeneration = useRef(0);
+  const quotationLatest = useRef({ startDate: '', document: null as QuotationDocument | null });
+  const sheetRef = useRef<HTMLDivElement>(null);
   const [closure, setClosureValue] = useState<'LOST' | 'CANCELLED'>('LOST');
   const [closureReason, setClosureReason] = useState('');
   const [clientFiles, setClientFiles] = useState<File[]>([]);
@@ -140,29 +173,18 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     setProjectScope(record.projectScope);
     setSalesmanId(record.salesmanId);
     setExtraNotes(record.extraNotes ?? '');
-    setStartDate(dateInputValue(record.startDate));
-    setQuotationMode(record.quotationMode);
     const accepted = record.options.findIndex((option) => option.isAccepted);
-    setAcceptedIndex(accepted >= 0 ? accepted : 0);
+    if (accepted >= 0) setAcceptedIndex(accepted);
+    else if (acceptedForRecord.current !== record.id) setAcceptedIndex(null);
+    acceptedForRecord.current = record.id;
     setPoDate(dateInputValue(record.poDate));
     setPoValue(record.poValue != null ? String(record.poValue) : '');
     setBudgetDetails(record.budgetDetails ?? '');
     setPurchaseOrderNotes(record.purchaseOrderNotes ?? '');
-    if (record.options.length) {
-      setOptions(
-        record.options.map((option: SalesOption) => ({
-          id: option.id,
-          name: option.name,
-          vatAmount: String(option.vatAmount),
-          lines: option.lines.map((line) => ({
-            item: line.item,
-            description: line.description ?? '',
-            unitPrice: String(line.unitPrice),
-            quantity: String(line.quantity),
-            fields: (line.fields ?? []).map((field) => ({ label: field.label, value: field.value })),
-          })),
-        })),
-      );
+    if (!quotationDirty.current) {
+      quotationReady.current = false;
+      setStartDate(dateInputValue(record.startDate));
+      setQuotationDocument(documentFromRecord(record));
     }
   }, [record]);
 
@@ -192,6 +214,51 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
 
   const lockedQuery = Boolean(record && record.stage !== 'QUERY');
   const quotationEditable = record?.stage === 'QUOTATION' && record.closure === 'OPEN' && access.quotationManage;
+  quotationLatest.current = { startDate, document: quotationDocument };
+
+  useEffect(() => {
+    if (section !== 'quotation' || !quotationEditable || !id || !quotationDocument) return;
+    const key = JSON.stringify({ startDate, quotationDocument });
+    if (!quotationReady.current) {
+      savedQuotationKey.current = key;
+      quotationReady.current = true;
+      quotationDirty.current = false;
+      return;
+    }
+    if (key === savedQuotationKey.current) {
+      quotationDirty.current = false;
+      setQuotationSaveState((current) => (current === 'saving' ? 'saved' : current));
+      return;
+    }
+    quotationDirty.current = true;
+    const timer = window.setTimeout(() => {
+      const generation = ++saveGeneration.current;
+      const payload = quotationLatest.current;
+      if (!payload.document) return;
+      const payloadKey = JSON.stringify({ startDate: payload.startDate, quotationDocument: payload.document });
+      setQuotationSaveState('saving');
+      void updateQuery({ id, body: { startDate: payload.startDate, quotationDocument: payload.document } })
+        .unwrap()
+        .then(() => {
+          if (saveGeneration.current !== generation) return;
+          savedQuotationKey.current = payloadKey;
+          const currentKey = JSON.stringify({
+            startDate: quotationLatest.current.startDate,
+            quotationDocument: quotationLatest.current.document,
+          });
+          if (currentKey === payloadKey) {
+            quotationDirty.current = false;
+            setQuotationSaveState('saved');
+          }
+        })
+        .catch((error: unknown) => {
+          if (saveGeneration.current !== generation) return;
+          setQuotationSaveState('error');
+          toast.error(apiError(error));
+        });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [id, quotationDocument, quotationEditable, section, startDate, updateQuery]);
   const purchaseOrderEditable = record?.stage === 'PURCHASE_ORDER' && record.closure === 'OPEN' && access.purchaseOrdersManage;
   const currency = record?.currencyCode ?? '';
   const quotationLabel = record?.quotationNumber || record?.queryNumber || 'New query';
@@ -208,18 +275,76 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     }
   }
 
-  function optionPayload() {
-    return options.map((option) => ({
-      name: option.name,
-      vatAmount: Number(option.vatAmount || 0),
-      lines: option.lines.map((line) => ({
-        item: line.item,
-        description: line.description,
-        unitPrice: Number(line.unitPrice || 0),
-        quantity: Number(line.quantity || 0),
-        fields: line.fields.map((field) => ({ label: field.label, value: field.value })),
-      })),
-    }));
+  function quotationBody() {
+    return { startDate, quotationDocument };
+  }
+
+  async function openQuotationPdf(copy: 'quotation' | 'po') {
+    if (!id || !quotationDocument || !sheetRef.current || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const result = await downloadQuotationPdf(sheetRef.current, quotationFileName(quotationDocument, record?.quotationNumber || ''));
+      if (result === 'cancelled') return;
+      toast.success('PDF downloaded');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : apiError(error));
+      return;
+    } finally {
+      setPdfBusy(false);
+    }
+    try {
+      if (copy === 'quotation' && quotationEditable) {
+        await updateQuery({ id, body: quotationBody() }).unwrap();
+      }
+      if (copy === 'po' && purchaseOrderEditable) {
+        await updateQuery({
+          id,
+          body: {
+            budgetDetails,
+            purchaseOrderNotes,
+            poDate: poDate || null,
+            poValue: poValue === '' ? null : Number(poValue),
+          },
+        }).unwrap();
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : apiError(error));
+    }
+  }
+
+  async function onRevise() {
+    const base = record?.quotationNumber?.replace(/-R\d+$/, '') ?? '';
+    const nextRevision = record ? `${base}-R${record.quotationRevision + 1}` : '';
+    if (!id || !quotationDocument || !confirm(`Issue the next revision? The quotation number will be ${nextRevision}.`)) return;
+    try {
+      await updateQuery({ id, body: quotationBody() }).unwrap();
+      await revise(id).unwrap();
+      toast.success('Revision issued');
+      router.push('/sales/quotations');
+    } catch (error) {
+      toast.error(apiError(error));
+    }
+  }
+
+  async function onReceivePurchaseOrder() {
+    if (!id || !quotationDocument) return;
+    const optionCount = optionBlocks(quotationDocument).length;
+    if (optionCount > 1 && acceptedIndex == null) {
+      toast.error('Choose the accepted option');
+      return;
+    }
+    try {
+      const saved = await updateQuery({ id, body: quotationBody() }).unwrap();
+      const chosen = acceptedOptionId(saved.options, optionCount > 1 ? acceptedIndex ?? 0 : 0);
+      await receivePurchaseOrder({
+        id,
+        body: { acceptedOptionId: chosen },
+      }).unwrap();
+      toast.success('Purchase order received');
+      router.push('/sales/quotations');
+    } catch (error) {
+      toast.error(apiError(error));
+    }
   }
 
   function customerReady(): boolean {
@@ -289,49 +414,6 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       router.push('/sales/queries');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : apiError(error));
-    }
-  }
-
-  async function onSaveQuotation() {
-    if (!id) return;
-    try {
-      await updateQuery({ id, body: { startDate, quotationMode, options: optionPayload() } }).unwrap();
-      if (clientFiles.length) await uploadFiles(id, clientFiles, 'CLIENT');
-      setClientFiles([]);
-      toast.success('Quotation saved');
-      router.push('/sales/quotations');
-    } catch (error) {
-      toast.error(apiError(error));
-    }
-  }
-
-  async function onRevise() {
-    const base = record?.quotationNumber?.replace(/-R\d+$/, '') ?? '';
-    const nextRevision = record ? `${base}-R${record.quotationRevision + 1}` : '';
-    if (!id || !confirm(`Issue the next revision? The quotation number will be ${nextRevision}.`)) return;
-    try {
-      await updateQuery({ id, body: { startDate, quotationMode, options: optionPayload() } }).unwrap();
-      await revise(id).unwrap();
-      toast.success('Revision issued');
-      router.push('/sales/quotations');
-    } catch (error) {
-      toast.error(apiError(error));
-    }
-  }
-
-  async function onReceivePurchaseOrder() {
-    if (!id) return;
-    try {
-      const saved = await updateQuery({ id, body: { startDate, quotationMode, options: optionPayload() } }).unwrap();
-      const chosen = saved.options[quotationMode === 'SINGLE' ? 0 : acceptedIndex]?.id;
-      await receivePurchaseOrder({
-        id,
-        body: { acceptedOptionId: chosen },
-      }).unwrap();
-      toast.success('Purchase order received');
-      router.push('/sales/quotations');
-    } catch (error) {
-      toast.error(apiError(error));
     }
   }
 
@@ -450,16 +532,24 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           ) : null}
           {section === 'quotation' && quotationEditable ? (
             <>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSaveQuotation()}>
-                Save
-              </Button>
+              {quotationSaveState === 'saving' ? <span className="self-center text-xs text-muted-foreground">Saving…</span> : null}
+              {quotationSaveState === 'saved' ? <span className="self-center text-xs text-muted-foreground">Saved</span> : null}
+              {quotationSaveState === 'error' ? <span className="self-center text-xs text-destructive">Not saved</span> : null}
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onRevise()}>
                 Revise
+              </Button>
+              <Button type="button" variant="outline" size="sm" disabled={busy || pdfBusy || !quotationDocument} onClick={() => void openQuotationPdf('quotation')}>
+                {pdfBusy ? 'Preparing PDF…' : 'Download PDF'}
               </Button>
               <Button type="button" size="sm" disabled={busy} onClick={() => void onReceivePurchaseOrder()}>
                 PO Received
               </Button>
             </>
+          ) : null}
+          {section === 'purchaseOrder' && record ? (
+            <Button type="button" variant="outline" size="sm" disabled={busy || pdfBusy} onClick={() => void openQuotationPdf('po')}>
+              {pdfBusy ? 'Preparing PDF…' : 'Download PDF'}
+            </Button>
           ) : null}
           {section === 'purchaseOrder' && purchaseOrderEditable ? (
             <Button type="button" size="sm" disabled={busy} onClick={() => void onSavePurchaseOrder()}>
@@ -570,245 +660,57 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             Client files
             <input type="file" multiple className={INPUT_CLASS} onChange={(event) => setClientFiles(Array.from(event.target.files ?? []))} />
           </label>
-        ) : null}
-        {record?.attachments.filter((file) => file.kind === 'CLIENT').length ? (
-          <div className="space-y-2">
-            {record.attachments
-              .filter((file) => file.kind === 'CLIENT')
-              .map((file) => (
-                <a key={file.id} href={`/api/sales/attachments/${file.id}/download`} className="block text-sm text-primary">
-                  {file.fileName}
-                </a>
-              ))}
-          </div>
-        ) : null}
+        ) : (
+          <p className={LABEL_CLASS}>Client files</p>
+        )}
+        <AttachmentFiles
+          files={record?.attachments.filter((file) => file.kind === 'CLIENT') ?? []}
+          pending={clientFiles.map((file) => file.name)}
+        />
       </Section>
 
       {section !== 'query' ? (
-        <Section eyebrow="Quotation" title={record?.quotationNumber || 'Quotation'} description={record ? `Source query ${record.queryNumber}` : undefined}>
+        <Section eyebrow="Quotation" title={record?.quotationNumber || 'Quotation'} description={record ? `Source query ${record.queryNumber}` : undefined} allowSticky>
           <div className="grid gap-4 md:grid-cols-2">
             <label className={LABEL_CLASS}>
               When to start
               <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={!quotationEditable} className={INPUT_CLASS} />
             </label>
-            <label className={LABEL_CLASS}>
-              Options
-              <select
-                value={quotationMode}
-                onChange={(event) => setQuotationMode(event.target.value as 'SINGLE' | 'MULTIPLE')}
-                disabled={!quotationEditable}
-                className={INPUT_CLASS}
-              >
-                <option value="SINGLE">Single</option>
-                <option value="MULTIPLE">Multiple</option>
-              </select>
-            </label>
+            {quotationDocument && optionBlocks(quotationDocument).length > 1 ? (
+              <label className={LABEL_CLASS}>
+                Accepted option
+                <select
+                  value={acceptedIndex ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setAcceptedIndex(value === '' ? null : Number(value));
+                  }}
+                  disabled={!quotationEditable}
+                  className={INPUT_CLASS}
+                >
+                  <option value="">Choose an option</option>
+                  {optionBlocks(quotationDocument).map((block, index) => (
+                    <option key={block.id} value={index}>{plainText(block.name) || `Option ${index + 1}`}</option>
+                  ))}
+                </select>
+              </label>
+            ) : <span />}
           </div>
-          {options.map((option, optionIndex) => {
-            const subtotal = option.lines.reduce((sum, line) => sum + Number(line.unitPrice || 0) * Number(line.quantity || 0), 0);
-            const gross = subtotal + Number(option.vatAmount || 0);
-            return (
-              <div key={option.id ?? optionIndex} className="min-w-0 space-y-3 rounded-lg border border-border bg-muted/30 p-3">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <label className={LABEL_CLASS}>
-                    Option
-                    <input
-                      value={option.name}
-                      disabled={!quotationEditable}
-                      onChange={(event) =>
-                        setOptions((current) => current.map((item, index) => (index === optionIndex ? { ...item, name: event.target.value } : item)))
-                      }
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                  <div className="flex flex-wrap items-center gap-4">
-                    {quotationMode === 'MULTIPLE' && quotationEditable ? (
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="accepted-option"
-                          checked={acceptedIndex === optionIndex}
-                          onChange={() => setAcceptedIndex(optionIndex)}
-                        />
-                        Client accepted
-                      </label>
-                    ) : null}
-                    {quotationEditable && options.length > 1 ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOptions((current) => current.filter((_, index) => index !== optionIndex));
-                          setAcceptedIndex((current) => {
-                            if (current === optionIndex) return 0;
-                            if (current > optionIndex) return current - 1;
-                            return current;
-                          });
-                        }}
-                        className="text-xs font-semibold text-destructive hover:underline"
-                      >
-                        Remove option
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                {option.lines.map((line, lineIndex) => (
-                  <div key={lineIndex} className="min-w-0 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Line {lineIndex + 1}</p>
-                      {quotationEditable && option.lines.length > 1 ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setOptions((current) =>
-                              current.map((item, index) =>
-                                index === optionIndex
-                                  ? { ...item, lines: item.lines.filter((_, rowIndex) => rowIndex !== lineIndex) }
-                                  : item,
-                              ),
-                            )
-                          }
-                          className="text-xs font-semibold text-destructive hover:underline"
-                        >
-                          Remove
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="flex w-full min-w-0 items-end gap-2">
-                      <input placeholder="Item" value={line.item} disabled={!quotationEditable} className={`${LINE_INPUT_CLASS} min-w-0 flex-1 basis-0`} onChange={(event) => setOptions((current) => current.map((item, index) => index === optionIndex ? { ...item, lines: item.lines.map((row, rowIndex) => rowIndex === lineIndex ? { ...row, item: event.target.value } : row) } : item))} />
-                      <input placeholder="Description" value={line.description} disabled={!quotationEditable} className={`${LINE_INPUT_CLASS} min-w-0 flex-1 basis-0`} onChange={(event) => setOptions((current) => current.map((item, index) => index === optionIndex ? { ...item, lines: item.lines.map((row, rowIndex) => rowIndex === lineIndex ? { ...row, description: event.target.value } : row) } : item))} />
-                      <input placeholder="Unit price" type="number" step="0.01" value={line.unitPrice} disabled={!quotationEditable} className={`${LINE_INPUT_CLASS} w-28 shrink-0`} onChange={(event) => setOptions((current) => current.map((item, index) => index === optionIndex ? { ...item, lines: item.lines.map((row, rowIndex) => rowIndex === lineIndex ? { ...row, unitPrice: event.target.value } : row) } : item))} />
-                      <input placeholder="Quantity" type="number" step="0.001" value={line.quantity} disabled={!quotationEditable} className={`${LINE_INPUT_CLASS} w-24 shrink-0`} onChange={(event) => setOptions((current) => current.map((item, index) => index === optionIndex ? { ...item, lines: item.lines.map((row, rowIndex) => rowIndex === lineIndex ? { ...row, quantity: event.target.value } : row) } : item))} />
-                      {line.fields.length ? (
-                        <div className="flex min-w-0 flex-[1.4] basis-0 items-end gap-1">
-                          {line.fields.map((field, fieldIndex) => {
-                            const extraKey = `${optionIndex}-${lineIndex}-${fieldIndex}`;
-                            const expanded = activeExtra === extraKey;
-                            return (
-                              <div key={extraKey} className={`flex min-w-0 items-center gap-0.5 ${expanded ? 'flex-[2.5]' : 'flex-1'}`}>
-                                <input
-                                  placeholder="Extra"
-                                  value={field.value}
-                                  disabled={!quotationEditable}
-                                  className={`${LINE_INPUT_CLASS} min-w-0 flex-1 basis-0 px-2`}
-                                  onFocus={() => setActiveExtra(extraKey)}
-                                  onBlur={() => setActiveExtra((current) => (current === extraKey ? null : current))}
-                                  onChange={(event) =>
-                                    setOptions((current) =>
-                                      current.map((item, index) =>
-                                        index === optionIndex
-                                          ? {
-                                              ...item,
-                                              lines: item.lines.map((row, rowIndex) =>
-                                                rowIndex === lineIndex
-                                                  ? {
-                                                      ...row,
-                                                      fields: row.fields.map((entry, entryIndex) =>
-                                                        entryIndex === fieldIndex
-                                                          ? { label: entry.label.trim() || 'Extra', value: event.target.value }
-                                                          : entry,
-                                                      ),
-                                                    }
-                                                  : row,
-                                              ),
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                                {quotationEditable ? (
-                                  <button
-                                    type="button"
-                                    aria-label="Remove field"
-                                    className="inline-flex size-8 shrink-0 items-center justify-center text-muted-foreground hover:text-destructive"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() =>
-                                      setOptions((current) =>
-                                        current.map((item, index) =>
-                                          index === optionIndex
-                                            ? {
-                                                ...item,
-                                                lines: item.lines.map((row, rowIndex) =>
-                                                  rowIndex === lineIndex
-                                                    ? { ...row, fields: row.fields.filter((_, entryIndex) => entryIndex !== fieldIndex) }
-                                                    : row,
-                                                ),
-                                              }
-                                            : item,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    <X className="size-3.5" />
-                                  </button>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                      {quotationEditable ? (
-                        <button
-                          type="button"
-                          aria-label="Add field"
-                          title="Add field"
-                          className="inline-flex size-11 shrink-0 items-center justify-center self-end rounded-md border border-border text-foreground hover:bg-muted"
-                          onClick={() =>
-                            setOptions((current) =>
-                              current.map((item, index) =>
-                                index === optionIndex
-                                  ? {
-                                      ...item,
-                                      lines: item.lines.map((row, rowIndex) =>
-                                        rowIndex === lineIndex
-                                          ? { ...row, fields: [...row.fields, { label: 'Extra', value: '' }] }
-                                          : row,
-                                      ),
-                                    }
-                                  : item,
-                              ),
-                            )
-                          }
-                        >
-                          <Plus className="size-4" />
-                        </button>
-                      ) : null}
-                      <p className="w-24 shrink-0 self-end py-3 text-right text-sm text-foreground">
-                        {currency} {(Number(line.unitPrice || 0) * Number(line.quantity || 0)).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {quotationEditable ? (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setOptions((current) => current.map((item, index) => index === optionIndex ? { ...item, lines: [...item.lines, emptyLine()] } : item))}>
-                    Add line
-                  </Button>
-                ) : null}
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className={LABEL_CLASS}>
-                    VAT amount {currency}
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={option.vatAmount}
-                      disabled={!quotationEditable}
-                      onChange={(event) => setOptions((current) => current.map((item, index) => index === optionIndex ? { ...item, vatAmount: event.target.value } : item))}
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                  <label className={LABEL_CLASS}>
-                    Grand total {currency}
-                    <input readOnly value={gross.toFixed(2)} className={INPUT_CLASS} />
-                  </label>
-                </div>
-              </div>
-            );
-          })}
-          {quotationEditable && quotationMode === 'MULTIPLE' ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setOptions((current) => [...current, emptyOption(current.length)])}>
-              Add option
-            </Button>
+          {quotationDocument ? (
+            <div ref={sheetRef} className="min-w-0">
+              <QuotationSheet
+                document={quotationDocument}
+                onChange={setQuotationDocument}
+                readOnly={!quotationEditable}
+                quotationNumber={record?.quotationNumber || ''}
+                letterheadUrl={record?.company?.letterheadUrl}
+                sourceCustomerName={record?.customer?.name || record?.customerName || ''}
+                acceptedOptionIndex={section === 'purchaseOrder' ? acceptedIndex : null}
+                po={section === 'purchaseOrder' && record?.poNumber ? { number: record.poNumber, date: poDate, value: poValue } : null}
+              />
+            </div>
           ) : null}
+
           {section === 'quotation' && record ? (
             <div className="space-y-3">
               <p className={LABEL_CLASS}>Previous versions</p>
@@ -858,13 +760,14 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
                 PO file
                 <input type="file" className={INPUT_CLASS} onChange={(event) => setPoFile(event.target.files?.[0] ?? null)} />
               </label>
-            ) : null}
+            ) : (
+              <p className={LABEL_CLASS}>PO file</p>
+            )}
           </div>
-          {record.attachments.filter((file) => file.kind === 'PO').map((file) => (
-            <a key={file.id} href={`/api/sales/attachments/${file.id}/download`} className="block text-sm text-primary">
-              {file.fileName}
-            </a>
-          ))}
+          <AttachmentFiles
+            files={record.attachments.filter((file) => file.kind === 'PO')}
+            pending={poFile ? [poFile.name] : []}
+          />
           <label className={LABEL_CLASS}>
             Budget details
             <textarea value={budgetDetails} onChange={(event) => setBudgetDetails(event.target.value)} disabled={!purchaseOrderEditable} rows={4} className={`${INPUT_CLASS} resize-none`} />
@@ -941,6 +844,17 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       >
         {viewRevision ? (
           <div className="space-y-4 text-sm">
+            {readQuotationDocument(viewRevision.snapshot.quotationDocument) ? (
+              <div className="overflow-x-auto">
+                <QuotationSheet
+                  document={readQuotationDocument(viewRevision.snapshot.quotationDocument)!}
+                  readOnly
+                  quotationNumber={viewRevision.quotationLabel}
+                  letterheadUrl={record?.company?.letterheadUrl}
+                />
+              </div>
+            ) : (
+            <>
             <p className="text-muted-foreground">
               {viewRevision.snapshot.quotationMode === 'MULTIPLE' ? 'Multiple options' : 'Single option'}
               {viewRevision.snapshot.startDate ? ` · Start ${dateInputValue(viewRevision.snapshot.startDate)}` : ''}
@@ -966,6 +880,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
                 </div>
               );
             })}
+            </>
+            )}
           </div>
         ) : null}
       </Modal>
