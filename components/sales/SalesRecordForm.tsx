@@ -148,6 +148,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const quotationReady = useRef(false);
   const savedQuotationKey = useRef('');
   const saveGeneration = useRef(0);
+  const pauseQuotationSave = useRef(false);
+  const quotationSaveFlight = useRef<Promise<void> | null>(null);
   const quotationLatest = useRef({ startDate: '', document: null as QuotationDocument | null });
   const sheetRef = useRef<HTMLDivElement>(null);
   const [closure, setClosureValue] = useState<'LOST' | 'CANCELLED'>('LOST');
@@ -232,12 +234,13 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     }
     quotationDirty.current = true;
     const timer = window.setTimeout(() => {
+      if (pauseQuotationSave.current) return;
       const generation = ++saveGeneration.current;
       const payload = quotationLatest.current;
       if (!payload.document) return;
       const payloadKey = JSON.stringify({ startDate: payload.startDate, quotationDocument: payload.document });
       setQuotationSaveState('saving');
-      void updateQuery({ id, body: { startDate: payload.startDate, quotationDocument: payload.document } })
+      const flight = updateQuery({ id, body: { startDate: payload.startDate, quotationDocument: payload.document } })
         .unwrap()
         .then(() => {
           if (saveGeneration.current !== generation) return;
@@ -256,6 +259,10 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           setQuotationSaveState('error');
           toast.error(apiError(error));
         });
+      quotationSaveFlight.current = flight;
+      void flight.finally(() => {
+        if (quotationSaveFlight.current === flight) quotationSaveFlight.current = null;
+      });
     }, 700);
     return () => window.clearTimeout(timer);
   }, [id, quotationDocument, quotationEditable, section, startDate, updateQuery]);
@@ -277,6 +284,12 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
 
   function quotationBody() {
     return { startDate, quotationDocument };
+  }
+
+  async function settleQuotationSave() {
+    pauseQuotationSave.current = true;
+    const pending = quotationSaveFlight.current;
+    if (pending) await pending.catch(() => undefined);
   }
 
   async function openQuotationPdf(copy: 'quotation' | 'po') {
@@ -334,6 +347,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       return;
     }
     try {
+      await settleQuotationSave();
       const saved = await updateQuery({ id, body: quotationBody() }).unwrap();
       const chosen = acceptedOptionId(saved.options, optionCount > 1 ? acceptedIndex ?? 0 : 0);
       await receivePurchaseOrder({
@@ -341,8 +355,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         body: { acceptedOptionId: chosen },
       }).unwrap();
       toast.success('Purchase order received');
-      router.push('/sales/quotations');
+      router.push(`/sales/purchase-orders/form?id=${id}`);
     } catch (error) {
+      pauseQuotationSave.current = false;
       toast.error(apiError(error));
     }
   }
@@ -403,15 +418,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   }
 
   async function onForwardQuotation() {
-    if (!id && !customerReady()) return;
+    if (!customerReady()) return;
     try {
-      const saved = id ? record : await saveQuery();
+      const saved = await saveQuery();
       const targetId = saved?.id ?? id;
       if (!targetId) return;
       if (clientFiles.length) await uploadFiles(targetId, clientFiles, 'CLIENT');
       await forwardQuotation(targetId).unwrap();
       toast.success('Forwarded to quotation');
-      router.push('/sales/queries');
+      router.push(`/sales/quotations/form?id=${targetId}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : apiError(error));
     }
@@ -468,7 +483,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       return;
     }
     try {
-      await createJob({
+      const created = await createJob({
         id,
         body: {
           poDate,
@@ -484,7 +499,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       }).unwrap();
       toast.success('Job created');
       setJobOpen(false);
-      router.push('/sales/purchase-orders');
+      if (created.job?.id) router.push(`/customers/jobs/${created.job.id}`);
+      else router.push('/sales/purchase-orders');
     } catch (error) {
       toast.error(apiError(error));
     }

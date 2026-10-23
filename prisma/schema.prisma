@@ -107,6 +107,7 @@ model Company {
   deliveryNotes             DeliveryNote[]
   deliveryNoteMaterialLines DeliveryNoteMaterialLine[]
   salesQueries              SalesQuery[]
+  quotationTermsTemplates   QuotationTermsTemplate[]
   salesQuotationOptions     SalesQuotationOption[]
   salesQuotationLines       SalesQuotationLine[]
   salesQuotationLineFields  SalesQuotationLineField[]
@@ -1150,6 +1151,20 @@ model SalesQuery {
   @@index([companyId, stage, closure])
   @@index([companyId, customerId])
   @@index([companyId, salesmanId])
+}
+
+model QuotationTermsTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  rows      Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, nameKey])
+  @@index([companyId, name])
 }
 
 model SalesQuotationOption {

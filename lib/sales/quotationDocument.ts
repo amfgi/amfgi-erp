@@ -5,12 +5,15 @@ export type RichText = string;
 
 export type LabelRow = { id: string; label: RichText; value: RichText };
 
+export type PriceColumn = { id: string; name: string };
+
 export type PriceRow = {
   id: string;
   item: RichText;
   description: RichText;
   unitPrice: string;
   quantity: string;
+  extras?: Record<string, RichText>;
 };
 
 export type SignatureBlock = {
@@ -25,7 +28,7 @@ export type QuotationBlock =
   | { id: string; type: 'scope'; name: string; body: RichText }
   | { id: string; type: 'specification'; name: string; rows: LabelRow[] }
   | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number }
-  | { id: string; type: 'option'; name: string; titleCustomized: boolean; rows: PriceRow[] }
+  | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rows: PriceRow[] }
   | { id: string; type: 'closing'; name: string; body: RichText }
   | { id: string; type: 'signatures'; name: string; left: SignatureBlock; right: SignatureBlock };
 
@@ -83,7 +86,7 @@ export function sanitizeRichText(value: string | null | undefined) {
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
     .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/javascript:/gi, '')
-    .replace(/<(?!\/?(b|strong|i|em|u|span|font|br|p|div|ul|ol|li)\b)[^>]*>/gi, '');
+    .replace(/<(?!\/?(b|strong|i|em|u|span|font|br|p|div|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col)\b)[^>]*>/gi, '');
 }
 
 function moneyWordsUnderThousand(value: number): string {
@@ -167,13 +170,25 @@ export function optionHeading(index: number) {
   return `Option ${letters}`;
 }
 
+export function emptyPriceRow(columns: PriceColumn[] = []): PriceRow {
+  return {
+    id: id(),
+    item: '',
+    description: '',
+    unitPrice: '',
+    quantity: '1',
+    extras: Object.fromEntries(columns.map((column) => [column.id, ''])),
+  };
+}
+
 export function defaultOption(): QuotationBlock {
   return {
     id: id(),
     type: 'option',
     name: optionHeading(0),
     titleCustomized: false,
-    rows: [{ id: id(), item: '', description: '', unitPrice: '', quantity: '1' }],
+    columns: [],
+    rows: [emptyPriceRow()],
   };
 }
 
@@ -254,6 +269,54 @@ function clampNumber(value: number | undefined, min: number, max: number, fallba
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+const DEFAULT_PRICE_WIDTH: Record<string, number> = {
+  sl: 8,
+  item: 20,
+  description: 26,
+  unitPrice: 14,
+  quantity: 12,
+  total: 20,
+};
+
+export function priceColumnWidths(block: Extract<QuotationBlock, { type: 'option' }>) {
+  const columns = (block.columns ?? []).slice(0, 2);
+  const keys = ['sl', 'item', 'description', ...columns.map((column) => column.id), 'unitPrice', 'quantity', 'total'];
+  const stored = block.widths ?? {};
+  const values = keys.map((key) => {
+    const number = Number(stored[key]);
+    return Number.isFinite(number) && number >= 6 ? number : DEFAULT_PRICE_WIDTH[key] ?? 12;
+  });
+  const sum = values.reduce((total, value) => total + value, 0) || 1;
+  return Object.fromEntries(keys.map((key, index) => [key, (values[index] / sum) * 100]));
+}
+
+function sanitizePriceWidths(widths: Record<string, number> | undefined, columnIds: string[]) {
+  if (!widths || typeof widths !== 'object') return undefined;
+  const allowed = new Set(['sl', 'item', 'description', 'unitPrice', 'quantity', 'total', ...columnIds]);
+  const next: Record<string, number> = {};
+  for (const [key, value] of Object.entries(widths)) {
+    if (!allowed.has(key)) continue;
+    const number = Number(value);
+    if (!Number.isFinite(number)) continue;
+    next[key] = Math.min(70, Math.max(6, Math.round(number)));
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+function sanitizePriceColumns(columns: PriceColumn[] | undefined): PriceColumn[] {
+  if (!Array.isArray(columns)) return [];
+  const seen = new Set<string>();
+  const next: PriceColumn[] = [];
+  for (const column of columns) {
+    const columnId = String(column?.id ?? '').slice(0, 40);
+    if (!columnId || seen.has(columnId)) continue;
+    seen.add(columnId);
+    next.push({ id: columnId, name: plainText(column?.name).slice(0, 40) || 'Column' });
+    if (next.length === 2) break;
+  }
+  return next;
+}
+
 export function sanitizeDocument(document: QuotationDocument): QuotationDocument {
   return {
     ...document,
@@ -281,15 +344,19 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
         return { ...block, name: block.name.slice(0, 120), rows: block.rows.map((entry) => ({ ...entry, label: sanitizeRichText(entry.label), value: sanitizeRichText(entry.value) })) };
       }
       if (block.type === 'option') {
+        const columns = sanitizePriceColumns(block.columns);
         return {
           ...block,
           name: block.name.slice(0, 160),
+          columns,
+          widths: sanitizePriceWidths(block.widths, columns.map((column) => column.id)),
           rows: block.rows.map((entry) => ({
             ...entry,
             item: sanitizeRichText(entry.item),
             description: sanitizeRichText(entry.description),
             unitPrice: String(entry.unitPrice ?? '').slice(0, 20),
             quantity: String(entry.quantity ?? '').slice(0, 20),
+            extras: Object.fromEntries(columns.map((column) => [column.id, sanitizeRichText(entry.extras?.[column.id])])),
           })),
         };
       }
@@ -335,19 +402,22 @@ export function optionsFromDocument(document: QuotationDocument): QuotationOptio
   return optionBlocks(document).map((block, index) => ({
     name: plainText(block.name).slice(0, 120) || `Option ${index + 1}`,
     vatAmount: 0,
-    lines: block.rows
-      .map((row) => {
-        const unitPrice = Number(row.unitPrice);
-        const quantity = Number(row.quantity);
-        return {
-          item: plainText(row.item).slice(0, 200),
-          description: plainText(row.description).slice(0, 2000) || null,
-          unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
-          quantity: Number.isFinite(quantity) ? quantity : 0,
-          fields: [] as [],
-        };
-      })
-      .filter((row) => row.item && row.unitPrice >= 0 && row.quantity >= 0),
+    lines: block.rows.flatMap((row) => {
+      const unitPrice = Number(row.unitPrice);
+      const quantity = Number(row.quantity);
+      const item = plainText(row.item).slice(0, 200);
+      const description = plainText(row.description).slice(0, 2000);
+      const price = Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0;
+      const qty = Number.isFinite(quantity) && quantity >= 0 ? quantity : 0;
+      if (!item && !description && price <= 0 && qty <= 0) return [];
+      return [{
+        item: item || description.slice(0, 200) || 'Item',
+        description: description || null,
+        unitPrice: price,
+        quantity: qty,
+        fields: [] as [],
+      }];
+    }),
   }));
 }
 
@@ -383,6 +453,18 @@ function optionInsertIndex(blocks: QuotationBlock[]) {
   let end = first + 1;
   while (end < blocks.length && blocks[end].type === 'option') end += 1;
   return end;
+}
+
+export function applySavedTerms(document: QuotationDocument, rows: Array<{ label: string; value: string }>): QuotationDocument {
+  const nextRows = rows.map((entry) => row(entry.label, entry.value));
+  const existing = document.blocks.find((block) => block.type === 'terms');
+  if (existing && existing.type === 'terms') {
+    return {
+      ...document,
+      blocks: document.blocks.map((block) => (block.type === 'terms' ? { ...block, rows: nextRows } : block)),
+    };
+  }
+  return insertBlock(document, { id: id(), type: 'terms', name: 'Terms & Conditions', rows: nextRows });
 }
 
 export function insertBlock(document: QuotationDocument, block: QuotationBlock): QuotationDocument {
@@ -462,7 +544,7 @@ export function documentFromRecord(source: HydrateSource): QuotationDocument {
           unitPrice: String(line.unitPrice ?? ''),
           quantity: String(line.quantity ?? ''),
         }))
-      : [{ id: id(), item: '', description: '', unitPrice: '', quantity: '1' }],
+      : [emptyPriceRow()],
   }));
   return {
     ...base,

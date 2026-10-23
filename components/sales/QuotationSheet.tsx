@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import toast from 'react-hot-toast';
 import {
   AlignCenter,
   AlignLeft,
@@ -12,27 +13,32 @@ import {
   List,
   ListOrdered,
   Redo2,
+  Table2,
   Underline,
   Undo2,
 } from 'lucide-react';
 
+import { useCreateQuotationTermsTemplateMutation, useGetQuotationTermsTemplatesQuery } from '@/store/hooks';
 import {
+  applySavedTerms,
   defaultBlank,
   defaultOption,
   defaultScope,
   defaultSpecification,
-  defaultTerms,
+  emptyPriceRow,
   insertBlock,
   lineAmount,
   moveBlock,
   optionBlocks,
   optionTotal,
   padImageUrl,
+  priceColumnWidths,
   presetAlreadyUsed,
   removeBlock,
   showOptionTitle,
   syncTotalCostWords,
   visibleRows,
+  type PriceColumn,
   type QuotationBlock,
   type QuotationDocument,
 } from '@/lib/sales/quotationDocument';
@@ -200,6 +206,20 @@ function placeCaret(root: HTMLElement, offset: number) {
   selection.addRange(range);
 }
 
+function tableColumns(table: HTMLTableElement, count: number) {
+  let group = table.querySelector('colgroup');
+  if (!group) {
+    group = table.ownerDocument.createElement('colgroup');
+    table.insertBefore(group, table.firstChild);
+  }
+  while (group.children.length < count) {
+    const col = table.ownerDocument.createElement('col');
+    col.style.width = `${100 / count}%`;
+    group.appendChild(col);
+  }
+  return [...group.querySelectorAll('col')];
+}
+
 function RichText({
   value,
   onChange,
@@ -207,6 +227,7 @@ function RichText({
   className,
   style,
   onFocusField,
+  allowTable = false,
 }: {
   value: string;
   onChange?: (value: string) => void;
@@ -214,6 +235,7 @@ function RichText({
   className?: string;
   style?: CSSProperties;
   onFocusField?: (element: HTMLElement) => void;
+  allowTable?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const emitted = useRef(value || '');
@@ -260,9 +282,10 @@ function RichText({
       role="textbox"
       aria-multiline="true"
       contentEditable={!readOnly}
+      data-allow-table={allowTable ? 'true' : undefined}
       suppressContentEditableWarning
       style={style}
-      className={`min-h-[1.25rem] whitespace-pre-wrap outline-none ${readOnly ? '' : 'rounded-sm focus:bg-sky-50/80 focus:outline focus:outline-1 focus:outline-sky-400'} ${className ?? ''}`}
+      className={`min-h-[1.25rem] outline-none ${allowTable ? '' : 'whitespace-pre-wrap'} ${readOnly ? '' : 'rounded-sm focus:bg-sky-50/80 focus:outline focus:outline-1 focus:outline-sky-400'} ${className ?? ''}`}
       onFocus={(event) => onFocusField?.(event.currentTarget)}
       onKeyDown={(event) => {
         if (readOnly || (event.key !== 'Backspace' && event.key !== 'Delete')) return;
@@ -274,6 +297,49 @@ function RichText({
         if ((event.key === 'Backspace' && offset === 0) || (event.key === 'Delete' && offset === total)) {
           event.preventDefault();
         }
+      }}
+      onPointerDown={(event) => {
+        if (!allowTable || event.button !== 0) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const cell = target.closest('td, th');
+        if (!(cell instanceof HTMLTableCellElement) || !ref.current?.contains(cell)) return;
+        const rect = cell.getBoundingClientRect();
+        if (rect.right - event.clientX > 8) return;
+        const row = cell.parentElement;
+        const table = cell.closest('table');
+        if (!row || !table) return;
+        const index = [...row.children].indexOf(cell);
+        if (index < 0 || index >= row.children.length - 1) return;
+        event.preventDefault();
+        const tableWidth = table.getBoundingClientRect().width || 1;
+        const startX = event.clientX;
+        const start = rect.width;
+        const neighbor = row.children[index + 1].getBoundingClientRect().width;
+        const cols = tableColumns(table, row.children.length);
+        function move(moveEvent: PointerEvent) {
+          let width = start + (moveEvent.clientX - startX);
+          let other = neighbor - (moveEvent.clientX - startX);
+          if (width < 28) {
+            other -= 28 - width;
+            width = 28;
+          }
+          if (other < 28) {
+            width -= 28 - other;
+            other = 28;
+          }
+          cols[index].style.width = `${(width / tableWidth) * 100}%`;
+          cols[index + 1].style.width = `${(other / tableWidth) * 100}%`;
+        }
+        function up() {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          const html = ref.current?.innerHTML ?? '';
+          emitted.current = html;
+          onChange?.(html);
+        }
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
       }}
       onInput={(event) => {
         const html = event.currentTarget.innerHTML;
@@ -392,6 +458,54 @@ function SwatchMenu({
   );
 }
 
+function TableMenu({ disabled, onInsert }: { disabled: boolean; onInsert: (rows: number, cols: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState({ rows: 1, cols: 1 });
+  const rootRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function close(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    window.document.addEventListener('mousedown', close);
+    return () => window.document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  return (
+    <span ref={rootRef} className="relative">
+      <ToolButton label={disabled ? 'Click in the description, then insert a table' : 'Insert table'} onClick={() => { if (!disabled) setOpen((current) => !current); }}>
+        <Table2 className={`size-4 ${disabled ? 'opacity-40' : ''}`} />
+      </ToolButton>
+      {open ? (
+        <div className="absolute left-0 top-full z-50 mt-1 rounded border border-[#d4d4d4] bg-white p-2 shadow-lg" onMouseDown={preventToolbarMouseDown}>
+          <div className="grid grid-cols-5 gap-0.5">
+            {Array.from({ length: 25 }, (_, index) => {
+              const row = Math.floor(index / 5) + 1;
+              const col = (index % 5) + 1;
+              const active = row <= hover.rows && col <= hover.cols;
+              return (
+                <button
+                  key={`${row}-${col}`}
+                  type="button"
+                  aria-label={`${row} by ${col} table`}
+                  className={`size-4 border ${active ? 'border-[#7eb4ea] bg-[#cce4f7]' : 'border-[#d4d4d4] bg-white'}`}
+                  onMouseEnter={() => setHover({ rows: row, cols: col })}
+                  onClick={() => {
+                    onInsert(row, col);
+                    setOpen(false);
+                  }}
+                />
+              );
+            })}
+          </div>
+          <p className="mt-1 text-center text-[10px] text-slate-600">{hover.rows} × {hover.cols}</p>
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
 function FormatControls({
   variant,
   marks,
@@ -399,6 +513,8 @@ function FormatControls({
   fontColor,
   onFormat,
   onPrepare,
+  tableReady,
+  onInsertTable,
 }: {
   variant: 'full' | 'compact';
   marks: FormatMarks;
@@ -406,6 +522,8 @@ function FormatControls({
   fontColor: string;
   onFormat: (command: string, value?: string) => void;
   onPrepare: () => void;
+  tableReady?: boolean;
+  onInsertTable?: (rows: number, cols: number) => void;
 }) {
   const [open, setOpen] = useState<'highlight' | 'color' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -487,6 +605,7 @@ function FormatControls({
           <ToolButton label="Align right" pressed={marks.align === 'right'} onClick={() => onFormat('justifyRight')}><AlignRight className="size-4" /></ToolButton>
           <ToolButton label="Bullets" onClick={() => onFormat('insertUnorderedList')}><List className="size-4" /></ToolButton>
           <ToolButton label="Numbering" onClick={() => onFormat('insertOrderedList')}><ListOrdered className="size-4" /></ToolButton>
+          {onInsertTable ? <TableMenu disabled={!tableReady} onInsert={onInsertTable} /> : null}
         </>
       ) : null}
     </div>
@@ -540,6 +659,17 @@ export function QuotationSheet({
   const [marks, setMarks] = useState<FormatMarks>(DEFAULT_MARKS);
   const [highlight, setHighlight] = useState('#ffff00');
   const [fontColor, setFontColor] = useState('#c00000');
+  const [tableReady, setTableReady] = useState(false);
+  const [termsListOpen, setTermsListOpen] = useState(false);
+  const [saveTerms, setSaveTerms] = useState<Array<{ label: string; value: string }> | null>(null);
+  const [saveName, setSaveName] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const termsQuery = useGetQuotationTermsTemplatesQuery(undefined, { skip: readOnly });
+  const [createTerms, createTermsState] = useCreateQuotationTermsTemplateMutation();
+  const termsItems = useMemo(
+    () => (termsQuery.data ?? []).map((entry) => ({ id: entry.id, label: entry.name, searchText: entry.name })),
+    [termsQuery.data],
+  );
   const undoStack = useRef<QuotationDocument[]>([]);
   const redoStack = useRef<QuotationDocument[]>([]);
   const documentRef = useRef(document);
@@ -607,10 +737,12 @@ export function QuotationSheet({
       const editable = element?.closest('[contenteditable="true"]');
       if (!node || !pad.contains(node) || !(editable instanceof HTMLElement) || !pad.contains(editable)) {
         setBubble(null);
+        setTableReady(false);
         return;
       }
       savedRange.current = selection.getRangeAt(0).cloneRange();
       richField.current = editable;
+      setTableReady(editable.dataset.allowTable === 'true');
       const nextMarks = readMarks(element);
       setMarks((current) => (sameMarks(current, nextMarks) ? current : nextMarks));
       if (selection.isCollapsed) {
@@ -703,11 +835,11 @@ export function QuotationSheet({
   useEffect(() => {
     const root = sheetRef.current;
     if (!root) return;
-    function onFocusOut(event: FocusEvent) {
+    const onFocusOut = (event: FocusEvent) => {
       const next = event.relatedTarget;
       if (next instanceof Node && root.contains(next)) return;
       setLayoutNonce((value) => value + 1);
-    }
+    };
     root.addEventListener('focusout', onFocusOut);
     return () => root.removeEventListener('focusout', onFocusOut);
   }, []);
@@ -789,20 +921,58 @@ export function QuotationSheet({
     applyCommand(command, value);
   }
 
+  function insertTable(rows: number, cols: number) {
+    const field = richField.current;
+    if (!field || field.dataset.allowTable !== 'true') return;
+    const safeRows = Math.min(5, Math.max(1, rows));
+    const safeCols = Math.min(5, Math.max(1, cols));
+    const cells = '<td><br></td>'.repeat(safeCols);
+    const body = `<tr>${cells}</tr>`.repeat(safeRows);
+    const share = (100 / safeCols).toFixed(2);
+    const columnMarkup = `<col style="width:${share}%" />`.repeat(safeCols);
+    applyCommand('insertHTML', `<table class="quotation-insert"><colgroup>${columnMarkup}</colgroup><tbody>${body}</tbody></table>`);
+  }
+
   undoEditRef.current = undoEdit;
   redoEditRef.current = redoEdit;
 
   function addSection(type: (typeof SECTION_CHOICES)[number]['type']) {
-    if (type === 'terms' || type === 'scope' || type === 'specification') {
+    if (type === 'scope' || type === 'specification') {
       if (presetAlreadyUsed(document, type)) {
         window.document.getElementById(document.blocks.find((block) => block.type === type)?.id || '')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      const block = type === 'terms' ? defaultTerms() : type === 'scope' ? defaultScope() : defaultSpecification();
-      update(insertBlock(document, block));
+      update(insertBlock(document, type === 'scope' ? defaultScope() : defaultSpecification()));
       return;
     }
     update(insertBlock(document, type === 'option' ? defaultOption() : defaultBlank()));
+  }
+
+  function chooseSavedTerms(templateId: string) {
+    const template = termsQuery.data?.find((entry) => entry.id === templateId);
+    if (!template) return;
+    pushHistory();
+    const next = applySavedTerms(document, template.rows);
+    update(next);
+    setTermsListOpen(false);
+    const termsId = next.blocks.find((block) => block.type === 'terms')?.id;
+    if (termsId) window.requestAnimationFrame(() => window.document.getElementById(termsId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
+
+  async function submitSavedTerms(event: FormEvent) {
+    event.preventDefault();
+    if (!saveTerms) return;
+    setSaveError('');
+    try {
+      await createTerms({ name: saveName, rows: saveTerms }).unwrap();
+      setSaveTerms(null);
+      setSaveName('');
+      toast.success('Terms saved');
+    } catch (error) {
+      setSaveError(error && typeof error === 'object' && 'data' in error && typeof (error as { data?: { error?: string } }).data?.error === 'string'
+        ? (error as { data?: { error?: string } }).data?.error || 'Could not save the terms'
+        : 'Could not save the terms');
+    }
   }
 
   const pad = padImageUrl(letterheadUrl);
@@ -819,6 +989,36 @@ export function QuotationSheet({
                 const used = choice.type === 'terms' || choice.type === 'scope' || choice.type === 'specification'
                   ? presetAlreadyUsed(document, choice.type)
                   : false;
+                if (choice.type === 'terms') {
+                  return (
+                    <div key={choice.type} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setTermsListOpen((open) => !open)}
+                        className={`cursor-pointer w-full rounded-md border px-3 py-2 text-left ${used ? 'border-border bg-muted/60 text-muted-foreground' : 'border-border bg-background hover:bg-muted/50'}`}
+                      >
+                        <span className="block text-sm font-medium">{used ? choice.label : `+ ${choice.label}`}</span>
+                        <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : choice.hint}</span>
+                      </button>
+                      {termsListOpen ? (
+                        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background py-1 shadow-lg">
+                          {termsItems.length ? termsItems.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="block w-full cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-muted/60"
+                              onClick={() => chooseSavedTerms(item.id)}
+                            >
+                              {item.label}
+                            </button>
+                          )) : (
+                            <p className="px-3 py-1.5 text-[11px] text-muted-foreground">No saved terms yet</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
                 return (
                   <button
                     key={choice.type}
@@ -840,7 +1040,7 @@ export function QuotationSheet({
         {readOnly ? null : (
           <div className="quotation-format quotation-edit-only sticky top-0 z-30 mb-3 flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 shadow-sm">
             <span className="mr-1 text-xs font-semibold uppercase tracking-wide">Format</span>
-            <FormatControls variant="full" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} />
+            <FormatControls variant="full" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} tableReady={tableReady} onInsertTable={insertTable} />
           </div>
         )}
         {bubble && !readOnly ? (
@@ -914,6 +1114,11 @@ export function QuotationSheet({
                       block={block}
                       readOnly={readOnly}
                       optionCount={options.length}
+                      onSaveTerms={block.type === 'terms' && !readOnly ? () => {
+                        setSaveName('');
+                        setSaveError('');
+                        setSaveTerms(block.type === 'terms' ? block.rows.map((row) => ({ label: row.label, value: row.value })) : null);
+                      } : undefined}
                       onChange={(next) => patchBlock(block.id, next)}
                       onMove={(direction) => update(moveBlock(document, block.id, direction))}
                       onRemove={() => {
@@ -929,14 +1134,106 @@ export function QuotationSheet({
           ))}
         </div>
       </div>
+      {saveTerms ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setSaveTerms(null)}>
+          <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitSavedTerms(event)}>
+            <p className="text-sm font-semibold">Save terms for which item?</p>
+            <input
+              value={saveName}
+              onChange={(event) => setSaveName(event.target.value)}
+              autoFocus
+              maxLength={80}
+              placeholder="Item name"
+              className="mt-3 h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+            />
+            {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSaveTerms(null)}>Cancel</button>
+              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createTermsState.isLoading}>Save</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function addPriceColumn(block: Extract<QuotationBlock, { type: 'option' }>): QuotationBlock {
+  const columns = block.columns ?? [];
+  if (columns.length >= 2) return block;
+  const column: PriceColumn = { id: crypto.randomUUID(), name: columns.length === 0 ? 'Column' : 'Column 2' };
+  return {
+    ...block,
+    columns: [...columns, column],
+    rows: block.rows.map((row) => ({ ...row, extras: { ...row.extras, [column.id]: '' } })),
+  };
+}
+
+function removePriceColumn(block: Extract<QuotationBlock, { type: 'option' }>, columnId: string): QuotationBlock {
+  return {
+    ...block,
+    columns: (block.columns ?? []).filter((column) => column.id !== columnId),
+    rows: block.rows.map((row) => {
+      const extras = { ...row.extras };
+      delete extras[columnId];
+      return { ...row, extras };
+    }),
+  };
+}
+
+function resizedWidths(widths: Record<string, number>, key: string, nextKey: string, delta: number) {
+  let current = widths[key] + delta;
+  let neighbor = widths[nextKey] - delta;
+  if (current < 6) {
+    neighbor -= 6 - current;
+    current = 6;
+  }
+  if (neighbor < 6) {
+    current -= 6 - neighbor;
+    neighbor = 6;
+  }
+  return { ...widths, [key]: current, [nextKey]: neighbor };
+}
+
+function priceHeaders(
+  block: Extract<QuotationBlock, { type: 'option' }>,
+  columns: PriceColumn[],
+  readOnly: boolean,
+  onChange: (block: QuotationBlock, recordHistory?: boolean) => void,
+) {
+  const keys = ['sl', 'item', 'description', ...columns.map((column) => column.id), 'unitPrice', 'quantity', 'total'];
+  const labels: Record<string, string> = {
+    sl: 'Sl.No.',
+    item: 'Items',
+    description: 'Description',
+    unitPrice: 'Unit Price',
+    quantity: 'Quantity',
+    total: 'Total Price',
+  };
+  return keys.map((key, index) => {
+    const column = columns.find((entry) => entry.id === key);
+    const content = column ? (
+      <span className="inline-flex w-full items-center justify-center gap-1">
+        <Field
+          value={column.name}
+          readOnly={readOnly}
+          className="min-w-0 w-full text-center font-semibold"
+          onChange={(name) => onChange({ ...block, columns: columns.map((entry) => entry.id === column.id ? { ...entry, name } : entry) })}
+        />
+        {readOnly ? null : (
+          <button type="button" className="quotation-edit-only text-[10px] font-normal text-slate-500" onClick={() => onChange(removePriceColumn(block, column.id), true)}>×</button>
+        )}
+      </span>
+    ) : labels[key];
+    return { key, label: column?.name || labels[key] || 'Column', next: keys[index + 1], content };
+  });
 }
 
 function BlockView({
   block,
   readOnly,
   optionCount,
+  onSaveTerms,
   onChange,
   onMove,
   onRemove,
@@ -944,6 +1241,7 @@ function BlockView({
   block: QuotationBlock;
   readOnly: boolean;
   optionCount: number;
+  onSaveTerms?: () => void;
   onChange: (block: QuotationBlock, recordHistory?: boolean) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -966,6 +1264,8 @@ function BlockView({
   if (block.type === 'option') {
     const total = optionTotal(block);
     const titled = showOptionTitle(block, optionCount);
+    const columns = (block.columns ?? []).slice(0, 2);
+    const leadColumns = 3 + columns.length;
     return (
       <div className={armed ? 'quotation-section-hot' : ''}>
         {titled || !readOnly ? (
@@ -980,23 +1280,47 @@ function BlockView({
             <button type="button" className="quotation-edit-only text-[10px] text-slate-500" onClick={() => onChange({ ...block, titleCustomized: true })}>Add option title</button>
           )
         ) : null}
-        <table className="mt-1 w-full border-collapse border border-black text-[11pt]">
+        <table className="quotation-item-table mt-1 w-full table-fixed border-collapse border border-black text-[11pt]">
           <colgroup>
-            <col className="w-[14mm]" />
-            <col className="w-[26%]" />
-            <col className="w-[28%]" />
-            <col className="w-[24mm]" />
-            <col className="w-[20mm]" />
-            <col className="w-[28mm]" />
+            {Object.entries(priceColumnWidths(block)).map(([key, width]) => (
+              <col key={key} style={{ width: `${width}%` }} />
+            ))}
           </colgroup>
           <thead>
             <tr className="text-center font-semibold">
-              <th className="border border-black px-1 py-1">Sl.No.</th>
-              <th className="border border-black px-1 py-1">Items</th>
-              <th className="border border-black px-1 py-1">Description</th>
-              <th className="border border-black px-1 py-1">Unit Price</th>
-              <th className="border border-black px-1 py-1">Quantity</th>
-              <th className="border border-black px-1 py-1">Total Price</th>
+              {priceHeaders(block, columns, readOnly, onChange).map((header) => (
+                <th key={header.key} className="relative border border-black px-1 py-1 align-top">
+                  {header.content}
+                  {readOnly || !header.next ? null : (
+                    <span
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`Resize ${header.label}`}
+                      className="quotation-edit-only absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const table = event.currentTarget.closest('table');
+                        const tableWidth = table?.getBoundingClientRect().width || 1;
+                        const startX = event.clientX;
+                        const start = priceColumnWidths(block);
+                        const key = header.key;
+                        const next = header.next;
+                        if (!next) return;
+                        const move = (moveEvent: PointerEvent) => {
+                          onChange({ ...block, widths: resizedWidths(start, key, next, ((moveEvent.clientX - startX) / tableWidth) * 100) });
+                        };
+                        const up = () => {
+                          window.removeEventListener('pointermove', move);
+                          window.removeEventListener('pointerup', up);
+                        };
+                        window.addEventListener('pointermove', move);
+                        window.addEventListener('pointerup', up);
+                      }}
+                    />
+                  )}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -1005,6 +1329,18 @@ function BlockView({
                 <td className="border border-black px-1 py-1 text-center">{index + 1}</td>
                 <td className="border border-black px-1 py-1 text-center"><RichText value={row.item} readOnly={readOnly} className="text-center" onChange={(item) => onChange({ ...block, rows: block.rows.map((entry) => entry.id === row.id ? { ...entry, item } : entry) })} /></td>
                 <td className="border border-black px-1 py-1"><RichText value={row.description} readOnly={readOnly} onChange={(description) => onChange({ ...block, rows: block.rows.map((entry) => entry.id === row.id ? { ...entry, description } : entry) })} /></td>
+                {columns.map((column) => (
+                  <td key={column.id} className="border border-black px-1 py-1">
+                    <RichText
+                      value={row.extras?.[column.id] ?? ''}
+                      readOnly={readOnly}
+                      onChange={(value) => onChange({
+                        ...block,
+                        rows: block.rows.map((entry) => entry.id === row.id ? { ...entry, extras: { ...entry.extras, [column.id]: value } } : entry),
+                      })}
+                    />
+                  </td>
+                ))}
                 <td className="border border-black px-1 py-1 text-center"><Field value={row.unitPrice} readOnly={readOnly} className="w-full text-center" onChange={(unitPrice) => onChange({ ...block, rows: block.rows.map((entry) => entry.id === row.id ? { ...entry, unitPrice } : entry) })} /></td>
                 <td className="border border-black px-1 py-1 text-center"><Field value={row.quantity} readOnly={readOnly} className="w-full text-center" onChange={(quantity) => onChange({ ...block, rows: block.rows.map((entry) => entry.id === row.id ? { ...entry, quantity } : entry) })} /></td>
                 <td className="border border-black px-1 py-1 text-center tabular-nums">
@@ -1014,13 +1350,18 @@ function BlockView({
               </tr>
             ))}
             <tr className="font-semibold">
-              <td colSpan={5} className="border border-black px-1 py-1 text-center">Grand Total (Amount is 5% VAT Excluded)</td>
+              <td colSpan={leadColumns + 2} className="border border-black px-1 py-1 text-center">Grand Total (Amount is 5% VAT Excluded)</td>
               <td className="border border-black px-1 py-1 text-center tabular-nums">{money(total)}</td>
             </tr>
           </tbody>
         </table>
         {readOnly ? null : (
-          <button type="button" className="quotation-edit-only mt-1 block text-left text-xs text-slate-600" onClick={() => onChange({ ...block, rows: [...block.rows, { id: crypto.randomUUID(), item: '', description: '', unitPrice: '', quantity: '1' }] })}>Add row</button>
+          <div className="quotation-edit-only mt-1 flex gap-3 text-xs text-slate-600">
+            <button type="button" className="cursor-pointer" onClick={() => onChange({ ...block, rows: [...block.rows, emptyPriceRow(columns)] })}>Add row</button>
+            {columns.length < 2 ? (
+              <button type="button" className="cursor-pointer" onClick={() => onChange(addPriceColumn(block), true)}>Add column</button>
+            ) : null}
+          </div>
         )}
         {controls}
       </div>
@@ -1031,7 +1372,12 @@ function BlockView({
     const rows = visibleRows(block.rows, readOnly);
     return (
       <div className={armed ? 'quotation-section-hot' : ''}>
-        <RichText value={block.name} readOnly={readOnly} className="font-semibold" onChange={(name) => onChange({ ...block, name })} />
+        <div className="flex items-start justify-between gap-2">
+          <RichText value={block.name} readOnly={readOnly} className="min-w-0 flex-1 font-semibold" onChange={(name) => onChange({ ...block, name })} />
+          {block.type === 'terms' && onSaveTerms ? (
+            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveTerms}>Save</button>
+          ) : null}
+        </div>
         <div className={`mt-1 grid items-baseline gap-x-2 gap-y-1 ${block.type === 'specification' ? 'grid-cols-[2rem_max-content_auto_minmax(0,1fr)_auto]' : 'grid-cols-[max-content_auto_minmax(0,1fr)_auto]'}`}>
           {rows.map((row, index) => (
             <div key={row.id} className="col-span-full grid grid-cols-subgrid items-baseline">
@@ -1080,6 +1426,7 @@ function BlockView({
           <RichText
             value={block.body}
             readOnly={readOnly}
+            allowTable
             className="mt-1 w-full"
             style={{ minHeight: `${block.minHeightMm ?? 36}mm` }}
             onChange={(body) => onChange({ ...block, body })}
@@ -1096,15 +1443,15 @@ function BlockView({
                 const startHeight = block.minHeightMm ?? 36;
                 const startWidth = block.widthPercent ?? 100;
                 const parentWidth = event.currentTarget.parentElement?.parentElement?.getBoundingClientRect().width || 1;
-                function move(moveEvent: PointerEvent) {
+                const move = (moveEvent: PointerEvent) => {
                   const minHeightMm = Math.min(160, Math.max(24, Math.round(startHeight + (moveEvent.clientY - startY) / 3.78)));
                   const widthPercent = Math.min(100, Math.max(45, Math.round(startWidth + ((moveEvent.clientX - startX) / parentWidth) * 100)));
                   onChange({ ...block, minHeightMm, widthPercent });
-                }
-                function up() {
+                };
+                const up = () => {
                   window.removeEventListener('pointermove', move);
                   window.removeEventListener('pointerup', up);
-                }
+                };
                 window.addEventListener('pointermove', move);
                 window.addEventListener('pointerup', up);
               }}

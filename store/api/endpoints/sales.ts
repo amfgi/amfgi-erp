@@ -207,6 +207,16 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery'],
     }),
+    getQuotationTermsTemplates: builder.query<Array<{ id: string; name: string; rows: Array<{ label: string; value: string }> }>, void>({
+      query: () => '/sales/terms-templates',
+      transformResponse: (response: { data: Array<{ id: string; name: string; rows: Array<{ label: string; value: string }> }> }) => response.data,
+      providesTags: ['QuotationTermsTemplate'],
+    }),
+    createQuotationTermsTemplate: builder.mutation<{ id: string; name: string }, { name: string; rows: Array<{ label: string; value: string }> }>({
+      query: (body) => ({ url: '/sales/terms-templates', method: 'POST', body }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationTermsTemplate'],
+    }),
     createJobFromSales: builder.mutation<SalesRecord, { id: string; body: Record<string, unknown> }>({
       query: ({ id, body }) => ({ url: `/sales/queries/${id}/create-job`, method: 'POST', body }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
@@ -226,4 +236,6 @@ export const {
   useReceivePurchaseOrderMutation,
   useSetSalesClosureMutation,
   useCreateJobFromSalesMutation,
+  useGetQuotationTermsTemplatesQuery,
+  useCreateQuotationTermsTemplateMutation,
 } = salesApi;

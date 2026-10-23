@@ -6,9 +6,10 @@ import { parsePartyListDateInput } from '@/lib/partyListsApi';
 
 import {
   optionsFromDocument,
+  plainText,
   readQuotationDocument,
 } from './quotationDocument';
-import { canSeeStage, hidesPurchaseOrders } from './access';
+import { canSeeStage, hidesPurchaseOrders, type SalesAccess } from './access';
 import {
   type DocumentKind,
   formatDocumentNumber,
@@ -181,8 +182,8 @@ function quotationGrandTotal(row: {
   const accepted = row.acceptedOptionId
     ? row.options.find((option) => option.id === row.acceptedOptionId)
     : undefined;
-  const counted = accepted ? [accepted] : row.options;
-  return counted.reduce((sum, option) => sum + optionGross(option), 0);
+  const counted = accepted ?? row.options[0];
+  return counted ? optionGross(counted) : 0;
 }
 
 export function presentSalesRecord(record: SalesRecord, currencyCode: string) {
@@ -225,6 +226,10 @@ function assertVisible(access: SalesAccess, stage: SalesStage) {
   if (!canSeeStage(access, stage)) throw new SalesError('Forbidden', 403);
 }
 
+async function lockSalesQuery(tx: Prisma.TransactionClient, companyId: string, id: string) {
+  await tx.$queryRaw`SELECT id FROM "SalesQuery" WHERE id = ${id} AND "companyId" = ${companyId} FOR UPDATE`;
+}
+
 export async function listSalesRecords(params: {
   companyId: string;
   access: SalesAccess;
@@ -265,6 +270,7 @@ export async function listSalesRecords(params: {
         salesman: { select: { id: true, name: true } },
         job: { select: { id: true, jobNumber: true } },
         options: {
+          orderBy: { sortOrder: 'asc' as const },
           select: {
             id: true,
             vatAmount: true,
@@ -585,6 +591,12 @@ export async function updateSalesQuery(params: {
     const options = documentOptions ?? params.options ?? null;
     if (options) assertOptions(mode, options, false);
     await prisma.$transaction(async (tx) => {
+      await lockSalesQuery(tx, params.companyId, current.id);
+      const fresh = await tx.salesQuery.findFirst({
+        where: { id: current.id, companyId: params.companyId },
+        select: { stage: true },
+      });
+      if (!fresh || fresh.stage !== 'QUOTATION') return;
       if (options) await replaceOptions(tx, current, options);
       await tx.salesQuery.update({
         where: { id: current.id },
@@ -728,6 +740,7 @@ export async function receivePurchaseOrder(params: {
   }
 
   await withNumberRetry(() => prisma.$transaction(async (tx) => {
+    await lockSalesQuery(tx, params.companyId, current.id);
     const fresh = await tx.salesQuery.findFirst({
       where: { id: current.id, companyId: params.companyId },
       select: { stage: true, poNumber: true },
@@ -735,6 +748,11 @@ export async function receivePurchaseOrder(params: {
     if (!fresh || fresh.stage !== 'QUOTATION' || fresh.poNumber) {
       throw new SalesError('This quotation already has a purchase order');
     }
+    const option = await tx.salesQuotationOption.findFirst({
+      where: { id: acceptedId!, companyId: params.companyId, salesQueryId: current.id },
+      select: { id: true },
+    });
+    if (!option) throw new SalesError('Choose the option the client accepted');
     const poNumber = await nextDocumentNumber(tx, params.companyId, 'PO');
     await tx.salesQuotationOption.updateMany({
       where: { companyId: params.companyId, salesQueryId: current.id },
@@ -797,6 +815,34 @@ export async function setSalesClosure(params: {
   return getSalesRecord(params.companyId, params.id, params.access);
 }
 
+function clipText(value: string, max: number) {
+  return value.slice(0, max);
+}
+
+function quotationJobCopy(record: SalesRecord) {
+  const document = readQuotationDocument(record.quotationDocument);
+  const project = clipText(plainText(document?.project), 500);
+  const title = clipText(plainText(document?.quoteTitle), 4000);
+  const contactName = clipText(plainText(document?.customer.contactName), 200);
+  const quotedName = clipText(plainText(document?.customer.name), 200);
+  const tel = clipText(plainText(document?.customer.tel) || plainText(document?.customer.contactNumber), 50);
+  const email = clipText(plainText(document?.customer.email), 200);
+  const city = clipText(plainText(document?.customer.city), 2000);
+  const location = project || record.projectLocation;
+  const description = title || record.projectDescription;
+  return {
+    location,
+    description,
+    contactPerson: contactName || record.customer.contactPerson,
+    address: city || null,
+    contact: {
+      name: contactName || quotedName,
+      number: tel || null,
+      email: email || null,
+    },
+  };
+}
+
 export async function createJobFromSales(params: {
   companyId: string;
   id: string;
@@ -836,7 +882,9 @@ export async function createJobFromSales(params: {
 
   const quotationNumber = formatQuotationNumber(current.quotationNumber, current.quotationRevision);
   const salesPerson = (current.salesman.name || current.salesman.email || '').slice(0, 200);
-  const address = params.address?.trim() || null;
+  const typedAddress = params.address?.trim() || null;
+  const copy = quotationJobCopy(current);
+  const jobAddress = typedAddress || copy.address;
 
   try {
     await withNumberRetry(() => prisma.$transaction(async (tx) => {
@@ -855,7 +903,7 @@ export async function createJobFromSales(params: {
           where: { id: current.customerId },
           data: {
             ...(params.email?.trim() ? { email: params.email.trim() } : {}),
-            ...(address ? { address } : {}),
+            ...(typedAddress ? { address: typedAddress } : {}),
             ...(params.tradeLicenseNumber?.trim()
               ? { tradeLicenseNumber: params.tradeLicenseNumber.trim() }
               : {}),
@@ -875,17 +923,18 @@ export async function createJobFromSales(params: {
           companyId: params.companyId,
           jobNumber,
           customerId: current.customerId,
-          description: current.projectDescription,
-          projectDetails: current.projectDescription,
-          site: current.projectLocation,
-          locationName: current.projectLocation,
-          address: address && address.length <= 2000 ? address : null,
+          description: copy.description,
+          projectName: copy.location,
+          projectDetails: copy.description,
+          site: copy.location,
+          locationName: copy.location,
+          address: jobAddress && jobAddress.length <= 2000 ? jobAddress : null,
           projectQtyArea: current.projectScope,
           startDate: current.startDate ?? new Date(),
           quotationNumber,
           quotationDate: current.quotationIssuedAt,
           salesPerson: salesPerson || null,
-          contactPerson: current.customer.contactPerson,
+          contactPerson: copy.contactPerson,
           lpoNumber: current.poNumber,
           lpoDate: poDateValue,
           lpoValue: poAmount,
@@ -894,6 +943,18 @@ export async function createJobFromSales(params: {
         },
         select: { id: true },
       });
+      if (copy.contact.name) {
+        await tx.jobContact.create({
+          data: {
+            companyId: params.companyId,
+            jobId: job.id,
+            name: copy.contact.name,
+            email: copy.contact.email,
+            number: copy.contact.number,
+            sortOrder: 0,
+          },
+        });
+      }
       const linked = await tx.salesQuery.updateMany({
         where: { id: current.id, companyId: params.companyId, jobId: null },
         data: { jobId: job.id },
