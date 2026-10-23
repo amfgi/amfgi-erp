@@ -573,6 +573,33 @@ html.quotation-editing body {
   padding-left: 1.25rem;
 }
 
+.quotation-pad table.quotation-insert {
+  width: 100%;
+  height: auto;
+  margin: 0.25rem 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.quotation-pad table.quotation-insert td,
+.quotation-pad table.quotation-insert th {
+  height: auto;
+  border: 1px solid #111;
+  min-width: 0;
+  padding: 2px 4px;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.quotation-pad table.quotation-item-table th,
+.quotation-pad table.quotation-item-table td {
+  height: auto;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  vertical-align: top;
+}
+
 .quotation-page {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;

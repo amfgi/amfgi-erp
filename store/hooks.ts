@@ -174,6 +174,8 @@ export {
   useReceivePurchaseOrderMutation,
   useSetSalesClosureMutation,
   useCreateJobFromSalesMutation,
+  useGetQuotationTermsTemplatesQuery,
+  useCreateQuotationTermsTemplateMutation,
 } from './api/endpoints/sales';
 
 export {
