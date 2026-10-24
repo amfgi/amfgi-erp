@@ -157,6 +157,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const [clientFiles, setClientFiles] = useState<File[]>([]);
   const [poFile, setPoFile] = useState<File | null>(null);
   const [jobOpen, setJobOpen] = useState(false);
+  const [jobSaving, setJobSaving] = useState(false);
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [tradeLicenseNumber, setTradeLicenseNumber] = useState('');
@@ -354,8 +355,13 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         id,
         body: { acceptedOptionId: chosen },
       }).unwrap();
-      toast.success('Purchase order received');
-      router.push(`/sales/purchase-orders/form?id=${id}`);
+      if (access.purchaseOrdersView) {
+        toast.success('Purchase order received');
+        router.push(`/sales/purchase-orders/form?id=${id}`);
+      } else {
+        toast.success('Purchase order received. You do not have access to open purchase orders.');
+        router.push('/sales/quotations');
+      }
     } catch (error) {
       pauseQuotationSave.current = false;
       toast.error(apiError(error));
@@ -432,20 +438,27 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     }
   }
 
+  async function persistPurchaseOrder() {
+    if (!id) return;
+    await updateQuery({
+      id,
+      body: {
+        budgetDetails,
+        purchaseOrderNotes,
+        poDate: poDate || null,
+        poValue: poValue === '' ? null : Number(poValue),
+      },
+    }).unwrap();
+    if (poFile) {
+      await uploadFiles(id, [poFile], 'PO');
+      setPoFile(null);
+    }
+  }
+
   async function onSavePurchaseOrder() {
     if (!id) return;
     try {
-      await updateQuery({
-        id,
-        body: {
-          budgetDetails,
-          purchaseOrderNotes,
-          poDate: poDate || null,
-          poValue: poValue === '' ? null : Number(poValue),
-        },
-      }).unwrap();
-      if (poFile) await uploadFiles(id, [poFile], 'PO');
-      setPoFile(null);
+      await persistPurchaseOrder();
       toast.success('Purchase order saved');
       router.push('/sales/purchase-orders');
     } catch (error) {
@@ -476,13 +489,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   }
 
   async function onCreateJob() {
-    if (!id) return;
+    if (!id || jobSaving) return;
     const value = Number(poValue);
     if (!poDate || !Number.isFinite(value) || value <= 0) {
       toast.error('Enter the PO date and a PO value greater than zero');
       return;
     }
+    setJobSaving(true);
     try {
+      await persistPurchaseOrder();
       const created = await createJob({
         id,
         body: {
@@ -502,7 +517,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       if (created.job?.id) router.push(`/customers/jobs/${created.job.id}`);
       else router.push('/sales/purchase-orders');
     } catch (error) {
-      toast.error(apiError(error));
+      toast.error(error instanceof Error ? error.message : apiError(error));
+    } finally {
+      setJobSaving(false);
     }
   }
 
@@ -904,15 +921,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
 
       <Modal
         isOpen={jobOpen}
-        onClose={() => !createJobState.isLoading && setJobOpen(false)}
+        onClose={() => !jobSaving && setJobOpen(false)}
         title="Create job"
         description="The job number is assigned when you create the job."
         actions={
           <>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setJobOpen(false)}>
+            <Button type="button" variant="ghost" size="sm" disabled={jobSaving} onClick={() => setJobOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" size="sm" disabled={createJobState.isLoading} onClick={() => void onCreateJob()}>
+            <Button type="button" size="sm" disabled={jobSaving} onClick={() => void onCreateJob()}>
               Create job
             </Button>
           </>

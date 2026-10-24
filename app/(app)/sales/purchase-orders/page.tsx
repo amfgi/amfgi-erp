@@ -7,9 +7,9 @@ export default function PurchaseOrdersPage() {
     <SalesListPage
       eyebrow="Sales"
       title="Purchase Orders"
-      description="Received purchase orders that do not have a job yet."
+      description="Received purchase orders that do not have a job yet. Use Status to find lost or cancelled ones."
       stage="PURCHASE_ORDER"
-      closure="OPEN"
+      showClosureFilter
       withoutJob
     />
   );

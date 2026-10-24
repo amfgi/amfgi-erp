@@ -33,7 +33,7 @@ function getDatabaseUrl(): string {
 }
 
 /** Model delegates that must exist; extend when adding new Prisma models. */
-const REQUIRED_PRISMA_DELEGATES = ['mediaAsset', 'globalSetting', 'payRun', 'payRunLine', 'quotationTermsTemplate'] as const
+const REQUIRED_PRISMA_DELEGATES = ['mediaAsset', 'globalSetting', 'payRun', 'payRunLine', 'quotationTermsTemplate', 'quotationCustomSection'] as const
 
 function prismaClientHasExpectedModels(client: PrismaClient): boolean {
   return REQUIRED_PRISMA_DELEGATES.every(

@@ -37,7 +37,7 @@ function slot(ticket: string, userId: string, pageCount = 1) {
     controller: null,
     bytes: null,
     failed: false,
-    timer: setTimeout(() => downloads.delete(ticket), ticketLifetime(pageCount)),
+    timer: setTimeout(() => expire(ticket), ticketLifetime(pageCount)),
   };
   downloads.set(ticket, created);
   return created;
@@ -50,6 +50,15 @@ function close(waiter: Waiter) {
     // The browser already finished the download.
   }
   waiter.controller = null;
+}
+
+function expire(ticket: string) {
+  const waiter = store().get(ticket);
+  if (!waiter) return;
+  waiter.failed = true;
+  waiter.bytes = null;
+  close(waiter);
+  store().delete(ticket);
 }
 
 export function beginPdfDownload(ticket: string, userId: string, pageCount = 1) {

@@ -86,7 +86,7 @@ export function sanitizeRichText(value: string | null | undefined) {
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
     .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/javascript:/gi, '')
-    .replace(/<(?!\/?(b|strong|i|em|u|span|font|br|p|div|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col)\b)[^>]*>/gi, '');
+    .replace(/<(?!\/?(b|strong|i|em|u|span|font|br|p|div|h1|h2|h3|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col)\b)[^>]*>/gi, '');
 }
 
 function moneyWordsUnderThousand(value: number): string {
@@ -193,7 +193,7 @@ export function defaultOption(): QuotationBlock {
 }
 
 export function defaultBlank(): QuotationBlock {
-  return { id: id(), type: 'blank', name: 'Description', body: '', minHeightMm: 36, widthPercent: 100 };
+  return { id: id(), type: 'blank', name: '', body: '', minHeightMm: 36, widthPercent: 100 };
 }
 
 export function quotationFileName(document: Pick<QuotationDocument, 'fileName' | 'fileNameCustomized' | 'customer'>, quotationNumber: string) {
@@ -453,6 +453,20 @@ function optionInsertIndex(blocks: QuotationBlock[]) {
   let end = first + 1;
   while (end < blocks.length && blocks[end].type === 'option') end += 1;
   return end;
+}
+
+export function insertCustomSection(
+  document: QuotationDocument,
+  content: { name: string; body: string; minHeightMm?: number; widthPercent?: number },
+): QuotationDocument {
+  return insertBlock(document, {
+    id: id(),
+    type: 'blank',
+    name: content.name,
+    body: content.body,
+    minHeightMm: content.minHeightMm ?? 36,
+    widthPercent: content.widthPercent ?? 100,
+  });
 }
 
 export function applySavedTerms(document: QuotationDocument, rows: Array<{ label: string; value: string }>): QuotationDocument {

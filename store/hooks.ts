@@ -176,6 +176,12 @@ export {
   useCreateJobFromSalesMutation,
   useGetQuotationTermsTemplatesQuery,
   useCreateQuotationTermsTemplateMutation,
+  useUpdateQuotationTermsTemplateMutation,
+  useDeleteQuotationTermsTemplateMutation,
+  useGetQuotationCustomSectionsQuery,
+  useCreateQuotationCustomSectionMutation,
+  useUpdateQuotationCustomSectionMutation,
+  useDeleteQuotationCustomSectionMutation,
 } from './api/endpoints/sales';
 
 export {

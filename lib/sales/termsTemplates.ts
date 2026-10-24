@@ -43,10 +43,15 @@ export async function listTermsTemplates(companyId: string) {
   return rows.map((row) => ({ id: row.id, name: row.name, rows: sanitizeTermsRows(row.rows) }));
 }
 
-export async function createTermsTemplate(companyId: string, name: string, rows: unknown) {
+function cleanName(name: string) {
   const trimmed = name.trim().slice(0, NAME_LIMIT);
   const nameKey = termsNameKey(trimmed);
   if (!nameKey) throw new SalesError('Enter a name');
+  return { trimmed, nameKey };
+}
+
+export async function createTermsTemplate(companyId: string, name: string, rows: unknown) {
+  const { trimmed, nameKey } = cleanName(name);
   const savedRows = sanitizeTermsRows(rows);
   if (!savedRows.length) throw new SalesError('Add a term before saving');
   const existing = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -67,4 +72,44 @@ export async function createTermsTemplate(companyId: string, name: string, rows:
     if (alreadySaved(error)) throw new SalesError('This name is already saved');
     throw error;
   }
+}
+
+export async function renameTermsTemplate(companyId: string, id: string, name: string) {
+  const { trimmed, nameKey } = cleanName(name);
+  const current = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "QuotationTermsTemplate"
+    WHERE "id" = ${id} AND "companyId" = ${companyId}
+    LIMIT 1
+  `;
+  if (!current.length) throw new SalesError('Saved terms not found', 404);
+  const clash = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "QuotationTermsTemplate"
+    WHERE "companyId" = ${companyId} AND "nameKey" = ${nameKey} AND "id" <> ${id}
+    LIMIT 1
+  `;
+  if (clash.length) throw new SalesError('This name is already saved');
+  try {
+    const updated = await prisma.$executeRaw`
+      UPDATE "QuotationTermsTemplate"
+      SET "name" = ${trimmed}, "nameKey" = ${nameKey}
+      WHERE "id" = ${id} AND "companyId" = ${companyId}
+    `;
+    if (Number(updated) < 1) throw new SalesError('Saved terms not found', 404);
+    return { id, name: trimmed };
+  } catch (error) {
+    if (error instanceof SalesError) throw error;
+    if (alreadySaved(error)) throw new SalesError('This name is already saved');
+    throw error;
+  }
+}
+
+export async function deleteTermsTemplate(companyId: string, id: string) {
+  const deleted = await prisma.$executeRaw`
+    DELETE FROM "QuotationTermsTemplate"
+    WHERE "id" = ${id} AND "companyId" = ${companyId}
+  `;
+  if (Number(deleted) < 1) throw new SalesError('Saved terms not found', 404);
+  return { id };
 }
