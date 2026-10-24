@@ -35,6 +35,7 @@ export default function SalesListPage({
   stage,
   closure,
   showQueryQueue,
+  showClosureFilter,
   showGrandTotal,
   withoutJob,
   addHref,
@@ -46,6 +47,7 @@ export default function SalesListPage({
   stage?: SalesStage;
   closure?: SalesClosure;
   showQueryQueue?: boolean;
+  showClosureFilter?: boolean;
   showGrandTotal?: boolean;
   withoutJob?: boolean;
   addHref?: string;
@@ -59,6 +61,7 @@ export default function SalesListPage({
   });
   const [search, setSearch] = useState('');
   const [queue, setQueue] = useState<'active' | 'rejected' | 'all'>('active');
+  const [closureFilter, setClosureFilter] = useState<SalesClosure | 'ALL'>('OPEN');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(LIST_PAGE_SIZE_OPTIONS[0]);
 
@@ -67,13 +70,17 @@ export default function SalesListPage({
     offset: (page - 1) * pageSize,
     search: search.trim() || undefined,
     stage,
-    closure: showQueryQueue ? (queue === 'rejected' ? 'REJECTED' : closure) : closure,
+    closure: showQueryQueue
+      ? (queue === 'rejected' ? 'REJECTED' : closure)
+      : showClosureFilter
+        ? (closureFilter === 'ALL' ? undefined : closureFilter)
+        : closure,
     excludeClosure: showQueryQueue && queue === 'active' ? 'REJECTED' : undefined,
     withoutJob,
   });
 
-  const items = query.data?.items ?? [];
-  const total = query.data?.total ?? 0;
+  const items = query.currentData?.items ?? [];
+  const total = query.currentData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageStart = total === 0 ? 0 : (page - 1) * pageSize;
 
@@ -122,12 +129,30 @@ export default function SalesListPage({
             </select>
           </label>
         ) : null}
+        {showClosureFilter ? (
+          <label className={LABEL_CLASS}>
+            Status
+            <select
+              value={closureFilter}
+              onChange={(event) => {
+                setClosureFilter(event.target.value as SalesClosure | 'ALL');
+                setPage(1);
+              }}
+              className="mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm"
+            >
+              <option value="OPEN">Open</option>
+              <option value="LOST">Lost</option>
+              <option value="CANCELLED">Cancelled</option>
+              <option value="ALL">All</option>
+            </select>
+          </label>
+        ) : null}
       </div>
 
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         {query.isError ? (
           <p className="p-5 text-sm text-muted-foreground">You do not have access to this list.</p>
-        ) : query.isLoading ? (
+        ) : query.isLoading || !query.currentData ? (
           <p className="p-5 text-sm text-muted-foreground">Loading…</p>
         ) : rows.length === 0 ? (
           <p className="p-5 text-sm text-muted-foreground">Nothing here yet.</p>
@@ -166,7 +191,7 @@ export default function SalesListPage({
                 {showGrandTotal ? (
                   <span className="font-medium text-foreground">
                     <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:hidden">Grand total</span>
-                    {query.data?.currencyCode ?? row.currencyCode} {Number(row.grandTotal || 0).toFixed(2)}
+                    {query.currentData?.currencyCode ?? row.currencyCode} {Number(row.grandTotal || 0).toFixed(2)}
                   </span>
                 ) : null}
                 <span className="flex flex-wrap gap-2">

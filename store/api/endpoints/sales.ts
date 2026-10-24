@@ -217,6 +217,36 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: { id: string; name: string } }) => response.data,
       invalidatesTags: ['QuotationTermsTemplate'],
     }),
+    updateQuotationTermsTemplate: builder.mutation<{ id: string; name: string }, { id: string; name: string }>({
+      query: ({ id, name }) => ({ url: `/sales/terms-templates/${id}`, method: 'PATCH', body: { name } }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationTermsTemplate'],
+    }),
+    deleteQuotationTermsTemplate: builder.mutation<{ id: string }, string>({
+      query: (id) => ({ url: `/sales/terms-templates/${id}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: ['QuotationTermsTemplate'],
+    }),
+    getQuotationCustomSections: builder.query<Array<{ id: string; name: string; content: { name: string; body: string; minHeightMm: number; widthPercent: number } }>, void>({
+      query: () => '/sales/custom-sections',
+      transformResponse: (response: { data: Array<{ id: string; name: string; content: { name: string; body: string; minHeightMm: number; widthPercent: number } }> }) => response.data,
+      providesTags: ['QuotationCustomSection'],
+    }),
+    createQuotationCustomSection: builder.mutation<{ id: string; name: string }, { name: string; content: { name: string; body: string; minHeightMm: number; widthPercent: number } }>({
+      query: (body) => ({ url: '/sales/custom-sections', method: 'POST', body }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationCustomSection'],
+    }),
+    updateQuotationCustomSection: builder.mutation<{ id: string; name: string }, { id: string; name: string }>({
+      query: ({ id, name }) => ({ url: `/sales/custom-sections/${id}`, method: 'PATCH', body: { name } }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationCustomSection'],
+    }),
+    deleteQuotationCustomSection: builder.mutation<{ id: string }, string>({
+      query: (id) => ({ url: `/sales/custom-sections/${id}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: ['QuotationCustomSection'],
+    }),
     createJobFromSales: builder.mutation<SalesRecord, { id: string; body: Record<string, unknown> }>({
       query: ({ id, body }) => ({ url: `/sales/queries/${id}/create-job`, method: 'POST', body }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
@@ -238,4 +268,10 @@ export const {
   useCreateJobFromSalesMutation,
   useGetQuotationTermsTemplatesQuery,
   useCreateQuotationTermsTemplateMutation,
+  useUpdateQuotationTermsTemplateMutation,
+  useDeleteQuotationTermsTemplateMutation,
+  useGetQuotationCustomSectionsQuery,
+  useCreateQuotationCustomSectionMutation,
+  useUpdateQuotationCustomSectionMutation,
+  useDeleteQuotationCustomSectionMutation,
 } = salesApi;

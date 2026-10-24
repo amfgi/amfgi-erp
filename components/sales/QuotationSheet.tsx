@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import {
   AlignCenter,
@@ -12,13 +12,24 @@ import {
   Italic,
   List,
   ListOrdered,
+  Pencil,
   Redo2,
   Table2,
+  Trash2,
   Underline,
   Undo2,
 } from 'lucide-react';
 
-import { useCreateQuotationTermsTemplateMutation, useGetQuotationTermsTemplatesQuery } from '@/store/hooks';
+import {
+  useCreateQuotationCustomSectionMutation,
+  useCreateQuotationTermsTemplateMutation,
+  useDeleteQuotationCustomSectionMutation,
+  useDeleteQuotationTermsTemplateMutation,
+  useGetQuotationCustomSectionsQuery,
+  useGetQuotationTermsTemplatesQuery,
+  useUpdateQuotationCustomSectionMutation,
+  useUpdateQuotationTermsTemplateMutation,
+} from '@/store/hooks';
 import {
   applySavedTerms,
   defaultBlank,
@@ -27,11 +38,13 @@ import {
   defaultSpecification,
   emptyPriceRow,
   insertBlock,
+  insertCustomSection,
   lineAmount,
   moveBlock,
   optionBlocks,
   optionTotal,
   padImageUrl,
+  plainText,
   priceColumnWidths,
   presetAlreadyUsed,
   removeBlock,
@@ -73,6 +86,15 @@ const TEXT_COLORS = [
   '#b5e61d', '#99d9ea', '#7092be', '#c8bfe7',
 ] as const;
 
+type HeadingLevel = 'normal' | 'h1' | 'h2' | 'h3';
+
+const HEADING_STYLES: Record<HeadingLevel, { tag: 'p' | 'h1' | 'h2' | 'h3'; label: string; pt: string; weight: string; color: string; margin: string }> = {
+  normal: { tag: 'p', label: 'Normal', pt: '11', weight: '400', color: '', margin: '0' },
+  h1: { tag: 'h1', label: 'Heading 1', pt: '16', weight: '700', color: '#111111', margin: '10pt 0 4pt' },
+  h2: { tag: 'h2', label: 'Heading 2', pt: '14', weight: '700', color: '#111111', margin: '8pt 0 2pt' },
+  h3: { tag: 'h3', label: 'Heading 3', pt: '12', weight: '700', color: '#111111', margin: '6pt 0 2pt' },
+};
+
 type FormatMarks = {
   bold: boolean;
   italic: boolean;
@@ -80,6 +102,7 @@ type FormatMarks = {
   align: 'left' | 'center' | 'right';
   fontFamily: string;
   fontSize: string;
+  heading: HeadingLevel;
 };
 
 const DEFAULT_MARKS: FormatMarks = {
@@ -89,6 +112,7 @@ const DEFAULT_MARKS: FormatMarks = {
   align: 'left',
   fontFamily: 'Calibri',
   fontSize: '11',
+  heading: 'normal',
 };
 
 function preventToolbarMouseDown(event: ReactMouseEvent) {
@@ -111,7 +135,14 @@ function sameMarks(left: FormatMarks, right: FormatMarks) {
     && left.underline === right.underline
     && left.align === right.align
     && left.fontFamily === right.fontFamily
-    && left.fontSize === right.fontSize;
+    && left.fontSize === right.fontSize
+    && left.heading === right.heading;
+}
+
+function readHeading(element: Element | null): HeadingLevel {
+  const tag = element?.closest('h1, h2, h3')?.tagName.toLowerCase();
+  if (tag === 'h1' || tag === 'h2' || tag === 'h3') return tag;
+  return 'normal';
 }
 
 function readMarks(element: Element | null): FormatMarks {
@@ -126,15 +157,33 @@ function readMarks(element: Element | null): FormatMarks {
     align,
     fontFamily: matchFont(style.fontFamily),
     fontSize: matchSize(parseFloat(style.fontSize) || 14.67),
+    heading: readHeading(element),
   };
 }
 
-function paintFontSize(field: HTMLElement, range: Range | null, pt: string) {
-  for (const node of field.querySelectorAll<HTMLElement>('span, font')) {
-    const size = node.style.fontSize.toLowerCase();
-    const keyword = size.includes('xxx-large');
-    const fontTag = node.tagName === 'FONT' && node.getAttribute('size') === '7';
-    if (!keyword && !fontTag) continue;
+function isHeadingLevel(value: string | undefined): value is HeadingLevel {
+  return value === 'normal' || value === 'h1' || value === 'h2' || value === 'h3';
+}
+
+function headingPointSize(node: HTMLElement) {
+  const heading = node.closest('h1, h2, h3');
+  if (!(heading instanceof HTMLElement)) return null;
+  const inline = /^(\d+(?:\.\d+)?)pt$/i.exec(heading.style.fontSize);
+  if (inline) return inline[1];
+  if (heading.tagName === 'H1') return HEADING_STYLES.h1.pt;
+  if (heading.tagName === 'H2') return HEADING_STYLES.h2.pt;
+  if (heading.tagName === 'H3') return HEADING_STYLES.h3.pt;
+  return null;
+}
+
+function isMaxFontNode(node: HTMLElement) {
+  const size = node.style.fontSize.toLowerCase();
+  return size.includes('xxx-large') || (node.tagName === 'FONT' && node.getAttribute('size') === '7');
+}
+
+function paintFontSize(field: HTMLElement, range: Range | null, pt: string, keepHeading = false) {
+  for (const node of field.querySelectorAll<HTMLElement>('span, font, div, p')) {
+    if (!isMaxFontNode(node)) continue;
     if (range) {
       try {
         if (!range.intersectsNode(node)) continue;
@@ -142,9 +191,65 @@ function paintFontSize(field: HTMLElement, range: Range | null, pt: string) {
         continue;
       }
     }
-    node.style.fontSize = `${pt}pt`;
+    node.style.fontSize = `${(keepHeading ? headingPointSize(node) : null) ?? pt}pt`;
     node.removeAttribute('size');
   }
+}
+
+function paintHeadingBlock(block: HTMLElement, level: HeadingLevel) {
+  const spec = HEADING_STYLES[level];
+  block.style.fontSize = `${spec.pt}pt`;
+  block.style.fontWeight = spec.weight;
+  block.style.lineHeight = '1.15';
+  block.style.margin = spec.margin;
+  block.style.color = spec.color;
+  for (const child of block.querySelectorAll<HTMLElement>('span, font, b, strong')) {
+    child.style.fontSize = '';
+    child.style.fontWeight = '';
+    if (child.tagName === 'FONT') child.removeAttribute('size');
+  }
+}
+
+function blocksInSelection(field: HTMLElement, tag: string) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return [];
+  const range = selection.getRangeAt(0);
+  const matches: HTMLElement[] = [];
+  for (const node of field.querySelectorAll<HTMLElement>(tag)) {
+    if (node === field || !field.contains(node)) continue;
+    try {
+      if (!range.intersectsNode(node)) continue;
+    } catch {
+      continue;
+    }
+    matches.push(node);
+  }
+  return matches.filter((node) => !matches.some((other) => other !== node && node.contains(other)));
+}
+
+function applyHeading(field: HTMLElement, level: HeadingLevel) {
+  const spec = HEADING_STYLES[level];
+  const text = field.textContent?.replace(/\u00a0/g, ' ').trim() ?? '';
+  if (!text && field.querySelectorAll('table, img').length === 0) {
+    field.innerHTML = `<${spec.tag}><br></${spec.tag}>`;
+    const block = field.querySelector<HTMLElement>(`:scope > ${spec.tag}`);
+    if (!block) return;
+    paintHeadingBlock(block, level);
+    const range = window.document.createRange();
+    range.setStart(block, 0);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    return;
+  }
+  window.document.execCommand('formatBlock', false, spec.tag);
+  let blocks = blocksInSelection(field, spec.tag);
+  if (blocks.length === 0) {
+    window.document.execCommand('formatBlock', false, `<${spec.tag}>`);
+    blocks = blocksInSelection(field, spec.tag);
+  }
+  for (const block of blocks) paintHeadingBlock(block, level);
 }
 
 const SECTION_CHOICES = [
@@ -152,8 +257,16 @@ const SECTION_CHOICES = [
   { type: 'scope', label: 'Not in our scope', hint: 'What the quote leaves out' },
   { type: 'specification', label: 'Specification & Note', hint: 'Numbered specification' },
   { type: 'option', label: 'Price option', hint: 'Another priced table' },
-  { type: 'blank', label: 'Description', hint: 'A wide text box' },
+  { type: 'blank', label: 'Custom Section', hint: 'A blank section you write' },
 ] as const;
+
+function mutationMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const message = (error as { data?: { error?: string } }).data?.error;
+    if (message) return message;
+  }
+  return fallback;
+}
 
 function money(value: number) {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -263,7 +376,10 @@ function RichText({
       return;
     }
     node.innerHTML = next;
-    emitted.current = next;
+    paintFontSize(node, null, '11', true);
+    const cleaned = node.innerHTML;
+    emitted.current = cleaned;
+    if (normalizedHtml(cleaned) !== normalizedHtml(next)) onChange?.(cleaned);
     if (focused) {
       node.focus();
       placeCaret(node, caret.current ?? node.textContent?.length ?? 0);
@@ -342,7 +458,9 @@ function RichText({
         window.addEventListener('pointerup', up);
       }}
       onInput={(event) => {
-        const html = event.currentTarget.innerHTML;
+        const field = event.currentTarget;
+        paintFontSize(field, null, '11', true);
+        const html = field.innerHTML;
         emitted.current = html;
         rememberCaret();
         onChange?.(html);
@@ -547,6 +665,19 @@ function FormatControls({
         </>
       ) : null}
       <select
+        aria-label="Heading"
+        title="Heading"
+        value={marks.heading}
+        onMouseDown={onPrepare}
+        onChange={(event) => onFormat('heading', event.target.value)}
+        className="h-8 max-w-[8.5rem] rounded border px-1 text-sm"
+      >
+        {(Object.keys(HEADING_STYLES) as HeadingLevel[]).map((level) => (
+          <option key={level} value={level}>{HEADING_STYLES[level].label}</option>
+        ))}
+      </select>
+      <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
+      <select
         aria-label="Font"
         title="Font"
         value={marks.fontFamily}
@@ -662,10 +793,20 @@ export function QuotationSheet({
   const [tableReady, setTableReady] = useState(false);
   const [termsListOpen, setTermsListOpen] = useState(false);
   const [saveTerms, setSaveTerms] = useState<Array<{ label: string; value: string }> | null>(null);
+  const [saveSection, setSaveSection] = useState<{ name: string; body: string; minHeightMm: number; widthPercent: number } | null>(null);
   const [saveName, setSaveName] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [renameTarget, setRenameTarget] = useState<null | { kind: 'terms' | 'section'; id: string }>(null);
+  const [renameName, setRenameName] = useState('');
+  const [renameError, setRenameError] = useState('');
   const termsQuery = useGetQuotationTermsTemplatesQuery(undefined, { skip: readOnly });
   const [createTerms, createTermsState] = useCreateQuotationTermsTemplateMutation();
+  const [renameTerms, renameTermsState] = useUpdateQuotationTermsTemplateMutation();
+  const [deleteTerms] = useDeleteQuotationTermsTemplateMutation();
+  const customQuery = useGetQuotationCustomSectionsQuery(undefined, { skip: readOnly });
+  const [createCustomSection, createCustomSectionState] = useCreateQuotationCustomSectionMutation();
+  const [renameSection, renameSectionState] = useUpdateQuotationCustomSectionMutation();
+  const [deleteSection] = useDeleteQuotationCustomSectionMutation();
   const termsItems = useMemo(
     () => (termsQuery.data ?? []).map((entry) => ({ id: entry.id, label: entry.name, searchText: entry.name })),
     [termsQuery.data],
@@ -889,7 +1030,9 @@ export function QuotationSheet({
       selection.addRange(savedRange.current);
     }
     window.document.execCommand('styleWithCSS', false, 'true');
-    if (command === 'fontSize') {
+    if (command === 'heading') {
+      if (field && isHeadingLevel(value)) applyHeading(field, value);
+    } else if (command === 'fontSize') {
       const pt = SIZES.includes(value as (typeof SIZES)[number]) ? value! : '11';
       window.document.execCommand('fontSize', false, '7');
       const range = window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0) : savedRange.current;
@@ -959,6 +1102,17 @@ export function QuotationSheet({
     if (termsId) window.requestAnimationFrame(() => window.document.getElementById(termsId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
+  function insertSavedSection(sectionId: string) {
+    const saved = customQuery.data?.find((entry) => entry.id === sectionId);
+    if (!saved) return;
+    pushHistory();
+    const previous = new Set(document.blocks.map((block) => block.id));
+    const next = insertCustomSection(document, saved.content);
+    update(next);
+    const added = next.blocks.find((block) => !previous.has(block.id));
+    if (added) window.requestAnimationFrame(() => window.document.getElementById(added.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
+
   async function submitSavedTerms(event: FormEvent) {
     event.preventDefault();
     if (!saveTerms) return;
@@ -972,6 +1126,55 @@ export function QuotationSheet({
       setSaveError(error && typeof error === 'object' && 'data' in error && typeof (error as { data?: { error?: string } }).data?.error === 'string'
         ? (error as { data?: { error?: string } }).data?.error || 'Could not save the terms'
         : 'Could not save the terms');
+    }
+  }
+
+  function openRename(kind: 'terms' | 'section', id: string, name: string) {
+    setRenameError('');
+    setRenameName(name);
+    setRenameTarget({ kind, id });
+  }
+
+  async function submitRename(event: FormEvent) {
+    event.preventDefault();
+    if (!renameTarget) return;
+    setRenameError('');
+    try {
+      if (renameTarget.kind === 'terms') await renameTerms({ id: renameTarget.id, name: renameName }).unwrap();
+      else await renameSection({ id: renameTarget.id, name: renameName }).unwrap();
+      setRenameTarget(null);
+      setRenameName('');
+      toast.success('Name updated');
+    } catch (error) {
+      setRenameError(mutationMessage(error, 'Could not rename'));
+    }
+  }
+
+  async function removeSaved(kind: 'terms' | 'section', id: string, name: string) {
+    const label = kind === 'terms' ? 'terms' : 'section';
+    if (!window.confirm(`Delete the saved ${label} “${name}”? Quotations that already use it keep their copy.`)) return;
+    try {
+      if (kind === 'terms') await deleteTerms(id).unwrap();
+      else await deleteSection(id).unwrap();
+      toast.success(kind === 'terms' ? 'Saved terms deleted' : 'Saved section deleted');
+    } catch (error) {
+      toast.error(mutationMessage(error, 'Could not delete'));
+    }
+  }
+
+  async function submitSavedSection(event: FormEvent) {
+    event.preventDefault();
+    if (!saveSection) return;
+    setSaveError('');
+    try {
+      await createCustomSection({ name: saveName, content: saveSection }).unwrap();
+      setSaveSection(null);
+      setSaveName('');
+      toast.success('Section saved');
+    } catch (error) {
+      setSaveError(error && typeof error === 'object' && 'data' in error && typeof (error as { data?: { error?: string } }).data?.error === 'string'
+        ? (error as { data?: { error?: string } }).data?.error || 'Could not save the section'
+        : 'Could not save the section');
     }
   }
 
@@ -1003,14 +1206,33 @@ export function QuotationSheet({
                       {termsListOpen ? (
                         <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background py-1 shadow-lg">
                           {termsItems.length ? termsItems.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className="block w-full cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-muted/60"
-                              onClick={() => chooseSavedTerms(item.id)}
-                            >
-                              {item.label}
-                            </button>
+                            <div key={item.id} className="flex items-center gap-1 pr-1 hover:bg-muted/60">
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 cursor-pointer px-3 py-1.5 text-left text-sm"
+                                onClick={() => chooseSavedTerms(item.id)}
+                              >
+                                {item.label}
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Rename ${item.label}`}
+                                title="Rename"
+                                className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground"
+                                onClick={() => openRename('terms', item.id, item.label)}
+                              >
+                                <Pencil className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Delete ${item.label}`}
+                                title="Delete"
+                                className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground"
+                                onClick={() => void removeSaved('terms', item.id, item.label)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
                           )) : (
                             <p className="px-3 py-1.5 text-[11px] text-muted-foreground">No saved terms yet</p>
                           )}
@@ -1019,7 +1241,7 @@ export function QuotationSheet({
                     </div>
                   );
                 }
-                return (
+                const button = (
                   <button
                     key={choice.type}
                     type="button"
@@ -1029,6 +1251,42 @@ export function QuotationSheet({
                     <span className="block text-sm font-medium">{used ? choice.label : `+ ${choice.label}`}</span>
                     <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : choice.hint}</span>
                   </button>
+                );
+                if (choice.type !== 'blank') return button;
+                return (
+                  <Fragment key={choice.type}>
+                    {(customQuery.data ?? []).map((item) => (
+                      <div key={item.id} className="flex items-stretch gap-1">
+                        <button
+                          type="button"
+                          onClick={() => insertSavedSection(item.id)}
+                          className="min-w-0 flex-1 cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
+                        >
+                          <span className="block text-sm font-medium">+ {item.name}</span>
+                          <span className="block text-[11px] text-muted-foreground">Saved section</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Rename ${item.name}`}
+                          title="Rename"
+                          className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                          onClick={() => openRename('section', item.id, item.name)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${item.name}`}
+                          title="Delete"
+                          className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                          onClick={() => void removeSaved('section', item.id, item.name)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {button}
+                  </Fragment>
                 );
               })}
             </div>
@@ -1069,7 +1327,7 @@ export function QuotationSheet({
                         <Field value={document.trn} readOnly={readOnly} className="w-[46mm] shrink-0" onChange={(trn) => update({ ...document, trn })} />
                       </div>
                     </div>
-                    <h2 className="text-center text-[16pt] font-bold underline">Quotation</h2>
+                    <h2 className="quotation-doc-title text-center text-[16pt] font-bold underline" style={{ margin: 0, fontSize: '16pt', fontWeight: 700, lineHeight: 'normal', color: '#111111' }}>Quotation</h2>
                     <div className="mt-2 border border-black text-[11pt]">
                       <div className="grid grid-cols-2 items-start border-b border-black">
                         <div className="border-r border-black px-2 py-1"><span className="font-semibold">Quotation Number:</span> {quotationNumber || 'Assigned when forwarded'}</div>
@@ -1115,9 +1373,21 @@ export function QuotationSheet({
                       readOnly={readOnly}
                       optionCount={options.length}
                       onSaveTerms={block.type === 'terms' && !readOnly ? () => {
+                        setSaveSection(null);
                         setSaveName('');
                         setSaveError('');
                         setSaveTerms(block.type === 'terms' ? block.rows.map((row) => ({ label: row.label, value: row.value })) : null);
+                      } : undefined}
+                      onSaveSection={block.type === 'blank' && !readOnly ? () => {
+                        setSaveTerms(null);
+                        setSaveError('');
+                        setSaveName(plainText(block.name).slice(0, 80));
+                        setSaveSection({
+                          name: block.name,
+                          body: block.body,
+                          minHeightMm: block.minHeightMm ?? 36,
+                          widthPercent: block.widthPercent ?? 100,
+                        });
                       } : undefined}
                       onChange={(next) => patchBlock(block.id, next)}
                       onMove={(direction) => update(moveBlock(document, block.id, direction))}
@@ -1134,6 +1404,25 @@ export function QuotationSheet({
           ))}
         </div>
       </div>
+      {renameTarget ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setRenameTarget(null)}>
+          <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitRename(event)}>
+            <p className="text-sm font-semibold">{renameTarget.kind === 'terms' ? 'Rename saved terms' : 'Rename saved section'}</p>
+            <input
+              value={renameName}
+              onChange={(event) => setRenameName(event.target.value)}
+              autoFocus
+              maxLength={80}
+              className="mt-3 h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+            />
+            {renameError ? <p className="mt-2 text-xs text-red-700">{renameError}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setRenameTarget(null)}>Cancel</button>
+              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={renameTermsState.isLoading || renameSectionState.isLoading}>Save</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {saveTerms ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setSaveTerms(null)}>
           <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitSavedTerms(event)}>
@@ -1150,6 +1439,26 @@ export function QuotationSheet({
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSaveTerms(null)}>Cancel</button>
               <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createTermsState.isLoading}>Save</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {saveSection ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setSaveSection(null)}>
+          <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitSavedSection(event)}>
+            <p className="text-sm font-semibold">Save this section as</p>
+            <input
+              value={saveName}
+              onChange={(event) => setSaveName(event.target.value)}
+              autoFocus
+              maxLength={80}
+              placeholder="Section name"
+              className="mt-3 h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+            />
+            {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSaveSection(null)}>Cancel</button>
+              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createCustomSectionState.isLoading}>Save</button>
             </div>
           </form>
         </div>
@@ -1234,6 +1543,7 @@ function BlockView({
   readOnly,
   optionCount,
   onSaveTerms,
+  onSaveSection,
   onChange,
   onMove,
   onRemove,
@@ -1242,6 +1552,7 @@ function BlockView({
   readOnly: boolean;
   optionCount: number;
   onSaveTerms?: () => void;
+  onSaveSection?: () => void;
   onChange: (block: QuotationBlock, recordHistory?: boolean) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -1422,13 +1733,18 @@ function BlockView({
     return (
       <div className={armed ? 'quotation-section-hot' : ''}>
         <div className={readOnly ? '' : 'quotation-draft-box rounded-md border border-dashed border-slate-400 p-2'} style={{ width: `${block.widthPercent ?? 100}%` }}>
-          <RichText value={block.name} readOnly={readOnly} className="font-semibold" onChange={(name) => onChange({ ...block, name })} />
+          <div className="flex items-start justify-between gap-2">
+            <RichText value={block.name} readOnly={readOnly} className="min-w-0 flex-1 text-[11pt] font-semibold" onChange={(name) => onChange({ ...block, name })} />
+            {onSaveSection ? (
+              <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSection}>Save</button>
+            ) : null}
+          </div>
           <RichText
             value={block.body}
             readOnly={readOnly}
             allowTable
-            className="mt-1 w-full"
-            style={{ minHeight: `${block.minHeightMm ?? 36}mm` }}
+            className="mt-1 w-full text-[11pt] leading-normal"
+            style={{ minHeight: `${block.minHeightMm ?? 36}mm`, fontSize: '11pt', lineHeight: 'normal' }}
             onChange={(body) => onChange({ ...block, body })}
           />
           {readOnly ? null : (

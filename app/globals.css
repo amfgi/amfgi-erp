@@ -563,6 +563,39 @@ html.quotation-editing body {
   text-decoration: underline;
 }
 
+.quotation-pad h2.quotation-doc-title {
+  margin: 0;
+  font-size: 16pt;
+  font-weight: 700;
+  line-height: normal;
+  color: #111111;
+}
+
+.quotation-pad [contenteditable='true'] h1,
+.quotation-pad [contenteditable='true'] h2,
+.quotation-pad [contenteditable='true'] h3 {
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.quotation-pad [contenteditable='true'] h1 {
+  margin: 10pt 0 4pt;
+  font-size: 16pt;
+  color: #111111;
+}
+
+.quotation-pad [contenteditable='true'] h2 {
+  margin: 8pt 0 2pt;
+  font-size: 14pt;
+  color: #111111;
+}
+
+.quotation-pad [contenteditable='true'] h3 {
+  margin: 6pt 0 2pt;
+  font-size: 12pt;
+  color: #111111;
+}
+
 .quotation-pad ul {
   list-style: disc;
   padding-left: 1.25rem;
