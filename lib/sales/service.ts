@@ -10,6 +10,8 @@ import {
   readQuotationDocument,
 } from './quotationDocument';
 import { canSeeStage, hidesPurchaseOrders, type SalesAccess } from './access';
+import { findSalesUser, listSalesUsers } from './salesUsers';
+import { closureWorkDetail, writeSalesWorkLog } from './workLog';
 import {
   type DocumentKind,
   formatDocumentNumber,
@@ -46,6 +48,7 @@ const recordInclude = {
     },
   },
   salesman: { select: { id: true, name: true, email: true, isActive: true } },
+  assignedTo: { select: { id: true, name: true, email: true } },
   options: {
     orderBy: { sortOrder: 'asc' as const },
     include: {
@@ -268,6 +271,7 @@ export async function listSalesRecords(params: {
       include: {
         customer: { select: { id: true, name: true } },
         salesman: { select: { id: true, name: true } },
+        assignedTo: { select: { id: true, name: true } },
         job: { select: { id: true, jobNumber: true } },
         options: {
           orderBy: { sortOrder: 'asc' as const },
@@ -318,7 +322,7 @@ async function resolveCustomer(
   tx: Prisma.TransactionClient,
   companyId: string,
   input: { customerId?: string | null; newCustomer?: NewCustomerInput | null },
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; created: boolean }> {
   const selectedId = input.customerId?.trim();
   if (selectedId) {
     const customer = await tx.customer.findFirst({
@@ -326,7 +330,7 @@ async function resolveCustomer(
       select: { id: true, name: true },
     });
     if (!customer) throw new SalesError('Customer not found');
-    return customer;
+    return { ...customer, created: false };
   }
 
   const draft = input.newCustomer;
@@ -372,7 +376,7 @@ async function resolveCustomer(
         await tx.customerContact.update({ where: { id: contact.id }, data: { phone } });
       }
     }
-    return { id: existing.id, name: existing.name };
+    return { id: existing.id, name: existing.name, created: false };
   }
 
   const created = await tx.customer.create({
@@ -391,21 +395,13 @@ async function resolveCustomer(
       data: { companyId, customerId: created.id, contactName: contactPerson, phone, sortOrder: 0 },
     });
   }
-  return created;
+  return { ...created, created: true };
 }
 
 async function assertSalesman(companyId: string, salesmanId: string) {
-  const user = await prisma.user.findFirst({
-    where: {
-      id: salesmanId,
-      isActive: true,
-      companyAccess: { some: { companyId, role: { slug: 'salesman' } } },
-    },
-    select: { id: true },
-  });
-  if (!user) {
-    throw new SalesError('Choose an active user with the Salesman role. Assign one in Admin → Users.');
-  }
+  const user = await findSalesUser(companyId, salesmanId);
+  if (!user) throw new SalesError('Choose an active user who has a sales permission.');
+  return user;
 }
 
 export type SalesOptionInput = {
@@ -497,6 +493,7 @@ export async function createSalesQuery(params: {
   projectScope: string;
   salesmanId: string;
   extraNotes?: string | null;
+  logDetail?: string | null;
 }) {
   if (!params.access.queryManage) throw new SalesError('Forbidden', 403);
   if (!params.customerId && !params.access.customerCreate) {
@@ -510,7 +507,7 @@ export async function createSalesQuery(params: {
       customerId: params.customerId,
       newCustomer: params.newCustomer,
     });
-    return tx.salesQuery.create({
+    const row = await tx.salesQuery.create({
       data: {
         companyId: params.companyId,
         queryNumber,
@@ -526,13 +523,23 @@ export async function createSalesQuery(params: {
       },
       select: { id: true },
     });
+    await writeSalesWorkLog(tx, {
+      companyId: params.companyId,
+      salesQueryId: row.id,
+      actorId: params.userId,
+      action: 'CREATED',
+      detail: params.logDetail,
+    });
+    return { id: row.id, customerCreated: customer.created };
   }));
-  return getSalesRecord(params.companyId, created.id, params.access);
+  const record = await getSalesRecord(params.companyId, created.id, params.access);
+  return { ...record, customerCreated: created.customerCreated };
 }
 
 export async function updateSalesQuery(params: {
   companyId: string;
   id: string;
+  userId: string;
   access: SalesAccess;
   projectLocation?: string;
   projectDescription?: string;
@@ -579,6 +586,12 @@ export async function updateSalesQuery(params: {
           ...(customer ? { customerId: customer.id, customerName: customer.name } : {}),
         },
       });
+      await writeSalesWorkLog(tx, {
+        companyId: params.companyId,
+        salesQueryId: current.id,
+        actorId: params.userId,
+        action: 'SAVED_QUERY',
+      });
     });
   } else if (current.stage === 'QUOTATION') {
     if (!params.access.quotationManage) throw new SalesError('Forbidden', 403);
@@ -608,6 +621,12 @@ export async function updateSalesQuery(params: {
             : {}),
         },
       });
+      await writeSalesWorkLog(tx, {
+        companyId: params.companyId,
+        salesQueryId: current.id,
+        actorId: params.userId,
+        action: 'EDITED_QUOTATION',
+      });
     });
   } else {
     if (!params.access.purchaseOrdersManage) throw new SalesError('Forbidden', 403);
@@ -625,19 +644,35 @@ export async function updateSalesQuery(params: {
         ...(params.poValue !== undefined ? { poValue: params.poValue == null ? null : money(params.poValue) } : {}),
       },
     });
+    await writeSalesWorkLog(prisma, {
+      companyId: params.companyId,
+      salesQueryId: current.id,
+      actorId: params.userId,
+      action: 'SAVED_PO',
+    });
   }
 
   return getSalesRecord(params.companyId, current.id, params.access);
 }
 
-export async function forwardToQuotation(companyId: string, id: string, access: SalesAccess) {
+export async function forwardToQuotation(params: {
+  companyId: string;
+  id: string;
+  access: SalesAccess;
+  assigneeId: string;
+  actorId: string;
+  sourceNote?: string | null;
+}) {
+  const { companyId, id, access } = params;
   if (!access.queryManage) throw new SalesError('Forbidden', 403);
+  const assignee = await assertSalesman(companyId, params.assigneeId);
   const current = await loadRecord(companyId, id);
   if (current.stage !== 'QUERY') throw new SalesError('This record is already past the query stage');
   if (current.closure !== 'OPEN') throw new SalesError('Reopen this record before forwarding it');
   if (!current.projectLocation || !current.projectDescription || !current.projectScope) {
     throw new SalesError('Location, description, and scope are required');
   }
+  const detail = [`Assigned to ${assignee.name}`, params.sourceNote?.trim()].filter(Boolean).join('. ');
   await withNumberRetry(() => prisma.$transaction(async (tx) => {
     const fresh = await tx.salesQuery.findFirst({
       where: { id: current.id, companyId },
@@ -651,16 +686,30 @@ export async function forwardToQuotation(companyId: string, id: string, access: 
       where: { id: current.id },
       data: {
         stage: 'QUOTATION',
+        assignedToId: assignee.id,
         quotationNumber,
         quotationNumberKey: queryNumberKey(quotationNumber),
         quotationIssuedAt: current.quotationIssuedAt ?? new Date(),
       },
     });
+    await writeSalesWorkLog(tx, {
+      companyId,
+      salesQueryId: current.id,
+      actorId: params.actorId,
+      action: 'FORWARDED',
+      detail,
+    });
   }));
   return getSalesRecord(companyId, id, access);
 }
 
-export async function reviseQuotation(companyId: string, id: string, access: SalesAccess) {
+export async function reviseQuotation(params: {
+  companyId: string;
+  id: string;
+  access: SalesAccess;
+  actorId: string;
+}) {
+  const { companyId, id, access } = params;
   if (!access.quotationManage) throw new SalesError('Forbidden', 403);
   const current = await loadRecord(companyId, id);
   if (current.stage !== 'QUOTATION') throw new SalesError('Only a quotation can be revised');
@@ -681,6 +730,13 @@ export async function reviseQuotation(companyId: string, id: string, access: Sal
     await tx.salesQuery.update({
       where: { id: current.id },
       data: { quotationRevision: next, quotationIssuedAt: new Date() },
+    });
+    await writeSalesWorkLog(tx, {
+      companyId,
+      salesQueryId: current.id,
+      actorId: params.actorId,
+      action: 'REVISED',
+      detail: formatQuotationNumber(current.quotationNumber, next),
     });
   });
   return getSalesRecord(companyId, id, access);
@@ -710,6 +766,7 @@ export async function receivePurchaseOrder(params: {
   companyId: string;
   id: string;
   access: SalesAccess;
+  actorId: string;
   acceptedOptionId?: string | null;
 }) {
   if (!params.access.quotationManage) throw new SalesError('Forbidden', 403);
@@ -771,6 +828,13 @@ export async function receivePurchaseOrder(params: {
         poNumberKey: queryNumberKey(poNumber),
       },
     });
+    await writeSalesWorkLog(tx, {
+      companyId: params.companyId,
+      salesQueryId: current.id,
+      actorId: params.actorId,
+      action: 'PO_RECEIVED',
+      detail: poNumber,
+    });
   }));
   if (!canSeeStage(params.access, 'PURCHASE_ORDER')) {
     return { id: current.id, stage: 'PURCHASE_ORDER' as const, forwarded: true as const };
@@ -783,6 +847,7 @@ export async function setSalesClosure(params: {
   id: string;
   access: SalesAccess;
   closure: SalesClosure;
+  actorId: string;
   reason?: string | null;
 }) {
   const current = await loadRecord(params.companyId, params.id);
@@ -811,6 +876,14 @@ export async function setSalesClosure(params: {
             closureReason: params.reason?.trim() || null,
             closedAt: new Date(),
           },
+  });
+  const reason = params.reason?.trim();
+  await writeSalesWorkLog(prisma, {
+    companyId: params.companyId,
+    salesQueryId: current.id,
+    actorId: params.actorId,
+    action: 'STATUS',
+    detail: reason ? `${closureWorkDetail(params.closure)}. ${reason}` : closureWorkDetail(params.closure),
   });
   return getSalesRecord(params.companyId, params.id, params.access);
 }
@@ -960,6 +1033,13 @@ export async function createJobFromSales(params: {
         data: { jobId: job.id },
       });
       if (linked.count !== 1) throw new SalesError('This purchase order already has a job');
+      await writeSalesWorkLog(tx, {
+        companyId: params.companyId,
+        salesQueryId: current.id,
+        actorId: params.userId,
+        action: 'JOB_CREATED',
+        detail: jobNumber,
+      });
     }));
   } catch (error) {
     if (error instanceof SalesError) throw error;
@@ -970,14 +1050,7 @@ export async function createJobFromSales(params: {
 }
 
 export async function listSalesmen(companyId: string) {
-  return prisma.user.findMany({
-    where: {
-      isActive: true,
-      companyAccess: { some: { companyId, role: { slug: 'salesman' } } },
-    },
-    select: { id: true, name: true, email: true },
-    orderBy: { name: 'asc' },
-  });
+  return listSalesUsers(companyId);
 }
 
 const ALLOWED_MIMES = new Set([

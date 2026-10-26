@@ -104,6 +104,7 @@ export type SalesRecord = {
     trnExpiry: string | null;
   };
   salesman: { id: string; name: string; email: string; isActive: boolean };
+  assignedTo: { id: string; name: string; email: string } | null;
   options: SalesOption[];
   attachments: SalesAttachment[];
   job: { id: string; jobNumber: string } | null;
@@ -126,6 +127,7 @@ export type SalesListItem = {
   currencyCode: string;
   updatedAt: string;
   salesman: { id: string; name: string };
+  assignedTo: { id: string; name: string } | null;
   job: { id: string; jobNumber: string } | null;
 };
 
@@ -136,6 +138,15 @@ export type SalesListResponse = {
 };
 
 export type SalesmanOption = { id: string; name: string; email: string };
+
+export type SalesWorkLogEntry = {
+  id: string;
+  action: string;
+  label: string;
+  detail: string | null;
+  createdAt: string;
+  actor: { id: string; name: string };
+};
 
 export type SalesOptionInput = {
   name: string;
@@ -183,8 +194,12 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery', 'Customer'],
     }),
-    forwardSalesToQuotation: builder.mutation<SalesRecord, string>({
-      query: (id) => ({ url: `/sales/queries/${id}/forward-quotation`, method: 'POST' }),
+    forwardSalesToQuotation: builder.mutation<SalesRecord, { id: string; assigneeId: string }>({
+      query: ({ id, assigneeId }) => ({
+        url: `/sales/queries/${id}/forward-quotation`,
+        method: 'POST',
+        body: { assigneeId },
+      }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery'],
     }),
@@ -247,6 +262,11 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: { id: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
     }),
+    getSalesWorkLog: builder.query<SalesWorkLogEntry[], string>({
+      query: (id) => `/sales/queries/${id}/work-log`,
+      transformResponse: (response: { data: SalesWorkLogEntry[] }) => response.data,
+      providesTags: (_result, _error, id) => [{ type: 'SalesQuery', id }],
+    }),
     createJobFromSales: builder.mutation<SalesRecord, { id: string; body: Record<string, unknown> }>({
       query: ({ id, body }) => ({ url: `/sales/queries/${id}/create-job`, method: 'POST', body }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
@@ -275,3 +295,5 @@ export const {
   useUpdateQuotationCustomSectionMutation,
   useDeleteQuotationCustomSectionMutation,
 } = salesApi;
+
+export const useGetSalesWorkLogQuery = salesApi.endpoints.getSalesWorkLog.useQuery;

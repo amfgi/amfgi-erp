@@ -14,6 +14,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         companyId: session.companyId,
         id,
         access: session.access,
+        actorId: session.userId,
         ...parsed.data,
       }),
     );

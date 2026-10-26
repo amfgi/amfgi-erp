@@ -24,6 +24,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const record = await updateSalesQuery({
       companyId: session.companyId,
       id,
+      userId: session.userId,
       access: session.access,
       ...parsed.data,
     });

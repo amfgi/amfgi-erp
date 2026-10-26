@@ -114,6 +114,7 @@ model Company {
   salesQuotationLineFields  SalesQuotationLineField[]
   salesQuotationRevisions   SalesQuotationRevision[]
   salesAttachments          SalesAttachment[]
+  salesWorkLogs             SalesWorkLog[]
 }
 
 model User {
@@ -152,6 +153,8 @@ model User {
   scheduleEditorPresences     ScheduleEditorPresence[]
   salesQueriesAsSalesman      SalesQuery[]                 @relation("SalesQuerySalesman")
   salesQueriesCreated         SalesQuery[]                 @relation("SalesQueryCreatedBy")
+  salesQueriesAssigned        SalesQuery[]                 @relation("SalesQueryAssignee")
+  salesWorkLogs               SalesWorkLog[]
   salesAttachmentsUploaded    SalesAttachment[]            @relation("SalesAttachmentUploadedBy")
 
   @@index([activeCompanyId])
@@ -781,7 +784,7 @@ model Job {
   /// e.g. Fit-out, Maintenance, Civil works
   projectType            String?                @db.VarChar(120)
   /// Quantity or area scope for the job (e.g. 1200 sqm, 50 nos)
-  projectQtyArea         String?                @db.VarChar(120)
+  projectQtyArea         String?                @db.VarChar(500)
   /// Primary site/contact name (same idea as Customer.contactPerson)
   contactPerson          String?
   salesPerson            String?
@@ -1110,8 +1113,9 @@ model SalesQuery {
   customerName       String             @db.VarChar(100)
   projectLocation    String             @db.VarChar(200)
   projectDescription String             @db.VarChar(1000)
-  projectScope       String             @db.VarChar(120)
+  projectScope       String             @db.VarChar(500)
   salesmanId         String
+  assignedToId       String?
   extraNotes         String?            @db.Text
   stage              SalesStage         @default(QUERY)
   closure            SalesClosure       @default(OPEN)
@@ -1137,12 +1141,14 @@ model SalesQuery {
   company        Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer       Customer                @relation(fields: [companyId, customerId], references: [companyId, id])
   salesman       User                    @relation("SalesQuerySalesman", fields: [salesmanId], references: [id])
+  assignedTo     User?                   @relation("SalesQueryAssignee", fields: [assignedToId], references: [id])
   createdBy      User                    @relation("SalesQueryCreatedBy", fields: [createdById], references: [id])
   job            Job?                    @relation(fields: [companyId, jobId], references: [companyId, id])
   options        SalesQuotationOption[]  @relation("SalesQueryOptions")
   acceptedOption SalesQuotationOption?   @relation("SalesAcceptedOption", fields: [acceptedOptionId], references: [id])
   revisions      SalesQuotationRevision[]
   attachments    SalesAttachment[]
+  workLogs       SalesWorkLog[]
 
   @@unique([companyId, id])
   @@unique([companyId, queryNumberKey])
@@ -1152,6 +1158,23 @@ model SalesQuery {
   @@index([companyId, stage, closure])
   @@index([companyId, customerId])
   @@index([companyId, salesmanId])
+  @@index([assignedToId])
+}
+
+model SalesWorkLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  salesQueryId String
+  actorId      String
+  action       String   @db.VarChar(80)
+  detail       String?  @db.VarChar(300)
+  createdAt    DateTime @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  actor      User       @relation(fields: [actorId], references: [id])
+
+  @@index([companyId, salesQueryId, createdAt])
 }
 
 model QuotationTermsTemplate {

@@ -22,6 +22,7 @@ import {
   useGetCustomersQuery,
   useGetSalesmenQuery,
   useGetSalesQueryQuery,
+  useGetSalesWorkLogQuery,
   useReviseSalesQuotationMutation,
   useSetSalesClosureMutation,
   useUpdateSalesQueryMutation,
@@ -32,6 +33,43 @@ import type { SalesAttachment, SalesRevision } from '@/store/api/endpoints/sales
 const INPUT_CLASS =
   'mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
 const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
+
+function SalesWorkLogDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const workLogQuery = useGetSalesWorkLogQuery(id);
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Working log"
+      description="Newest first. Older records stay empty until someone works on them."
+      actions={
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      {workLogQuery.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : workLogQuery.isError ? (
+        <p className="text-sm text-muted-foreground">The working log could not be loaded.</p>
+      ) : (workLogQuery.data ?? []).length === 0 ? (
+        <p className="text-sm text-muted-foreground">No work has been recorded yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {(workLogQuery.data ?? []).map((entry) => (
+            <li key={entry.id} className="border-b border-border pb-3 text-sm last:border-0">
+              <p className="font-medium text-foreground">{entry.label}</p>
+              <p className="text-muted-foreground">
+                {entry.actor.name} · {new Date(entry.createdAt).toLocaleString()}
+              </p>
+              {entry.detail ? <p className="text-muted-foreground">{entry.detail}</p> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
+  );
+}
 
 function fileCountLabel(count: number) {
   if (count === 0) return 'No files';
@@ -157,6 +195,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const [clientFiles, setClientFiles] = useState<File[]>([]);
   const [poFile, setPoFile] = useState<File | null>(null);
   const [jobOpen, setJobOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assigneeId, setAssigneeId] = useState('');
+  const [logOpen, setLogOpen] = useState(false);
   const [jobSaving, setJobSaving] = useState(false);
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
@@ -423,14 +464,24 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     }
   }
 
-  async function onForwardQuotation() {
+  function openForward() {
     if (!customerReady()) return;
+    setAssigneeId('');
+    setAssignOpen(true);
+  }
+
+  async function onForwardQuotation() {
+    if (!customerReady() || !assigneeId) {
+      toast.error('Choose who this quotation is assigned to');
+      return;
+    }
     try {
       const saved = await saveQuery();
       const targetId = saved?.id ?? id;
       if (!targetId) return;
       if (clientFiles.length) await uploadFiles(targetId, clientFiles, 'CLIENT');
-      await forwardQuotation(targetId).unwrap();
+      await forwardQuotation({ id: targetId, assigneeId }).unwrap();
+      setAssignOpen(false);
       toast.success('Forwarded to quotation');
       router.push(`/sales/quotations/form?id=${targetId}`);
     } catch (error) {
@@ -548,17 +599,27 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             {quotationLabel}
             {record ? ` · ${record.displayCustomerName}` : ''}
           </p>
+          {section !== 'query' && record ? (
+            <p className="text-sm text-muted-foreground">
+              {record.assignedTo ? `Assigned to ${record.assignedTo.name}` : 'Not assigned'}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
             Cancel
           </Button>
+          {id ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setLogOpen(true)}>
+              Working log
+            </Button>
+          ) : null}
           {section === 'query' && queryOpen && access.queryManage ? (
             <>
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSaveQuery()}>
                 Save
               </Button>
-              <Button type="button" size="sm" disabled={busy} onClick={() => void onForwardQuotation()}>
+              <Button type="button" size="sm" disabled={busy} onClick={openForward}>
                 Forward to quotation
               </Button>
             </>
@@ -682,7 +743,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         </label>
         <label className={LABEL_CLASS}>
           Project scope
-          <input value={projectScope} onChange={(event) => setProjectScope(event.target.value)} disabled={lockedQuery} maxLength={120} className={INPUT_CLASS} />
+          <input value={projectScope} onChange={(event) => setProjectScope(event.target.value)} disabled={lockedQuery} maxLength={500} className={INPUT_CLASS} />
         </label>
         <label className={LABEL_CLASS}>
           Extra notes
@@ -863,6 +924,36 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           </Button>
         </Section>
       ) : null}
+
+      <Modal
+        isOpen={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        title="Who should this quotation be assigned to?"
+        description="This person can be the salesman, or someone else who has a sales permission."
+        actions={
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAssignOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" disabled={busy || !assigneeId} onClick={() => void onForwardQuotation()}>
+              Assign and forward
+            </Button>
+          </>
+        }
+      >
+        <SearchSelect
+          items={salesmanItems}
+          value={assigneeId}
+          onChange={setAssigneeId}
+          placeholder="Search a sales user…"
+          openOnFocus
+          minCharactersToSearch={0}
+          dropdownInPortal
+          inputProps={{ className: INPUT_CLASS }}
+        />
+      </Modal>
+
+      {id && logOpen ? <SalesWorkLogDialog id={id} onClose={() => setLogOpen(false)} /> : null}
 
       <Modal
         isOpen={Boolean(viewRevision)}

@@ -15,6 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         id,
         access: session.access,
         closure: parsed.data.closure,
+        actorId: session.userId,
         reason: parsed.data.reason,
       }),
     );

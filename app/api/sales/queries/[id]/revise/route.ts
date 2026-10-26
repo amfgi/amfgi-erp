@@ -6,7 +6,14 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   try {
     const session = await requireSalesSession();
     const { id } = await params;
-    return successResponse(await reviseQuotation(session.companyId, id, session.access));
+    return successResponse(
+      await reviseQuotation({
+        companyId: session.companyId,
+        id,
+        access: session.access,
+        actorId: session.userId,
+      }),
+    );
   } catch (error) {
     return salesErrorResponse(error);
   }
