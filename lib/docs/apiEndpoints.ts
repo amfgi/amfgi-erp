@@ -41,6 +41,30 @@ export const API_DOC_SECTIONS: ApiDocSection[] = [
         auth: 'integration_key',
         summary: 'Create or update a supplier by externalPartyId and store the external id for future purchasing/stock operations.',
       },
+      {
+        methods: 'GET',
+        path: '/api/integrations/sales/customers',
+        auth: 'integration_key',
+        summary: 'List customers for the customer-service app. Query: companyExternalId, search, limit, offset.',
+      },
+      {
+        methods: 'GET',
+        path: '/api/integrations/sales/customers/[id]',
+        auth: 'integration_key',
+        summary: 'One customer, including contacts. Query: companyExternalId. Another company returns 404.',
+      },
+      {
+        methods: 'GET',
+        path: '/api/integrations/sales/users',
+        auth: 'integration_key',
+        summary: 'Active users who have a sales permission. Query: companyExternalId. Use these ids as salesmanId and assigneeId.',
+      },
+      {
+        methods: 'POST',
+        path: '/api/integrations/sales/queries',
+        auth: 'integration_key',
+        summary: 'Create a query. salesmanId is required. assigneeId is required only when forwardToQuotation is true, and it may be a different user.',
+      },
     ],
   },
   {

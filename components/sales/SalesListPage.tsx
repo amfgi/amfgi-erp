@@ -180,6 +180,11 @@ export default function SalesListPage({
                       {row.stage === 'QUOTATION' ? (
                         <span className="block text-xs text-muted-foreground">Query {row.queryNumber}</span>
                       ) : null}
+                      {row.stage === 'QUOTATION' ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {row.assignedTo ? `Assigned to ${row.assignedTo.name}` : 'Not assigned'}
+                        </span>
+                      ) : null}
                       {row.stage === 'PURCHASE_ORDER' ? (
                         <span className="block text-xs text-muted-foreground">
                           Quotation {row.quotationNumber} · Query {row.queryNumber}

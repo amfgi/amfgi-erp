@@ -30,7 +30,7 @@ export const createSalesSchema = z.object({
   newCustomer: newCustomerSchema.optional().nullable(),
   projectLocation: z.string().min(1).max(200),
   projectDescription: z.string().min(1).max(1000),
-  projectScope: z.string().min(1).max(120),
+  projectScope: z.string().min(1).max(500),
   salesmanId: z.string().min(1),
   extraNotes: z.string().max(5000).optional().nullable(),
 });
@@ -38,7 +38,7 @@ export const createSalesSchema = z.object({
 export const updateSalesSchema = z.object({
   projectLocation: z.string().min(1).max(200).optional(),
   projectDescription: z.string().min(1).max(1000).optional(),
-  projectScope: z.string().min(1).max(120).optional(),
+  projectScope: z.string().min(1).max(500).optional(),
   salesmanId: z.string().min(1).optional(),
   extraNotes: z.string().max(5000).optional().nullable(),
   customerId: z.string().optional().nullable(),

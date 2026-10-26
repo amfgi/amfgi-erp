@@ -26,7 +26,7 @@ const SharedJobFieldsSchema = {
   projectName: z.string().max(200).optional(),
   projectDetails: z.string().max(2000).optional(),
   projectType: z.string().max(120).optional(),
-  projectQtyArea: z.string().max(120).optional(),
+  projectQtyArea: z.string().max(500).optional(),
   contactPerson: z.string().max(200).optional(),
   salesPerson: z.string().max(200).optional(),
   jobWorkValue: z.number().positive().finite().optional(),

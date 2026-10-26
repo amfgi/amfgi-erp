@@ -170,6 +170,7 @@ export {
   useCreateSalesQueryMutation,
   useUpdateSalesQueryMutation,
   useForwardSalesToQuotationMutation,
+  useGetSalesWorkLogQuery,
   useReviseSalesQuotationMutation,
   useReceivePurchaseOrderMutation,
   useSetSalesClosureMutation,

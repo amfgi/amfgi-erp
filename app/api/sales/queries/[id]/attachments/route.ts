@@ -4,6 +4,7 @@ import { uploadToDrive } from '@/lib/utils/googleDrive';
 import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 import { requireSalesSession, salesErrorResponse } from '@/lib/sales/http';
 import { assertSalesUpload, assertUploadFile, SalesError } from '@/lib/sales/service';
+import { writeSalesWorkLog } from '@/lib/sales/workLog';
 import type { SalesAttachmentKind } from '@prisma/client';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +53,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         viewerUrl: uploaded.viewerUrl,
         uploadedById: session.userId,
       },
+    });
+    await writeSalesWorkLog(prisma, {
+      companyId: session.companyId,
+      salesQueryId: record.id,
+      actorId: session.userId,
+      action: 'FILE_UPLOADED',
+      detail: file.name,
     });
     return successResponse(attachment, 201);
   } catch (error) {
