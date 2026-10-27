@@ -3,8 +3,17 @@
 import Link from 'next/link';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import toast from 'react-hot-toast';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
+import ResponsiveDialog from '@/components/ui/ResponsiveDialog';
+import { Button } from '@/components/ui/shadcn/button';
 import { DEFAULT_LIST_PAGE_SIZE, LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
+import {
+  downloadItemwiseStocklistExcel,
+  downloadItemwiseStocklistPdf,
+  type ItemwiseStocklistRow,
+  type ItemwiseStocklistWarehouse,
+} from '@/lib/stock/itemwiseStocklistExport';
 import { useGetInventoryByWarehousePageQuery } from '@/store/hooks';
 
 function formatQty(value: number) {
@@ -16,6 +25,13 @@ function formatQty(value: number) {
 
 function qtyMismatch(a: number, b: number) {
   return Math.abs(a - b) > 0.0005;
+}
+
+function systemDateStamp(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export default function InventoryByWarehousePage() {
@@ -32,6 +48,8 @@ export default function InventoryByWarehousePage() {
   const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -54,6 +72,48 @@ export default function InventoryByWarehousePage() {
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const pageStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
   const pageEnd = Math.min(page * pageSize, totalRows);
+
+  async function downloadStocklist(format: 'excel' | 'pdf') {
+    setExporting(format);
+    try {
+      const params = new URLSearchParams();
+      if (deferredSearch.trim()) params.set('search', deferredSearch.trim());
+      if (warehouseFilter !== 'all') params.set('warehouseId', warehouseFilter);
+      const query = params.toString();
+      const res = await fetch(`/api/reports/inventory-by-warehouse${query ? `?${query}` : ''}`);
+      const json = (await res.json().catch(() => null)) as {
+        data?: {
+          currencyCode?: string;
+          warehouseColumns?: ItemwiseStocklistWarehouse[];
+          rows?: ItemwiseStocklistRow[];
+        };
+        error?: string;
+      } | null;
+      if (!res.ok) {
+        toast.error(json?.error || 'Could not build the stocklist');
+        return;
+      }
+      const warehouses = (json?.data?.warehouseColumns ?? []).filter(
+        (warehouse) => warehouseFilter === 'all' || warehouse.id === warehouseFilter,
+      );
+      const rows = json?.data?.rows ?? [];
+      const fileName = `itemwise-stocklist-${systemDateStamp()}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      const payload = {
+        currencyCode: json?.data?.currencyCode || 'AED',
+        warehouses,
+        rows,
+        fileName,
+      };
+      if (format === 'excel') downloadItemwiseStocklistExcel(payload);
+      else await downloadItemwiseStocklistPdf(payload);
+      toast.success(format === 'excel' ? 'Excel downloaded' : 'PDF downloaded');
+      setExportOpen(false);
+    } catch {
+      toast.error('Could not build the stocklist');
+    } finally {
+      setExporting(null);
+    }
+  }
 
   const visibleWarehouses = useMemo(() => {
     if (warehouseFilter === 'all') return warehouseColumns;
@@ -119,6 +179,13 @@ export default function InventoryByWarehousePage() {
               className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
             >
               Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportOpen(true)}
+              className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+            >
+              Itemwise stocklist
             </button>
           </div>
         </div>
@@ -235,6 +302,23 @@ export default function InventoryByWarehousePage() {
         </Link>
         . Showing {totalRows} material{totalRows === 1 ? '' : 's'} matching filters.
       </p>
+
+      <ResponsiveDialog open={exportOpen} onClose={() => { if (!exporting) setExportOpen(false); }} size="sm">
+        <div className="px-5 py-5">
+          <h2 className="text-lg font-semibold text-foreground">Itemwise stocklist</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Each warehouse is listed separately, with its name, item quantity, value, and total.
+          </p>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <Button type="button" variant="outline" disabled={exporting !== null} onClick={() => void downloadStocklist('excel')}>
+              {exporting === 'excel' ? 'Preparing…' : 'Excel'}
+            </Button>
+            <Button type="button" disabled={exporting !== null} onClick={() => void downloadStocklist('pdf')}>
+              {exporting === 'pdf' ? 'Preparing…' : 'PDF'}
+            </Button>
+          </div>
+        </div>
+      </ResponsiveDialog>
     </div>
   );
 }

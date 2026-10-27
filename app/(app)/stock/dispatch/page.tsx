@@ -138,6 +138,7 @@ export default function DispatchPage() {
   });
 
   const [printModalEntry, setPrintModalEntry] = useState<Entry | null>(null);
+  const [uploadingSignedCopy, setUploadingSignedCopy] = useState(false);
   const [printTemplates, setPrintTemplates] = useState<DocumentTemplate[]>([]);
   const [printTplLoading, setPrintTplLoading] = useState(false);
   const [selectedPrintTplId, setSelectedPrintTplId] = useState('');
@@ -160,7 +161,7 @@ export default function DispatchPage() {
     setPage(1);
   }, [filterType, selectedDate, noteTypeFilter, deferredSearch, pageSize]);
 
-  const { data: dispatchPage, isLoading, isFetching } = useGetDispatchEntriesPageQuery(listQueryArgs, {
+  const { data: dispatchPage, isLoading, isFetching, refetch } = useGetDispatchEntriesPageQuery(listQueryArgs, {
     skip: !canView,
     refetchOnMountOrArgChange: 300,
   });
@@ -386,6 +387,48 @@ export default function DispatchPage() {
       setDeleteModal((prev) => ({ ...prev, loading: false }));
     }
   };
+
+  const uploadSignedCopy = useCallback(async (entry: Entry, file: File) => {
+    const deliveryNoteId = entry.deliveryNoteId;
+    const transactionId = entry.transactionIds[0];
+    if (!deliveryNoteId && !transactionId) {
+      toast.error('This delivery note cannot receive a signed copy yet');
+      return;
+    }
+
+    setUploadingSignedCopy(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (deliveryNoteId) formData.append('deliveryNoteId', deliveryNoteId);
+      else if (transactionId) formData.append('transactionId', transactionId);
+
+      const res = await fetch('/api/upload/signed-copy', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = (await res.json().catch(() => null)) as { data?: { signedCopyUrl?: string }; error?: string } | null;
+      if (!res.ok) {
+        toast.error(data?.error || 'Upload failed');
+        return;
+      }
+
+      const signedCopyUrl = data?.data?.signedCopyUrl;
+      if (signedCopyUrl) {
+        setViewModal((prev) =>
+          prev.entry && prev.entry.id === entry.id
+            ? { ...prev, entry: { ...prev.entry, signedCopyUrl } }
+            : prev,
+        );
+      }
+      toast.success('Signed copy uploaded successfully');
+      void refetch();
+    } catch {
+      toast.error('Upload failed');
+    } finally {
+      setUploadingSignedCopy(false);
+    }
+  }, [refetch]);
 
   const handleRowClick = useCallback((entry: Entry) => {
     setSelectedRowId(entry.id);
@@ -843,6 +886,48 @@ export default function DispatchPage() {
                       <p className="text-xs text-muted-foreground mt-0.5 break-all">{entry.createdByEmail}</p>
                     )}
                   </div>
+                  {isDeliveryNote ? (
+                    <div className="bg-muted/30 rounded-lg p-3 border border-border">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Signed copy</p>
+                      {entry.signedCopyUrl ? (
+                        <a
+                          href={entry.signedCopyUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-semibold text-primary underline"
+                        >
+                          View in Drive
+                        </a>
+                      ) : (
+                        <p className="text-sm font-semibold text-foreground">Pending</p>
+                      )}
+                      {canEdit ? (
+                        <label className="mt-2 block">
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            disabled={uploadingSignedCopy}
+                            className="sr-only"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) void uploadSignedCopy(entry, file);
+                              e.target.value = '';
+                            }}
+                          />
+                          <span
+                            className={cn(
+                              buttonVariants({ variant: 'outline', size: 'sm' }),
+                              'cursor-pointer',
+                              uploadingSignedCopy && 'pointer-events-none opacity-50',
+                            )}
+                          >
+                            {uploadingSignedCopy ? 'Uploading…' : entry.signedCopyUrl ? 'Replace file' : 'Upload file'}
+                          </span>
+                          <p className="mt-1 text-[10px] text-muted-foreground">JPEG, PNG, WebP or PDF · max 20 MB</p>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Materials Section */}

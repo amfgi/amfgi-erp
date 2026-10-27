@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/shadcn/button';
@@ -38,7 +38,7 @@ interface Material {
   allowNegativeConsumption: boolean;
   externalItemName?: string;
   currentStock: number;
-  reorderLevel?: number;
+  reorderLevel?: number | null;
   unitCost?: number;
   isActive: boolean;
   createdAt?: string | Date;
@@ -88,6 +88,8 @@ function formatBoolean(value: boolean) {
 
 export default function MaterialsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const lowStockOnly = searchParams.get('stock') === 'low';
   const { data: session } = useSession();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
@@ -103,8 +105,9 @@ export default function MaterialsPage() {
       search: deferredSearch,
       sortBy: sortKey,
       sortDir,
+      ...(lowStockOnly ? { stock: 'low' as const } : {}),
     }),
-    [deferredSearch, page, pageSize, sortDir, sortKey],
+    [deferredSearch, lowStockOnly, page, pageSize, sortDir, sortKey],
   );
 
   const { data: pageData, isFetching } = useGetMaterialsPageQuery(listQueryArgs, {
@@ -123,7 +126,7 @@ export default function MaterialsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [deferredSearch, pageSize, sortKey, sortDir]);
+  }, [deferredSearch, lowStockOnly, pageSize, sortKey, sortDir]);
 
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
@@ -156,7 +159,9 @@ export default function MaterialsPage() {
   const valuationCurrencyCode = stockValuation?.summary.currencyCode ?? 'AED';
 
   const handleExport = async () => {
-    const exportMaterials = await fetchMaterialsForExport().unwrap();
+    const exportMaterials = await fetchMaterialsForExport(
+      lowStockOnly ? { stock: 'low' } : undefined,
+    ).unwrap();
     const exportData = exportMaterials.map((material) => ({
       'Material ID': material.id,
       'Item Name': material.name,
@@ -423,7 +428,7 @@ export default function MaterialsPage() {
                 {formatCount(material.currentStock)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Reorder {material.reorderLevel !== undefined ? formatCount(material.reorderLevel) : '-'}
+                Reorder {typeof material.reorderLevel === 'number' ? formatCount(material.reorderLevel) : '-'}
               </div>
             </div>
           );
@@ -446,7 +451,7 @@ export default function MaterialsPage() {
         sortable: true,
         hiddenByDefault: true,
         render: (material) =>
-          material.reorderLevel !== undefined ? formatCount(material.reorderLevel) : <span className="text-muted-foreground">-</span>,
+          typeof material.reorderLevel === 'number' ? formatCount(material.reorderLevel) : <span className="text-muted-foreground">-</span>,
       },
       {
         key: 'allowNegativeConsumption',
@@ -506,12 +511,19 @@ export default function MaterialsPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Materials</p>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Inventory</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Review stock health, move inventory, and jump into material setup without leaving the main grid.
+            {lowStockOnly
+              ? 'Materials whose on-hand stock is at or below the reorder level.'
+              : 'Review stock health, move inventory, and jump into material setup without leaving the main grid.'}
           </p>
+          {lowStockOnly ? (
+            <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={() => router.push('/stock/materials')}>
+              Show all materials
+            </Button>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-col gap-3 sm:items-end">
           <p className="text-xs tabular-nums text-muted-foreground sm:text-right">
-            {formatCount(totalMaterials)} active material{totalMaterials === 1 ? '' : 's'}
+            {`${formatCount(totalMaterials)} ${lowStockOnly ? 'low stock' : 'active'} material${totalMaterials === 1 ? '' : 's'}`}
           </p>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button type="button" variant="secondary" size="sm" onClick={() => setImportModal(true)}>
