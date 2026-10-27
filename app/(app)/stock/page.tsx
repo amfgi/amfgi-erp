@@ -327,6 +327,13 @@ export default function StockPage() {
                   badge: 'Warehouses',
                   tone: 'amber',
                 },
+                {
+                  href: '/stock/inventory-by-warehouse',
+                  title: 'Itemwise stocklist',
+                  description: 'Download an item and warehouse stock list as Excel or PDF, with quantity and value.',
+                  badge: 'Export',
+                  tone: 'emerald',
+                },
               ]
             : [],
         ),

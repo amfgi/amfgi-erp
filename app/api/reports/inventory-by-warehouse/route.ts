@@ -2,12 +2,14 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
+import { readCompanyOperationalSettings } from '@/lib/utils/companyOperationalSettings';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
 type InventoryByWarehouseRow = {
   materialId: string;
   materialName: string;
   unit: string;
+  unitCost: number;
   companyTotal: number;
   splitTotal: number;
   qtyByWarehouseId: Record<string, number>;
@@ -39,7 +41,11 @@ export async function GET(req: Request) {
   const warehouseFilter = searchParams.get('warehouseId');
 
   try {
-    const [activeWarehouses, snapshotRows, materials] = await Promise.all([
+    const [company, activeWarehouses, snapshotRows, materials] = await Promise.all([
+      prisma.company.findUnique({
+        where: { id: companyId },
+        select: { operationalSettings: true },
+      }),
       prisma.warehouse.findMany({
         where: { companyId, isActive: true },
         orderBy: { name: 'asc' },
@@ -57,7 +63,7 @@ export async function GET(req: Request) {
       prisma.material.findMany({
         where: { companyId, isActive: true },
         orderBy: { name: 'asc' },
-        select: { id: true, name: true, unit: true, currentStock: true },
+        select: { id: true, name: true, unit: true, unitCost: true, currentStock: true },
       }),
     ]);
 
@@ -103,6 +109,7 @@ export async function GET(req: Request) {
           materialId: mat.id,
           materialName: mat.name,
           unit: mat.unit,
+          unitCost: decimalToNumberOrZero(mat.unitCost),
           companyTotal,
           splitTotal,
           qtyByWarehouseId,
@@ -118,16 +125,19 @@ export async function GET(req: Request) {
       filteredRows = filteredRows.filter((r) => (r.qtyByWarehouseId[warehouseFilter] ?? 0) > 0);
     }
 
+    const currencyCode = readCompanyOperationalSettings(company?.operationalSettings).currencyCode;
+
     if (limitParam !== null) {
       const limit = parseListLimit(limitParam);
       return successResponse({
+        currencyCode,
         warehouseColumns,
         items: filteredRows.slice(offset, offset + limit),
         total: filteredRows.length,
       });
     }
 
-    return successResponse({ warehouseColumns, rows: filteredRows });
+    return successResponse({ currencyCode, warehouseColumns, rows: filteredRows });
   } catch (e) {
     console.error('[inventory-by-warehouse]', e);
     return errorResponse('Failed to load inventory by warehouse', 500);

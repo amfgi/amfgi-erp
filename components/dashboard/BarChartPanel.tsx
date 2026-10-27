@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Skeleton } from '@/components/ui/shadcn/skeleton';
 import { cn } from '@/lib/utils';
 
 export type BarChartItem = {
+  id?: string;
   label: string;
   value: number;
   displayValue?: string;
@@ -22,6 +25,48 @@ function defaultFormat(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
 
+export function BarChartBars({
+  items,
+  emptyMessage = 'No data for this period.',
+  valueFormatter = defaultFormat,
+}: {
+  items: BarChartItem[];
+  emptyMessage?: string;
+  valueFormatter?: (value: number) => string;
+}) {
+  const max = Math.max(...items.map((item) => item.value), 1);
+
+  if (items.length === 0) {
+    return <p className="py-6 text-sm text-muted-foreground">{emptyMessage}</p>;
+  }
+
+  return (
+    <ul className="space-y-3">
+      {items.map((item, index) => {
+        const widthPct = Math.max(4, Math.round((item.value / max) * 100));
+        const tone = item.tone ?? 'sky';
+        return (
+          <li key={item.id ?? `${item.label}-${index}`}>
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate text-foreground">{item.label}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {item.displayValue ?? valueFormatter(item.value)}
+              </span>
+            </div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-muted/60">
+              <div
+                className={cn('h-full rounded-full transition-[width]', barToneClass[tone])}
+                style={{ width: `${widthPct}%` }}
+                role="presentation"
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function BarChartPanel({
   title,
   description,
@@ -29,6 +74,7 @@ export function BarChartPanel({
   loading,
   emptyMessage = 'No data for this period.',
   valueFormatter = defaultFormat,
+  headerAction,
 }: {
   title: string;
   description?: string;
@@ -36,13 +82,15 @@ export function BarChartPanel({
   loading?: boolean;
   emptyMessage?: string;
   valueFormatter?: (value: number) => string;
+  headerAction?: ReactNode;
 }) {
-  const max = Math.max(...items.map((item) => item.value), 1);
-
   return (
     <Card className="border-border shadow-sm">
       <CardHeader className="gap-1 pb-2">
-        <CardTitle className="text-base font-semibold">{title}</CardTitle>
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="text-base font-semibold">{title}</CardTitle>
+          {headerAction}
+        </div>
         {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent className="pt-0">
@@ -55,32 +103,8 @@ export function BarChartPanel({
               </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
-          <p className="py-6 text-sm text-muted-foreground">{emptyMessage}</p>
         ) : (
-          <ul className="space-y-3">
-            {items.map((item) => {
-              const widthPct = Math.max(4, Math.round((item.value / max) * 100));
-              const tone = item.tone ?? 'sky';
-              return (
-                <li key={item.label}>
-                  <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate text-foreground">{item.label}</span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {item.displayValue ?? valueFormatter(item.value)}
-                    </span>
-                  </div>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-muted/60">
-                    <div
-                      className={cn('h-full rounded-full transition-[width]', barToneClass[tone])}
-                      style={{ width: `${widthPct}%` }}
-                      role="presentation"
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <BarChartBars items={items} emptyMessage={emptyMessage} valueFormatter={valueFormatter} />
         )}
       </CardContent>
     </Card>

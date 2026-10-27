@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
 import {
+  BarChartBars,
   BarChartPanel,
   DashboardFeedPanel,
   DashboardSection,
@@ -13,6 +14,8 @@ import {
   type BarChartItem,
   type DashboardFeedItem,
 } from '@/components/dashboard';
+import { Button } from '@/components/ui/shadcn/button';
+import ResponsiveDialog from '@/components/ui/ResponsiveDialog';
 import { WorkspaceHubHeader } from '@/components/workspace';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
 import { buttonVariants } from '@/components/ui/shadcn/button';
@@ -36,8 +39,16 @@ function currentMonthYmd() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+const CHART_PREVIEW_LIMIT = 6;
+const MATERIAL_VALUE_TONES = ['sky', 'emerald', 'amber', 'violet', 'rose', 'muted'] as const;
+const WAREHOUSE_VALUE_TONES = ['emerald', 'sky', 'amber', 'violet', 'rose', 'muted'] as const;
+
 function formatCount(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatStockQty(value: number) {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
 }
 
 function formatMoney(value: number, currencyCode: string) {
@@ -253,31 +264,40 @@ function DashboardContent({
     { skip: !canViewHrEmployees },
   );
 
+  const [materialsValueOpen, setMaterialsValueOpen] = useState(false);
+  const [warehouseValueOpen, setWarehouseValueOpen] = useState(false);
+
   const currencyCode = valuation?.summary.currencyCode ?? 'AED';
   const stockValue = valuation?.summary.totalStockValue ?? 0;
   const integrityIssues = integrity?.summary.materialsWithExceptions ?? 0;
 
-  const warehouseChartItems: BarChartItem[] = useMemo(
+  const allWarehouseChartItems: BarChartItem[] = useMemo(
     () =>
-      (valuation?.warehouseBreakdown ?? []).slice(0, 6).map((row, index) => ({
-        label: row.warehouseName,
-        value: row.stockValue,
-        displayValue: formatMoney(row.stockValue, currencyCode),
-        tone: (['emerald', 'sky', 'amber', 'violet', 'rose', 'muted'] as const)[index % 6],
-      })),
+      (valuation?.warehouseBreakdown ?? [])
+        .filter((row) => row.stockValue > 0)
+        .map((row, index) => ({
+          id: row.warehouseId,
+          label: row.warehouseName,
+          value: row.stockValue,
+          displayValue: formatMoney(row.stockValue, currencyCode),
+          tone: WAREHOUSE_VALUE_TONES[index % WAREHOUSE_VALUE_TONES.length],
+        })),
     [currencyCode, valuation?.warehouseBreakdown],
   );
+  const warehouseChartItems = allWarehouseChartItems.slice(0, CHART_PREVIEW_LIMIT);
 
-  const topMaterialsChartItems: BarChartItem[] = useMemo(
+  const allMaterialsChartItems: BarChartItem[] = useMemo(
     () =>
-      (valuation?.topMaterialsByValue ?? []).slice(0, 6).map((row, index) => ({
+      (valuation?.topMaterialsByValue ?? []).map((row, index) => ({
+        id: row.id,
         label: row.name,
         value: row.totalValue,
         displayValue: formatMoney(row.totalValue, currencyCode),
-        tone: (['sky', 'emerald', 'amber', 'violet', 'rose', 'muted'] as const)[index % 6],
+        tone: MATERIAL_VALUE_TONES[index % MATERIAL_VALUE_TONES.length],
       })),
     [currencyCode, valuation?.topMaterialsByValue],
   );
+  const topMaterialsChartItems = allMaterialsChartItems.slice(0, CHART_PREVIEW_LIMIT);
 
   const attendanceDailyItems: BarChartItem[] = useMemo(() => {
     if (!attendance?.days?.length) return [];
@@ -389,6 +409,18 @@ function DashboardContent({
     stockApprovals?.summary.receiptLineCorrectionApprovedCount ??
     receiptCorrectionRows.filter((row) => row.status === 'APPROVED').length;
 
+  const lowStockFeedItems: DashboardFeedItem[] = useMemo(
+    () =>
+      (stockStats?.lowStockItems ?? []).map((item) => ({
+        key: item.id,
+        primary: item.name,
+        secondary: `${formatStockQty(item.currentStock)} ${item.unit} on hand · reorder ${formatStockQty(item.reorderLevel)}`,
+        href: `/stock/materials/${item.id}`,
+        badge: { label: 'Low', tone: 'amber' as const },
+      })),
+    [stockStats?.lowStockItems],
+  );
+
   const stockLoading = stockStatsLoading || valuationLoading || integrityLoading || stockApprovalsLoading;
   const hrEmployeesLoading =
     activeEmployeesLoading || onLeaveEmployeesLoading || suspendedEmployeesLoading || exitedEmployeesLoading;
@@ -446,13 +478,15 @@ function DashboardContent({
                 value={formatCount(stockStats?.activeMaterials ?? 0)}
                 href="/stock/materials"
               />
-              <DashboardStatCard
-                label="Low stock alerts"
-                value={formatCount(stockStats?.lowStockCount ?? 0)}
-                hint="At or below reorder level"
-                tone={(stockStats?.lowStockCount ?? 0) > 0 ? 'amber' : undefined}
-                href="/stock/materials"
-              />
+              {canSeeMaterials ? (
+                <DashboardStatCard
+                  label="Low stock alerts"
+                  value={formatCount(stockStats?.lowStockCount ?? 0)}
+                  hint="At or below reorder level"
+                  tone={(stockStats?.lowStockCount ?? 0) > 0 ? 'amber' : undefined}
+                  href="/stock/materials?stock=low"
+                />
+              ) : null}
               <DashboardStatCard
                 label="Open batches"
                 value={formatCount(stockStats?.openBatches ?? 0)}
@@ -488,6 +522,18 @@ function DashboardContent({
             </div>
           )}
 
+          {canSeeMaterials ? (
+            <DashboardFeedPanel
+              title="Low stock"
+              description="Active materials at or below their reorder level."
+              emptyMessage="No materials are at or below their reorder level."
+              loading={stockStatsLoading && lowStockFeedItems.length === 0}
+              href="/stock/materials?stock=low"
+              linkLabel="View all"
+              items={lowStockFeedItems}
+            />
+          ) : null}
+
           {canViewReceiptCorrections ? (
             <div className="grid gap-4 lg:grid-cols-2">
               <DashboardFeedPanel
@@ -519,6 +565,19 @@ function DashboardContent({
               loading={valuationLoading && warehouseChartItems.length === 0}
               emptyMessage="No warehouse balances recorded yet."
               valueFormatter={(value) => formatMoney(value, currencyCode)}
+              headerAction={
+                allWarehouseChartItems.length > CHART_PREVIEW_LIMIT ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-mr-2 -mt-1 shrink-0"
+                    onClick={() => setWarehouseValueOpen(true)}
+                  >
+                    See all
+                  </Button>
+                ) : null
+              }
             />
             <BarChartPanel
               title="Top materials by value"
@@ -527,6 +586,19 @@ function DashboardContent({
               loading={valuationLoading && topMaterialsChartItems.length === 0}
               emptyMessage="No valued materials yet."
               valueFormatter={(value) => formatMoney(value, currencyCode)}
+              headerAction={
+                allMaterialsChartItems.length > CHART_PREVIEW_LIMIT ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-mr-2 -mt-1 shrink-0"
+                    onClick={() => setMaterialsValueOpen(true)}
+                  >
+                    See all
+                  </Button>
+                ) : null
+              }
             />
           </div>
         </DashboardSection>
@@ -640,6 +712,44 @@ function DashboardContent({
           </div>
         </DashboardSection>
       ) : null}
+
+      <ResponsiveDialog open={warehouseValueOpen} onClose={() => setWarehouseValueOpen(false)} size="lg">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Stock value by warehouse</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">All warehouses with stock value, highest first.</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setWarehouseValueOpen(false)}>
+            Close
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          <BarChartBars
+            items={allWarehouseChartItems}
+            emptyMessage="No warehouse balances recorded yet."
+            valueFormatter={(value) => formatMoney(value, currencyCode)}
+          />
+        </div>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog open={materialsValueOpen} onClose={() => setMaterialsValueOpen(false)} size="lg">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Materials by value</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">All materials with stock value, highest first.</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setMaterialsValueOpen(false)}>
+            Close
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          <BarChartBars
+            items={allMaterialsChartItems}
+            emptyMessage="No valued materials yet."
+            valueFormatter={(value) => formatMoney(value, currencyCode)}
+          />
+        </div>
+      </ResponsiveDialog>
     </div>
   );
 }

@@ -53,12 +53,14 @@ export interface InventoryByWarehouseRow {
   materialId: string;
   materialName: string;
   unit: string;
+  unitCost: number;
   companyTotal: number;
   splitTotal: number;
   qtyByWarehouseId: Record<string, number>;
 }
 
 export interface InventoryByWarehouseResponse {
+  currencyCode?: string;
   warehouseColumns: InventoryByWarehouseWarehouseCol[];
   rows: InventoryByWarehouseRow[];
 }
@@ -446,7 +448,12 @@ export const reportsApi = appApi.injectEndpoints({
       }) => {
         const data = r.data;
         if (data.items) {
-          return { warehouseColumns: data.warehouseColumns, rows: data.items, total: data.total ?? data.items.length };
+          return {
+            currencyCode: data.currencyCode,
+            warehouseColumns: data.warehouseColumns,
+            rows: data.items,
+            total: data.total ?? data.items.length,
+          };
         }
         return { ...data, total: data.rows.length };
       },
