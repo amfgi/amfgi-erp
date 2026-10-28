@@ -16,6 +16,14 @@ import {
 } from '@/lib/stock/itemwiseStocklistExport';
 import { useGetInventoryByWarehousePageQuery } from '@/store/hooks';
 
+function roundQty(value: number) {
+  return Number(value.toFixed(3));
+}
+
+function roundMoney(value: number) {
+  return Number(value.toFixed(2));
+}
+
 function formatQty(value: number) {
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
@@ -23,8 +31,11 @@ function formatQty(value: number) {
   }).format(value);
 }
 
-function qtyMismatch(a: number, b: number) {
-  return Math.abs(a - b) > 0.0005;
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function systemDateStamp(date = new Date()) {
@@ -120,6 +131,24 @@ export default function InventoryByWarehousePage() {
     return warehouseColumns.filter((w) => w.id === warehouseFilter);
   }, [warehouseColumns, warehouseFilter]);
 
+  const currencyCode = data?.currencyCode || 'AED';
+  const tableLines = useMemo(
+    () =>
+      rows.map((row) => {
+        const qtys = visibleWarehouses.map((warehouse) => roundQty(row.qtyByWarehouseId[warehouse.id] ?? 0));
+        const total = roundQty(qtys.reduce((sum, qty) => sum + qty, 0));
+        return {
+          ...row,
+          qtys,
+          total,
+          value: roundMoney(total * row.unitCost),
+        };
+      }),
+    [rows, visibleWarehouses],
+  );
+  const pageValue = roundMoney(tableLines.reduce((sum, line) => sum + line.value, 0));
+  const columnCount = 4 + visibleWarehouses.length;
+
   if (!canView) {
     return (
       <div className="space-y-6">
@@ -142,10 +171,8 @@ export default function InventoryByWarehousePage() {
             Inventory by warehouse
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-            Quantities come from live{' '}
-            <span className="font-medium text-slate-800 dark:text-slate-200">material × warehouse</span> balances
-            updated on every receipt and dispatch. Company total is the material master balance; split is the sum of
-            warehouse cells — they should match; if not, use stock batches or support to investigate.
+            Each item is one row. Warehouse columns show quantity, including zero. Total is the quantity on this
+            sheet, and value is that total times the unit cost.
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
@@ -199,41 +226,41 @@ export default function InventoryByWarehousePage() {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
                     <th className="sticky left-0 z-20 min-w-[220px] border-r border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/95">
-                      Material
+                      Item
                     </th>
-                    <th className="min-w-[72px] px-3 py-3">Unit</th>
-                    <th className="min-w-[100px] px-3 py-3 text-right">Company total</th>
-                    <th className="min-w-[100px] border-r border-slate-200 px-3 py-3 text-right dark:border-slate-800">
-                      Split sum
-                    </th>
+                    <th className="min-w-[72px] border-r border-slate-200 px-3 py-3 dark:border-slate-800">Unit</th>
                     {visibleWarehouses.map((w) => (
-                      <th key={w.id} className="min-w-[110px] px-3 py-3 text-right whitespace-nowrap">
+                      <th key={w.id} className="min-w-[110px] border-r border-slate-200 px-3 py-3 text-right dark:border-slate-800">
                         {w.name}
                       </th>
                     ))}
+                    <th className="min-w-[88px] border-r border-slate-200 px-3 py-3 text-right dark:border-slate-800">
+                      Total
+                    </th>
+                    <th className="min-w-[110px] px-3 py-3 text-right">Value ({currencyCode})</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {isFetching && rows.length === 0 ? (
+                  {isFetching && tableLines.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4 + visibleWarehouses.length}
+                        colSpan={columnCount}
                         className="px-4 py-10 text-center text-slate-500 dark:text-slate-400"
                       >
                         Loading…
                       </td>
                     </tr>
-                  ) : rows.length === 0 ? (
+                  ) : tableLines.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={4 + visibleWarehouses.length}
+                        colSpan={columnCount}
                         className="px-4 py-10 text-center text-slate-500 dark:text-slate-400"
                       >
                         No rows match your filters, or there is no on-hand stock in any warehouse yet.
                       </td>
                     </tr>
                   ) : (
-                    rows.map((row) => (
+                    tableLines.map((row) => (
                       <tr
                         key={row.materialId}
                         className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-800/80 dark:odd:bg-slate-950 dark:even:bg-slate-900/40"
@@ -245,36 +272,45 @@ export default function InventoryByWarehousePage() {
                           >
                             {row.materialName}
                           </Link>
-                          {qtyMismatch(row.companyTotal, row.splitTotal) ? (
-                            <span className="ml-2 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
-                              Mismatch
-                            </span>
-                          ) : null}
                         </td>
-                        <td className="px-3 py-2.5 text-slate-600 dark:text-slate-400">{row.unit}</td>
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-slate-600 dark:border-slate-800 dark:text-slate-400">
+                          {row.unit}
+                        </td>
+                        {row.qtys.map((qty, index) => (
+                          <td
+                            key={visibleWarehouses[index]?.id ?? index}
+                            className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums text-slate-900 dark:border-slate-800 dark:text-white"
+                          >
+                            {formatQty(qty)}
+                          </td>
+                        ))}
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums font-medium text-slate-900 dark:border-slate-800 dark:text-white">
+                          {formatQty(row.total)}
+                        </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
-                          {formatQty(row.companyTotal)}
+                          {formatMoney(row.value)}
                         </td>
-                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums text-slate-700 dark:border-slate-800 dark:text-slate-300">
-                          {formatQty(row.splitTotal)}
-                        </td>
-                        {visibleWarehouses.map((w) => {
-                          const q = row.qtyByWarehouseId[w.id] ?? 0;
-                          return (
-                            <td
-                              key={w.id}
-                              className={`px-3 py-2.5 text-right tabular-nums ${
-                                q > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'
-                              }`}
-                            >
-                              {q > 0 ? formatQty(q) : '—'}
-                            </td>
-                          );
-                        })}
                       </tr>
                     ))
                   )}
                 </tbody>
+                {tableLines.length > 0 ? (
+                  <tfoot>
+                    <tr className="border-t border-slate-200 bg-slate-50 text-sm font-semibold dark:border-slate-800 dark:bg-slate-900/80">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/95">
+                        {totalPages > 1 ? 'Total value (this page)' : 'Total value'}
+                      </td>
+                      <td className="border-r border-slate-200 dark:border-slate-800" />
+                      {visibleWarehouses.map((warehouse) => (
+                        <td key={warehouse.id} className="border-r border-slate-200 dark:border-slate-800" />
+                      ))}
+                      <td className="border-r border-slate-200 dark:border-slate-800" />
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
+                        {formatMoney(pageValue)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                ) : null}
               </table>
             </div>
           )}
@@ -307,7 +343,7 @@ export default function InventoryByWarehousePage() {
         <div className="px-5 py-5">
           <h2 className="text-lg font-semibold text-foreground">Itemwise stocklist</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each warehouse is listed separately, with its name, item quantity, value, and total.
+            Each item is one row. Every warehouse has a quantity column, and zero is shown as 0, followed by the total quantity and value.
           </p>
           <div className="mt-5 grid grid-cols-2 gap-2">
             <Button type="button" variant="outline" disabled={exporting !== null} onClick={() => void downloadStocklist('excel')}>
