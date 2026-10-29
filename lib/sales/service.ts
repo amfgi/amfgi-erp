@@ -11,15 +11,14 @@ import {
 } from './quotationDocument';
 import { canSeeStage, hidesPurchaseOrders, type SalesAccess } from './access';
 import { findSalesUser, listSalesUsers } from './salesUsers';
+import { allocateJobNumber } from '@/lib/jobs/allocateJobNumber';
+import { assignNextDocumentNumber } from '@/lib/sales/nextDocumentSerial';
 import { closureWorkDetail, writeSalesWorkLog } from './workLog';
 import {
   type DocumentKind,
-  formatDocumentNumber,
   formatQuotationNumber,
-  parseDocumentSerial,
   phoneDigits,
   queryNumberKey,
-  salesYearCode,
 } from './format';
 
 export class SalesError extends Error {
@@ -96,81 +95,20 @@ async function withNumberRetry<T>(work: () => Promise<T>): Promise<T> {
   throw new SalesError('Could not assign the next number');
 }
 
-async function highestSerial(
-  tx: Prisma.TransactionClient,
-  companyId: string,
-  kind: DocumentKind,
-  year: string,
-): Promise<number> {
-  const prefix = `${kind}${year}-`;
-  let values: string[] = [];
-  if (kind === 'QR') {
-    const rows = await tx.salesQuery.findMany({
-      where: { companyId, queryNumber: { startsWith: prefix, mode: 'insensitive' } },
-      select: { queryNumber: true },
-    });
-    values = rows.map((row) => row.queryNumber);
-  } else if (kind === 'Q') {
-    const rows = await tx.salesQuery.findMany({
-      where: { companyId, quotationNumber: { startsWith: prefix, mode: 'insensitive' } },
-      select: { quotationNumber: true },
-    });
-    values = rows.flatMap((row) => (row.quotationNumber ? [row.quotationNumber] : []));
-  } else if (kind === 'PO') {
-    const rows = await tx.salesQuery.findMany({
-      where: { companyId, poNumber: { startsWith: prefix, mode: 'insensitive' } },
-      select: { poNumber: true },
-    });
-    values = rows.flatMap((row) => (row.poNumber ? [row.poNumber] : []));
-  } else {
-    const rows = await tx.job.findMany({
-      where: { companyId, jobNumber: { startsWith: prefix, mode: 'insensitive' } },
-      select: { jobNumber: true },
-    });
-    values = rows.map((row) => row.jobNumber);
-  }
-  return values.reduce((max, value) => {
-    const serial = parseDocumentSerial(kind, year, value);
-    return serial && serial > max ? serial : max;
-  }, 0);
-}
-
-async function documentNumberTaken(
-  tx: Prisma.TransactionClient,
-  companyId: string,
-  kind: DocumentKind,
-  number: string,
-): Promise<boolean> {
-  const key = queryNumberKey(number);
-  if (kind === 'QR') {
-    const row = await tx.salesQuery.findFirst({ where: { companyId, queryNumberKey: key }, select: { id: true } });
-    return Boolean(row);
-  }
-  if (kind === 'Q') {
-    const row = await tx.salesQuery.findFirst({ where: { companyId, quotationNumberKey: key }, select: { id: true } });
-    return Boolean(row);
-  }
-  if (kind === 'PO') {
-    const row = await tx.salesQuery.findFirst({ where: { companyId, poNumberKey: key }, select: { id: true } });
-    return Boolean(row);
-  }
-  const job = await tx.job.findFirst({ where: { companyId, jobNumber: number }, select: { id: true } });
-  return Boolean(job);
-}
-
 async function nextDocumentNumber(
   tx: Prisma.TransactionClient,
   companyId: string,
   kind: DocumentKind,
 ): Promise<string> {
-  const year = salesYearCode();
-  let serial = await highestSerial(tx, companyId, kind, year);
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    serial += 1;
-    const candidate = formatDocumentNumber(kind, year, serial);
-    if (!(await documentNumberTaken(tx, companyId, kind, candidate))) return candidate;
+  if (kind === 'J') return allocateJobNumber(tx, companyId);
+  try {
+    return await assignNextDocumentNumber(tx, companyId, kind);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Could not assign the next number') {
+      throw new SalesError('Could not assign the next number');
+    }
+    throw error;
   }
-  throw new SalesError('Could not assign the next number');
 }
 
 function optionGross(option: { vatAmount: Prisma.Decimal | number; lines: Array<{ lineTotal: Prisma.Decimal | number }> }) {
@@ -673,6 +611,7 @@ export async function forwardToQuotation(params: {
     throw new SalesError('Location, description, and scope are required');
   }
   const detail = [`Assigned to ${assignee.name}`, params.sourceNote?.trim()].filter(Boolean).join('. ');
+  let quotationNumber = '';
   await withNumberRetry(() => prisma.$transaction(async (tx) => {
     const fresh = await tx.salesQuery.findFirst({
       where: { id: current.id, companyId },
@@ -681,7 +620,7 @@ export async function forwardToQuotation(params: {
     if (!fresh || fresh.stage !== 'QUERY' || fresh.quotationNumber) {
       throw new SalesError('This record is already past the query stage');
     }
-    const quotationNumber = await nextDocumentNumber(tx, companyId, 'Q');
+    quotationNumber = await nextDocumentNumber(tx, companyId, 'Q');
     await tx.salesQuery.update({
       where: { id: current.id },
       data: {
@@ -700,6 +639,18 @@ export async function forwardToQuotation(params: {
       detail,
     });
   }));
+  if (!canSeeStage(access, 'QUOTATION')) {
+    return {
+      id: current.id,
+      queryNumber: current.queryNumber,
+      customerId: current.customerId,
+      stage: 'QUOTATION' as const,
+      salesman: current.salesman,
+      quotationNumber,
+      assignedTo: { id: assignee.id, name: assignee.name },
+      forwarded: true as const,
+    };
+  }
   return getSalesRecord(companyId, id, access);
 }
 

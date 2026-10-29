@@ -183,6 +183,13 @@ export {
   useCreateQuotationCustomSectionMutation,
   useUpdateQuotationCustomSectionMutation,
   useDeleteQuotationCustomSectionMutation,
+  useCreateQuotationCustomSectionVersionMutation,
+  useUpdateQuotationCustomSectionVersionMutation,
+  useDeleteQuotationCustomSectionVersionMutation,
+  useGetQuotationSectionPresetsQuery,
+  useCreateQuotationSectionPresetMutation,
+  useUpdateQuotationSectionPresetMutation,
+  useDeleteQuotationSectionPresetMutation,
 } from './api/endpoints/sales';
 
 export {

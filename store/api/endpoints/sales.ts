@@ -242,12 +242,12 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: { id: string } }) => response.data,
       invalidatesTags: ['QuotationTermsTemplate'],
     }),
-    getQuotationCustomSections: builder.query<Array<{ id: string; name: string; content: { name: string; body: string; minHeightMm: number; widthPercent: number } }>, void>({
+    getQuotationCustomSections: builder.query<Array<{ id: string; name: string; content: CustomSectionRecord }>, void>({
       query: () => '/sales/custom-sections',
-      transformResponse: (response: { data: Array<{ id: string; name: string; content: { name: string; body: string; minHeightMm: number; widthPercent: number } }> }) => response.data,
+      transformResponse: (response: { data: Array<{ id: string; name: string; content: CustomSectionRecord }> }) => response.data,
       providesTags: ['QuotationCustomSection'],
     }),
-    createQuotationCustomSection: builder.mutation<{ id: string; name: string }, { name: string; content: { name: string; body: string; minHeightMm: number; widthPercent: number } }>({
+    createQuotationCustomSection: builder.mutation<{ id: string; name: string }, { name: string; content: CustomSectionBody }>({
       query: (body) => ({ url: '/sales/custom-sections', method: 'POST', body }),
       transformResponse: (response: { data: { id: string; name: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
@@ -261,6 +261,44 @@ const salesApi = appApi.injectEndpoints({
       query: (id) => ({ url: `/sales/custom-sections/${id}`, method: 'DELETE' }),
       transformResponse: (response: { data: { id: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
+    }),
+    createQuotationCustomSectionVersion: builder.mutation<{ id: string; name: string }, { id: string; name: string; content: CustomSectionBody }>({
+      query: ({ id, name, content }) => ({ url: `/sales/custom-sections/${id}/versions`, method: 'POST', body: { name, content } }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationCustomSection'],
+    }),
+    updateQuotationCustomSectionVersion: builder.mutation<{ id: string; name: string }, { id: string; versionId: string; name: string }>({
+      query: ({ id, versionId, name }) => ({ url: `/sales/custom-sections/${id}/versions`, method: 'PATCH', body: { versionId, name } }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationCustomSection'],
+    }),
+    deleteQuotationCustomSectionVersion: builder.mutation<{ id: string }, { id: string; versionId: string }>({
+      query: ({ id, versionId }) => ({ url: `/sales/custom-sections/${id}/versions?versionId=${encodeURIComponent(versionId)}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: ['QuotationCustomSection'],
+    }),
+    getQuotationSectionPresets: builder.query<SectionPreset[], SectionPresetKind>({
+      query: (kind) => `/sales/section-presets?kind=${kind}`,
+      transformResponse: (response: { data: SectionPreset[] }) => response.data,
+      providesTags: (_result, _error, kind) => [{ type: 'QuotationSectionPreset', id: kind }],
+    }),
+    createQuotationSectionPreset: builder.mutation<
+      { id: string; name: string },
+      { kind: 'scope'; name: string; body: string } | { kind: 'specification'; name: string; rows: Array<{ label: string; value: string }> }
+    >({
+      query: (body) => ({ url: '/sales/section-presets', method: 'POST', body }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationSectionPreset', id: arg.kind }],
+    }),
+    updateQuotationSectionPreset: builder.mutation<{ id: string; name: string }, { id: string; kind: SectionPresetKind; name: string }>({
+      query: ({ id, name }) => ({ url: `/sales/section-presets/${id}`, method: 'PATCH', body: { name } }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationSectionPreset', id: arg.kind }],
+    }),
+    deleteQuotationSectionPreset: builder.mutation<{ id: string }, { id: string; kind: SectionPresetKind }>({
+      query: ({ id }) => ({ url: `/sales/section-presets/${id}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationSectionPreset', id: arg.kind }],
     }),
     getSalesWorkLog: builder.query<SalesWorkLogEntry[], string>({
       query: (id) => `/sales/queries/${id}/work-log`,
@@ -294,6 +332,30 @@ export const {
   useCreateQuotationCustomSectionMutation,
   useUpdateQuotationCustomSectionMutation,
   useDeleteQuotationCustomSectionMutation,
+  useCreateQuotationCustomSectionVersionMutation,
+  useUpdateQuotationCustomSectionVersionMutation,
+  useDeleteQuotationCustomSectionVersionMutation,
+  useGetQuotationSectionPresetsQuery,
+  useCreateQuotationSectionPresetMutation,
+  useUpdateQuotationSectionPresetMutation,
+  useDeleteQuotationSectionPresetMutation,
 } = salesApi;
+
+export type CustomSectionBody = {
+  name: string;
+  body: string;
+  minHeightMm: number;
+  widthPercent: number;
+};
+
+export type CustomSectionRecord = CustomSectionBody & {
+  versions: Array<{ id: string; name: string; content: CustomSectionBody }>;
+};
+
+export type SectionPresetKind = 'scope' | 'specification';
+
+export type SectionPreset =
+  | { id: string; name: string; kind: 'scope'; body: string }
+  | { id: string; name: string; kind: 'specification'; rows: Array<{ label: string; value: string }> };
 
 export const useGetSalesWorkLogQuery = salesApi.endpoints.getSalesWorkLog.useQuery;

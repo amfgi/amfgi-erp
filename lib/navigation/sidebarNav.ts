@@ -292,6 +292,7 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			P.SETTINGS_MEDIA,
 			P.SETTINGS_EMAIL,
 			P.SETTINGS_API,
+			P.SETTINGS_SERIAL,
 			P.SETTINGS_MANAGE,
 		],
 		children: [
@@ -299,6 +300,19 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				href: '/settings/print-format',
 				label: 'Print format',
 				anyPerms: [P.SETTINGS_PRINT_FORMAT, P.SETTINGS_MANAGE],
+			},
+			{
+				href: '/settings/serial-number',
+				label: 'Serial Number',
+				anyPerms: [
+					P.SETTINGS_SERIAL,
+					P.SETTINGS_MANAGE,
+					P.SETTINGS_PRINT_FORMAT,
+					P.SETTINGS_STORAGE,
+					P.SETTINGS_MEDIA,
+					P.SETTINGS_EMAIL,
+					P.SETTINGS_API,
+				],
 			},
 			{
 				href: '/settings/storage',

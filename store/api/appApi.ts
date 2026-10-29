@@ -38,6 +38,7 @@ export const appApi = createApi({
     'SalesQuery',
     'QuotationTermsTemplate',
     'QuotationCustomSection',
+    'QuotationSectionPreset',
   ],
   endpoints: () => ({}),
 });

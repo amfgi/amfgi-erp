@@ -174,6 +174,7 @@ export const API_DOC_SECTIONS: ApiDocSection[] = [
     endpoints: [
       { methods: 'GET, PATCH', path: '/api/settings/email', auth: 'session_cookie', summary: 'Global email provider configuration.' },
       { methods: 'POST', path: '/api/settings/email/test', auth: 'session_cookie', summary: 'Send test email to current user.' },
+      { methods: 'GET, PUT', path: '/api/settings/serial-number', auth: 'session_cookie', summary: 'Starting serial for queries, quotations, purchase orders, and jobs.' },
     ],
   },
   {

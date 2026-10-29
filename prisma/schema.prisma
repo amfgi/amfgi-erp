@@ -28,6 +28,8 @@ model Company {
   hrEmployeeTypeSettings   Json?
   /// Employee ID prefix + counting style (sequential / yearly / monthly)
   hrEmployeeCodeSettings   Json?
+  /// Starting serial for queries, quotations, purchase orders, and jobs. Prefix and year stay automatic.
+  documentSerialSettings   Json?
   phone                    String?
   warehouseMode            WarehouseMode               @default(REQUIRED)
   stockFallbackWarehouseId String?
@@ -109,6 +111,7 @@ model Company {
   salesQueries              SalesQuery[]
   quotationTermsTemplates   QuotationTermsTemplate[]
   quotationCustomSections   QuotationCustomSection[]
+  quotationSectionPresets   QuotationSectionPreset[]
   salesQuotationOptions     SalesQuotationOption[]
   salesQuotationLines       SalesQuotationLine[]
   salesQuotationLineFields  SalesQuotationLineField[]
@@ -1203,6 +1206,21 @@ model QuotationCustomSection {
 
   @@unique([companyId, nameKey])
   @@index([companyId, name])
+}
+
+model QuotationSectionPreset {
+  id        String   @id @default(cuid())
+  companyId String
+  kind      String   @db.VarChar(20)
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  content   Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, nameKey])
+  @@index([companyId, kind, name])
 }
 
 model SalesQuotationOption {
