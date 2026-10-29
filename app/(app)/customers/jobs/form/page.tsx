@@ -367,28 +367,33 @@ export default function CustomerJobFormPage() {
       }
 
       const todayDate = new Date().toISOString().split('T')[0];
-      const finalJobNumber =
-        mode === 'variation' && parentJob && form.variationSuffix.trim()
-          ? `${parentJob.jobNumber}-${form.variationSuffix.trim()}`
-          : form.jobNumber.trim();
-
-      await createJob({
-        ...buildPayload(),
-        jobNumber: finalJobNumber,
-        startDate: form.startDate || todayDate,
-        ...(parentJobId ? { parentJobId } : {}),
-        ...(mode === 'create' && isProvisional ? { isProvisional: true } : {}),
-      }).unwrap();
-      toast.success(mode === 'variation' ? 'Job variation created' : 'Job created');
       if (mode === 'variation') {
+        if (!parentJob || !form.variationSuffix.trim()) {
+          toast.error('Enter a variation suffix');
+          return;
+        }
+        await createJob({
+          ...buildPayload(),
+          variationSuffix: form.variationSuffix.trim(),
+          startDate: form.startDate || todayDate,
+          ...(parentJobId ? { parentJobId } : {}),
+        }).unwrap();
+        toast.success('Job variation created');
         if (typeof window !== 'undefined' && window.history.length > 1) {
           router.back();
         } else {
           router.push('/customers/jobs');
         }
-      } else {
-        router.push('/customers/jobs');
+        return;
       }
+
+      await createJob({
+        ...buildPayload(),
+        startDate: form.startDate || todayDate,
+        ...(isProvisional ? { isProvisional: true } : {}),
+      }).unwrap();
+      toast.success('Job created');
+      router.push('/customers/jobs');
     } catch (error) {
       toast.error(extractApiErrorMessage(error, 'Failed to save job'));
     }
@@ -510,12 +515,15 @@ export default function CustomerJobFormPage() {
                 <label className={LABEL_CLASS}>
                   Job number
                   <input
-                    required
-                    value={form.jobNumber}
-                    onChange={(event) => updateField('jobNumber', event.target.value)}
-                    disabled={mode === 'edit'}
+                    value={mode === 'edit' ? form.jobNumber : 'Assigned when you save'}
+                    disabled
                     className={INPUT_CLASS}
                   />
+                  {mode === 'create' ? (
+                    <p className="mt-2 text-xs normal-case tracking-normal text-muted-foreground">
+                      Format J26-0001. The year and the next serial are assigned when you save.
+                    </p>
+                  ) : null}
                 </label>
                 <div>
                   <p className={LABEL_CLASS}>Customer</p>
@@ -544,10 +552,9 @@ export default function CustomerJobFormPage() {
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="text-sm font-medium text-foreground">Provisional parent job number</span>
+                  <span className="text-sm font-medium text-foreground">Provisional parent job</span>
                   <span className="mt-1 block text-xs normal-case tracking-normal text-muted-foreground">
-                    Use a temporary parent number until the formal customer job is issued. Variations keep their
-                    suffix and are renumbered automatically when you confirm the parent from the jobs list.
+                    The job number is still assigned automatically. Mark it provisional until you confirm the customer from the jobs list. Variation suffixes stay as you enter them.
                   </span>
                 </span>
               </label>
@@ -738,7 +745,7 @@ export default function CustomerJobFormPage() {
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Save checklist</p>
             <div className="mt-4 space-y-3 text-sm text-muted-foreground">
               <p className="flex justify-between gap-3"><span>Customer selected</span><span className="text-foreground">{form.customerId ? 'Yes' : 'Missing'}</span></p>
-              <p className="flex justify-between gap-3"><span>Job number</span><span className="text-foreground">{mode === 'variation' ? (form.variationSuffix ? 'Ready' : 'Missing') : (form.jobNumber ? 'Ready' : 'Missing')}</span></p>
+              <p className="flex justify-between gap-3"><span>Job number</span><span className="text-foreground">{mode === 'variation' ? (form.variationSuffix ? 'Ready' : 'Missing') : mode === 'edit' ? (form.jobNumber || 'Missing') : 'Assigned on save'}</span></p>
               <p className="flex justify-between gap-3"><span>Budget page</span><span className="text-foreground">{isVariation ? 'Available' : 'Use variation'}</span></p>
               <p className="flex justify-between gap-3"><span>Expertise tags</span><span className="text-foreground">{requiredExpertises.length}</span></p>
             </div>

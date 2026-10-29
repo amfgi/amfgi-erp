@@ -78,6 +78,7 @@ export const P = {
   SETTINGS_MEDIA: 'settings.media',
   SETTINGS_EMAIL: 'settings.email',
   SETTINGS_API: 'settings.api',
+  SETTINGS_SERIAL: 'settings.serial_number',
 
   // HR / Workforce
   HR_EMPLOYEE_VIEW: 'hr.employee.view',
@@ -154,6 +155,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.SETTINGS_MEDIA,
     P.SETTINGS_EMAIL,
     P.SETTINGS_API,
+    P.SETTINGS_SERIAL,
     P.HR_EMPLOYEE_VIEW, P.HR_EMPLOYEE_CREATE, P.HR_EMPLOYEE_EDIT, P.HR_EMPLOYEE_DELETE,
     P.HR_DOCUMENT_VIEW, P.HR_DOCUMENT_CREATE, P.HR_DOCUMENT_EDIT, P.HR_DOCUMENT_DELETE,
     P.HR_DOCUMENT_TYPE_VIEW, P.HR_DOCUMENT_TYPE_CREATE, P.HR_DOCUMENT_TYPE_EDIT, P.HR_DOCUMENT_TYPE_DELETE,
@@ -398,6 +400,7 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.SETTINGS_MEDIA, label: 'Media library' },
       { key: P.SETTINGS_EMAIL, label: 'Email delivery' },
       { key: P.SETTINGS_API, label: 'API center' },
+      { key: P.SETTINGS_SERIAL, label: 'Serial numbers' },
     ],
   },
   {

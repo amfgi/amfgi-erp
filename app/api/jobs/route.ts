@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { allocateJobNumber, variationSuffixForParent } from '@/lib/jobs/allocateJobNumber';
 import { attachJobListLineage } from '@/lib/jobs/jobListLineage';
 import {
   serializeJobWithContacts,
@@ -15,7 +16,7 @@ import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumber, decimalToNumberOrZero } from '@/lib/utils/decimal';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 const jobListInclude = {
@@ -181,7 +182,8 @@ function buildJobListWhere(
 }
 
 const JobSchema = z.object({
-  jobNumber:      z.string().min(1).max(50),
+  jobNumber:      z.string().max(50).optional(),
+  variationSuffix: z.string().max(40).optional(),
   customerId:     z.string().min(1),
   description:    z.string().max(1000).optional(),
   site:           z.string().max(200).optional(),
@@ -328,11 +330,25 @@ export async function POST(req: Request) {
 
   const requiredExpertises = normalizeRequiredExpertiseNames(parsed.data.requiredExpertises);
 
-  try {
-    const job = await prisma.$transaction(async (tx) => {
+  const createRecord = () => prisma.$transaction(async (tx) => {
+      let jobNumber: string;
+      if (parsed.data.parentJobId) {
+        const parent = await tx.job.findFirst({
+          where: { id: parsed.data.parentJobId, companyId },
+          select: { jobNumber: true },
+        });
+        if (!parent) throw new Error('Parent job not found');
+        const suffix = variationSuffixForParent(parent.jobNumber, parsed.data.variationSuffix, parsed.data.jobNumber);
+        if (!suffix) throw new Error('Enter a variation suffix');
+        jobNumber = `${parent.jobNumber}-${suffix}`;
+        if (jobNumber.length > 50) throw new Error('Variation suffix is too long');
+      } else {
+        jobNumber = await allocateJobNumber(tx, companyId);
+      }
+
       const created = await tx.job.create({
         data: {
-          jobNumber: parsed.data.jobNumber,
+          jobNumber,
           customerId: parsed.data.customerId,
           description: parsed.data.description || null,
           site: parsed.data.site || null,
@@ -392,7 +408,21 @@ export async function POST(req: Request) {
           },
         },
       });
-    });
+  });
+
+  try {
+    let job: Awaited<ReturnType<typeof createRecord>> | undefined;
+    const attempts = parsed.data.parentJobId ? 1 : 5;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        job = await createRecord();
+        break;
+      } catch (error) {
+        const unique = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+        if (!unique || attempt === attempts - 1) throw error;
+      }
+    }
+    if (!job) throw new Error('Could not assign the next job number');
     publishLiveUpdate({
       companyId,
       channel: 'jobs',
@@ -403,9 +433,12 @@ export async function POST(req: Request) {
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Failed to create job';
     console.error('Job creation error:', errorMsg, err);
-    if (errorMsg.includes('Unique constraint failed')) {
+    if (errorMsg.includes('Unique constraint failed') || (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
       return errorResponse('Job number already exists for this company', 409);
     }
-    return errorResponse(errorMsg, 500);
+    if (errorMsg === 'Parent job not found' || errorMsg === 'Enter a variation suffix' || errorMsg === 'Variation suffix is too long' || errorMsg === 'Could not assign the next job number') {
+      return errorResponse(errorMsg, errorMsg === 'Parent job not found' ? 404 : 422);
+    }
+    return errorResponse('Failed to create job', 500);
   }
 }

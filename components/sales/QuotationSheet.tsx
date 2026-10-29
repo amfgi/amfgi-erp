@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import {
   AlignCenter,
@@ -22,15 +22,24 @@ import {
 
 import {
   useCreateQuotationCustomSectionMutation,
+  useCreateQuotationCustomSectionVersionMutation,
   useCreateQuotationTermsTemplateMutation,
   useDeleteQuotationCustomSectionMutation,
+  useDeleteQuotationCustomSectionVersionMutation,
   useDeleteQuotationTermsTemplateMutation,
   useGetQuotationCustomSectionsQuery,
+  useCreateQuotationSectionPresetMutation,
+  useDeleteQuotationSectionPresetMutation,
+  useGetQuotationSectionPresetsQuery,
   useGetQuotationTermsTemplatesQuery,
   useUpdateQuotationCustomSectionMutation,
+  useUpdateQuotationCustomSectionVersionMutation,
+  useUpdateQuotationSectionPresetMutation,
   useUpdateQuotationTermsTemplateMutation,
 } from '@/store/hooks';
 import {
+  applySavedScope,
+  applySavedSpecification,
   applySavedTerms,
   defaultBlank,
   defaultOption,
@@ -259,6 +268,71 @@ const SECTION_CHOICES = [
   { type: 'option', label: 'Price option', hint: 'Another priced table' },
   { type: 'blank', label: 'Custom Section', hint: 'A blank section you write' },
 ] as const;
+
+function SavedPresetPicker({
+  label,
+  hint,
+  used,
+  open,
+  items,
+  emptyText,
+  addLabel,
+  onToggle,
+  onChoose,
+  onRename,
+  onDelete,
+  onAddBlank,
+}: {
+  label: string;
+  hint: string;
+  used: boolean;
+  open: boolean;
+  items: Array<{ id: string; label: string }>;
+  emptyText: string;
+  addLabel?: string;
+  onToggle: () => void;
+  onChoose: (id: string) => void;
+  onRename: (id: string, label: string) => void;
+  onDelete: (id: string, label: string) => void;
+  onAddBlank?: () => void;
+}) {
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`w-full cursor-pointer rounded-md border px-3 py-2 text-left ${used ? 'border-border bg-muted/60 text-muted-foreground' : 'border-border bg-background hover:bg-muted/50'}`}
+      >
+        <span className="block text-sm font-medium">{used ? label : `+ ${label}`}</span>
+        <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : hint}</span>
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background py-1 shadow-lg">
+          {items.length ? items.map((item) => (
+            <div key={item.id} className="flex items-center gap-1 pr-1 hover:bg-muted/60">
+              <button type="button" className="min-w-0 flex-1 cursor-pointer px-3 py-1.5 text-left text-sm" onClick={() => onChoose(item.id)}>
+                {item.label}
+              </button>
+              <button type="button" aria-label={`Rename ${item.label}`} title="Rename" className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground" onClick={() => onRename(item.id, item.label)}>
+                <Pencil className="size-3.5" />
+              </button>
+              <button type="button" aria-label={`Delete ${item.label}`} title="Delete" className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground" onClick={() => onDelete(item.id, item.label)}>
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          )) : (
+            <p className="px-3 py-1.5 text-[11px] text-muted-foreground">{emptyText}</p>
+          )}
+          {onAddBlank ? (
+            <button type="button" className="w-full cursor-pointer border-t border-border px-3 py-1.5 text-left text-sm hover:bg-muted/60" onClick={onAddBlank}>
+              {addLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function mutationMessage(error: unknown, fallback: string) {
   if (error && typeof error === 'object' && 'data' in error) {
@@ -791,12 +865,20 @@ export function QuotationSheet({
   const [highlight, setHighlight] = useState('#ffff00');
   const [fontColor, setFontColor] = useState('#c00000');
   const [tableReady, setTableReady] = useState(false);
-  const [termsListOpen, setTermsListOpen] = useState(false);
+  const [presetMenu, setPresetMenu] = useState<string | null>(null);
   const [saveTerms, setSaveTerms] = useState<Array<{ label: string; value: string }> | null>(null);
-  const [saveSection, setSaveSection] = useState<{ name: string; body: string; minHeightMm: number; widthPercent: number } | null>(null);
+  const [savePreset, setSavePreset] = useState<null | { kind: 'scope'; body: string } | { kind: 'specification'; rows: Array<{ label: string; value: string }> }>(null);
+  const [saveSection, setSaveSection] = useState<null | {
+    blockId: string;
+    sectionId?: string;
+    name: string;
+    body: string;
+    minHeightMm: number;
+    widthPercent: number;
+  }>(null);
   const [saveName, setSaveName] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [renameTarget, setRenameTarget] = useState<null | { kind: 'terms' | 'section'; id: string }>(null);
+  const [renameTarget, setRenameTarget] = useState<null | { kind: 'terms' | 'section' | 'scope' | 'specification' | 'version'; id: string; sectionId?: string }>(null);
   const [renameName, setRenameName] = useState('');
   const [renameError, setRenameError] = useState('');
   const termsQuery = useGetQuotationTermsTemplatesQuery(undefined, { skip: readOnly });
@@ -805,8 +887,16 @@ export function QuotationSheet({
   const [deleteTerms] = useDeleteQuotationTermsTemplateMutation();
   const customQuery = useGetQuotationCustomSectionsQuery(undefined, { skip: readOnly });
   const [createCustomSection, createCustomSectionState] = useCreateQuotationCustomSectionMutation();
+  const [createCustomVersion, createCustomVersionState] = useCreateQuotationCustomSectionVersionMutation();
   const [renameSection, renameSectionState] = useUpdateQuotationCustomSectionMutation();
+  const [renameCustomVersion, renameCustomVersionState] = useUpdateQuotationCustomSectionVersionMutation();
   const [deleteSection] = useDeleteQuotationCustomSectionMutation();
+  const [deleteCustomVersion] = useDeleteQuotationCustomSectionVersionMutation();
+  const scopePresets = useGetQuotationSectionPresetsQuery('scope', { skip: readOnly });
+  const specificationPresets = useGetQuotationSectionPresetsQuery('specification', { skip: readOnly });
+  const [createPreset, createPresetState] = useCreateQuotationSectionPresetMutation();
+  const [renamePreset, renamePresetState] = useUpdateQuotationSectionPresetMutation();
+  const [deletePreset] = useDeleteQuotationSectionPresetMutation();
   const termsItems = useMemo(
     () => (termsQuery.data ?? []).map((entry) => ({ id: entry.id, label: entry.name, searchText: entry.name })),
     [termsQuery.data],
@@ -1097,18 +1187,47 @@ export function QuotationSheet({
     pushHistory();
     const next = applySavedTerms(document, template.rows);
     update(next);
-    setTermsListOpen(false);
+    setPresetMenu(null);
     const termsId = next.blocks.find((block) => block.type === 'terms')?.id;
     if (termsId) window.requestAnimationFrame(() => window.document.getElementById(termsId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
-  function insertSavedSection(sectionId: string) {
+  function focusBlock(next: QuotationDocument, type: 'scope' | 'specification') {
+    const blockId = next.blocks.find((block) => block.type === type)?.id;
+    if (blockId) window.requestAnimationFrame(() => window.document.getElementById(blockId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
+
+  function chooseSavedScope(presetId: string) {
+    const preset = scopePresets.data?.find((entry) => entry.id === presetId);
+    if (!preset || preset.kind !== 'scope') return;
+    pushHistory();
+    const next = applySavedScope(document, preset.body);
+    update(next);
+    setPresetMenu(null);
+    focusBlock(next, 'scope');
+  }
+
+  function chooseSavedSpecification(presetId: string) {
+    const preset = specificationPresets.data?.find((entry) => entry.id === presetId);
+    if (!preset || preset.kind !== 'specification') return;
+    pushHistory();
+    const next = applySavedSpecification(document, preset.rows);
+    update(next);
+    setPresetMenu(null);
+    focusBlock(next, 'specification');
+  }
+
+  function insertSavedSection(sectionId: string, versionId?: string) {
     const saved = customQuery.data?.find((entry) => entry.id === sectionId);
     if (!saved) return;
+    const version = versionId ? saved.content.versions?.find((entry) => entry.id === versionId) : undefined;
+    if (versionId && !version) return;
+    const content = version?.content ?? saved.content;
     pushHistory();
     const previous = new Set(document.blocks.map((block) => block.id));
-    const next = insertCustomSection(document, saved.content);
+    const next = insertCustomSection(document, content, sectionId);
     update(next);
+    setPresetMenu(null);
     const added = next.blocks.find((block) => !previous.has(block.id));
     if (added) window.requestAnimationFrame(() => window.document.getElementById(added.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
@@ -1129,10 +1248,10 @@ export function QuotationSheet({
     }
   }
 
-  function openRename(kind: 'terms' | 'section', id: string, name: string) {
+  function openRename(kind: 'terms' | 'section' | 'scope' | 'specification' | 'version', id: string, name: string, sectionId?: string) {
     setRenameError('');
     setRenameName(name);
-    setRenameTarget({ kind, id });
+    setRenameTarget({ kind, id, sectionId });
   }
 
   async function submitRename(event: FormEvent) {
@@ -1141,7 +1260,11 @@ export function QuotationSheet({
     setRenameError('');
     try {
       if (renameTarget.kind === 'terms') await renameTerms({ id: renameTarget.id, name: renameName }).unwrap();
-      else await renameSection({ id: renameTarget.id, name: renameName }).unwrap();
+      else if (renameTarget.kind === 'scope' || renameTarget.kind === 'specification') {
+        await renamePreset({ id: renameTarget.id, kind: renameTarget.kind, name: renameName }).unwrap();
+      } else if (renameTarget.kind === 'version' && renameTarget.sectionId) {
+        await renameCustomVersion({ id: renameTarget.sectionId, versionId: renameTarget.id, name: renameName }).unwrap();
+      } else await renameSection({ id: renameTarget.id, name: renameName }).unwrap();
       setRenameTarget(null);
       setRenameName('');
       toast.success('Name updated');
@@ -1150,15 +1273,41 @@ export function QuotationSheet({
     }
   }
 
-  async function removeSaved(kind: 'terms' | 'section', id: string, name: string) {
-    const label = kind === 'terms' ? 'terms' : 'section';
+  async function removeSaved(kind: 'terms' | 'section' | 'scope' | 'specification', id: string, name: string) {
+    const label = kind === 'terms' ? 'terms' : kind === 'scope' ? 'scope' : kind === 'specification' ? 'specification' : 'section';
     if (!window.confirm(`Delete the saved ${label} “${name}”? Quotations that already use it keep their copy.`)) return;
     try {
       if (kind === 'terms') await deleteTerms(id).unwrap();
+      else if (kind === 'scope' || kind === 'specification') await deletePreset({ id, kind }).unwrap();
       else await deleteSection(id).unwrap();
-      toast.success(kind === 'terms' ? 'Saved terms deleted' : 'Saved section deleted');
+      toast.success(`Saved ${label} deleted`);
     } catch (error) {
       toast.error(mutationMessage(error, 'Could not delete'));
+    }
+  }
+
+  async function removeVersion(sectionId: string, versionId: string, name: string) {
+    if (!window.confirm(`Delete the version “${name}”? Quotations that already use it keep their copy.`)) return;
+    try {
+      await deleteCustomVersion({ id: sectionId, versionId }).unwrap();
+      toast.success('Version deleted');
+    } catch (error) {
+      toast.error(mutationMessage(error, 'Could not delete'));
+    }
+  }
+
+  async function submitSavedPreset(event: FormEvent) {
+    event.preventDefault();
+    if (!savePreset) return;
+    setSaveError('');
+    try {
+      if (savePreset.kind === 'scope') await createPreset({ kind: 'scope', name: saveName, body: savePreset.body }).unwrap();
+      else await createPreset({ kind: 'specification', name: saveName, rows: savePreset.rows }).unwrap();
+      setSavePreset(null);
+      setSaveName('');
+      toast.success(savePreset.kind === 'scope' ? 'Scope saved' : 'Specification saved');
+    } catch (error) {
+      setSaveError(mutationMessage(error, 'Could not save'));
     }
   }
 
@@ -1166,15 +1315,31 @@ export function QuotationSheet({
     event.preventDefault();
     if (!saveSection) return;
     setSaveError('');
+    const content = {
+      name: saveSection.name,
+      body: saveSection.body,
+      minHeightMm: saveSection.minHeightMm,
+      widthPercent: saveSection.widthPercent,
+    };
     try {
-      await createCustomSection({ name: saveName, content: saveSection }).unwrap();
+      if (saveSection.sectionId) {
+        await createCustomVersion({ id: saveSection.sectionId, name: saveName, content }).unwrap();
+        toast.success('Version saved');
+      } else {
+        const created = await createCustomSection({ name: saveName, content }).unwrap();
+        const blockId = saveSection.blockId;
+        update({
+          ...document,
+          blocks: document.blocks.map((block) => (
+            block.id === blockId && block.type === 'blank' ? { ...block, sectionId: created.id } : block
+          )),
+        });
+        toast.success('Section saved');
+      }
       setSaveSection(null);
       setSaveName('');
-      toast.success('Section saved');
     } catch (error) {
-      setSaveError(error && typeof error === 'object' && 'data' in error && typeof (error as { data?: { error?: string } }).data?.error === 'string'
-        ? (error as { data?: { error?: string } }).data?.error || 'Could not save the section'
-        : 'Could not save the section');
+      setSaveError(mutationMessage(error, 'Could not save the section'));
     }
   }
 
@@ -1192,56 +1357,92 @@ export function QuotationSheet({
                 const used = choice.type === 'terms' || choice.type === 'scope' || choice.type === 'specification'
                   ? presetAlreadyUsed(document, choice.type)
                   : false;
-                if (choice.type === 'terms') {
+                if (choice.type === 'terms' || choice.type === 'scope' || choice.type === 'specification') {
+                  const items = choice.type === 'terms'
+                    ? termsItems
+                    : choice.type === 'scope'
+                      ? (scopePresets.data ?? []).flatMap((entry) => (entry.kind === 'scope' ? [{ id: entry.id, label: entry.name }] : []))
+                      : (specificationPresets.data ?? []).flatMap((entry) => (entry.kind === 'specification' ? [{ id: entry.id, label: entry.name }] : []));
                   return (
-                    <div key={choice.type} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setTermsListOpen((open) => !open)}
-                        className={`cursor-pointer w-full rounded-md border px-3 py-2 text-left ${used ? 'border-border bg-muted/60 text-muted-foreground' : 'border-border bg-background hover:bg-muted/50'}`}
-                      >
-                        <span className="block text-sm font-medium">{used ? choice.label : `+ ${choice.label}`}</span>
-                        <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : choice.hint}</span>
-                      </button>
-                      {termsListOpen ? (
-                        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background py-1 shadow-lg">
-                          {termsItems.length ? termsItems.map((item) => (
-                            <div key={item.id} className="flex items-center gap-1 pr-1 hover:bg-muted/60">
+                    <SavedPresetPicker
+                      key={choice.type}
+                      label={choice.label}
+                      hint={choice.hint}
+                      used={used}
+                      open={presetMenu === choice.type}
+                      items={items}
+                      emptyText={choice.type === 'terms' ? 'No saved terms yet' : 'No saved versions yet'}
+                      addLabel={choice.type === 'terms' ? undefined : 'Use the standard text'}
+                      onToggle={() => setPresetMenu((open) => (open === choice.type ? null : choice.type))}
+                      onChoose={choice.type === 'terms' ? chooseSavedTerms : choice.type === 'scope' ? chooseSavedScope : chooseSavedSpecification}
+                      onRename={(id, name) => openRename(choice.type, id, name)}
+                      onDelete={(id, name) => void removeSaved(choice.type, id, name)}
+                      onAddBlank={choice.type !== 'terms' && !used ? () => {
+                        addSection(choice.type);
+                        setPresetMenu(null);
+                      } : undefined}
+                    />
+                  );
+                }
+                if (choice.type === 'blank') {
+                  return (
+                    <div key={choice.type} className="flex flex-col gap-2">
+                      {(customQuery.data ?? []).map((item) => {
+                        const versions = item.content.versions ?? [];
+                        if (versions.length === 0) {
+                          return (
+                            <div key={item.id} className="flex items-stretch gap-1">
                               <button
                                 type="button"
-                                className="min-w-0 flex-1 cursor-pointer px-3 py-1.5 text-left text-sm"
-                                onClick={() => chooseSavedTerms(item.id)}
+                                onClick={() => insertSavedSection(item.id)}
+                                className="min-w-0 flex-1 cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
                               >
-                                {item.label}
+                                <span className="block text-sm font-medium">+ {item.name}</span>
+                                <span className="block text-[11px] text-muted-foreground">Saved section</span>
                               </button>
-                              <button
-                                type="button"
-                                aria-label={`Rename ${item.label}`}
-                                title="Rename"
-                                className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground"
-                                onClick={() => openRename('terms', item.id, item.label)}
-                              >
+                              <button type="button" aria-label={`Rename ${item.name}`} title="Rename" className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground" onClick={() => openRename('section', item.id, item.name)}>
                                 <Pencil className="size-3.5" />
                               </button>
-                              <button
-                                type="button"
-                                aria-label={`Delete ${item.label}`}
-                                title="Delete"
-                                className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground"
-                                onClick={() => void removeSaved('terms', item.id, item.label)}
-                              >
+                              <button type="button" aria-label={`Delete ${item.name}`} title="Delete" className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground" onClick={() => void removeSaved('section', item.id, item.name)}>
                                 <Trash2 className="size-3.5" />
                               </button>
                             </div>
-                          )) : (
-                            <p className="px-3 py-1.5 text-[11px] text-muted-foreground">No saved terms yet</p>
-                          )}
-                        </div>
-                      ) : null}
+                          );
+                        }
+                        return (
+                          <SavedPresetPicker
+                            key={item.id}
+                            label={item.name}
+                            hint="Saved section"
+                            used={false}
+                            open={presetMenu === item.id}
+                            items={[{ id: item.id, label: item.name }, ...versions.map((version) => ({ id: version.id, label: version.name }))]}
+                            emptyText="No saved versions yet"
+                            onToggle={() => setPresetMenu((open) => (open === item.id ? null : item.id))}
+                            onChoose={(choiceId) => insertSavedSection(item.id, choiceId === item.id ? undefined : choiceId)}
+                            onRename={(choiceId, name) => {
+                              if (choiceId === item.id) openRename('section', item.id, name);
+                              else openRename('version', choiceId, name, item.id);
+                            }}
+                            onDelete={(choiceId, name) => {
+                              if (choiceId === item.id) void removeSaved('section', item.id, name);
+                              else void removeVersion(item.id, choiceId, name);
+                            }}
+                          />
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => addSection('blank')}
+                        className="cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
+                      >
+                        <span className="block text-sm font-medium">+ {choice.label}</span>
+                        <span className="block text-[11px] text-muted-foreground">{choice.hint}</span>
+                      </button>
                     </div>
                   );
                 }
-                const button = (
+                return (
                   <button
                     key={choice.type}
                     type="button"
@@ -1251,42 +1452,6 @@ export function QuotationSheet({
                     <span className="block text-sm font-medium">{used ? choice.label : `+ ${choice.label}`}</span>
                     <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : choice.hint}</span>
                   </button>
-                );
-                if (choice.type !== 'blank') return button;
-                return (
-                  <Fragment key={choice.type}>
-                    {(customQuery.data ?? []).map((item) => (
-                      <div key={item.id} className="flex items-stretch gap-1">
-                        <button
-                          type="button"
-                          onClick={() => insertSavedSection(item.id)}
-                          className="min-w-0 flex-1 cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
-                        >
-                          <span className="block text-sm font-medium">+ {item.name}</span>
-                          <span className="block text-[11px] text-muted-foreground">Saved section</span>
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Rename ${item.name}`}
-                          title="Rename"
-                          className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                          onClick={() => openRename('section', item.id, item.name)}
-                        >
-                          <Pencil className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${item.name}`}
-                          title="Delete"
-                          className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                          onClick={() => void removeSaved('section', item.id, item.name)}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                    {button}
-                  </Fragment>
                 );
               })}
             </div>
@@ -1374,15 +1539,36 @@ export function QuotationSheet({
                       optionCount={options.length}
                       onSaveTerms={block.type === 'terms' && !readOnly ? () => {
                         setSaveSection(null);
+                        setSavePreset(null);
                         setSaveName('');
                         setSaveError('');
                         setSaveTerms(block.type === 'terms' ? block.rows.map((row) => ({ label: row.label, value: row.value })) : null);
                       } : undefined}
-                      onSaveSection={block.type === 'blank' && !readOnly ? () => {
+                      onSaveScope={block.type === 'scope' && !readOnly ? () => {
+                        if (block.type !== 'scope') return;
                         setSaveTerms(null);
+                        setSaveSection(null);
+                        setSaveName('');
+                        setSaveError('');
+                        setSavePreset({ kind: 'scope', body: block.body });
+                      } : undefined}
+                      onSaveSpecification={block.type === 'specification' && !readOnly ? () => {
+                        if (block.type !== 'specification') return;
+                        setSaveTerms(null);
+                        setSaveSection(null);
+                        setSaveName('');
+                        setSaveError('');
+                        setSavePreset({ kind: 'specification', rows: block.rows.map((row) => ({ label: row.label, value: row.value })) });
+                      } : undefined}
+                      onSaveSection={block.type === 'blank' && !readOnly ? () => {
+                        if (block.type !== 'blank') return;
+                        setSaveTerms(null);
+                        setSavePreset(null);
                         setSaveError('');
                         setSaveName(plainText(block.name).slice(0, 80));
                         setSaveSection({
+                          blockId: block.id,
+                          sectionId: block.sectionId,
                           name: block.name,
                           body: block.body,
                           minHeightMm: block.minHeightMm ?? 36,
@@ -1407,7 +1593,7 @@ export function QuotationSheet({
       {renameTarget ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setRenameTarget(null)}>
           <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitRename(event)}>
-            <p className="text-sm font-semibold">{renameTarget.kind === 'terms' ? 'Rename saved terms' : 'Rename saved section'}</p>
+            <p className="text-sm font-semibold">{renameTarget.kind === 'terms' ? 'Rename saved terms' : renameTarget.kind === 'scope' ? 'Rename saved scope' : renameTarget.kind === 'specification' ? 'Rename saved specification' : renameTarget.kind === 'version' ? 'Rename saved version' : 'Rename saved section'}</p>
             <input
               value={renameName}
               onChange={(event) => setRenameName(event.target.value)}
@@ -1418,7 +1604,7 @@ export function QuotationSheet({
             {renameError ? <p className="mt-2 text-xs text-red-700">{renameError}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setRenameTarget(null)}>Cancel</button>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={renameTermsState.isLoading || renameSectionState.isLoading}>Save</button>
+              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={renameTermsState.isLoading || renameSectionState.isLoading || renamePresetState.isLoading || renameCustomVersionState.isLoading}>Save</button>
             </div>
           </form>
         </div>
@@ -1443,10 +1629,30 @@ export function QuotationSheet({
           </form>
         </div>
       ) : null}
+      {savePreset ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setSavePreset(null)}>
+          <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitSavedPreset(event)}>
+            <p className="text-sm font-semibold">{savePreset.kind === 'scope' ? 'Save this scope as' : 'Save this specification as'}</p>
+            <input
+              value={saveName}
+              onChange={(event) => setSaveName(event.target.value)}
+              autoFocus
+              maxLength={80}
+              placeholder="Name"
+              className="mt-3 h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+            />
+            {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSavePreset(null)}>Cancel</button>
+              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createPresetState.isLoading}>Save</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {saveSection ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setSaveSection(null)}>
           <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitSavedSection(event)}>
-            <p className="text-sm font-semibold">Save this section as</p>
+            <p className="text-sm font-semibold">{saveSection.sectionId ? 'Save a version as' : 'Save this section as'}</p>
             <input
               value={saveName}
               onChange={(event) => setSaveName(event.target.value)}
@@ -1458,7 +1664,7 @@ export function QuotationSheet({
             {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSaveSection(null)}>Cancel</button>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createCustomSectionState.isLoading}>Save</button>
+              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createCustomSectionState.isLoading || createCustomVersionState.isLoading}>Save</button>
             </div>
           </form>
         </div>
@@ -1543,6 +1749,8 @@ function BlockView({
   readOnly,
   optionCount,
   onSaveTerms,
+  onSaveScope,
+  onSaveSpecification,
   onSaveSection,
   onChange,
   onMove,
@@ -1552,6 +1760,8 @@ function BlockView({
   readOnly: boolean;
   optionCount: number;
   onSaveTerms?: () => void;
+  onSaveScope?: () => void;
+  onSaveSpecification?: () => void;
   onSaveSection?: () => void;
   onChange: (block: QuotationBlock, recordHistory?: boolean) => void;
   onMove: (direction: -1 | 1) => void;
@@ -1688,6 +1898,9 @@ function BlockView({
           {block.type === 'terms' && onSaveTerms ? (
             <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveTerms}>Save</button>
           ) : null}
+          {block.type === 'specification' && onSaveSpecification ? (
+            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSpecification}>Save</button>
+          ) : null}
         </div>
         <div className={`mt-1 grid items-baseline gap-x-2 gap-y-1 ${block.type === 'specification' ? 'grid-cols-[2rem_max-content_auto_minmax(0,1fr)_auto]' : 'grid-cols-[max-content_auto_minmax(0,1fr)_auto]'}`}>
           {rows.map((row, index) => (
@@ -1783,7 +1996,14 @@ function BlockView({
 
   return (
     <div className={armed ? 'quotation-section-hot' : ''}>
-      {block.type === 'closing' ? null : <RichText value={block.name} readOnly={readOnly} className="font-semibold" onChange={(name) => onChange({ ...block, name })} />}
+      {block.type === 'closing' ? null : (
+        <div className="flex items-start justify-between gap-2">
+          <RichText value={block.name} readOnly={readOnly} className="min-w-0 flex-1 font-semibold" onChange={(name) => onChange({ ...block, name })} />
+          {block.type === 'scope' && onSaveScope ? (
+            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveScope}>Save</button>
+          ) : null}
+        </div>
+      )}
       <RichText value={block.body} readOnly={readOnly} className="mt-1 text-justify" onChange={(body) => onChange({ ...block, body })} />
       {controls}
     </div>

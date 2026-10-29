@@ -27,7 +27,7 @@ export type QuotationBlock =
   | { id: string; type: 'terms'; name: string; rows: LabelRow[] }
   | { id: string; type: 'scope'; name: string; body: RichText }
   | { id: string; type: 'specification'; name: string; rows: LabelRow[] }
-  | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number }
+  | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number; sectionId?: string }
   | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rows: PriceRow[] }
   | { id: string; type: 'closing'; name: string; body: RichText }
   | { id: string; type: 'signatures'; name: string; left: SignatureBlock; right: SignatureBlock };
@@ -458,6 +458,7 @@ function optionInsertIndex(blocks: QuotationBlock[]) {
 export function insertCustomSection(
   document: QuotationDocument,
   content: { name: string; body: string; minHeightMm?: number; widthPercent?: number },
+  sectionId?: string,
 ): QuotationDocument {
   return insertBlock(document, {
     id: id(),
@@ -466,6 +467,7 @@ export function insertCustomSection(
     body: content.body,
     minHeightMm: content.minHeightMm ?? 36,
     widthPercent: content.widthPercent ?? 100,
+    ...(sectionId ? { sectionId } : {}),
   });
 }
 
@@ -479,6 +481,29 @@ export function applySavedTerms(document: QuotationDocument, rows: Array<{ label
     };
   }
   return insertBlock(document, { id: id(), type: 'terms', name: 'Terms & Conditions', rows: nextRows });
+}
+
+export function applySavedScope(document: QuotationDocument, body: string): QuotationDocument {
+  const existing = document.blocks.find((block) => block.type === 'scope');
+  if (existing && existing.type === 'scope') {
+    return {
+      ...document,
+      blocks: document.blocks.map((block) => (block.type === 'scope' ? { ...block, body } : block)),
+    };
+  }
+  return insertBlock(document, { id: id(), type: 'scope', name: 'Not in our scope', body });
+}
+
+export function applySavedSpecification(document: QuotationDocument, rows: Array<{ label: string; value: string }>): QuotationDocument {
+  const nextRows = rows.map((entry) => row(entry.label, entry.value));
+  const existing = document.blocks.find((block) => block.type === 'specification');
+  if (existing && existing.type === 'specification') {
+    return {
+      ...document,
+      blocks: document.blocks.map((block) => (block.type === 'specification' ? { ...block, rows: nextRows } : block)),
+    };
+  }
+  return insertBlock(document, { id: id(), type: 'specification', name: 'Specification & Note', rows: nextRows });
 }
 
 export function insertBlock(document: QuotationDocument, block: QuotationBlock): QuotationDocument {

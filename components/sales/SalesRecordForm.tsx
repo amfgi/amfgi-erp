@@ -464,14 +464,28 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     }
   }
 
+  function projectReady(): boolean {
+    if (!customerReady()) return false;
+    if (!salesmanId) {
+      toast.error('Choose a salesman');
+      return false;
+    }
+    if (!projectLocation.trim() || !projectDescription.trim() || !projectScope.trim()) {
+      toast.error('Location, description, and scope are required');
+      return false;
+    }
+    return true;
+  }
+
   function openForward() {
-    if (!customerReady()) return;
+    if (!projectReady()) return;
     setAssigneeId('');
     setAssignOpen(true);
   }
 
   async function onForwardQuotation() {
-    if (!customerReady() || !assigneeId) {
+    if (!projectReady()) return;
+    if (!assigneeId) {
       toast.error('Choose who this quotation is assigned to');
       return;
     }
@@ -482,8 +496,13 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       if (clientFiles.length) await uploadFiles(targetId, clientFiles, 'CLIENT');
       await forwardQuotation({ id: targetId, assigneeId }).unwrap();
       setAssignOpen(false);
-      toast.success('Forwarded to quotation');
-      router.push(`/sales/quotations/form?id=${targetId}`);
+      if (access.quotationView) {
+        toast.success('Forwarded to quotation');
+        router.push(`/sales/quotations/form?id=${targetId}`);
+      } else {
+        toast.success('Forwarded to quotation. You do not have access to open quotations.');
+        router.push('/sales/queries');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : apiError(error));
     }
@@ -743,7 +762,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         </label>
         <label className={LABEL_CLASS}>
           Project scope
-          <input value={projectScope} onChange={(event) => setProjectScope(event.target.value)} disabled={lockedQuery} maxLength={500} className={INPUT_CLASS} />
+          <textarea value={projectScope} onChange={(event) => setProjectScope(event.target.value)} disabled={lockedQuery} maxLength={500} rows={4} className={`${INPUT_CLASS} resize-none`} />
         </label>
         <label className={LABEL_CLASS}>
           Extra notes
