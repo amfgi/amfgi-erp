@@ -1,6 +1,7 @@
 import { Prisma, type SalesAttachmentKind, type SalesClosure, type SalesQuotationMode, type SalesStage } from '@prisma/client';
 
 import { prisma } from '@/lib/db/prisma';
+import { notifyQueryCreated, notifyQuotationAssigned } from '@/lib/mail/notifySales';
 import { readCompanyOperationalSettings } from '@/lib/utils/companyOperationalSettings';
 import { parsePartyListDateInput } from '@/lib/partyListsApi';
 
@@ -468,8 +469,25 @@ export async function createSalesQuery(params: {
       action: 'CREATED',
       detail: params.logDetail,
     });
-    return { id: row.id, customerCreated: customer.created };
+    return {
+      id: row.id,
+      customerCreated: customer.created,
+      queryNumber,
+      customerName: customer.name,
+    };
   }));
+  try {
+    await notifyQueryCreated({
+      companyId: params.companyId,
+      salesQueryId: created.id,
+      queryNumber: created.queryNumber,
+      customerName: created.customerName,
+      projectLocation: params.projectLocation.trim(),
+      actorId: params.userId,
+    });
+  } catch (error) {
+    console.error('[mail] query notice failed:', error);
+  }
   const record = await getSalesRecord(params.companyId, created.id, params.access);
   return { ...record, customerCreated: created.customerCreated };
 }
@@ -639,6 +657,20 @@ export async function forwardToQuotation(params: {
       detail,
     });
   }));
+  try {
+    await notifyQuotationAssigned({
+      companyId,
+      salesQueryId: current.id,
+      queryNumber: current.queryNumber,
+      quotationNumber,
+      customerName: current.customerName,
+      projectLocation: current.projectLocation,
+      actorId: params.actorId,
+      assignee,
+    });
+  } catch (error) {
+    console.error('[mail] quotation notice failed:', error);
+  }
   if (!canSeeStage(access, 'QUOTATION')) {
     return {
       id: current.id,

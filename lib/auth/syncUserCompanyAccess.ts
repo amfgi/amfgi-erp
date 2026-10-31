@@ -35,6 +35,7 @@ export async function syncUserCompanyAccess(
 
   if (access.length === 0) {
     await tx.userCompanyAccess.deleteMany({ where: { userId } });
+    await tx.userCompanyExtraPermission.deleteMany({ where: { userId } });
     return;
   }
 
@@ -58,4 +59,9 @@ export async function syncUserCompanyAccess(
       create: { userId, companyId: row.companyId, roleId: row.roleId },
     });
   }
+
+  const companyIds = [...new Set(access.map((row) => row.companyId))];
+  await tx.userCompanyExtraPermission.deleteMany({
+    where: { userId, companyId: { notIn: companyIds } },
+  });
 }
