@@ -37,6 +37,7 @@ export interface User {
   /** When set, this login is the employee self-service portal user for HR. */
   linkedEmployeeId?: string | null;
   companyAccess?: UserCompanyAccessItem[];
+  extraPermissions?: { companyId: string; permissions: string[] | unknown }[];
   createdAt: string | Date;
   updatedAt?: string | Date;
 }
@@ -47,6 +48,9 @@ function applyUserDraftPatch(row: User, data: Partial<User> & Record<string, unk
   if (data.isActive !== undefined) row.isActive = data.isActive as boolean;
   if (data.companyAccess !== undefined) {
     row.companyAccess = data.companyAccess as User['companyAccess'];
+  }
+  if (data.extraPermissions !== undefined) {
+    row.extraPermissions = data.extraPermissions as User['extraPermissions'];
   }
 }
 
@@ -89,7 +93,7 @@ export const usersApi = adminApi.injectEndpoints({
         body,
       }),
       transformResponse: (r: { data: User }) => r.data,
-      invalidatesTags: [],
+      invalidatesTags: [{ type: 'User', id: 'LIST' }],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         try {
           const { data: created } = await queryFulfilled;
@@ -111,7 +115,7 @@ export const usersApi = adminApi.injectEndpoints({
         body: data,
       }),
       transformResponse: (r: { data: User }) => r.data,
-      invalidatesTags: [],
+      invalidatesTags: [{ type: 'User', id: 'LIST' }],
       async onQueryStarted({ id, data }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           usersApi.util.updateQueryData('getUsers', undefined, (draft) => {

@@ -7,6 +7,7 @@ export type ItemwiseStocklistRow = {
   materialName: string;
   unit: string;
   unitCost: number;
+  lastPurchasePrice: number | null;
   qtyByWarehouseId: Record<string, number>;
 };
 
@@ -15,6 +16,7 @@ type MatrixLine = {
   unit: string;
   qtys: number[];
   total: number;
+  lastPurchasePrice: number | null;
   value: number;
 };
 
@@ -44,6 +46,7 @@ function buildMatrix(warehouses: ItemwiseStocklistWarehouse[], rows: ItemwiseSto
       unit: row.unit,
       qtys,
       total,
+      lastPurchasePrice: row.lastPurchasePrice == null ? null : roundMoney(row.lastPurchasePrice),
       value: roundMoney(total * row.unitCost),
     });
   }
@@ -163,8 +166,8 @@ export function downloadItemwiseStocklistExcel(args: {
   fileName: string;
 }) {
   const { lines, grandTotal } = buildMatrix(args.warehouses, args.rows);
-  const lastCol = args.warehouses.length + 3;
-  const headers = ['Item', 'Unit', ...args.warehouses.map((warehouse) => warehouse.name), 'Total', `Value (${args.currencyCode})`];
+  const lastCol = args.warehouses.length + 4;
+  const headers = ['Item', 'Unit', ...args.warehouses.map((warehouse) => warehouse.name), 'Total', 'Last purchase price', `Value (${args.currencyCode})`];
   const sheet: XLSX.WorkSheet = {};
   const merges: XLSX.Range[] = [];
   let row = 0;
@@ -194,17 +197,18 @@ export function downloadItemwiseStocklistExcel(args: {
     paintRow(
       sheet,
       row,
-      [line.item, line.unit, ...line.qtys, line.total, line.value],
-      [excelStyles.text, excelStyles.text, ...line.qtys.map(() => excelStyles.qty), excelStyles.qty, excelStyles.money],
+      [line.item, line.unit, ...line.qtys, line.total, line.lastPurchasePrice ?? '', line.value],
+      [excelStyles.text, excelStyles.text, ...line.qtys.map(() => excelStyles.qty), excelStyles.qty, line.lastPurchasePrice == null ? excelStyles.text : excelStyles.money, excelStyles.money],
     );
     row += 1;
   }
 
-  const footer: Array<string | number> = ['Total value', '', ...args.warehouses.map(() => ''), '', grandTotal];
+  const footer: Array<string | number> = ['Total value', '', ...args.warehouses.map(() => ''), '', '', grandTotal];
   const footerStyles = [
     excelStyles.totalLabel,
     excelStyles.totalEmpty,
     ...args.warehouses.map(() => excelStyles.totalEmpty),
+    excelStyles.totalEmpty,
     excelStyles.totalEmpty,
     excelStyles.totalMoney,
   ];
@@ -217,6 +221,7 @@ export function downloadItemwiseStocklistExcel(args: {
     { wch: 14 },
     ...args.warehouses.map((warehouse) => ({ wch: columnWidth(warehouse.name) })),
     { wch: 12 },
+    { wch: 20 },
     { wch: 16 },
   ];
   sheet['!rows'] = [];
@@ -281,20 +286,22 @@ export async function downloadItemwiseStocklistPdf(args: {
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const tableW = pageWidth - margin * 2;
-  const itemW = 46;
-  const unitW = 16;
+  const itemW = 42;
+  const unitW = 14;
   const totalW = 16;
-  const valueW = 24;
-  const fixed = itemW + unitW + totalW + valueW;
+  const priceW = 22;
+  const valueW = 22;
+  const fixed = itemW + unitW + totalW + priceW + valueW;
   const warehouseW = args.warehouses.length > 0 ? (tableW - fixed) / args.warehouses.length : 0;
   const widths = [
-    args.warehouses.length > 0 ? itemW : tableW - unitW - totalW - valueW,
+    args.warehouses.length > 0 ? itemW : tableW - unitW - totalW - priceW - valueW,
     unitW,
     ...args.warehouses.map(() => warehouseW),
     totalW,
+    priceW,
     valueW,
   ];
-  const headers = ['Item', 'Unit', ...args.warehouses.map((warehouse) => warehouse.name), 'Total', `Value (${args.currencyCode})`];
+  const headers = ['Item', 'Unit', ...args.warehouses.map((warehouse) => warehouse.name), 'Total', 'Last purchase price', `Value (${args.currencyCode})`];
   const { lines, grandTotal } = buildMatrix(args.warehouses, args.rows);
   const rowH = 6;
   const headerH = 10;
@@ -359,13 +366,20 @@ export async function downloadItemwiseStocklistPdf(args: {
       newPage();
       drawHeader();
     }
-    drawRow([line.item, line.unit, ...line.qtys.map(formatQty), formatQty(line.total), line.value.toFixed(2)]);
+    drawRow([
+      line.item,
+      line.unit,
+      ...line.qtys.map(formatQty),
+      formatQty(line.total),
+      line.lastPurchasePrice == null ? '' : line.lastPurchasePrice.toFixed(2),
+      line.value.toFixed(2),
+    ]);
   }
 
   if (y + rowH > pageHeight - margin) {
     newPage();
     drawHeader();
   }
-  drawRow(['Total value', '', ...args.warehouses.map(() => ''), '', grandTotal.toFixed(2)], true);
+  drawRow(['Total value', '', ...args.warehouses.map(() => ''), '', '', grandTotal.toFixed(2)], true);
   pdf.save(args.fileName);
 }

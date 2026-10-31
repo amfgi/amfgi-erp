@@ -27,6 +27,7 @@ const UpdateSchema = z.object({
   operationalSettings: z
     .object({
       currencyCode: z.string().trim().min(3).max(3).optional(),
+      deliveryNoteCreatesDispatch: z.boolean().optional(),
     })
     .optional(),
 });
@@ -87,6 +88,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     const allowedNonSaFields = new Set<string>([...profileFields, 'printTemplates']);
+    if (canManageSettings) allowedNonSaFields.add('operationalSettings');
     const hasDisallowedFields = Object.entries(parsed.data).some(
       ([field, value]) => value !== undefined && !allowedNonSaFields.has(field),
     );
@@ -133,7 +135,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       select: { operationalSettings: true },
     });
 
-    if (isSA && parsed.data.operationalSettings !== undefined) {
+    if ((isSA || canManageSettings) && parsed.data.operationalSettings !== undefined) {
       const currentOperational =
         existing.operationalSettings &&
         typeof existing.operationalSettings === 'object' &&
@@ -143,8 +145,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       const nextOperationalSettings: Record<string, unknown> = {
         ...currentOperational,
-        ...(parsed.data.operationalSettings.currencyCode
+        ...(isSA && parsed.data.operationalSettings.currencyCode
           ? { currencyCode: parsed.data.operationalSettings.currencyCode.toUpperCase() }
+          : {}),
+        ...(typeof parsed.data.operationalSettings.deliveryNoteCreatesDispatch === 'boolean'
+          ? {
+              deliveryNoteCreatesDispatch: parsed.data.operationalSettings.deliveryNoteCreatesDispatch,
+            }
           : {}),
       };
       update.operationalSettings = nextOperationalSettings as Prisma.InputJsonValue;

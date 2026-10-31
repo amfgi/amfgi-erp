@@ -22,6 +22,8 @@ export interface DispatchEntry {
   materialsCount: number;
   notes?: string;
   isDeliveryNote?: boolean;
+  /** Delivery note whose single stock-out is also listed under Dispatches. */
+  countsAsDispatch?: boolean;
   deliveryNoteId?: string;
   deliveryNoteNumber?: number | null;
   deliveryNoteContactPerson?: string;

@@ -40,6 +40,9 @@ function makeDb(overrides: {
           : [{ role: { permissions: [P.MATERIAL_VIEW] } }],
       ),
     },
+    userCompanyExtraPermission: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
   };
 }
 
@@ -60,6 +63,22 @@ describe('refreshAuthJwtTokenFromDb', () => {
     expect(refreshed.isSuperAdmin).toBe(false);
     expect(refreshed.allowedCompanyIds).toEqual([companyId]);
     expect(refreshed.activeCompanySlug).toBe('acme');
+  });
+
+  it('unions extra permissions onto the role and drops unknown keys', async () => {
+    const db = makeDb({ permissions: [P.JOB_VIEW] });
+    db.userCompanyExtraPermission.findUnique.mockResolvedValue({
+      permissions: [P.MATERIAL_EDIT, 'not.a.permission'],
+    });
+    const token = {
+      sub: userId,
+      activeCompanyId: companyId,
+      permissions: [],
+    };
+
+    const refreshed = await refreshAuthJwtTokenFromDb(db as never, token);
+
+    expect(refreshed.permissions).toEqual([P.JOB_VIEW, P.MATERIAL_EDIT]);
   });
 
   it('clears permissions when the account is deactivated', async () => {

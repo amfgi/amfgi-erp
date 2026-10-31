@@ -118,6 +118,8 @@ model Company {
   salesQuotationRevisions   SalesQuotationRevision[]
   salesAttachments          SalesAttachment[]
   salesWorkLogs             SalesWorkLog[]
+  outboundEmails            OutboundEmail[]
+  extraPermissions          UserCompanyExtraPermission[]
 }
 
 model User {
@@ -159,6 +161,8 @@ model User {
   salesQueriesAssigned        SalesQuery[]                 @relation("SalesQueryAssignee")
   salesWorkLogs               SalesWorkLog[]
   salesAttachmentsUploaded    SalesAttachment[]            @relation("SalesAttachmentUploadedBy")
+  outboundEmailsReceived      OutboundEmail[]              @relation("OutboundEmailRecipient")
+  extraPermissions            UserCompanyExtraPermission[]
 
   @@index([activeCompanyId])
 }
@@ -170,6 +174,28 @@ model SystemEmailSettings {
   config      Json     @default("{}")
   updatedAt   DateTime @updatedAt
   updatedById String?
+}
+
+/// One row per sales notification attempt. Message HTML is not stored.
+model OutboundEmail {
+  id        String   @id @default(cuid())
+  companyId String
+  kind      String   @db.VarChar(40)
+  toEmail   String   @db.VarChar(320)
+  toUserId  String?
+  subject   String   @db.VarChar(200)
+  status    String   @db.VarChar(20)
+  error     String?  @db.VarChar(300)
+  provider  String?  @db.VarChar(40)
+  relatedId String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  toUser  User?   @relation("OutboundEmailRecipient", fields: [toUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([relatedId])
+  @@index([toUserId])
 }
 
 /// One-time token for self-service password reset (hashed at rest).
@@ -244,6 +270,22 @@ model UserCompanyAccess {
   @@index([companyId])
   @@index([roleId])
   @@index([userId, companyId])
+}
+
+/// Permissions granted to one user in one company, in addition to their roles.
+model UserCompanyExtraPermission {
+  id          String   @id @default(cuid())
+  userId      String
+  companyId   String
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
 }
 
 model UserTablePreference {

@@ -29,8 +29,10 @@ export const P = {
   // Sales
   SALES_QUERY_VIEW: 'sales.query.view',
   SALES_QUERY_MANAGE: 'sales.query.manage',
+  SALES_QUERY_NOTICE: 'sales.query.notice',
   SALES_QUOTATION_VIEW: 'sales.quotation.view',
   SALES_QUOTATION_MANAGE: 'sales.quotation.manage',
+  SALES_QUOTATION_NOTICE: 'sales.quotation.notice',
   SALES_PURCHASE_ORDERS_VIEW: 'sales.purchaseOrders.view',
   SALES_PURCHASE_ORDERS_MANAGE: 'sales.purchaseOrders.manage',
 
@@ -138,7 +140,10 @@ export const HR_ROLE_SLUG = 'hr';
 
 // ── Predefined role permission sets ───────────────────────────────────────────
 export const ROLE_PRESETS: Record<string, Permission[]> = {
-  super_admin: ALL_PERMISSIONS,
+  // Notice checkboxes stay off until an admin ticks them. They are not merged onto existing roles.
+  super_admin: ALL_PERMISSIONS.filter(
+    (permission) => permission !== P.SALES_QUERY_NOTICE && permission !== P.SALES_QUOTATION_NOTICE,
+  ),
 
   manager: [
     P.MATERIAL_VIEW, P.MATERIAL_CREATE, P.MATERIAL_EDIT,
@@ -316,6 +321,8 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.SALES_QUOTATION_MANAGE, label: 'Quotations manage' },
       { key: P.SALES_PURCHASE_ORDERS_VIEW, label: 'Purchase orders view' },
       { key: P.SALES_PURCHASE_ORDERS_MANAGE, label: 'Purchase orders manage' },
+      { key: P.SALES_QUERY_NOTICE, label: 'Query notice' },
+      { key: P.SALES_QUOTATION_NOTICE, label: 'Quotation notice' },
     ],
   },
   {

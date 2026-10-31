@@ -16,6 +16,10 @@ export interface Company {
   createdAt: Date | string;
   updatedAt?: Date | string;
   canDelete?: boolean;
+  operationalSettings?: {
+    currencyCode?: string;
+    deliveryNoteCreatesDispatch?: boolean;
+  } | null;
 }
 
 export type GetCompaniesArg = void | { includeInactive?: boolean };

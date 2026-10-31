@@ -162,6 +162,55 @@ export default function MaterialsPage() {
     const exportMaterials = await fetchMaterialsForExport(
       lowStockOnly ? { stock: 'low' } : undefined,
     ).unwrap();
+    if (lowStockOnly) {
+      const res = await fetch('/api/reports/inventory-by-warehouse', { cache: 'no-store' });
+      const json = await res.json() as {
+        success?: boolean;
+        error?: string;
+        data?: {
+          warehouseColumns?: Array<{ id: string; name: string }>;
+          rows?: Array<{ materialId: string; qtyByWarehouseId: Record<string, number> }>;
+        };
+      };
+      if (!res.ok || !json?.data) {
+        toast.error(json?.error || 'Could not export low stock');
+        return;
+      }
+      const warehouses = json.data.warehouseColumns ?? [];
+      const qtyByMaterial = new Map(
+        (json.data.rows ?? []).map((row) => [row.materialId, row.qtyByWarehouseId]),
+      );
+      const exportData = exportMaterials.map((material) => {
+        const qtyMap = qtyByMaterial.get(material.id) ?? {};
+        const row: Record<string, string | number> = {
+          'Material ID': material.id,
+          'Item Name': material.name,
+          Description: material.description || '',
+          Unit: material.unit,
+          'Stock type': material.stockType,
+        };
+        let total = 0;
+        const usedNames = new Map<string, number>();
+        for (const warehouse of warehouses) {
+          const seen = usedNames.get(warehouse.name) ?? 0;
+          usedNames.set(warehouse.name, seen + 1);
+          const header = seen === 0 ? warehouse.name : `${warehouse.name} (${seen + 1})`;
+          const qty = Number(qtyMap[warehouse.id] ?? 0);
+          row[header] = qty;
+          total += qty;
+        }
+        row['Total Quantity'] = Number(total.toFixed(3));
+        row['Unit Cost'] = material.unitCost ?? '';
+        row['Reorder Level'] = material.reorderLevel ?? '';
+        return row;
+      });
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Low stock');
+      XLSX.writeFile(wb, `low-stock-${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success('Low stock exported');
+      return;
+    }
     const exportData = exportMaterials.map((material) => ({
       'Material ID': material.id,
       'Item Name': material.name,

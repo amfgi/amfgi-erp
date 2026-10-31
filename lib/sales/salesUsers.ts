@@ -32,6 +32,19 @@ function salesUserSql(companyId: string, userId?: string) {
           ) AS perm(value)
           WHERE perm.value IN (${Prisma.join(SALES_PERMISSIONS)})
         )
+        OR EXISTS (
+          SELECT 1
+          FROM "UserCompanyExtraPermission" x
+          WHERE x."userId" = u.id
+            AND x."companyId" = ${companyId}
+            AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(
+                CASE WHEN jsonb_typeof(x.permissions) = 'array' THEN x.permissions ELSE '[]'::jsonb END
+              ) AS extra(value)
+              WHERE extra.value IN (${Prisma.join(SALES_PERMISSIONS)})
+            )
+        )
       )
     ORDER BY u.name ASC
     ${limit}

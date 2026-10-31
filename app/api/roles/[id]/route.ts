@@ -3,6 +3,7 @@ import { prisma }          from '@/lib/db/prisma';
 import { GLOBAL_LIVE_UPDATE_COMPANY_ID, publishLiveUpdate } from '@/lib/live-updates/server';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z }               from 'zod';
+import { deleteOrphanExtraPermissions } from '@/lib/auth/extraPermissions';
 import { ALL_PERMISSIONS } from '@/lib/permissions';
 
 const UpdateSchema = z.object({
@@ -85,7 +86,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
   await prisma.$transaction(async (tx) => {
     if (assignmentCount > 0) {
+      const affected = await tx.userCompanyAccess.findMany({
+        where: { roleId: id },
+        select: { userId: true },
+      });
       await tx.userCompanyAccess.deleteMany({ where: { roleId: id } });
+      await deleteOrphanExtraPermissions(tx, affected.map((row) => row.userId));
     }
     await tx.role.delete({ where: { id } });
   });

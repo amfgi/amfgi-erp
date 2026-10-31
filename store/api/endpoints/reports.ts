@@ -54,6 +54,7 @@ export interface InventoryByWarehouseRow {
   materialName: string;
   unit: string;
   unitCost: number;
+  lastPurchasePrice: number | null;
   companyTotal: number;
   splitTotal: number;
   qtyByWarehouseId: Record<string, number>;
