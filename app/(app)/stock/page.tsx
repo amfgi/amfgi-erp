@@ -23,6 +23,7 @@ import {
   canViewWarehouseTransfer,
 } from '@/lib/permissions/stockModuleAccess';
 import { useGetStockIntegrityQuery, useGetStockValuationQuery } from '@/store/hooks';
+import { useDeliveryNoteCreatesDispatch } from '@/hooks/useDeliveryNoteCreatesDispatch';
 
 function splitMoney(value: number, currencyCode: string) {
   const formatted = value.toLocaleString('en-AE', {
@@ -136,6 +137,7 @@ export default function StockPage() {
   const { data: session } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
+  const deliveryNoteCreatesDispatch = useDeliveryNoteCreatesDispatch();
 
   const canSeeMaterials = isSA || perms.includes('material.view');
   const canSeeReceipts = isSA || perms.includes('transaction.stock_in');
@@ -187,14 +189,16 @@ export default function StockPage() {
       actions.push({ href: '/stock/factory-production/new', label: 'Factory production' });
     }
     if (canSeeDispatch) {
-      actions.push({ href: '/stock/dispatch/entry', label: 'New dispatch' });
+      if (deliveryNoteCreatesDispatch === false) {
+        actions.push({ href: '/stock/dispatch/entry', label: 'New dispatch' });
+      }
       actions.push({ href: '/stock/dispatch/delivery-note', label: 'Delivery note' });
     }
     if (canTransferWarehouse(perms, isSA)) {
       actions.push({ href: '/stock/warehouse-transfers/new', label: 'Warehouse transfer' });
     }
     return actions;
-  }, [canSeeReceipts, canSeeDispatch, isSA, perms]);
+  }, [canSeeReceipts, canSeeDispatch, deliveryNoteCreatesDispatch, isSA, perms]);
 
   const sections: WorkspaceHubSectionData[] = [
     {

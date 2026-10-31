@@ -134,11 +134,6 @@ function dispatchDaysFrom(consumption: MaterialConsumption) {
   return days;
 }
 
-function formatDispatchCell(day: DispatchDay | undefined) {
-  if (!day) return '';
-  return formatAed(day.cost);
-}
-
 function actualQtyTone(actual: number, budget: number, showBudget: boolean) {
   if (!showBudget || Math.abs(actual - budget) < 0.0005) return 'text-slate-700 dark:text-slate-300';
   return actual < budget
@@ -317,10 +312,10 @@ export default function JobConsumptionCostingSection({
     const byDate: Record<string, number> = {};
     for (const key of dateColumns) byDate[key] = 0;
     for (const row of rows) {
-      for (const key of dateColumns) byDate[key] += row.dispatchByDate[key]?.cost ?? 0;
+      for (const key of dateColumns) byDate[key] += row.dispatchByDate[key]?.qty ?? 0;
     }
-    const totalValue = dateColumns.reduce((sum, key) => sum + (byDate[key] ?? 0), 0);
-    return { byDate, totalValue };
+    const totalQty = dateColumns.reduce((sum, key) => sum + (byDate[key] ?? 0), 0);
+    return { byDate, totalQty };
   }, [dateColumns, rows]);
 
   const shownDateKeys = dateColumns.length > 0 ? dateColumns : [''];
@@ -339,19 +334,21 @@ export default function JobConsumptionCostingSection({
       'Material',
       'Unit',
       ...shownDateKeys.map(dateColumnHeading),
-      ...(showBudgetColumns ? ['Budget Qty', 'Actual Qty', 'Qty Variance', 'Budget Cost'] : ['Actual Qty']),
+      'Actual Qty',
+      ...(showBudgetColumns ? ['Budget Qty', 'Qty Variance', 'Budget Cost'] : []),
       'Actual Cost',
       ...(showBudgetColumns ? ['Cost Variance'] : []),
     ];
-    const actualQtyIndex = 2 + shownDateKeys.length + (showBudgetColumns ? 1 : 0);
+    const actualQtyIndex = 2 + shownDateKeys.length;
     const body = rows.map((row) => {
       const qtyVar = row.actualQty - row.budgetQty;
       const costVar = row.actualCost - row.budgetCost;
       return [
         row.materialName,
         row.unit,
-        ...shownDateKeys.map((key) => (key ? formatDispatchCell(row.dispatchByDate[key]) : '')),
-        ...(showBudgetColumns ? [row.budgetQty, row.actualQty, qtyVar, row.budgetCost] : [row.actualQty]),
+        ...shownDateKeys.map((key) => (key ? (row.dispatchByDate[key]?.qty ?? '') : '')),
+        row.actualQty,
+        ...(showBudgetColumns ? [row.budgetQty, qtyVar, row.budgetCost] : []),
         row.actualCost,
         ...(showBudgetColumns ? [costVar] : []),
       ];
@@ -364,10 +361,10 @@ export default function JobConsumptionCostingSection({
       totals.totalActual,
       ...(showBudgetColumns ? [totals.totalVariance] : []),
     ];
-    const valueLead = ['Total value', ''];
+    const valueLead = ['Total qty', ''];
     const valueDates = shownDateKeys.map((key) => (key ? dateTotals.byDate[key] ?? 0 : ''));
     const valueTail = Array<string>(headers.length - valueLead.length - valueDates.length - 1).fill('');
-    const totalValueRow: Array<string | number> = [...valueLead, ...valueDates, dateTotals.totalValue, ...valueTail];
+    const totalValueRow: Array<string | number> = [...valueLead, ...valueDates, dateTotals.totalQty, ...valueTail];
     const sheetRows: Array<Array<string | number>> = [
       ['Budget vs Consumption Report'],
       ['Job Number', data.job.jobNumber, 'Customer', data.job.customer ?? '', 'Method', costingMethod],
@@ -602,8 +599,8 @@ export default function JobConsumptionCostingSection({
                         {dateColumnHeading(key)}
                       </th>
                     ))}
-                    {showBudgetColumns ? <th className="num px-2 py-1.5 text-right">Budget qty</th> : null}
-                    <th className="num px-2 py-1.5 text-right">Actual qty</th>
+                    <th className="num px-2 py-1.5 text-right">Actual Qty</th>
+                    {showBudgetColumns ? <th className="num px-2 py-1.5 text-right">Budget Qty</th> : null}
                     {showBudgetColumns ? <th className="num px-2 py-1.5 text-right">Qty variance</th> : null}
                     {showBudgetColumns ? <th className="num px-2 py-1.5 text-right">Budget cost</th> : null}
                     <th className="num px-2 py-1.5 text-right">Actual cost</th>
@@ -626,14 +623,14 @@ export default function JobConsumptionCostingSection({
                           const day = key ? r.dispatchByDate[key] : undefined;
                           return (
                             <td key={key || 'date'} className="w-px whitespace-nowrap px-1 py-1 text-right text-[10px] tabular-nums leading-tight text-slate-700 dark:text-slate-300">
-                              {day ? formatAed(day.cost) : null}
+                              {day ? formatQty(day.qty) : null}
                             </td>
                           );
                         })}
+                        <td className={`num px-2 py-1.5 text-right tabular-nums ${actualQtyTone(r.actualQty, r.budgetQty, showBudgetColumns)}`}>{formatQty(r.actualQty)}</td>
                         {showBudgetColumns ? (
                           <td className="num px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-300">{formatQty(r.budgetQty)}</td>
                         ) : null}
-                        <td className={`num px-2 py-1.5 text-right tabular-nums ${actualQtyTone(r.actualQty, r.budgetQty, showBudgetColumns)}`}>{formatQty(r.actualQty)}</td>
                         {showBudgetColumns ? (
                           <td className={`num px-2 py-1.5 text-right tabular-nums ${varianceTone(qtyVar)}`}>
                             {qtyVar >= 0 ? '+' : ''}{formatQty(qtyVar)}
@@ -669,18 +666,14 @@ export default function JobConsumptionCostingSection({
                     ) : null}
                   </tr>
                   <tr className="value-row border-t border-sky-200 bg-sky-50 font-semibold text-slate-950 dark:border-sky-900 dark:bg-sky-950/35 dark:text-sky-50">
-                    <td className="px-2 py-1.5" colSpan={2}>Total value</td>
+                    <td className="px-2 py-1.5" colSpan={2}>Total qty</td>
                     {shownDateKeys.map((key) => (
                       <td key={key || 'date'} className="w-px whitespace-nowrap px-1 py-1 text-right text-[10px] tabular-nums">
-                        {key ? formatAed(dateTotals.byDate[key] ?? 0) : ''}
+                        {key ? formatQty(dateTotals.byDate[key] ?? 0) : ''}
                       </td>
                     ))}
-                    <td
-                      className="num px-2 py-1.5 text-right tabular-nums"
-                      colSpan={showBudgetColumns ? 6 : 2}
-                    >
-                      {formatAed(dateTotals.totalValue)}
-                    </td>
+                    <td className="num px-2 py-1.5 text-right tabular-nums">{formatQty(dateTotals.totalQty)}</td>
+                    <td colSpan={showBudgetColumns ? 5 : 1} />
                   </tr>
                 </tfoot>
               </table>

@@ -65,11 +65,10 @@ export const closureSchema = z.object({
 export const createJobSchema = z.object({
   poDate: z.string().min(1, 'Enter the PO date'),
   poValue: z.number().finite().positive('Enter a PO value greater than zero'),
-  email: z.union([z.string().email(), z.literal('')]).optional().nullable(),
-  address: z.string().max(500).optional().nullable(),
+  email: z.string().max(320).optional().nullable(),
+  address: z.string().max(20000).optional().nullable(),
   tradeLicenseNumber: z.string().max(255).optional().nullable(),
   tradeLicenseAuthority: z.string().max(255).optional().nullable(),
   tradeLicenseExpiry: z.string().max(40).optional().nullable(),
   trnNumber: z.string().max(255).optional().nullable(),
-  trnExpiry: z.string().max(40).optional().nullable(),
 });
