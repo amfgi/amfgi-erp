@@ -912,7 +912,6 @@ export async function createJobFromSales(params: {
   tradeLicenseAuthority?: string | null;
   tradeLicenseExpiry?: string | null;
   trnNumber?: string | null;
-  trnExpiry?: string | null;
 }) {
   if (!params.access.purchaseOrdersManage || !params.access.jobCreate) throw new SalesError('Forbidden', 403);
   const current = await loadRecord(params.companyId, params.id);
@@ -970,7 +969,6 @@ export async function createJobFromSales(params: {
               ? { tradeLicenseExpiry: parsePartyListDateInput(params.tradeLicenseExpiry) }
               : {}),
             ...(params.trnNumber?.trim() ? { trnNumber: params.trnNumber.trim() } : {}),
-            ...(params.trnExpiry?.trim() ? { trnExpiry: parsePartyListDateInput(params.trnExpiry) } : {}),
           },
         });
       }

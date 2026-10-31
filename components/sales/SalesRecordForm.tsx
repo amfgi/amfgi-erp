@@ -205,7 +205,6 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const [tradeLicenseAuthority, setTradeLicenseAuthority] = useState('');
   const [tradeLicenseExpiry, setTradeLicenseExpiry] = useState('');
   const [trnNumber, setTrnNumber] = useState('');
-  const [trnExpiry, setTrnExpiry] = useState('');
 
   useEffect(() => {
     if (!record) return;
@@ -548,13 +547,13 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   }
 
   function openCreateJob() {
-    setEmail('');
-    setAddress('');
-    setTradeLicenseNumber('');
-    setTradeLicenseAuthority('');
-    setTradeLicenseExpiry('');
-    setTrnNumber('');
-    setTrnExpiry('');
+    const customer = record?.customer;
+    setEmail(customer?.email?.trim() ?? '');
+    setAddress(customer?.address?.trim() ?? '');
+    setTradeLicenseNumber(customer?.tradeLicenseNumber?.trim() ?? '');
+    setTradeLicenseAuthority(customer?.tradeLicenseAuthority?.trim() ?? '');
+    setTradeLicenseExpiry(dateInputValue(customer?.tradeLicenseExpiry));
+    setTrnNumber(customer?.trnNumber?.trim() ?? '');
     setJobOpen(true);
   }
 
@@ -579,7 +578,6 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           tradeLicenseAuthority,
           tradeLicenseExpiry,
           trnNumber,
-          trnExpiry,
         },
       }).unwrap();
       toast.success('Job created');
@@ -1057,7 +1055,6 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
               <label className={LABEL_CLASS}>Authority<input value={tradeLicenseAuthority} onChange={(event) => setTradeLicenseAuthority(event.target.value)} className={INPUT_CLASS} /></label>
               <label className={LABEL_CLASS}>License expiry<input type="date" value={tradeLicenseExpiry} onChange={(event) => setTradeLicenseExpiry(event.target.value)} className={INPUT_CLASS} /></label>
               <label className={LABEL_CLASS}>TRN<input value={trnNumber} onChange={(event) => setTrnNumber(event.target.value)} className={INPUT_CLASS} /></label>
-              <label className={LABEL_CLASS}>TRN expiry<input type="date" value={trnExpiry} onChange={(event) => setTrnExpiry(event.target.value)} className={INPUT_CLASS} /></label>
             </div>
           ) : null}
         </div>

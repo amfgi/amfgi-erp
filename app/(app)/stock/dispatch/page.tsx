@@ -35,6 +35,7 @@ import {
   parseDeliveryNoteCustomItemsFromNotes,
   type DeliveryNoteCustomItemPrint,
 } from '@/lib/utils/deliveryNoteCustomItems';
+import { useDeliveryNoteCreatesDispatch } from '@/hooks/useDeliveryNoteCreatesDispatch';
 
 interface Material {
   materialId: string;
@@ -83,6 +84,7 @@ export default function DispatchPage() {
   const { openMenu: openContextMenu } = useGlobalContextMenu();
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
+  const deliveryNoteCreatesDispatch = useDeliveryNoteCreatesDispatch();
   const canView = isSA || perms.includes('transaction.stock_out');
   const canEdit = isSA || perms.includes('transaction.stock_out');
   const canDelete = isSA || perms.includes('transaction.stock_out');
@@ -637,9 +639,11 @@ export default function DispatchPage() {
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Dispatch</h1>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Link href="/stock/dispatch/entry" className={cn(buttonVariants({ size: 'sm' }))}>
-            New dispatch
-          </Link>
+          {deliveryNoteCreatesDispatch === false ? (
+            <Link href="/stock/dispatch/entry" className={cn(buttonVariants({ size: 'sm' }))}>
+              New dispatch
+            </Link>
+          ) : null}
           <Link
             href="/stock/dispatch/delivery-note"
             className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
