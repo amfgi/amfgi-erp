@@ -27,12 +27,15 @@ export async function GET(req: Request) {
     const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
     const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
 
-    // Find all STOCK_OUT transactions for this job on this date
+    // Worksheet edits are plain dispatches only. Delivery-note stock-outs stay on the
+    // note so a same-day worksheet save cannot post that quantity a second time.
     const transactions = await prisma.transaction.findMany({
       where: {
         companyId,
         type: 'STOCK_OUT',
         jobId,
+        isDeliveryNote: false,
+        deliveryNoteId: null,
         date: {
           gte: startOfDay,
           lte: endOfDay,

@@ -147,7 +147,7 @@ export default function InventoryByWarehousePage() {
     [rows, visibleWarehouses],
   );
   const pageValue = roundMoney(tableLines.reduce((sum, line) => sum + line.value, 0));
-  const columnCount = 4 + visibleWarehouses.length;
+  const columnCount = 5 + visibleWarehouses.length;
 
   if (!canView) {
     return (
@@ -237,6 +237,9 @@ export default function InventoryByWarehousePage() {
                     <th className="min-w-[88px] border-r border-slate-200 px-3 py-3 text-right dark:border-slate-800">
                       Total
                     </th>
+                    <th className="min-w-[120px] border-r border-slate-200 px-3 py-3 text-right dark:border-slate-800">
+                      Last purchase price
+                    </th>
                     <th className="min-w-[110px] px-3 py-3 text-right">Value ({currencyCode})</th>
                   </tr>
                 </thead>
@@ -287,6 +290,9 @@ export default function InventoryByWarehousePage() {
                         <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums font-medium text-slate-900 dark:border-slate-800 dark:text-white">
                           {formatQty(row.total)}
                         </td>
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums text-slate-900 dark:border-slate-800 dark:text-white">
+                          {row.lastPurchasePrice == null ? '' : formatMoney(row.lastPurchasePrice)}
+                        </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
                           {formatMoney(row.value)}
                         </td>
@@ -304,6 +310,7 @@ export default function InventoryByWarehousePage() {
                       {visibleWarehouses.map((warehouse) => (
                         <td key={warehouse.id} className="border-r border-slate-200 dark:border-slate-800" />
                       ))}
+                      <td className="border-r border-slate-200 dark:border-slate-800" />
                       <td className="border-r border-slate-200 dark:border-slate-800" />
                       <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-white">
                         {formatMoney(pageValue)}
@@ -343,7 +350,7 @@ export default function InventoryByWarehousePage() {
         <div className="px-5 py-5">
           <h2 className="text-lg font-semibold text-foreground">Itemwise stocklist</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each item is one row. Every warehouse has a quantity column, and zero is shown as 0, followed by the total quantity and value.
+            Each item is one row. Every warehouse has a quantity column, and zero is shown as 0, followed by the total quantity, last purchase price, and value.
           </p>
           <div className="mt-5 grid grid-cols-2 gap-2">
             <Button type="button" variant="outline" disabled={exporting !== null} onClick={() => void downloadStocklist('excel')}>

@@ -9,10 +9,13 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import {
+  DEFAULT_DOCUMENT_SERIAL_PREFIXES,
   DOCUMENT_SERIAL_CONTROLS,
   nextSerialFromHighest,
+  normalizeDocumentPrefix,
   normalizeDocumentSerial,
   type DocumentSerialKey,
+  type DocumentSerialPrefixes,
 } from '@/lib/sales/documentSerialSettings';
 import { formatDocumentNumber, salesYearCode } from '@/lib/sales/format';
 import { readApiJson } from '@/lib/utils/readApiResponse';
@@ -21,6 +24,7 @@ type SerialItem = {
   kind: 'QR' | 'Q' | 'PO' | 'J';
   key: DocumentSerialKey;
   label: string;
+  prefix: string;
   startFrom: number;
   latestSerial: number | null;
   latestNumber: string | null;
@@ -42,8 +46,9 @@ const emptyDraft = (): Record<DocumentSerialKey, string> => ({
 export default function SettingsSerialNumberPage() {
   const { data: session, status } = useSession();
   const perms = (session?.user?.permissions ?? []) as string[];
+  const isSuperAdmin = Boolean(session?.user?.isSuperAdmin);
   const canManage = canAccessSettingsSerial({
-    isSuperAdmin: Boolean(session?.user?.isSuperAdmin),
+    isSuperAdmin,
     permissions: perms,
   });
 
@@ -52,6 +57,7 @@ export default function SettingsSerialNumberPage() {
   const [year, setYear] = useState(salesYearCode());
   const [items, setItems] = useState<SerialItem[]>([]);
   const [draft, setDraft] = useState<Record<DocumentSerialKey, string>>(emptyDraft);
+  const [prefixes, setPrefixes] = useState<DocumentSerialPrefixes>({ ...DEFAULT_DOCUMENT_SERIAL_PREFIXES });
 
   const applyView = useCallback((view: SerialView) => {
     setYear(view.year);
@@ -59,6 +65,11 @@ export default function SettingsSerialNumberPage() {
     setDraft((current) => {
       const next = { ...current };
       for (const item of view.items) next[item.key] = String(item.startFrom);
+      return next;
+    });
+    setPrefixes((current) => {
+      const next = { ...current };
+      for (const item of view.items) next[item.key] = item.prefix;
       return next;
     });
   }, []);
@@ -90,6 +101,7 @@ export default function SettingsSerialNumberPage() {
       purchaseOrder: 0,
       job: 0,
     };
+    const prefixPayload = { ...prefixes };
     for (const control of DOCUMENT_SERIAL_CONTROLS) {
       const parsed = normalizeDocumentSerial(draft[control.key], 0);
       if (parsed < 1) {
@@ -97,6 +109,16 @@ export default function SettingsSerialNumberPage() {
         return;
       }
       payload[control.key] = parsed;
+      const prefix = normalizeDocumentPrefix(prefixes[control.key], '');
+      if (!prefix) {
+        toast.error(`Enter a starting tag of letters or digits for ${control.label}`);
+        return;
+      }
+      prefixPayload[control.key] = prefix;
+    }
+    if (new Set(Object.values(prefixPayload)).size !== DOCUMENT_SERIAL_CONTROLS.length) {
+      toast.error('Each starting tag must be different');
+      return;
     }
 
     setSaving(true);
@@ -104,7 +126,7 @@ export default function SettingsSerialNumberPage() {
       const res = await fetch('/api/settings/serial-number', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, prefixes: prefixPayload }),
       });
       const json = await readApiJson<SerialView>(res);
       if (!res.ok || !json?.success || !json.data) {
@@ -139,9 +161,10 @@ export default function SettingsSerialNumberPage() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings</p>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">Serial Number</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          Choose the serial where Queries, Quotations, Purchase Orders, and Jobs start. Enter the number only.
-          The prefix and year stay automatic, for example J{year}-1234. When the year changes, new numbers use the
-          new year and the serial starts again from the number you set. Numbers already issued keep their year.
+          Choose the starting tag and the serial for Queries, Quotations, Purchase Orders, and Jobs.
+          A new number looks like {prefixes.job}{year}-1234. When the year changes, new numbers use the new year
+          and start again from the serial you set. Numbers already issued keep their tag and year.
+          {isSuperAdmin ? '' : ' Only a super admin can change the starting tags.'}
         </p>
       </header>
 
@@ -158,18 +181,31 @@ export default function SettingsSerialNumberPage() {
           ) : (
             DOCUMENT_SERIAL_CONTROLS.map((control) => {
               const item = items.find((row) => row.key === control.key);
+              const prefix = normalizeDocumentPrefix(prefixes[control.key], control.kind);
               const typed = normalizeDocumentSerial(draft[control.key], 0);
-              const example = typed >= 1 ? formatDocumentNumber(control.kind, year, typed) : `${control.kind}${year}-`;
+              const example = typed >= 1 ? formatDocumentNumber(prefix, year, typed) : `${prefix}${year}-`;
               const nextSerial = typed >= 1 ? nextSerialFromHighest(item?.latestSerial ?? 0, typed) : null;
-              const nextNumber = nextSerial ? formatDocumentNumber(control.kind, year, nextSerial) : null;
+              const nextNumber = nextSerial ? formatDocumentNumber(prefix, year, nextSerial) : null;
               return (
                 <div key={control.key} className="grid gap-2 border-b border-border pb-4 last:border-b-0 last:pb-0 sm:grid-cols-[12rem_1fr] sm:items-start">
                   <label htmlFor={`serial-${control.key}`} className="pt-2 text-sm font-medium text-foreground">
                     {control.label}
                   </label>
                   <div className="flex min-w-0 flex-col gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm text-muted-foreground">{control.kind}{year}-</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        id={`prefix-${control.key}`}
+                        aria-label={`${control.label} starting tag`}
+                        autoComplete="off"
+                        value={prefixes[control.key]}
+                        disabled={!isSuperAdmin}
+                        onChange={(event) => {
+                          const next = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                          setPrefixes((current) => ({ ...current, [control.key]: next }));
+                        }}
+                        className="w-20 font-mono uppercase"
+                      />
+                      <span className="font-mono text-sm text-muted-foreground">{year}-</span>
                       <Input
                         id={`serial-${control.key}`}
                         inputMode="numeric"

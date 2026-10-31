@@ -81,6 +81,18 @@ describe('allocateJobNumber', () => {
 
     await expect(allocateJobNumber(tx as never, 'co-1')).resolves.toBe('J26-5000');
   });
+
+  it('uses a custom starting tag and ignores numbers from the old tag', async () => {
+    const tx = {
+      company: company({ job: 1, prefixes: { job: 'JOB' } }),
+      job: {
+        findMany: jest.fn(async () => [{ jobNumber: 'J26-2228' }, { jobNumber: 'JOB26-0003' }]),
+        findFirst: jest.fn(async () => null),
+      },
+    };
+
+    await expect(allocateJobNumber(tx as never, 'co-1')).resolves.toBe('JOB26-0004');
+  });
 });
 
 describe('variationSuffixForParent', () => {

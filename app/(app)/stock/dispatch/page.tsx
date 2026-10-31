@@ -537,6 +537,7 @@ export default function DispatchPage() {
               <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-900 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-100">
                 DN #{dnNumber ?? '—'}
               </span>
+              {entry.countsAsDispatch ? <Badge label="Dispatch" variant="gray" /> : null}
               {isSubcontractEntry(entry) && entry.transitStatus ? (
                 <span className="text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
                   {transitStatusLabel(entry.transitStatus)}

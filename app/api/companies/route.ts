@@ -65,6 +65,11 @@ const CreateSchema = z.object({
   jobSourceMode:        z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
   customerSourceMode:   z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
   supplierSourceMode:   z.enum(['HYBRID', 'EXTERNAL_ONLY', 'INTERNAL_ONLY']).optional(),
+  operationalSettings: z
+    .object({
+      deliveryNoteCreatesDispatch: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export async function POST(req: Request) {
@@ -116,6 +121,12 @@ export async function POST(req: Request) {
         customerSourceMode: parsed.data.customerSourceMode || 'HYBRID',
         supplierSourceMode: parsed.data.supplierSourceMode || 'HYBRID',
         warehouseMode: normalizeWarehouseMode(undefined),
+        operationalSettings: {
+          currencyCode: 'AED',
+          inventoryValuationMethod: 'FIFO',
+          deliveryNoteCreatesDispatch:
+            parsed.data.operationalSettings?.deliveryNoteCreatesDispatch === true,
+        },
         isActive:    true,
       },
     });

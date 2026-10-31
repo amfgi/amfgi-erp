@@ -1,16 +1,19 @@
 import { nextSerialFromHighest, normalizeDocumentSerialSettings } from '@/lib/sales/documentSerialSettings';
 
+const defaultPrefixes = { query: 'QR', quotation: 'Q', purchaseOrder: 'PO', job: 'J' };
+
 describe('document serial settings', () => {
-  it('keeps a blank setting at 1', () => {
+  it('keeps a blank setting at 1 with the default tags', () => {
     expect(normalizeDocumentSerialSettings(null)).toEqual({
       query: 1,
       quotation: 1,
       purchaseOrder: 1,
       job: 1,
+      prefixes: defaultPrefixes,
     });
   });
 
-  it('stores only the serial the user entered', () => {
+  it('keeps a saved serial when the older number-only shape is stored', () => {
     expect(normalizeDocumentSerialSettings({
       query: 1234,
       quotation: '20',
@@ -21,6 +24,22 @@ describe('document serial settings', () => {
       quotation: 20,
       purchaseOrder: 1,
       job: 5000,
+      prefixes: defaultPrefixes,
+    });
+  });
+
+  it('stores a custom starting tag in uppercase', () => {
+    expect(normalizeDocumentSerialSettings({
+      query: 1,
+      quotation: 1,
+      purchaseOrder: 1,
+      job: 8,
+      prefixes: { query: 'qry', quotation: 'Q', purchaseOrder: 'po', job: 'job' },
+    }).prefixes).toEqual({
+      query: 'QRY',
+      quotation: 'Q',
+      purchaseOrder: 'PO',
+      job: 'JOB',
     });
   });
 

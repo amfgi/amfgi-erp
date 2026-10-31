@@ -66,6 +66,7 @@ export default function AdminCompanyProfilePage() {
     customerSourceMode: 'HYBRID' as CompanySourceMode,
     supplierSourceMode: 'HYBRID' as CompanySourceMode,
     currencyCode: 'AED',
+    deliveryNoteCreatesDispatch: false,
     negativeEvidenceQtyThreshold: DEFAULT_STOCK_CONTROL_SETTINGS.negativeEvidenceQtyThreshold.toString(),
     negativeDecisionNoteQtyThreshold: DEFAULT_STOCK_CONTROL_SETTINGS.negativeDecisionNoteQtyThreshold.toString(),
   });
@@ -97,6 +98,7 @@ export default function AdminCompanyProfilePage() {
             typeof operationalSettings.currencyCode === 'string' && operationalSettings.currencyCode.trim().length > 0
               ? operationalSettings.currencyCode.trim().toUpperCase()
               : 'AED',
+          deliveryNoteCreatesDispatch: operationalSettings.deliveryNoteCreatesDispatch === true,
           negativeEvidenceQtyThreshold: stockControlSettings.negativeEvidenceQtyThreshold.toString(),
           negativeDecisionNoteQtyThreshold: stockControlSettings.negativeDecisionNoteQtyThreshold.toString(),
         });
@@ -131,16 +133,22 @@ export default function AdminCompanyProfilePage() {
         companyData && typeof companyData === 'object' && 'jobCostingSettings' in companyData
           ? (companyData as { jobCostingSettings?: unknown }).jobCostingSettings
           : undefined;
+      const operationalSettings: {
+        currencyCode?: string;
+        deliveryNoteCreatesDispatch: boolean;
+      } = {
+        deliveryNoteCreatesDispatch: form.deliveryNoteCreatesDispatch,
+      };
+      if (isSA) operationalSettings.currencyCode = form.currencyCode.trim().toUpperCase();
+
       const res = await fetch(`/api/companies/${session.user.activeCompanyId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          operationalSettings: {
-            currencyCode: form.currencyCode.trim().toUpperCase(),
-          },
-          ...(isSA
+        body: JSON.stringify(
+          isSA
             ? {
+                ...form,
+                operationalSettings,
                 jobCostingSettings: {
                   ...(nextJobCostingSettings &&
                   typeof nextJobCostingSettings === 'object' &&
@@ -153,8 +161,13 @@ export default function AdminCompanyProfilePage() {
                   },
                 },
               }
-            : {}),
-        }),
+            : {
+                address: form.address,
+                phone: form.phone,
+                email: form.email,
+                operationalSettings,
+              },
+        ),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -296,6 +309,25 @@ export default function AdminCompanyProfilePage() {
                 />
               </div>
             </div>
+
+            <label className="flex cursor-pointer select-none items-start gap-3">
+              <input
+                id="company-delivery-note-creates-dispatch"
+                type="checkbox"
+                checked={form.deliveryNoteCreatesDispatch}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, deliveryNoteCreatesDispatch: e.target.checked }))
+                }
+                disabled={fieldDisabled}
+                className="mt-0.5 h-4 w-4 rounded border border-border bg-background text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <span className="text-sm text-foreground">
+                Delivery notes also create a dispatch
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  On for this company only. A new delivery note also creates a dispatch. A new dispatch does not create a delivery note. Stock is reduced once.
+                </span>
+              </span>
+            </label>
 
             {isSA ? (
               <>

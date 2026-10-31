@@ -16,12 +16,13 @@ export function formatSerial(serial: number): string {
   return serial <= 9999 ? String(serial).padStart(4, '0') : String(serial);
 }
 
-export function formatDocumentNumber(kind: DocumentKind, year: string, serial: number): string {
-  return `${kind}${year}-${formatSerial(serial)}`;
+export function formatDocumentNumber(prefix: string, year: string, serial: number): string {
+  return `${prefix}${year}-${formatSerial(serial)}`;
 }
 
-export function parseDocumentSerial(kind: DocumentKind, year: string, value: string): number | null {
-  const match = value.trim().match(new RegExp(`^${kind}${year}-(\\d+)$`, 'i'));
+export function parseDocumentSerial(prefix: string, year: string, value: string): number | null {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = value.trim().match(new RegExp(`^${escaped}${year}-(\\d+)$`, 'i'));
   if (!match) return null;
   const serial = Number(match[1]);
   if (!Number.isInteger(serial) || serial < 1) return null;
