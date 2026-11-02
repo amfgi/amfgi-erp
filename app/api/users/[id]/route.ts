@@ -1,4 +1,5 @@
 import { auth }            from '@/auth';
+import { extraPermissionRowsSchema, syncUserExtraPermissions } from '@/lib/auth/extraPermissions';
 import { syncUserCompanyAccess } from '@/lib/auth/syncUserCompanyAccess';
 import { isEmployeeSelfServiceAccount } from '@/lib/auth/selfService';
 import { assertCanDeactivateUser } from '@/lib/auth/userSelfProtection';
@@ -20,6 +21,7 @@ const UpdateSchema = z.object({
     companyId: z.string().min(1),
     roleId:    z.string().min(1),
   })).optional(),
+  extraPermissions: extraPermissionRowsSchema.optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +40,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
           role: { select: { id: true, name: true } },
         },
       },
+      extraPermissions: { select: { companyId: true, permissions: true } },
       activeCompany: { select: { id: true, name: true, slug: true } },
     },
   });
@@ -80,6 +83,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (parsed.data.companyAccess) {
         await syncUserCompanyAccess(tx, id, parsed.data.companyAccess);
       }
+      if (parsed.data.extraPermissions) {
+        const companyAccess = parsed.data.companyAccess
+          ?? await tx.userCompanyAccess.findMany({
+            where: { userId: id },
+            select: { companyId: true, roleId: true },
+          });
+        await syncUserExtraPermissions(tx, id, parsed.data.extraPermissions, companyAccess);
+      }
 
       return tx.user.findUnique({
         where: { id },
@@ -90,6 +101,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               role: { select: { id: true, name: true } },
             },
           },
+          extraPermissions: { select: { companyId: true, permissions: true } },
           activeCompany: { select: { id: true, name: true, slug: true } },
         },
       });

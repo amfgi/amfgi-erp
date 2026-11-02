@@ -1,5 +1,6 @@
 import { auth } from '@/auth';
-import { dedupeUserCompanyAccess, syncUserCompanyAccess } from '@/lib/auth/syncUserCompanyAccess';
+import { extraPermissionRowsSchema, syncUserExtraPermissions } from '@/lib/auth/extraPermissions';
+import { dedupeUserCompanyAccess } from '@/lib/auth/syncUserCompanyAccess';
 import { prisma } from '@/lib/db/prisma';
 import { GLOBAL_LIVE_UPDATE_COMPANY_ID, publishLiveUpdate } from '@/lib/live-updates/server';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
@@ -15,6 +16,7 @@ const userListInclude = {
       role: { select: { id: true, name: true } },
     },
   },
+  extraPermissions: { select: { companyId: true, permissions: true } },
   activeCompany: { select: { id: true, name: true, slug: true } },
 } satisfies Prisma.UserInclude;
 
@@ -98,6 +100,7 @@ const CreateUserSchema = z.object({
     companyId: z.string().min(1),
     roleId:    z.string().min(1),
   })).default([]),
+  extraPermissions: extraPermissionRowsSchema.default([]),
 });
 
 export async function POST(req: Request) {
@@ -127,7 +130,8 @@ export async function POST(req: Request) {
         },
       });
 
-      for (const access of dedupeUserCompanyAccess(parsed.data.companyAccess)) {
+      const companyAccess = dedupeUserCompanyAccess(parsed.data.companyAccess);
+      for (const access of companyAccess) {
         await tx.userCompanyAccess.create({
           data: {
             userId:    newUser.id,
@@ -136,18 +140,11 @@ export async function POST(req: Request) {
           },
         });
       }
+      await syncUserExtraPermissions(tx, newUser.id, parsed.data.extraPermissions, companyAccess);
 
       return tx.user.findUnique({
         where: { id: newUser.id },
-        include: {
-          companyAccess: {
-            include: {
-              company: { select: { id: true, name: true, slug: true } },
-              role: { select: { id: true, name: true } },
-            },
-          },
-          activeCompany: { select: { id: true, name: true, slug: true } },
-        },
+        include: userListInclude,
       });
     });
   } catch (err) {

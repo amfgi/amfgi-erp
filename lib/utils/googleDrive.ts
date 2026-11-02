@@ -374,6 +374,22 @@ export async function uploadToDrive(
   }
 }
 
+export async function downloadDriveFile(companyId: string, driveFileId: string): Promise<Buffer> {
+  try {
+    const drive = await getDriveClientForCompany(companyId);
+    const res = await drive.files.get(
+      { fileId: driveFileId, alt: 'media', supportsAllDrives: true },
+      { responseType: 'arraybuffer' },
+    );
+    const data = res.data as ArrayBuffer | Buffer | Uint8Array;
+    if (Buffer.isBuffer(data)) return data;
+    if (data instanceof Uint8Array) return Buffer.from(data);
+    return Buffer.from(data);
+  } catch (error) {
+    throw new Error(explainGoogleDriveError(error));
+  }
+}
+
 export async function deleteFromDrive(driveId: string, companyId: string): Promise<void> {
   try {
     const drive = await getDriveClientForCompany(companyId);

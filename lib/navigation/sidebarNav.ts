@@ -18,6 +18,7 @@ import {
 	UserCog,
 	Users,
 	Wallet,
+	Briefcase,
 } from 'lucide-react';
 
 export type SidebarNavPermission = {
@@ -123,6 +124,18 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 		children: [
 			{ href: '/customers', label: 'Customers', perm: 'customer.view' },
 			{ href: '/customers/jobs', label: 'Jobs', perm: 'job.view' },
+		],
+	},
+	{
+		type: 'group',
+		id: 'sales',
+		label: 'Sales',
+		icon: Briefcase,
+		anyPerms: [P.SALES_QUERY_VIEW, P.SALES_QUOTATION_VIEW, P.SALES_PURCHASE_ORDERS_VIEW],
+		children: [
+			{ href: '/sales/queries', label: 'Queries', perm: P.SALES_QUERY_VIEW },
+			{ href: '/sales/quotations', label: 'Quotations', perm: P.SALES_QUOTATION_VIEW },
+			{ href: '/sales/purchase-orders', label: 'Purchase Orders', perm: P.SALES_PURCHASE_ORDERS_VIEW },
 		],
 	},
 	{
@@ -279,6 +292,7 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			P.SETTINGS_MEDIA,
 			P.SETTINGS_EMAIL,
 			P.SETTINGS_API,
+			P.SETTINGS_SERIAL,
 			P.SETTINGS_MANAGE,
 		],
 		children: [
@@ -286,6 +300,19 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 				href: '/settings/print-format',
 				label: 'Print format',
 				anyPerms: [P.SETTINGS_PRINT_FORMAT, P.SETTINGS_MANAGE],
+			},
+			{
+				href: '/settings/serial-number',
+				label: 'Serial Number',
+				anyPerms: [
+					P.SETTINGS_SERIAL,
+					P.SETTINGS_MANAGE,
+					P.SETTINGS_PRINT_FORMAT,
+					P.SETTINGS_STORAGE,
+					P.SETTINGS_MEDIA,
+					P.SETTINGS_EMAIL,
+					P.SETTINGS_API,
+				],
 			},
 			{
 				href: '/settings/storage',

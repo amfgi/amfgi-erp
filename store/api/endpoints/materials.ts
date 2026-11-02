@@ -9,6 +9,7 @@ export type MaterialsListParams = {
   search?: string;
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
+  stock?: 'low';
 };
 
 export type MaterialsListResponse = {
@@ -51,7 +52,7 @@ export interface Material {
   allowNegativeConsumption: boolean;
   externalItemName?: string;
   currentStock: number;
-  reorderLevel?: number;
+  reorderLevel?: number | null;
   unitCost?: number;
   netWeight?: number | null;
   grossWeight?: number | null;
@@ -86,9 +87,18 @@ export interface MaterialAssembly {
   components: MaterialAssemblyRow[];
 }
 
+export interface LowStockItem {
+  id: string;
+  name: string;
+  unit: string;
+  currentStock: number;
+  reorderLevel: number;
+}
+
 export interface StockDashboardStats {
   activeMaterials: number;
   lowStockCount: number;
+  lowStockItems: LowStockItem[];
   openBatches: number;
   totalBatches: number;
 }
@@ -133,13 +143,14 @@ export const materialsApi = appApi.injectEndpoints({
     }),
 
     getMaterialsPage: builder.query<MaterialsListResponse, MaterialsListParams>({
-      query: ({ limit, offset, search, sortBy, sortDir }) => {
+      query: ({ limit, offset, search, sortBy, sortDir, stock }) => {
         const params = new URLSearchParams();
         params.set('limit', String(limit));
         params.set('offset', String(offset));
         if (search?.trim()) params.set('search', search.trim());
         if (sortBy?.trim()) params.set('sortBy', sortBy.trim());
         if (sortDir) params.set('sortDir', sortDir);
+        if (stock === 'low') params.set('stock', 'low');
         return `/materials?${params.toString()}`;
       },
       transformResponse: (r: { data: MaterialsListResponse }) => ({
@@ -155,8 +166,11 @@ export const materialsApi = appApi.injectEndpoints({
           : [{ type: 'Material', id: 'LIST' }],
     }),
 
-    getMaterialsForExport: builder.query<Material[], void>({
-      query: () => '/materials',
+    getMaterialsForExport: builder.query<Material[], { stock?: 'low' } | void>({
+      query: (params) => {
+        if (params?.stock === 'low') return '/materials?stock=low';
+        return '/materials';
+      },
       transformResponse: (r: { data: Material[] }) => r.data.map(normalizeMaterial),
     }),
 

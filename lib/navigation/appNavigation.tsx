@@ -148,6 +148,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
       P.SETTINGS_MEDIA,
       P.SETTINGS_EMAIL,
       P.SETTINGS_API,
+      P.SETTINGS_SERIAL,
       P.SETTINGS_MANAGE,
     ],
     icon: (

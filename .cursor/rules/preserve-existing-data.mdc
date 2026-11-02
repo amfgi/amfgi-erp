@@ -1,0 +1,11 @@
+---
+description: Never change existing database rows or run seed
+alwaysApply: true
+---
+
+# Existing data stays untouched
+
+- Do not update, delete, or overwrite rows that are already in a database.
+- Do not run `npm run seed` or `npm run seed:production`.
+- Schema updates are `npm run migrate:deploy` only, and only to add new tables or columns.
+- Confirm the command output shows the intended database before treating a migration as applied.

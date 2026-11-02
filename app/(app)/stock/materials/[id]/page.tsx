@@ -157,6 +157,14 @@ function SectionShell({
   );
 }
 
+function parseReorderLevelInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 function FieldShell({
   label,
   hint,
@@ -497,7 +505,9 @@ function MaterialEditor({
         photoGallery: galleryFiles,
         documentFiles,
         ...(isCreateMode && { currentStock: parseFloat(currentStock) || 0 }),
-        reorderLevel: reorderLevel ? parseFloat(reorderLevel) : undefined,
+        reorderLevel: isCreateMode
+          ? (parseReorderLevelInput(reorderLevel) ?? undefined)
+          : parseReorderLevelInput(reorderLevel),
         netWeight: netWeight ? parseFloat(netWeight) : isCreateMode ? undefined : null,
         grossWeight: grossWeight ? parseFloat(grossWeight) : isCreateMode ? undefined : null,
         dimension: dimension.trim() || (isCreateMode ? undefined : null),
@@ -521,7 +531,8 @@ function MaterialEditor({
         };
 
         if (description) changes.description = { from: null, to: description };
-        if (reorderLevel) changes.reorderLevel = { from: null, to: reorderLevel };
+        const createdReorderLevel = parseReorderLevelInput(reorderLevel);
+        if (createdReorderLevel !== null) changes.reorderLevel = { from: null, to: createdReorderLevel };
         if (netWeight) changes.netWeight = { from: null, to: netWeight };
         if (grossWeight) changes.grossWeight = { from: null, to: grossWeight };
         if (dimension.trim()) changes.dimension = { from: null, to: dimension.trim() };
@@ -607,10 +618,12 @@ function MaterialEditor({
           to: externalItemName || null,
         };
       }
-      if (reorderLevel !== (material.reorderLevel?.toString() ?? '')) {
+      const nextReorderLevel = parseReorderLevelInput(reorderLevel);
+      const previousReorderLevel = material.reorderLevel ?? null;
+      if (nextReorderLevel !== previousReorderLevel) {
         changes.reorderLevel = {
-          from: material.reorderLevel ?? 0,
-          to: parseFloat(reorderLevel) || 0,
+          from: previousReorderLevel,
+          to: nextReorderLevel,
         };
       }
       if (netWeight !== (material.netWeight?.toString() ?? '')) {
@@ -778,7 +791,7 @@ function MaterialEditor({
             label: 'Current stock',
             value: isCreateMode ? currentStock || '0' : formatNumber(material?.currentStock),
             note:
-              !isCreateMode && material?.reorderLevel !== undefined
+              !isCreateMode && typeof material?.reorderLevel === 'number'
                 ? `Reorder at ${formatNumber(material.reorderLevel)}`
                 : 'Opening stock while creating',
           },
@@ -1041,7 +1054,10 @@ function MaterialEditor({
                 </FieldShell>
               ) : null}
 
-              <FieldShell label="Reorder level">
+              <FieldShell
+                label="Reorder level"
+                hint="When on-hand stock is at or below this number, the material appears in low stock alerts. Leave blank for no alert."
+              >
                 <input
                   type="number"
                   min="0"

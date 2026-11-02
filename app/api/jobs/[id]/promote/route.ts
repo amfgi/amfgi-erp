@@ -6,7 +6,6 @@ import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 import { z } from 'zod';
 
 const PromoteSchema = z.object({
-  jobNumber: z.string().min(1).max(50),
   customerId: z.string().min(1),
   note: z.string().max(2000).optional().nullable(),
 });
@@ -31,7 +30,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       companyId: session.user.activeCompanyId,
       jobId: id,
       userId: session.user.id,
-      jobNumber: parsed.data.jobNumber,
       customerId: parsed.data.customerId,
       note: parsed.data.note,
     });

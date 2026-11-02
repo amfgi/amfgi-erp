@@ -65,16 +65,10 @@ export async function promoteProvisionalJob(
     companyId: string;
     jobId: string;
     userId: string;
-    jobNumber: string;
     customerId: string;
     note?: string | null;
   },
 ) {
-  const trimmedNumber = params.jobNumber.trim();
-  if (!trimmedNumber) {
-    throw new PromoteProvisionalJobError('Job number is required', 422);
-  }
-
   return prisma.$transaction(async (tx) => {
     const existing = await tx.job.findFirst({
       where: { companyId: params.companyId, id: params.jobId },
@@ -99,6 +93,11 @@ export async function promoteProvisionalJob(
     }
     if (existing.source === 'EXTERNAL_API') {
       throw new PromoteProvisionalJobError('Externally synced jobs cannot be renumbered in AMFGI', 403);
+    }
+
+    const trimmedNumber = existing.jobNumber.trim();
+    if (!trimmedNumber) {
+      throw new PromoteProvisionalJobError('Job number is required', 422);
     }
 
     const customer = await tx.customer.findFirst({
@@ -242,9 +241,11 @@ export async function promoteProvisionalJob(
             previousCustomerId,
             newCustomerId: customer.id,
             changedBy: params.userId,
-            note: params.note?.trim()
-              ? `Renumbered with parent ${previousJobNumber} → ${trimmedNumber}. ${params.note.trim()}`
-              : `Renumbered with parent ${previousJobNumber} → ${trimmedNumber}`,
+            note: numberChanged
+              ? (params.note?.trim()
+                ? `Renumbered with parent ${previousJobNumber} → ${trimmedNumber}. ${params.note.trim()}`
+                : `Renumbered with parent ${previousJobNumber} → ${trimmedNumber}`)
+              : (params.note?.trim() || `Customer updated with parent ${trimmedNumber}`),
           },
         });
       }

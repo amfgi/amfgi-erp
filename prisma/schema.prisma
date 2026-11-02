@@ -28,6 +28,8 @@ model Company {
   hrEmployeeTypeSettings   Json?
   /// Employee ID prefix + counting style (sequential / yearly / monthly)
   hrEmployeeCodeSettings   Json?
+  /// Starting serial for queries, quotations, purchase orders, and jobs. Prefix and year stay automatic.
+  documentSerialSettings   Json?
   phone                    String?
   warehouseMode            WarehouseMode               @default(REQUIRED)
   stockFallbackWarehouseId String?
@@ -106,6 +108,18 @@ model Company {
   dispatchEntryRevisions    DispatchEntryRevision[]
   deliveryNotes             DeliveryNote[]
   deliveryNoteMaterialLines DeliveryNoteMaterialLine[]
+  salesQueries              SalesQuery[]
+  quotationTermsTemplates   QuotationTermsTemplate[]
+  quotationCustomSections   QuotationCustomSection[]
+  quotationSectionPresets   QuotationSectionPreset[]
+  salesQuotationOptions     SalesQuotationOption[]
+  salesQuotationLines       SalesQuotationLine[]
+  salesQuotationLineFields  SalesQuotationLineField[]
+  salesQuotationRevisions   SalesQuotationRevision[]
+  salesAttachments          SalesAttachment[]
+  salesWorkLogs             SalesWorkLog[]
+  outboundEmails            OutboundEmail[]
+  extraPermissions          UserCompanyExtraPermission[]
 }
 
 model User {
@@ -142,6 +156,13 @@ model User {
   passwordResetTokens         PasswordResetToken[]
   reviewedLeaveRequests       LeaveRequest[]         @relation("LeaveRequestReviewedBy")
   scheduleEditorPresences     ScheduleEditorPresence[]
+  salesQueriesAsSalesman      SalesQuery[]                 @relation("SalesQuerySalesman")
+  salesQueriesCreated         SalesQuery[]                 @relation("SalesQueryCreatedBy")
+  salesQueriesAssigned        SalesQuery[]                 @relation("SalesQueryAssignee")
+  salesWorkLogs               SalesWorkLog[]
+  salesAttachmentsUploaded    SalesAttachment[]            @relation("SalesAttachmentUploadedBy")
+  outboundEmailsReceived      OutboundEmail[]              @relation("OutboundEmailRecipient")
+  extraPermissions            UserCompanyExtraPermission[]
 
   @@index([activeCompanyId])
 }
@@ -153,6 +174,28 @@ model SystemEmailSettings {
   config      Json     @default("{}")
   updatedAt   DateTime @updatedAt
   updatedById String?
+}
+
+/// One row per sales notification attempt. Message HTML is not stored.
+model OutboundEmail {
+  id        String   @id @default(cuid())
+  companyId String
+  kind      String   @db.VarChar(40)
+  toEmail   String   @db.VarChar(320)
+  toUserId  String?
+  subject   String   @db.VarChar(200)
+  status    String   @db.VarChar(20)
+  error     String?  @db.VarChar(300)
+  provider  String?  @db.VarChar(40)
+  relatedId String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  toUser  User?   @relation("OutboundEmailRecipient", fields: [toUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([relatedId])
+  @@index([toUserId])
 }
 
 /// One-time token for self-service password reset (hashed at rest).
@@ -227,6 +270,22 @@ model UserCompanyAccess {
   @@index([companyId])
   @@index([roleId])
   @@index([userId, companyId])
+}
+
+/// Permissions granted to one user in one company, in addition to their roles.
+model UserCompanyExtraPermission {
+  id          String   @id @default(cuid())
+  userId      String
+  companyId   String
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
 }
 
 model UserTablePreference {
@@ -770,7 +829,7 @@ model Job {
   /// e.g. Fit-out, Maintenance, Civil works
   projectType            String?                @db.VarChar(120)
   /// Quantity or area scope for the job (e.g. 1200 sqm, 50 nos)
-  projectQtyArea         String?                @db.VarChar(120)
+  projectQtyArea         String?                @db.VarChar(500)
   /// Primary site/contact name (same idea as Customer.contactPerson)
   contactPerson          String?
   salesPerson            String?
@@ -810,6 +869,7 @@ model Job {
   dispatchEntryRevisions   DispatchEntryRevision[]
   deliveryNotes            DeliveryNote[]
   referenceDeliveryNotes   DeliveryNote[] @relation("DeliveryNoteReferenceJob")
+  salesQueries             SalesQuery[]
 
   @@unique([companyId, id])
   @@unique([companyId, jobNumber])
@@ -1035,6 +1095,7 @@ model Customer {
   company               Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   contacts              CustomerContact[]
   jobs                  Job[]
+  salesQueries          SalesQuery[]
 
   @@unique([companyId, id])
   @@unique([companyId, externalPartyId])
@@ -1061,6 +1122,236 @@ model CustomerContact {
 
   @@index([companyId, customerId, sortOrder])
   @@index([companyId, externalContactId])
+}
+
+enum SalesStage {
+  QUERY
+  QUOTATION
+  PURCHASE_ORDER
+}
+
+enum SalesClosure {
+  OPEN
+  LOST
+  CANCELLED
+  REJECTED
+}
+
+enum SalesQuotationMode {
+  SINGLE
+  MULTIPLE
+}
+
+enum SalesAttachmentKind {
+  CLIENT
+  PO
+}
+
+model SalesQuery {
+  id                 String             @id @default(cuid())
+  companyId          String
+  queryNumber        String             @db.VarChar(90)
+  queryNumberKey     String             @db.VarChar(90)
+  quotationNumber    String?            @db.VarChar(100)
+  quotationNumberKey String?            @db.VarChar(100)
+  customerId         String
+  customerName       String             @db.VarChar(100)
+  projectLocation    String             @db.VarChar(200)
+  projectDescription String             @db.VarChar(1000)
+  projectScope       String             @db.VarChar(500)
+  salesmanId         String
+  assignedToId       String?
+  extraNotes         String?            @db.Text
+  stage              SalesStage         @default(QUERY)
+  closure            SalesClosure       @default(OPEN)
+  closureReason      String?            @db.Text
+  closedAt           DateTime?
+  quotationRevision  Int                @default(0)
+  quotationIssuedAt  DateTime?
+  startDate          DateTime?          @db.Date
+  quotationMode      SalesQuotationMode @default(SINGLE)
+  acceptedOptionId   String?            @unique
+  poNumber           String?            @db.VarChar(100)
+  poNumberKey        String?            @db.VarChar(100)
+  poDate             DateTime?          @db.Date
+  poValue            Decimal?           @db.Decimal(18, 2)
+  budgetDetails       String?            @db.Text
+  purchaseOrderNotes  String?            @db.Text
+  quotationDocument   Json?
+  jobId              String?
+  createdById        String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company        Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer       Customer                @relation(fields: [companyId, customerId], references: [companyId, id])
+  salesman       User                    @relation("SalesQuerySalesman", fields: [salesmanId], references: [id])
+  assignedTo     User?                   @relation("SalesQueryAssignee", fields: [assignedToId], references: [id])
+  createdBy      User                    @relation("SalesQueryCreatedBy", fields: [createdById], references: [id])
+  job            Job?                    @relation(fields: [companyId, jobId], references: [companyId, id])
+  options        SalesQuotationOption[]  @relation("SalesQueryOptions")
+  acceptedOption SalesQuotationOption?   @relation("SalesAcceptedOption", fields: [acceptedOptionId], references: [id])
+  revisions      SalesQuotationRevision[]
+  attachments    SalesAttachment[]
+  workLogs       SalesWorkLog[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, queryNumberKey])
+  @@unique([companyId, quotationNumberKey])
+  @@unique([companyId, poNumberKey])
+  @@unique([companyId, jobId])
+  @@index([companyId, stage, closure])
+  @@index([companyId, customerId])
+  @@index([companyId, salesmanId])
+  @@index([assignedToId])
+}
+
+model SalesWorkLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  salesQueryId String
+  actorId      String
+  action       String   @db.VarChar(80)
+  detail       String?  @db.VarChar(300)
+  createdAt    DateTime @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  actor      User       @relation(fields: [actorId], references: [id])
+
+  @@index([companyId, salesQueryId, createdAt])
+}
+
+model QuotationTermsTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  rows      Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, nameKey])
+  @@index([companyId, name])
+}
+
+model QuotationCustomSection {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  content   Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, nameKey])
+  @@index([companyId, name])
+}
+
+model QuotationSectionPreset {
+  id        String   @id @default(cuid())
+  companyId String
+  kind      String   @db.VarChar(20)
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  content   Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, nameKey])
+  @@index([companyId, kind, name])
+}
+
+model SalesQuotationOption {
+  id           String   @id @default(cuid())
+  companyId    String
+  salesQueryId String
+  name         String   @db.VarChar(120)
+  sortOrder    Int      @default(0)
+  isAccepted   Boolean  @default(false)
+  vatAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery       SalesQuery           @relation("SalesQueryOptions", fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  lines            SalesQuotationLine[]
+  acceptedForQuery SalesQuery?          @relation("SalesAcceptedOption")
+
+  @@unique([companyId, id])
+  @@index([companyId, salesQueryId, sortOrder])
+}
+
+model SalesQuotationLine {
+  id          String   @id @default(cuid())
+  companyId   String
+  optionId    String
+  item        String   @db.VarChar(200)
+  description String?  @db.Text
+  unitPrice   Decimal  @db.Decimal(18, 2)
+  quantity    Decimal  @db.Decimal(18, 3)
+  lineTotal   Decimal  @db.Decimal(18, 2)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  option  SalesQuotationOption      @relation(fields: [companyId, optionId], references: [companyId, id], onDelete: Cascade)
+  fields  SalesQuotationLineField[]
+
+  @@index([companyId, optionId, sortOrder])
+}
+
+model SalesQuotationLineField {
+  id        String @id @default(cuid())
+  companyId String
+  lineId    String
+  label     String @db.VarChar(80)
+  value     String @db.VarChar(500)
+  sortOrder Int    @default(0)
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  line    SalesQuotationLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, lineId, sortOrder])
+}
+
+model SalesQuotationRevision {
+  id               String   @id @default(cuid())
+  companyId        String
+  salesQueryId     String
+  revision         Int
+  quotationLabel   String   @db.VarChar(120)
+  snapshot         Json
+  createdAt        DateTime @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+
+  @@unique([salesQueryId, revision])
+  @@index([companyId, salesQueryId])
+}
+
+model SalesAttachment {
+  id           String              @id @default(cuid())
+  companyId    String
+  salesQueryId String
+  kind         SalesAttachmentKind
+  fileName     String
+  mimeType     String
+  driveFileId  String
+  viewerUrl    String              @db.Text
+  uploadedById String
+  createdAt    DateTime            @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  uploadedBy User       @relation("SalesAttachmentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([companyId, salesQueryId, kind])
 }
 
 model Supplier {

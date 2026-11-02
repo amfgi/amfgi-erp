@@ -11,9 +11,16 @@ export type SendMailInput = {
   text?: string;
 };
 
-async function sendResend(config: { apiKey: string; from: string }, input: SendMailInput): Promise<boolean> {
+type SendAttempt = { ok: boolean; error?: string };
+
+function clipError(message: string): string {
+  return message.replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
+async function sendResend(config: { apiKey: string; from: string }, input: SendMailInput): Promise<SendAttempt> {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
+    signal: AbortSignal.timeout(15_000),
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
@@ -29,40 +36,49 @@ async function sendResend(config: { apiKey: string; from: string }, input: SendM
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     console.error('[mail] Resend error:', res.status, text);
+    return { ok: false, error: clipError(`Resend ${res.status}: ${text || 'request failed'}`) };
   }
-  return res.ok;
+  return { ok: true };
 }
 
 async function sendSmtp(
   config: NonNullable<EmailSettingsRecord['smtp']>,
   input: SendMailInput,
-): Promise<boolean> {
+): Promise<SendAttempt> {
   try {
     const nodemailer = await import('nodemailer');
     const transport = nodemailer.createTransport({
       host: config.host,
       port: config.port,
       secure: config.secure,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: config.user && config.password ? { user: config.user, pass: config.password } : undefined,
     });
-    await transport.sendMail({
-      from: config.from,
-      to: input.to,
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-    });
-    return true;
+    try {
+      await transport.sendMail({
+        from: config.from,
+        to: input.to,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      });
+      return { ok: true };
+    } finally {
+      transport.close();
+    }
   } catch (err) {
     console.error('[mail] SMTP send failed:', err);
-    return false;
+    const message = err instanceof Error ? err.message : 'SMTP send failed';
+    return { ok: false, error: clipError(message) };
   }
 }
 
 async function sendWebhook(
   config: NonNullable<EmailSettingsRecord['webhook']>,
   input: SendMailInput,
-): Promise<boolean> {
+): Promise<SendAttempt> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(config.headers ?? {}),
@@ -73,6 +89,7 @@ async function sendWebhook(
 
   const res = await fetch(config.url, {
     method: 'POST',
+    signal: AbortSignal.timeout(15_000),
     headers,
     body: JSON.stringify({
       to: input.to,
@@ -85,25 +102,37 @@ async function sendWebhook(
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     console.error('[mail] Webhook error:', res.status, text);
+    return { ok: false, error: clipError(`Webhook ${res.status}: ${text || 'request failed'}`) };
   }
-  return res.ok;
+  return { ok: true };
 }
+
+const NOT_CONFIGURED = 'Mail provider is not configured';
 
 export async function sendMail(
   db: PrismaClient,
   input: SendMailInput,
-): Promise<{ sent: boolean; devLogged: boolean; provider: string }> {
+): Promise<{ sent: boolean; devLogged: boolean; provider: string; error?: string }> {
   const settings = await resolveEmailSettings(db);
   let sent = false;
+  let error: string | undefined = NOT_CONFIGURED;
 
   if (settings.provider === 'resend' && settings.resend) {
-    sent = await sendResend(settings.resend, input);
+    const attempt = await sendResend(settings.resend, input);
+    sent = attempt.ok;
+    error = attempt.error;
   } else if (settings.provider === 'smtp' && settings.smtp) {
-    sent = await sendSmtp(settings.smtp, input);
+    const attempt = await sendSmtp(settings.smtp, input);
+    sent = attempt.ok;
+    error = attempt.error;
   } else if (settings.provider === 'webhook' && settings.webhook) {
-    sent = await sendWebhook(settings.webhook, input);
+    const attempt = await sendWebhook(settings.webhook, input);
+    sent = attempt.ok;
+    error = attempt.error;
   } else if (settings.resend) {
-    sent = await sendResend(settings.resend, input);
+    const attempt = await sendResend(settings.resend, input);
+    sent = attempt.ok;
+    error = attempt.error;
   }
 
   let devLogged = false;
@@ -112,7 +141,7 @@ export async function sendMail(
     devLogged = true;
   }
 
-  return { sent, devLogged, provider: settings.provider };
+  return { sent, devLogged, provider: settings.provider, error: sent ? undefined : error };
 }
 
 export async function isMailConfigured(db: PrismaClient): Promise<boolean> {

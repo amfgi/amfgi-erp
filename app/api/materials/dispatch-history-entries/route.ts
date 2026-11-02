@@ -9,6 +9,10 @@ import {
   resolveTransactionNetLineCost,
 } from '@/lib/stock/transactionFifoUnitCost';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
+import {
+  matchesDispatchHistoryNoteType,
+  stockOutCountsAsDispatch,
+} from '@/lib/utils/companyOperationalSettings';
 import { resolveEntryCreatedBy } from '@/lib/deliveryNote/resolveCreatedBy';
 
 function mapCustomItemsFromJson(json: unknown): Array<{ name: string; description: string; unit: string; qty: string }> {
@@ -87,6 +91,7 @@ export async function GET(req: Request) {
       averageCost: true,
       signedCopyUrl: true,
       deliveryNoteId: true,
+      meta: true,
       deliveryNote: {
         select: {
           id: true,
@@ -273,6 +278,7 @@ export async function GET(req: Request) {
         transactionCount: groupedTxns.length,
         notes: firstTxn.notes ?? undefined,
         isDeliveryNote: firstTxn.isDeliveryNote ?? false,
+        countsAsDispatch: groupedTxns.some((txn) => stockOutCountsAsDispatch(txn.meta)),
         deliveryNoteId: firstTxn.deliveryNoteId ?? undefined,
         deliveryNoteNumber: deliveryNoteNumber ?? undefined,
         deliveryNoteContactPerson,
@@ -447,6 +453,7 @@ export async function GET(req: Request) {
       transactionIds: [],
       transactionCount: 0,
       isDeliveryNote: true,
+      countsAsDispatch: false,
       deliveryNoteId: dn.id,
       deliveryNoteNumber: dn.number,
       deliveryNoteContactPerson: dn.contactPerson?.trim() || undefined,
@@ -468,12 +475,15 @@ export async function GET(req: Request) {
   });
 
   const filteredEntries = enrichedEntries.filter((entry) => {
-    if (noteType === 'delivery' && !entry.isDeliveryNote) return false;
-    if (noteType === 'dispatch' && entry.isDeliveryNote) return false;
-    if (noteType === 'transit') {
-      if (!entry.isDeliveryNote || entry.deliveryType !== 'SUBCONTRACT') return false;
-      const status = entry.transitStatus;
-      if (status !== 'ON_TRANSIT' && status !== 'PARTIALLY_RECEIVED') return false;
+    if (
+      !matchesDispatchHistoryNoteType(noteType, {
+        isDeliveryNote: entry.isDeliveryNote,
+        countsAsDispatch: entry.countsAsDispatch,
+        deliveryType: entry.deliveryType,
+        transitStatus: entry.transitStatus,
+      })
+    ) {
+      return false;
     }
 
     if (searchRaw) {

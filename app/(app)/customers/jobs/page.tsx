@@ -261,7 +261,7 @@ export default function CustomerJobsPage() {
       options.push({ divider: true });
       if (job.isProvisional && !job.parentJobId) {
         options.push({
-          label: 'Confirm job number',
+          label: 'Confirm provisional job',
           action: () => setPromoteJob(job),
         });
       }

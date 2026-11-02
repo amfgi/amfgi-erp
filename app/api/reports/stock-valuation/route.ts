@@ -173,7 +173,6 @@ export async function GET() {
 
     const prevMonthValue = prevMonthConsumption.reduce((sum, item) => sum + (item.totalValue || 0), 0);
 
-    // Top 30 materials by valuation
     const topMaterialsByValue = materials
       .map((mat) => ({
         id: mat.id,
@@ -184,8 +183,8 @@ export async function GET() {
         totalValue:
           fifoValueByMaterial.get(mat.id) ?? decimalToNumberOrZero(mat.currentStock) * decimalToNumberOrZero(mat.unitCost),
       }))
-      .sort((a, b) => b.totalValue - a.totalValue)
-      .slice(0, 30);
+      .filter((row) => row.totalValue > 0)
+      .sort((a, b) => b.totalValue - a.totalValue);
 
     // Top 30 consumed items in previous month
     const topConsumedItems = prevMonthConsumption.slice(0, 30).map((item) => ({

@@ -3,7 +3,7 @@ import type { Permission } from '@/lib/permissions';
 import { ALL_PERMISSIONS } from '@/lib/permissions';
 import { resolvePermissionsForCompany, uniqueCompanyIdsFromAccess } from '@/lib/auth/resolvePermissions';
 
-type DbClient = Pick<Prisma.TransactionClient, 'user' | 'company' | 'userCompanyAccess'>;
+type DbClient = Pick<Prisma.TransactionClient, 'user' | 'company' | 'userCompanyAccess' | 'userCompanyExtraPermission'>;
 
 export type AuthJwtToken = {
   sub?: string;

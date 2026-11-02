@@ -42,7 +42,7 @@ export type RequireHrSessionOptions = {
 };
 
 /**
- * Companies where the user has `permission` via UserCompanyAccess roles.
+ * Companies where the user has `permission` via roles or extra permissions.
  * Super-admins get every company id.
  */
 export async function getHrAccessibleCompanyIds(
@@ -54,10 +54,16 @@ export async function getHrAccessibleCompanyIds(
     return rows.map((r) => r.id);
   }
 
-  const accesses = await prisma.userCompanyAccess.findMany({
-    where: { userId: user.id },
-    include: { role: { select: { permissions: true } } },
-  });
+  const [accesses, extras] = await Promise.all([
+    prisma.userCompanyAccess.findMany({
+      where: { userId: user.id },
+      include: { role: { select: { permissions: true } } },
+    }),
+    prisma.userCompanyExtraPermission.findMany({
+      where: { userId: user.id },
+      select: { companyId: true, permissions: true },
+    }),
+  ]);
 
   const byCompany = new Map<string, Set<string>>();
   for (const access of accesses) {
@@ -68,6 +74,14 @@ export async function getHrAccessibleCompanyIds(
       byCompany.set(access.companyId, set);
     }
     for (const p of perms) set.add(p);
+  }
+  for (const extra of extras) {
+    const set = byCompany.get(extra.companyId);
+    if (!set) continue;
+    const perms = Array.isArray(extra.permissions) ? extra.permissions : [];
+    for (const p of perms) {
+      if (typeof p === 'string') set.add(p);
+    }
   }
 
   const result: string[] = [];

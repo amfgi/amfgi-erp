@@ -35,6 +35,10 @@ export const appApi = createApi({
     'HrDocumentType',
     'HrEmployeeTypeSettings',
     'HrExpertise',
+    'SalesQuery',
+    'QuotationTermsTemplate',
+    'QuotationCustomSection',
+    'QuotationSectionPreset',
   ],
   endpoints: () => ({}),
 });

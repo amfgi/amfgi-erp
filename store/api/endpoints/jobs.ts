@@ -1014,7 +1014,7 @@ export const jobsApi = appApi.injectEndpoints({
       transformResponse: (r: { data: DispatchBudgetWarningResult }) => r.data,
     }),
 
-    createJob: builder.mutation<Job, Partial<Job>>({
+    createJob: builder.mutation<Job, Partial<Job> & { variationSuffix?: string }>({
       query: (body) => ({
         url: '/jobs',
         method: 'POST',
@@ -1055,7 +1055,7 @@ export const jobsApi = appApi.injectEndpoints({
 
     promoteProvisionalJob: builder.mutation<
       { job: Job; assignmentsUpdated: number; variationsUpdated: number; affectedJobIds: string[] },
-      { id: string; jobNumber: string; customerId: string; note?: string | null }
+      { id: string; customerId: string; note?: string | null }
     >({
       query: ({ id, ...body }) => ({
         url: `/jobs/${id}/promote`,

@@ -36,6 +36,15 @@ const ROUTE_PERMISSIONS: RoutePermissionRule[] = [
   { prefix: '/settings/storage', anyPerms: [P.SETTINGS_STORAGE, P.SETTINGS_MANAGE] },
   { prefix: '/settings/media', anyPerms: [P.SETTINGS_MEDIA, P.SETTINGS_MANAGE] },
   { prefix: '/settings/email', anyPerms: [P.SETTINGS_EMAIL, P.SETTINGS_MANAGE] },
+  { prefix: '/settings/serial-number', anyPerms: [
+    P.SETTINGS_SERIAL,
+    P.SETTINGS_MANAGE,
+    P.SETTINGS_PRINT_FORMAT,
+    P.SETTINGS_STORAGE,
+    P.SETTINGS_MEDIA,
+    P.SETTINGS_EMAIL,
+    P.SETTINGS_API,
+  ] },
   { prefix: '/settings/api', anyPerms: [P.SETTINGS_API, P.SETTINGS_MANAGE] },
   {
     prefix: '/settings',
@@ -45,6 +54,7 @@ const ROUTE_PERMISSIONS: RoutePermissionRule[] = [
       P.SETTINGS_MEDIA,
       P.SETTINGS_EMAIL,
       P.SETTINGS_API,
+      P.SETTINGS_SERIAL,
       P.SETTINGS_MANAGE,
     ],
   },

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { API_DOC_SECTIONS, authLabel, type ApiEndpointDoc } from '@/lib/docs/apiEndpoints';
 
 type DocsTheme = 'light' | 'dark';
-type IntegrationExampleKey = 'job' | 'customer' | 'supplier';
+type IntegrationExampleKey = 'job' | 'customer' | 'supplier' | 'sales';
 
 const INTEGRATION_EXAMPLES: Record<
   IntegrationExampleKey,
@@ -136,6 +136,32 @@ const INTEGRATION_EXAMPLES: Record<
             },
           ],
         },
+      },
+      null,
+      2
+    ),
+  },
+  sales: {
+    label: 'Sales query',
+    endpoint: '/api/integrations/sales/queries',
+    summary:
+      'Creates a query for the customer-service app. The company must already have externalCompanyId. salesmanId and assigneeId both come from GET /api/integrations/sales/users and may be different people. Send customerId or customer { name, phone }, never both. Also use GET /api/integrations/sales/customers and GET /api/integrations/sales/customers/{id}?companyExternalId=. This key cannot edit a quotation, receive a PO, or create a job.',
+    payload: JSON.stringify(
+      {
+        companyExternalId: 'PM-COMPANY-001',
+        customer: {
+          name: 'Demo Customer LLC',
+          phone: '+971500000000',
+          contactPerson: 'John Smith',
+        },
+        projectLocation: 'Jebel Ali Site',
+        projectDescription: 'GRP lining for the plant room',
+        projectScope: 'Lining',
+        extraNotes: 'Site visit requested',
+        salesmanId: 'erp-user-id-from-sales-users',
+        forwardToQuotation: true,
+        assigneeId: 'erp-user-id-from-sales-users',
+        requestedBy: 'Amina from customer service',
       },
       null,
       2

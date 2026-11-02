@@ -63,26 +63,25 @@ function createMockPrisma(options?: {
 }
 
 describe('promoteProvisionalJob', () => {
-  it('updates parent job number, clears provisional flag, and cascades schedule snapshots', async () => {
+  it('keeps the assigned job number, clears the provisional flag, and cascades schedule snapshots', async () => {
     const prisma = createMockPrisma();
 
     const result = await promoteProvisionalJob(prisma as never, {
       companyId: 'co-1',
       jobId: 'job-1',
       userId: 'user-1',
-      jobNumber: 'REAL-100',
       customerId: 'cust-new',
       note: 'LPO received',
     });
 
-    expect(result.job.jobNumber).toBe('REAL-100');
+    expect(result.job.jobNumber).toBe('TMP-001');
     expect(result.assignmentsUpdated).toBe(1);
     expect(result.variationsUpdated).toBe(0);
     expect(prisma.tx.workAssignment.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'asg-1' },
         data: expect.objectContaining({
-          jobNumberSnapshot: 'REAL-100',
+          jobNumberSnapshot: 'TMP-001',
           clientNameSnapshot: 'Acme Ltd',
           siteNameSnapshot: 'Site A',
         }),
@@ -91,7 +90,7 @@ describe('promoteProvisionalJob', () => {
     expect(prisma.tx.jobNumberHistory.create).toHaveBeenCalled();
   });
 
-  it('renumbers variations when the parent job number is confirmed', async () => {
+  it('keeps variation suffixes when the parent job is confirmed', async () => {
     const prisma = createMockPrisma({
       variations: [{ id: 'var-1', jobNumber: 'TMP-001-A', source: 'LOCAL' }],
     });
@@ -103,7 +102,6 @@ describe('promoteProvisionalJob', () => {
       companyId: 'co-1',
       jobId: 'job-1',
       userId: 'user-1',
-      jobNumber: 'REAL-100',
       customerId: 'cust-new',
     });
 
@@ -111,7 +109,13 @@ describe('promoteProvisionalJob', () => {
     expect(prisma.tx.job.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'var-1' },
-        data: expect.objectContaining({ jobNumber: 'REAL-100-A', customerId: 'cust-new' }),
+        data: expect.objectContaining({ customerId: 'cust-new', isProvisional: false }),
+      }),
+    );
+    expect(prisma.tx.job.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'var-1' },
+        data: expect.objectContaining({ jobNumber: expect.any(String) }),
       }),
     );
   });
@@ -133,7 +137,6 @@ describe('promoteProvisionalJob', () => {
         companyId: 'co-1',
         jobId: 'var-1',
         userId: 'user-1',
-        jobNumber: 'REAL-100-A',
         customerId: 'cust-new',
       }),
     ).rejects.toBeInstanceOf(PromoteProvisionalJobError);
@@ -156,7 +159,6 @@ describe('promoteProvisionalJob', () => {
         companyId: 'co-1',
         jobId: 'job-1',
         userId: 'user-1',
-        jobNumber: 'API-2',
         customerId: 'cust-new',
       }),
     ).rejects.toBeInstanceOf(PromoteProvisionalJobError);

@@ -10,6 +10,7 @@ import DataTable from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import { isEmployeeSelfServiceAccount } from '@/lib/auth/selfService';
 import { dedupeUserCompanyAccess } from '@/lib/auth/syncUserCompanyAccess';
+import { PERMISSION_GROUPS } from '@/lib/permissions';
 import { isSuperAdminSelfTarget } from '@/lib/auth/userSelfProtection';
 import { cn } from '@/lib/utils';
 import type { Column } from '@/components/ui/DataTable';
@@ -34,16 +35,64 @@ const labelClass = 'text-[11px] font-medium uppercase tracking-wide text-muted-f
 const checkClass =
   'h-4 w-4 rounded border border-border bg-background text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
-type CompanyAccessGroup = { companyId: string; roleIds: string[] };
+type CompanyAccessGroup = { companyId: string; roleIds: string[]; extraPermissions: string[] };
 
-function groupCompanyAccess(access: User['companyAccess']): CompanyAccessGroup[] {
+function permissionKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function groupCompanyAccess(
+  access: User['companyAccess'],
+  extras: User['extraPermissions'],
+): CompanyAccessGroup[] {
   const grouped = new Map<string, string[]>();
   for (const row of access ?? []) {
     const roleIds = grouped.get(row.companyId) ?? [];
     if (!roleIds.includes(row.roleId)) roleIds.push(row.roleId);
     grouped.set(row.companyId, roleIds);
   }
-  return [...grouped.entries()].map(([companyId, roleIds]) => ({ companyId, roleIds }));
+  const extraByCompany = new Map<string, string[]>();
+  for (const row of extras ?? []) {
+    extraByCompany.set(row.companyId, permissionKeys(row.permissions));
+  }
+  return [...grouped.entries()].map(([companyId, roleIds]) => ({
+    companyId,
+    roleIds,
+    extraPermissions: extraByCompany.get(companyId) ?? [],
+  }));
+}
+
+function roleGrantedPermissions(
+  roles: { id: string; permissions?: unknown }[],
+  roleIds: string[],
+): Set<string> {
+  const granted = new Set<string>();
+  for (const role of roles) {
+    if (!roleIds.includes(role.id)) continue;
+    for (const key of permissionKeys(role.permissions)) granted.add(key);
+  }
+  return granted;
+}
+
+function extraPermissionsPayload(
+  groups: CompanyAccessGroup[],
+  roles: { id: string; permissions?: unknown }[],
+): { companyId: string; permissions: string[] }[] {
+  const byCompany = new Map<string, Set<string>>();
+  for (const group of groups) {
+    if (!group.companyId) continue;
+    const granted = roleGrantedPermissions(roles, group.roleIds);
+    const keys = byCompany.get(group.companyId) ?? new Set<string>();
+    for (const key of group.extraPermissions) {
+      if (!granted.has(key)) keys.add(key);
+    }
+    byCompany.set(group.companyId, keys);
+  }
+  return [...byCompany.entries()].map(([companyId, keys]) => ({
+    companyId,
+    permissions: [...keys],
+  }));
 }
 
 function flattenCompanyAccess(groups: CompanyAccessGroup[]): { companyId: string; roleId: string }[] {
@@ -137,17 +186,23 @@ export default function AdminUsersPage() {
     setEmail(u.email);
     setPassword('');
     setIsSuperAdmin(u.isSuperAdmin);
-    setAccessGroups(groupCompanyAccess(u.companyAccess));
+    setAccessGroups(groupCompanyAccess(u.companyAccess, u.extraPermissions));
     setModal(true);
   };
 
   const addAccessGroup = () =>
-    setAccessGroups((prev) => [...prev, { companyId: companies[0]?.id ?? '', roleIds: [] }]);
+    setAccessGroups((prev) => [...prev, { companyId: companies[0]?.id ?? '', roleIds: [], extraPermissions: [] }]);
 
   const removeAccessGroup = (i: number) => setAccessGroups((prev) => prev.filter((_, idx) => idx !== i));
 
   const updateAccessGroupCompany = (i: number, companyId: string) =>
-    setAccessGroups((prev) => prev.map((group, idx) => (idx === i ? { ...group, companyId } : group)));
+    setAccessGroups((prev) =>
+      prev.map((group, idx) => {
+        if (idx !== i) return group;
+        if (group.companyId === companyId) return group;
+        return { ...group, companyId, extraPermissions: [] };
+      }),
+    );
 
   const toggleAccessGroupRole = (i: number, roleId: string, checked: boolean) =>
     setAccessGroups((prev) =>
@@ -162,6 +217,20 @@ export default function AdminUsersPage() {
       })
     );
 
+  const toggleExtraPermission = (i: number, key: string, checked: boolean) =>
+    setAccessGroups((prev) =>
+      prev.map((group, idx) => {
+        if (idx !== i || group.roleIds.length === 0) return group;
+        if (roleGrantedPermissions(roles, group.roleIds).has(key)) return group;
+        const extraPermissions = checked
+          ? group.extraPermissions.includes(key)
+            ? group.extraPermissions
+            : [...group.extraPermissions, key]
+          : group.extraPermissions.filter((item) => item !== key);
+        return { ...group, extraPermissions };
+      })
+    );
+
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormLoading(true);
@@ -171,6 +240,10 @@ export default function AdminUsersPage() {
       isSuperAdmin,
       companyAccess: dedupeUserCompanyAccess(
         flattenCompanyAccess(accessGroups.filter((group) => group.companyId))
+      ),
+      extraPermissions: extraPermissionsPayload(
+        accessGroups.filter((group) => group.companyId),
+        roles,
       ),
     };
     if (!editing) body.email = email;
@@ -536,6 +609,49 @@ export default function AdminUsersPage() {
                           {role.name}
                         </label>
                       ))}
+                    </div>
+                    <div className="space-y-2 border-t border-border pt-3">
+                      <p className={labelClass}>Extra permissions</p>
+                      <p className="text-xs text-muted-foreground">
+                        {group.roleIds.length === 0
+                          ? 'Select a role before adding extra permissions.'
+                          : 'Added on top of the selected roles. Permissions already granted by a role stay locked.'}
+                      </p>
+                      <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                        {PERMISSION_GROUPS.map((permissionGroup) => {
+                          const granted = roleGrantedPermissions(roles, group.roleIds);
+                          const hasRole = group.roleIds.length > 0;
+                          return (
+                            <div key={permissionGroup.group}>
+                              <p className="mb-1 text-xs font-semibold text-muted-foreground">{permissionGroup.group}</p>
+                              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                                {permissionGroup.perms.map((perm) => {
+                                  const locked = hasRole && granted.has(perm.key);
+                                  const checked = hasRole && (locked || group.extraPermissions.includes(perm.key));
+                                  return (
+                                    <label
+                                      key={perm.key}
+                                      className={cn(
+                                        'flex items-center gap-2 text-sm',
+                                        locked || !hasRole ? 'text-muted-foreground' : 'cursor-pointer text-foreground',
+                                      )}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={locked || !hasRole}
+                                        onChange={(e) => toggleExtraPermission(i, perm.key, e.target.checked)}
+                                        className={checkClass}
+                                      />
+                                      {perm.label}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -35,6 +35,7 @@ export default function AdminCompaniesPage() {
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
   const [externalCompanyId, setExternalCompanyId] = useState('');
+  const [deliveryNoteCreatesDispatch, setDeliveryNoteCreatesDispatch] = useState(false);
 
   const formBusy = isCreating || isUpdating;
 
@@ -49,6 +50,7 @@ export default function AdminCompaniesPage() {
     setSlug('');
     setDescription('');
     setExternalCompanyId('');
+    setDeliveryNoteCreatesDispatch(false);
     setModal(true);
   };
 
@@ -57,17 +59,24 @@ export default function AdminCompaniesPage() {
     setName(c.name);
     setDescription(c.description ?? '');
     setExternalCompanyId(c.externalCompanyId ?? '');
+    setDeliveryNoteCreatesDispatch(c.operationalSettings?.deliveryNoteCreatesDispatch === true);
     setModal(true);
   };
 
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const body = editing
-      ? { name, description, externalCompanyId }
+      ? {
+          name,
+          description,
+          externalCompanyId,
+          operationalSettings: { deliveryNoteCreatesDispatch },
+        }
       : {
           name,
           description,
           externalCompanyId,
+          operationalSettings: { deliveryNoteCreatesDispatch },
           ...(slug.trim() ? { slug: slug.trim() } : {}),
         };
 
@@ -275,6 +284,21 @@ export default function AdminCompaniesPage() {
               placeholder="Used by external Project Management sync"
             />
           </div>
+          <label className="flex cursor-pointer select-none items-start gap-3">
+            <input
+              id="company-delivery-note-creates-dispatch"
+              type="checkbox"
+              checked={deliveryNoteCreatesDispatch}
+              onChange={(e) => setDeliveryNoteCreatesDispatch(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border border-border bg-background text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            />
+            <span className="text-sm text-foreground">
+              Delivery notes also create a dispatch
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                On for this company only. A new delivery note also creates a dispatch. A new dispatch does not create a delivery note. Stock is reduced once.
+              </span>
+            </span>
+          </label>
           <div className="flex gap-3 border-t border-border pt-4">
             <Button type="button" variant="outline" className="flex-1" disabled={formBusy} onClick={() => setModal(false)}>
               Cancel

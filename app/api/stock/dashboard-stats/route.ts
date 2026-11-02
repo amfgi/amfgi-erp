@@ -2,7 +2,9 @@ import { Prisma } from '@prisma/client';
 
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db/prisma';
+import { LOW_STOCK_PREVIEW_LIMIT, lowStockMaterialsFromSql } from '@/lib/stock/lowStock';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
+import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
 export async function GET() {
   const session = await auth();
@@ -18,22 +20,33 @@ export async function GET() {
 
   if (!canSeeMaterials && !canSeeBatches) return errorResponse('Forbidden', 403);
 
-  const [activeMaterials, lowStockRows, openBatches, totalBatches] = await Promise.all([
+  const [activeMaterials, lowStockRows, lowStockItemRows, openBatches, totalBatches] = await Promise.all([
     canSeeMaterials
       ? prisma.material.count({ where: { companyId, isActive: true } })
       : Promise.resolve(0),
     canSeeMaterials
       ? prisma.$queryRaw<Array<{ count: bigint }>>(
-          Prisma.sql`
-            SELECT COUNT(*)::bigint AS count
-            FROM "Material"
-            WHERE "companyId" = ${companyId}
-              AND "isActive" = true
-              AND "reorderLevel" IS NOT NULL
-              AND "currentStock" <= "reorderLevel"
-          `,
+          Prisma.sql`SELECT COUNT(*)::bigint AS count ${lowStockMaterialsFromSql(companyId)}`,
         )
       : Promise.resolve([{ count: BigInt(0) }]),
+    canSeeMaterials
+      ? prisma.$queryRaw<
+          Array<{
+            id: string;
+            name: string;
+            unit: string;
+            currentStock: unknown;
+            reorderLevel: unknown;
+          }>
+        >(
+          Prisma.sql`
+            SELECT id, name, unit, "currentStock", "reorderLevel"
+            ${lowStockMaterialsFromSql(companyId)}
+            ORDER BY ("reorderLevel" - "currentStock") DESC, name ASC
+            LIMIT ${LOW_STOCK_PREVIEW_LIMIT}
+          `,
+        )
+      : Promise.resolve([]),
     canSeeBatches
       ? prisma.stockBatch.count({
           where: { companyId, quantityAvailable: { gt: 0 } },
@@ -45,6 +58,13 @@ export async function GET() {
   return successResponse({
     activeMaterials,
     lowStockCount: Number(lowStockRows[0]?.count ?? 0),
+    lowStockItems: lowStockItemRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      unit: row.unit,
+      currentStock: decimalToNumberOrZero(row.currentStock),
+      reorderLevel: decimalToNumberOrZero(row.reorderLevel),
+    })),
     openBatches,
     totalBatches,
   });

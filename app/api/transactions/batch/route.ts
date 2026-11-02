@@ -23,6 +23,12 @@ import {
 } from '@/lib/utils/receiptHeaderMetadata';
 import { buildStockBatchReceiptLineMeta } from '@/lib/utils/receiptLineMetadata';
 import { applyMaterialWarehouseDelta, resolveEffectiveWarehouse } from '@/lib/warehouses/stockWarehouses';
+import {
+  isDeliveryNoteStockMovement,
+  readCompanyOperationalSettings,
+  shouldLinkNewDeliveryNoteAsDispatch,
+  stockOutCountsAsDispatch,
+} from '@/lib/utils/companyOperationalSettings';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { recalculateAssemblyAncestorsTx } from '@/lib/utils/materialAssembly';
 import {
@@ -386,6 +392,7 @@ export async function POST(req: Request) {
       let activeDeliveryNoteId: string | null = null;
       let reportedDeliveryNoteNumber: number | null = null;
       let deliveryNoteNotes = notes;
+      let linkStockOutAsDispatch = false;
 
       if (type === 'STOCK_OUT' && isDeliveryNote && existingTransactionIds && existingTransactionIds.length > 0) {
         const firstExisting = await tx.transaction.findFirst({
@@ -430,6 +437,23 @@ export async function POST(req: Request) {
               referenceJobId: deliveryType === 'SUBCONTRACT' ? referenceJobId?.trim() || null : null,
             },
           });
+        }
+      }
+
+      // A worksheet save must not rewrite the delivery note's stock-out. That would
+      // detach the note and post the same quantity again.
+      if (
+        type === 'STOCK_OUT' &&
+        !isDeliveryNote &&
+        existingTransactionIds &&
+        existingTransactionIds.length > 0
+      ) {
+        const protectedRows = await tx.transaction.findMany({
+          where: { id: { in: existingTransactionIds }, companyId },
+          select: { isDeliveryNote: true, deliveryNoteId: true },
+        });
+        if (protectedRows.some((row) => isDeliveryNoteStockMovement(row))) {
+          throw new Error('Delivery note stock lines can only be changed from the delivery note.');
         }
       }
 
@@ -480,6 +504,9 @@ export async function POST(req: Request) {
               preservedSignedCopy = {
                 signedCopyUrl: existingTxn.signedCopyUrl,
               };
+            }
+            if (existingTxn.type === 'STOCK_OUT' && stockOutCountsAsDispatch(existingTxn.meta)) {
+              linkStockOutAsDispatch = true;
             }
             // Reverse stock impact
             if (existingTxn.type === 'STOCK_OUT') {
@@ -606,6 +633,8 @@ export async function POST(req: Request) {
         reportedDeliveryNoteNumber = requestedDeliveryNoteNumber;
       }
 
+      // A delivery note is created only from the delivery-note form. A worksheet dispatch
+      // leaves isDeliveryNote unset, so it never inserts a delivery note.
       if (type === 'STOCK_OUT' && isDeliveryNote && !activeDeliveryNoteId) {
         const assignedNumber =
           requestedDeliveryNoteNumber != null
@@ -727,6 +756,35 @@ export async function POST(req: Request) {
           deliveryNoteId: activeDeliveryNoteId,
         };
       }
+
+      const isExistingDeliveryNote =
+        (existingTransactionIds?.length ?? 0) > 0 || Boolean(existingDeliveryNoteId?.trim());
+      let companyCreatesDispatch = false;
+      if (
+        !linkStockOutAsDispatch &&
+        type === 'STOCK_OUT' &&
+        isDeliveryNote &&
+        deliveryType === 'DISPATCH' &&
+        !isExistingDeliveryNote &&
+        lines.length > 0
+      ) {
+        const companyRow = await tx.company.findUnique({
+          where: { id: companyId },
+          select: { operationalSettings: true },
+        });
+        companyCreatesDispatch = readCompanyOperationalSettings(
+          companyRow?.operationalSettings
+        ).deliveryNoteCreatesDispatch;
+      }
+      linkStockOutAsDispatch = shouldLinkNewDeliveryNoteAsDispatch({
+        alreadyLinked: linkStockOutAsDispatch,
+        type,
+        isDeliveryNote: Boolean(isDeliveryNote),
+        deliveryType,
+        isExistingDeliveryNote,
+        lineCount: lines.length,
+        companySetting: companyCreatesDispatch,
+      });
 
       // Process each line item
       for (const line of lines) {
@@ -919,6 +977,7 @@ export async function POST(req: Request) {
               ...(isDeliveryNote && activeDeliveryNoteId
                 ? { deliveryNoteId: activeDeliveryNoteId }
                 : {}),
+              ...(linkStockOutAsDispatch && isDeliveryNote ? { meta: { countsAsDispatch: true } } : {}),
               signedCopyUrl: preservedSignedCopy && created.length === 0 ? preservedSignedCopy.signedCopyUrl : null,
               date: txDate,
               ...actorFields,

@@ -3,6 +3,18 @@ import { prisma } from '@/lib/db/prisma';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { decimalToNumberOrZero } from '@/lib/utils/decimal';
 
+function dispatchCalendarKey(value: Date | string | null | undefined) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 function resolveTransactionUnitCost(
   txn: {
     averageCost: unknown;
@@ -85,6 +97,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           batch: { select: { unitCost: true } },
         },
       },
+      deliveryNote: { select: { date: true } },
     },
     orderBy: { date: 'asc' },
   });
@@ -96,6 +109,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     unit: string;
     totalQuantity: number;
     totalCost: number;
+    dispatchByDate: Record<string, { qty: number; cost: number }>;
     transactions: Array<{
       id: string;
       type: string;
@@ -117,6 +131,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         unit: txn.material?.unit || '—',
         totalQuantity: 0,
         totalCost: 0,
+        dispatchByDate: {},
         transactions: [],
       });
     }
@@ -126,8 +141,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const quantity = decimalToNumberOrZero(txn.quantity);
     const cost = quantity * unitCost;
-    consumption.totalQuantity += txn.type === 'STOCK_OUT' ? quantity : -quantity;
-    consumption.totalCost += txn.type === 'STOCK_OUT' ? cost : -cost;
+    const sign = txn.type === 'STOCK_OUT' ? 1 : -1;
+    consumption.totalQuantity += sign * quantity;
+    consumption.totalCost += sign * cost;
+
+    const dayKey = dispatchCalendarKey(txn.deliveryNote?.date ?? txn.date);
+    if (dayKey) {
+      const day = consumption.dispatchByDate[dayKey] ?? { qty: 0, cost: 0 };
+      day.qty += sign * quantity;
+      day.cost += sign * cost;
+      consumption.dispatchByDate[dayKey] = day;
+    }
 
     consumption.transactions.push({
       id: txn.id,

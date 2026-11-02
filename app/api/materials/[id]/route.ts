@@ -25,7 +25,7 @@ const UpdateSchema = z.object({
   allowNegativeConsumption: z.boolean().optional(),
   externalItemName:    z.string().min(1).max(100).optional(),
   unitCost:            z.number().finite().min(0).optional(),
-  reorderLevel:        z.number().finite().min(0).optional(),
+  reorderLevel:        z.number().finite().min(0).nullable().optional(),
   netWeight:           z.number().finite().min(0).nullable().optional(),
   grossWeight:         z.number().finite().min(0).nullable().optional(),
   dimension:           z.string().max(100).nullable().optional(),

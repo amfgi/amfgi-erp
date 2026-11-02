@@ -26,6 +26,16 @@ export const P = {
   JOB_EDIT:   'job.edit',
   JOB_DELETE: 'job.delete',
 
+  // Sales
+  SALES_QUERY_VIEW: 'sales.query.view',
+  SALES_QUERY_MANAGE: 'sales.query.manage',
+  SALES_QUERY_NOTICE: 'sales.query.notice',
+  SALES_QUOTATION_VIEW: 'sales.quotation.view',
+  SALES_QUOTATION_MANAGE: 'sales.quotation.manage',
+  SALES_QUOTATION_NOTICE: 'sales.quotation.notice',
+  SALES_PURCHASE_ORDERS_VIEW: 'sales.purchaseOrders.view',
+  SALES_PURCHASE_ORDERS_MANAGE: 'sales.purchaseOrders.manage',
+
   // Customers
   CUSTOMER_VIEW:   'customer.view',
   CUSTOMER_CREATE: 'customer.create',
@@ -70,6 +80,7 @@ export const P = {
   SETTINGS_MEDIA: 'settings.media',
   SETTINGS_EMAIL: 'settings.email',
   SETTINGS_API: 'settings.api',
+  SETTINGS_SERIAL: 'settings.serial_number',
 
   // HR / Workforce
   HR_EMPLOYEE_VIEW: 'hr.employee.view',
@@ -129,7 +140,10 @@ export const HR_ROLE_SLUG = 'hr';
 
 // ── Predefined role permission sets ───────────────────────────────────────────
 export const ROLE_PRESETS: Record<string, Permission[]> = {
-  super_admin: ALL_PERMISSIONS,
+  // Notice checkboxes stay off until an admin ticks them. They are not merged onto existing roles.
+  super_admin: ALL_PERMISSIONS.filter(
+    (permission) => permission !== P.SALES_QUERY_NOTICE && permission !== P.SALES_QUOTATION_NOTICE,
+  ),
 
   manager: [
     P.MATERIAL_VIEW, P.MATERIAL_CREATE, P.MATERIAL_EDIT,
@@ -146,6 +160,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.SETTINGS_MEDIA,
     P.SETTINGS_EMAIL,
     P.SETTINGS_API,
+    P.SETTINGS_SERIAL,
     P.HR_EMPLOYEE_VIEW, P.HR_EMPLOYEE_CREATE, P.HR_EMPLOYEE_EDIT, P.HR_EMPLOYEE_DELETE,
     P.HR_DOCUMENT_VIEW, P.HR_DOCUMENT_CREATE, P.HR_DOCUMENT_EDIT, P.HR_DOCUMENT_DELETE,
     P.HR_DOCUMENT_TYPE_VIEW, P.HR_DOCUMENT_TYPE_CREATE, P.HR_DOCUMENT_TYPE_EDIT, P.HR_DOCUMENT_TYPE_DELETE,
@@ -167,6 +182,12 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.STOCK_WAREHOUSE_TRANSFER_TRANSFER,
     P.STOCK_COUNT_SESSION_VIEW,
     P.STOCK_COUNT_SESSION_EDIT,
+    P.SALES_QUERY_VIEW,
+    P.SALES_QUERY_MANAGE,
+    P.SALES_QUOTATION_VIEW,
+    P.SALES_QUOTATION_MANAGE,
+    P.SALES_PURCHASE_ORDERS_VIEW,
+    P.SALES_PURCHASE_ORDERS_MANAGE,
   ],
 
   store_keeper: [
@@ -235,6 +256,18 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.HR_ACCOUNT_ACCESS_EDIT,
     P.HR_ACCOUNT_ACCESS_DELETE,
   ],
+
+  /** Sales pipeline through purchase orders. Job creation stays a separate permission. */
+  salesman: [
+    P.SALES_QUERY_VIEW,
+    P.SALES_QUERY_MANAGE,
+    P.SALES_QUOTATION_VIEW,
+    P.SALES_QUOTATION_MANAGE,
+    P.SALES_PURCHASE_ORDERS_VIEW,
+    P.SALES_PURCHASE_ORDERS_MANAGE,
+    P.CUSTOMER_VIEW,
+    P.CUSTOMER_CREATE,
+  ],
 };
 
 export const ROLE_PRESET_LABELS: Record<keyof typeof ROLE_PRESETS, string> = {
@@ -244,6 +277,7 @@ export const ROLE_PRESET_LABELS: Record<keyof typeof ROLE_PRESETS, string> = {
   receipt_correction_approver: 'Receipt correction approver',
   employee_self: 'Employee self-service',
   hr: 'HR',
+  salesman: 'Salesman',
 };
 
 // ── Permission group labels (for UI checkboxes) ───────────────────────────────
@@ -276,6 +310,19 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.CUSTOMER_CREATE, label: 'Create' },
       { key: P.CUSTOMER_EDIT,   label: 'Edit'   },
       { key: P.CUSTOMER_DELETE, label: 'Delete' },
+    ],
+  },
+  {
+    group: 'Sales',
+    perms: [
+      { key: P.SALES_QUERY_VIEW, label: 'Queries view' },
+      { key: P.SALES_QUERY_MANAGE, label: 'Queries manage' },
+      { key: P.SALES_QUOTATION_VIEW, label: 'Quotations view' },
+      { key: P.SALES_QUOTATION_MANAGE, label: 'Quotations manage' },
+      { key: P.SALES_PURCHASE_ORDERS_VIEW, label: 'Purchase orders view' },
+      { key: P.SALES_PURCHASE_ORDERS_MANAGE, label: 'Purchase orders manage' },
+      { key: P.SALES_QUERY_NOTICE, label: 'Query notice' },
+      { key: P.SALES_QUOTATION_NOTICE, label: 'Quotation notice' },
     ],
   },
   {
@@ -360,6 +407,7 @@ export const PERMISSION_GROUPS: Array<{
       { key: P.SETTINGS_MEDIA, label: 'Media library' },
       { key: P.SETTINGS_EMAIL, label: 'Email delivery' },
       { key: P.SETTINGS_API, label: 'API center' },
+      { key: P.SETTINGS_SERIAL, label: 'Serial numbers' },
     ],
   },
   {

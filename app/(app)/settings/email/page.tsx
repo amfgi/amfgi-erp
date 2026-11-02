@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
 import { canAccessSettingsEmail } from '@/lib/auth/settingsAccess';
+import { readApiJson } from '@/lib/utils/readApiResponse';
 
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button } from '@/components/ui/shadcn/button';
@@ -35,6 +36,24 @@ type EmailSettingsView = {
     headers: Record<string, string>;
   };
 };
+
+type EmailLogRow = {
+  id: string;
+  kind: string;
+  toEmail: string;
+  subject: string;
+  status: string;
+  error: string | null;
+  provider: string | null;
+  createdAt: string;
+  companyName: string;
+};
+
+function noticeKindLabel(kind: string): string {
+  if (kind === 'QUERY_CREATED') return 'Query created';
+  if (kind === 'QUOTATION_ASSIGNED') return 'Quotation assigned';
+  return kind;
+}
 
 const textareaClass = cn(
   'mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground font-mono',
@@ -71,15 +90,32 @@ export default function SettingsEmailPage() {
   const [webhookToken, setWebhookToken] = useState('');
   const [webhookTokenConfigured, setWebhookTokenConfigured] = useState(false);
   const [webhookHeaders, setWebhookHeaders] = useState('{}');
+  const [sentMail, setSentMail] = useState<EmailLogRow[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/settings/email', { cache: 'no-store' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Failed to load email settings');
-      const s = json.data.settings as EmailSettingsView;
-      setMailReady(Boolean(json.data.mailReady));
+      const [res, logRes] = await Promise.all([
+        fetch('/api/settings/email', { cache: 'no-store' }),
+        fetch('/api/settings/email/log', { cache: 'no-store' }),
+      ]);
+      const json = await readApiJson<{
+        settings: EmailSettingsView;
+        mailReady?: boolean;
+      }>(res);
+      const settings = json?.data?.settings;
+      if (!settings) {
+        throw new Error(json?.error ?? 'Failed to load email settings');
+      }
+      const logJson = await readApiJson<{ items?: EmailLogRow[] }>(logRes);
+      if (logJson?.data && logRes.ok) {
+        setSentMail(logJson.data.items ?? []);
+      } else {
+        setSentMail([]);
+        toast.error(logJson?.error ?? 'Failed to load sent mail');
+      }
+      const s = settings;
+      setMailReady(Boolean(json?.data?.mailReady));
       setProvider(s.provider);
       setResendFrom(s.resend?.from ?? '');
       setResendKeyConfigured(Boolean(s.resend?.apiKey?.configured));
@@ -284,6 +320,12 @@ export default function SettingsEmailPage() {
 
             {provider === 'smtp' ? (
               <div className="grid gap-4 sm:grid-cols-2">
+                <p className="text-sm text-muted-foreground sm:col-span-2">
+                  Brevo’s free plan is filled in here as SMTP. Host{' '}
+                  <strong className="text-foreground">smtp-relay.brevo.com</strong>, port{' '}
+                  <strong className="text-foreground">587</strong>, leave TLS unchecked. Username is the Brevo login,
+                  password is the SMTP key, and From is a verified sender.
+                </p>
                 <div className="space-y-2">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Host</label>
                   <Input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" />
@@ -361,6 +403,53 @@ export default function SettingsEmailPage() {
           </CardContent>
         </Card>
       )}
+
+      {!loading ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Sent mail</CardTitle>
+            <CardDescription>
+              The latest query and quotation notification attempts. The message body is not stored.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {sentMail.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No notification emails have been recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-left text-sm">
+                  <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="py-2 pr-3 font-medium">When</th>
+                      <th className="py-2 pr-3 font-medium">Company</th>
+                      <th className="py-2 pr-3 font-medium">Notice</th>
+                      <th className="py-2 pr-3 font-medium">To</th>
+                      <th className="py-2 pr-3 font-medium">Subject</th>
+                      <th className="py-2 pr-3 font-medium">Status</th>
+                      <th className="py-2 font-medium">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sentMail.map((row) => (
+                      <tr key={row.id} className="border-b border-border align-top">
+                        <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
+                          {new Date(row.createdAt).toLocaleString()}
+                        </td>
+                        <td className="py-2 pr-3">{row.companyName}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{noticeKindLabel(row.kind)}</td>
+                        <td className="py-2 pr-3">{row.toEmail || 'No email'}</td>
+                        <td className="py-2 pr-3">{row.subject}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{row.status}</td>
+                        <td className="py-2 text-muted-foreground">{row.error || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

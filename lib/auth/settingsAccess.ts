@@ -11,6 +11,7 @@ const SETTINGS_PAGE_PERMISSIONS = [
   P.SETTINGS_MEDIA,
   P.SETTINGS_EMAIL,
   P.SETTINGS_API,
+  P.SETTINGS_SERIAL,
 ] as const;
 
 function hasLegacySettingsManage(permissions: string[]): boolean {
@@ -46,6 +47,13 @@ export function canAccessSettingsApi(user: SettingsAccessUser): boolean {
   return hasPermission(user.permissions, P.SETTINGS_API);
 }
 
+export function canAccessSettingsSerial(user: SettingsAccessUser): boolean {
+  if (user.isSuperAdmin) return true;
+  if (hasLegacySettingsManage(user.permissions)) return true;
+  if (hasPermission(user.permissions, P.SETTINGS_SERIAL)) return true;
+  return SETTINGS_PAGE_PERMISSIONS.some((perm) => user.permissions.includes(perm));
+}
+
 export function canAccessAnySettingsPage(user: SettingsAccessUser): boolean {
   if (user.isSuperAdmin) return true;
   if (hasLegacySettingsManage(user.permissions)) return true;
@@ -65,6 +73,12 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     label: 'Print format',
     description: 'Document layouts and default print templates',
     canAccess: canAccessSettingsPrintFormat,
+  },
+  {
+    href: '/settings/serial-number',
+    label: 'Serial Number',
+    description: 'Starting serial for queries, quotations, purchase orders, and jobs',
+    canAccess: canAccessSettingsSerial,
   },
   {
     href: '/settings/storage',

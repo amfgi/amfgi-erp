@@ -12,10 +12,12 @@ import {
 import { applyMaterialWarehouseDelta } from '@/lib/warehouses/stockWarehouses';
 import { canViewFormulaMaterialsApi } from '@/lib/permissions/stockModuleAccess';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
+import { lowStockMaterialsFromSql } from '@/lib/stock/lowStock';
 import { sortMaterialsBySearchRelevance } from '@/lib/pagination/materialSearchRelevance';
 import { buildMaterialListOrderBy } from '@/lib/pagination/materialListSort';
 import { parseListLimit, parseListOffset } from '@/lib/pagination/serverList';
 import type { Prisma } from '@prisma/client';
+import { Prisma as PrismaSql } from '@prisma/client';
 import { z } from 'zod';
 
 const materialListInclude = {
@@ -43,10 +45,15 @@ function serializeMaterialListRow({
   };
 }
 
-function buildMaterialListWhere(companyId: string, search: string): Prisma.MaterialWhereInput {
+function buildMaterialListWhere(
+  companyId: string,
+  search: string,
+  lowStockIds?: string[],
+): Prisma.MaterialWhereInput {
   const where: Prisma.MaterialWhereInput = {
     companyId,
     isActive: true,
+    ...(lowStockIds ? { id: { in: lowStockIds } } : {}),
   };
 
   if (!search) return where;
@@ -106,6 +113,13 @@ const MaterialSchema = z.object({
     .optional(),
 });
 
+async function loadLowStockMaterialIds(companyId: string) {
+  const idRows = await prisma.$queryRaw<Array<{ id: string }>>(
+    PrismaSql.sql`SELECT id ${lowStockMaterialsFromSql(companyId)}`,
+  );
+  return idRows.map((row) => row.id);
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return errorResponse('Unauthorized', 401);
@@ -126,7 +140,15 @@ export async function GET(req: Request) {
       const search = searchParams.get('search')?.trim() ?? '';
       const sortBy = searchParams.get('sortBy');
       const sortDir = searchParams.get('sortDir');
-      const where = buildMaterialListWhere(companyId, search);
+      const lowStockOnly = searchParams.get('stock') === 'low';
+      let lowStockIds: string[] | undefined;
+      if (lowStockOnly) {
+        lowStockIds = await loadLowStockMaterialIds(companyId);
+        if (lowStockIds.length === 0) {
+          return successResponse({ items: [], total: 0 });
+        }
+      }
+      const where = buildMaterialListWhere(companyId, search, lowStockIds);
       const orderBy = buildMaterialListOrderBy(sortBy, sortDir);
 
       const [total, materials] = await Promise.all([
@@ -147,8 +169,18 @@ export async function GET(req: Request) {
       });
     }
 
+    const lowStockOnly = searchParams.get('stock') === 'low';
+    const lowStockIds = lowStockOnly ? await loadLowStockMaterialIds(companyId) : undefined;
+    if (lowStockIds && lowStockIds.length === 0) {
+      return successResponse([]);
+    }
+
     const materials = await prisma.material.findMany({
-      where: { companyId, isActive: true },
+      where: {
+        companyId,
+        isActive: true,
+        ...(lowStockIds ? { id: { in: lowStockIds } } : {}),
+      },
       orderBy: { name: 'asc' },
       include: materialListInclude,
     });

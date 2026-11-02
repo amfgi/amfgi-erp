@@ -47,13 +47,11 @@ export default function JobPromoteModal({ isOpen, onClose, job }: JobPromoteModa
     [customers],
   );
 
-  const [jobNumber, setJobNumber] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [note, setNote] = useState('');
 
   useEffect(() => {
     if (!isOpen || !jobDetail) return;
-    setJobNumber(jobDetail.jobNumber ?? '');
     setCustomerId(jobDetail.customerId ?? '');
     setNote('');
   }, [isOpen, jobDetail]);
@@ -62,11 +60,6 @@ export default function JobPromoteModal({ isOpen, onClose, job }: JobPromoteModa
     event.preventDefault();
     if (!job) return;
 
-    const trimmedNumber = jobNumber.trim();
-    if (!trimmedNumber) {
-      toast.error('Job number is required');
-      return;
-    }
     if (!customerId) {
       toast.error('Customer is required');
       return;
@@ -75,7 +68,6 @@ export default function JobPromoteModal({ isOpen, onClose, job }: JobPromoteModa
     try {
       const result = await promoteJob({
         id: job.id,
-        jobNumber: trimmedNumber,
         customerId,
         note: note.trim() || undefined,
       }).unwrap();
@@ -85,9 +77,9 @@ export default function JobPromoteModal({ isOpen, onClose, job }: JobPromoteModa
           : '';
       const variationNote =
         result.variationsUpdated > 0
-          ? ` Renumbered ${result.variationsUpdated} variation${result.variationsUpdated === 1 ? '' : 's'}.`
+          ? ` Updated ${result.variationsUpdated} variation${result.variationsUpdated === 1 ? '' : 's'}.`
           : '';
-      toast.success(`Job number confirmed.${variationNote}${scheduleNote}`);
+      toast.success(`Provisional job confirmed.${variationNote}${scheduleNote}`);
       onClose();
     } catch (error) {
       toast.error(extractApiErrorMessage(error, 'Failed to confirm job number'));
@@ -100,10 +92,10 @@ export default function JobPromoteModal({ isOpen, onClose, job }: JobPromoteModa
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Confirm job number"
+      title="Confirm provisional job"
       description={
         job
-          ? `Replace provisional parent ${currentNumber} with the formal job number and customer. Linked variations are renumbered automatically.`
+          ? `Keep job number ${currentNumber} and confirm the customer. Variation suffixes stay as they are.`
           : undefined
       }
       size="md"
@@ -130,15 +122,13 @@ export default function JobPromoteModal({ isOpen, onClose, job }: JobPromoteModa
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="job-promote-number" className="text-sm font-medium text-foreground">
-            Final job number
+            Job number
           </label>
           <Input
             id="job-promote-number"
-            value={jobNumber}
-            onChange={(e) => setJobNumber(e.target.value)}
-            disabled={isFetching}
-            required
-            placeholder="e.g. 2026-1042-A"
+            value={currentNumber}
+            disabled
+            readOnly
           />
         </div>
 

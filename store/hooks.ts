@@ -164,6 +164,35 @@ export {
 } from './api/endpoints/customers';
 
 export {
+  useGetSalesQueriesQuery,
+  useGetSalesQueryQuery,
+  useGetSalesmenQuery,
+  useCreateSalesQueryMutation,
+  useUpdateSalesQueryMutation,
+  useForwardSalesToQuotationMutation,
+  useGetSalesWorkLogQuery,
+  useReviseSalesQuotationMutation,
+  useReceivePurchaseOrderMutation,
+  useSetSalesClosureMutation,
+  useCreateJobFromSalesMutation,
+  useGetQuotationTermsTemplatesQuery,
+  useCreateQuotationTermsTemplateMutation,
+  useUpdateQuotationTermsTemplateMutation,
+  useDeleteQuotationTermsTemplateMutation,
+  useGetQuotationCustomSectionsQuery,
+  useCreateQuotationCustomSectionMutation,
+  useUpdateQuotationCustomSectionMutation,
+  useDeleteQuotationCustomSectionMutation,
+  useCreateQuotationCustomSectionVersionMutation,
+  useUpdateQuotationCustomSectionVersionMutation,
+  useDeleteQuotationCustomSectionVersionMutation,
+  useGetQuotationSectionPresetsQuery,
+  useCreateQuotationSectionPresetMutation,
+  useUpdateQuotationSectionPresetMutation,
+  useDeleteQuotationSectionPresetMutation,
+} from './api/endpoints/sales';
+
+export {
   useGetStockValuationQuery,
   useGetConsumptionQuery,
   useGetJobProfitabilityQuery,

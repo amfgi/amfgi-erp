@@ -4,6 +4,7 @@ import { GLOBAL_LIVE_UPDATE_COMPANY_ID, publishLiveUpdate } from '@/lib/live-upd
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z }               from 'zod';
 import { ensureMissingSystemRoles } from '@/lib/auth/systemRoles';
+import { ensureSalesPipelineRoles } from '@/lib/sales/roles';
 import { ALL_PERMISSIONS } from '@/lib/permissions';
 
 export async function GET() {
@@ -11,6 +12,7 @@ export async function GET() {
   if (!session?.user) return errorResponse('Unauthorized', 401);
 
   await ensureMissingSystemRoles(prisma);
+  await ensureSalesPipelineRoles(prisma);
 
   const roles = await prisma.role.findMany({
     orderBy: [

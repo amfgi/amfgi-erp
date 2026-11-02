@@ -462,6 +462,10 @@ export default function SearchSelect<T extends { id: string; label: string; sear
                   onMouseDown={(e) => {
                     e.preventDefault();
                     ignoreBlurRef.current = true;
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     handleSelect(item.id);
                   }}
                   onMouseEnter={() => setHighlightedIdx(idx)}
@@ -514,6 +518,10 @@ export default function SearchSelect<T extends { id: string; label: string; sear
                   onMouseDown={(e) => {
                     e.preventDefault();
                     ignoreBlurRef.current = true;
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     emptyAction.onAction(input.trim());
                     setIsOpen(false);
                   }}
