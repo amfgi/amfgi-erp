@@ -168,6 +168,7 @@ export {
   useGetSalesQueryQuery,
   useGetSalesmenQuery,
   useCreateSalesQueryMutation,
+  useDeleteSalesQueryMutation,
   useUpdateSalesQueryMutation,
   useForwardSalesToQuotationMutation,
   useGetSalesWorkLogQuery,

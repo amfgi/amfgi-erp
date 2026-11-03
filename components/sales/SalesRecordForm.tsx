@@ -7,6 +7,7 @@ import { Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { Button } from '@/components/ui/shadcn/button';
+import Spinner from '@/components/ui/Spinner';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Modal from '@/components/ui/Modal';
 import { acceptedOptionId, QuotationSheet } from '@/components/sales/QuotationSheet';
@@ -49,7 +50,9 @@ function SalesWorkLogDialog({ id, onClose }: { id: string; onClose: () => void }
       }
     >
       {workLogQuery.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="flex h-24 items-center justify-center">
+          <Spinner size="lg" />
+        </div>
       ) : workLogQuery.isError ? (
         <p className="text-sm text-muted-foreground">The working log could not be loaded.</p>
       ) : (workLogQuery.data ?? []).length === 0 ? (
@@ -604,6 +607,14 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     return <p className="text-sm text-muted-foreground">This record is not available.</p>;
   }
 
+  if ((id && recordQuery.isLoading) || (!id && (customersQuery.isLoading || salesmenQuery.isLoading))) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
       <header className="flex w-full min-w-0 flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
@@ -622,7 +633,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {busy || pdfBusy ? <Spinner size="sm" /> : null}
           <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
             Cancel
           </Button>

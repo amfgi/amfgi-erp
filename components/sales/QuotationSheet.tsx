@@ -20,6 +20,7 @@ import {
   Undo2,
 } from 'lucide-react';
 
+import Spinner from '@/components/ui/Spinner';
 import {
   useCreateQuotationCustomSectionMutation,
   useCreateQuotationCustomSectionVersionMutation,
@@ -1604,7 +1605,7 @@ export function QuotationSheet({
             {renameError ? <p className="mt-2 text-xs text-red-700">{renameError}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setRenameTarget(null)}>Cancel</button>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={renameTermsState.isLoading || renameSectionState.isLoading || renamePresetState.isLoading || renameCustomVersionState.isLoading}>Save</button>
+              <button type="submit" className="inline-flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={renameTermsState.isLoading || renameSectionState.isLoading || renamePresetState.isLoading || renameCustomVersionState.isLoading}>{renameTermsState.isLoading || renameSectionState.isLoading || renamePresetState.isLoading || renameCustomVersionState.isLoading ? <Spinner size="sm" /> : 'Save'}</button>
             </div>
           </form>
         </div>
@@ -1624,7 +1625,7 @@ export function QuotationSheet({
             {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSaveTerms(null)}>Cancel</button>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createTermsState.isLoading}>Save</button>
+              <button type="submit" className="inline-flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createTermsState.isLoading}>{createTermsState.isLoading ? <Spinner size="sm" /> : 'Save'}</button>
             </div>
           </form>
         </div>
@@ -1644,7 +1645,7 @@ export function QuotationSheet({
             {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSavePreset(null)}>Cancel</button>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createPresetState.isLoading}>Save</button>
+              <button type="submit" className="inline-flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createPresetState.isLoading}>{createPresetState.isLoading ? <Spinner size="sm" /> : 'Save'}</button>
             </div>
           </form>
         </div>
@@ -1664,7 +1665,7 @@ export function QuotationSheet({
             {saveError ? <p className="mt-2 text-xs text-red-700">{saveError}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={() => setSaveSection(null)}>Cancel</button>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createCustomSectionState.isLoading || createCustomVersionState.isLoading}>Save</button>
+              <button type="submit" className="inline-flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" disabled={createCustomSectionState.isLoading || createCustomVersionState.isLoading}>{createCustomSectionState.isLoading || createCustomVersionState.isLoading ? <Spinner size="sm" /> : 'Save'}</button>
             </div>
           </form>
         </div>

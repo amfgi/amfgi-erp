@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 
 import { canAccessSettingsSerial } from '@/lib/auth/settingsAccess';
 import { Button } from '@/components/ui/shadcn/button';
+import Spinner from '@/components/ui/Spinner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import {
@@ -141,7 +142,11 @@ export default function SettingsSerialNumberPage() {
   };
 
   if (status === 'loading') {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
   }
 
   if (!canManage) {
@@ -177,7 +182,9 @@ export default function SettingsSerialNumberPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <div className="flex h-40 items-center justify-center">
+              <Spinner size="lg" />
+            </div>
           ) : (
             DOCUMENT_SERIAL_CONTROLS.map((control) => {
               const item = items.find((row) => row.key === control.key);
@@ -231,7 +238,7 @@ export default function SettingsSerialNumberPage() {
 
           <div>
             <Button type="button" onClick={() => void save()} disabled={loading || saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? <Spinner size="sm" /> : 'Save'}
             </Button>
           </div>
         </CardContent>

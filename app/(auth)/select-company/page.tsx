@@ -1,6 +1,6 @@
 'use client';
 
-import { useState }              from 'react';
+import { useEffect, useState } from 'react';
 import { useSession, signOut }   from 'next-auth/react';
 import { useRouter }             from 'next/navigation';
 import { LogOut }                  from 'lucide-react';
@@ -9,13 +9,22 @@ import { switchActiveCompany }   from '@/store/slices/companySlice';
 import toast                     from 'react-hot-toast';
 import { useGetCompaniesQuery, type Company } from '@/store/hooks';
 import { appApi } from '@/store/api/appApi';
+import Spinner from '@/components/ui/Spinner';
 
 export default function SelectCompanyPage() {
-  const { data: session, update } = useSession();
+  const { data: session, status, update } = useSession();
   const router   = useRouter();
   const dispatch = useAppDispatch();
-  const { data: companiesData = [] } = useGetCompaniesQuery();
+  const companiesQuery = useGetCompaniesQuery(undefined, { skip: status !== 'authenticated' });
+  const companiesData = companiesQuery.data ?? [];
   const [loading,   setLoading]   = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    if (session?.user?.isSuperAdmin && session.user.activeCompanyId) {
+      router.replace('/dashboard');
+    }
+  }, [router, session?.user?.activeCompanyId, session?.user?.isSuperAdmin, status]);
 
   // For type safety, cast companies data
   const companies = companiesData.map((c: Company) => ({
@@ -82,7 +91,16 @@ export default function SelectCompanyPage() {
         </div>
 
         <div className="space-y-3">
-          {allowed.map((c) => (
+          {status === 'loading' || companiesQuery.isLoading || companiesQuery.isFetching && !companiesQuery.data ? (
+            <div className="flex justify-center py-16">
+              <Spinner size="lg" />
+            </div>
+          ) : companiesQuery.isError ? (
+            <div className="text-center py-12 text-slate-400">
+              <p>The company list could not be loaded.</p>
+              <p className="text-sm mt-1">Refresh the page. If it continues, sign out and sign in again.</p>
+            </div>
+          ) : allowed.map((c) => (
             <button
               key={c.id}
               onClick={() => handleSelect(c.id)}
@@ -111,7 +129,7 @@ export default function SelectCompanyPage() {
             </button>
           ))}
 
-          {allowed.length === 0 && (
+          {!companiesQuery.isLoading && !companiesQuery.isError && allowed.length === 0 && (
             <div className="text-center py-12 text-slate-400">
               <p>No companies assigned to your account.</p>
               <p className="text-sm mt-1">Contact your administrator.</p>

@@ -189,6 +189,11 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery', 'Customer'],
     }),
+    deleteSalesQuery: builder.mutation<{ id: string }, string>({
+      query: (id) => ({ url: `/sales/queries/${id}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: ['SalesQuery'],
+    }),
     updateSalesQuery: builder.mutation<SalesRecord, { id: string; body: Record<string, unknown> }>({
       query: ({ id, body }) => ({ url: `/sales/queries/${id}`, method: 'PATCH', body }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
@@ -318,6 +323,7 @@ export const {
   useGetSalesQueryQuery,
   useGetSalesmenQuery,
   useCreateSalesQueryMutation,
+  useDeleteSalesQueryMutation,
   useUpdateSalesQueryMutation,
   useForwardSalesToQuotationMutation,
   useReviseSalesQuotationMutation,

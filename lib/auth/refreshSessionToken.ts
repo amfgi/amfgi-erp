@@ -50,13 +50,12 @@ export async function refreshAuthJwtTokenFromDb(
   const allowedCompanyIds = uniqueCompanyIdsFromAccess(user.companyAccess);
   token.allowedCompanyIds = allowedCompanyIds;
 
-  let companyId =
-    (token.activeCompanyId as string | null | undefined) ?? user.activeCompanyId ?? null;
+  let companyId = token.activeCompanyId || user.activeCompanyId || null;
 
   if (!user.isSuperAdmin && companyId && !allowedCompanyIds.includes(companyId)) {
     companyId = allowedCompanyIds[0] ?? null;
-    token.activeCompanyId = companyId;
   }
+  token.activeCompanyId = companyId;
 
   if (user.isSuperAdmin) {
     token.permissions = ALL_PERMISSIONS;

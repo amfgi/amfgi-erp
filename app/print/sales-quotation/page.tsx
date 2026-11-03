@@ -8,6 +8,7 @@ import { QuotationSheet } from '@/components/sales/QuotationSheet';
 import { documentFromRecord, quotationFileName } from '@/lib/sales/quotationDocument';
 import { dateInputValue } from '@/lib/sales/format';
 import { useGetSalesQueryQuery } from '@/store/hooks';
+import Spinner from '@/components/ui/Spinner';
 
 function SalesQuotationPrint() {
   const params = useSearchParams();
@@ -26,7 +27,13 @@ function SalesQuotationPrint() {
   }, [record]);
 
   if (!id) return <p className="p-6 text-sm">Missing quotation.</p>;
-  if (query.isLoading || !record) return <p className="p-6 text-sm">Preparing the document…</p>;
+  if (query.isLoading || !record) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   const accepted = record.options.findIndex((option) => option.isAccepted);
   const document = documentFromRecord(record);
@@ -52,7 +59,7 @@ function SalesQuotationPrint() {
 
 export default function SalesQuotationPrintPage() {
   return (
-    <Suspense fallback={<p className="p-6 text-sm">Preparing the document…</p>}>
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Spinner size="lg" /></div>}>
       <SalesQuotationPrint />
     </Suspense>
   );
