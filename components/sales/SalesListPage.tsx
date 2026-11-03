@@ -4,17 +4,22 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import toast from 'react-hot-toast';
 
 import { Badge } from '@/components/ui/shadcn/badge';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
+import Modal from '@/components/ui/Modal';
+import Spinner from '@/components/ui/Spinner';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { salesAccess } from '@/lib/sales/access';
-import { useGetSalesQueriesQuery } from '@/store/hooks';
-import type { SalesClosure, SalesStage } from '@/store/api/endpoints/sales';
+import { useDeleteSalesQueryMutation, useGetSalesQueriesQuery } from '@/store/hooks';
+import type { SalesClosure, SalesListItem, SalesStage } from '@/store/api/endpoints/sales';
 
-const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
+const LABEL_CLASS = 'shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground';
+const STATUS_SELECT_CLASS =
+  'h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground';
 
 function stageHref(stage: SalesStage, id: string) {
   if (stage === 'QUOTATION') return `/sales/quotations/form?id=${id}`;
@@ -64,6 +69,9 @@ export default function SalesListPage({
   const [closureFilter, setClosureFilter] = useState<SalesClosure | 'ALL'>('OPEN');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(LIST_PAGE_SIZE_OPTIONS[0]);
+  const [pendingDelete, setPendingDelete] = useState<SalesListItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteQuery] = useDeleteSalesQueryMutation();
 
   const query = useGetSalesQueriesQuery({
     limit: pageSize,
@@ -85,7 +93,33 @@ export default function SalesListPage({
   const pageStart = total === 0 ? 0 : (page - 1) * pageSize;
 
   const canAdd = Boolean(addHref && access.queryManage);
+  const canDelete = stage === 'QUERY' && access.queryManage;
   const rows = useMemo(() => items, [items]);
+  const rowGrid = showGrandTotal
+    ? canDelete
+      ? 'sm:grid-cols-[1.1fr_1.2fr_1fr_auto_auto_auto]'
+      : 'sm:grid-cols-[1.1fr_1.2fr_1fr_auto_auto]'
+    : canDelete
+      ? 'sm:grid-cols-[1.2fr_1.4fr_1fr_auto_auto]'
+      : 'sm:grid-cols-[1.2fr_1.4fr_1fr_auto]';
+
+  async function confirmDelete() {
+    if (!pendingDelete || deletingId) return;
+    const row = pendingDelete;
+    setDeletingId(row.id);
+    try {
+      await deleteQuery(row.id).unwrap();
+      toast.success('Query deleted');
+      setPendingDelete(null);
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'data' in error
+        ? (error as { data?: { error?: string } }).data?.error
+        : null;
+      toast.error(message || 'Could not delete the query');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
@@ -102,7 +136,7 @@ export default function SalesListPage({
         ) : null}
       </header>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input
           value={search}
           onChange={(event) => {
@@ -113,15 +147,15 @@ export default function SalesListPage({
           className="sm:max-w-sm"
         />
         {showQueryQueue ? (
-          <label className={LABEL_CLASS}>
-            Status
+          <label className="flex items-center gap-3">
+            <span className={LABEL_CLASS}>Status</span>
             <select
               value={queue}
               onChange={(event) => {
                 setQueue(event.target.value as 'active' | 'rejected' | 'all');
                 setPage(1);
               }}
-              className="mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm"
+              className={STATUS_SELECT_CLASS}
             >
               <option value="active">Non-rejected</option>
               <option value="rejected">Rejected</option>
@@ -130,15 +164,15 @@ export default function SalesListPage({
           </label>
         ) : null}
         {showClosureFilter ? (
-          <label className={LABEL_CLASS}>
-            Status
+          <label className="flex items-center gap-3">
+            <span className={LABEL_CLASS}>Status</span>
             <select
               value={closureFilter}
               onChange={(event) => {
                 setClosureFilter(event.target.value as SalesClosure | 'ALL');
                 setPage(1);
               }}
-              className="mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm"
+              className={STATUS_SELECT_CLASS}
             >
               <option value="OPEN">Open</option>
               <option value="LOST">Lost</option>
@@ -153,25 +187,31 @@ export default function SalesListPage({
         {query.isError ? (
           <p className="p-5 text-sm text-muted-foreground">You do not have access to this list.</p>
         ) : query.isLoading || !query.currentData ? (
-          <p className="p-5 text-sm text-muted-foreground">Loading…</p>
+          <div className="flex h-64 items-center justify-center">
+            <Spinner size="lg" />
+          </div>
         ) : rows.length === 0 ? (
           <p className="p-5 text-sm text-muted-foreground">Nothing here yet.</p>
         ) : (
           <div className="flex flex-col divide-y divide-border">
             {showGrandTotal ? (
-              <div className="hidden gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[1.1fr_1.2fr_1fr_auto_auto] sm:items-center">
+              <div className={`hidden gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:grid sm:items-center ${rowGrid}`}>
                 <span>Number</span>
                 <span>Customer</span>
                 <span>Location</span>
                 <span>Grand total</span>
                 <span>Status</span>
+                {canDelete ? <span className="sr-only">Delete</span> : null}
               </div>
             ) : null}
             {rows.map((row) => (
-              <Link
+              <div
                 key={row.id}
+                className={`grid gap-2 px-4 py-4 text-sm hover:bg-muted/40 sm:items-center ${rowGrid}`}
+              >
+              <Link
                 href={stageHref(row.stage, row.id)}
-                className={`grid gap-2 px-4 py-4 text-sm hover:bg-muted/40 sm:items-center ${showGrandTotal ? 'sm:grid-cols-[1.1fr_1.2fr_1fr_auto_auto]' : 'sm:grid-cols-[1.2fr_1.4fr_1fr_auto]'}`}
+                className="contents"
               >
                     <span>
                       <span className="font-medium text-foreground">
@@ -205,10 +245,64 @@ export default function SalesListPage({
                   {row.job ? <Badge variant="outline">{row.job.jobNumber}</Badge> : null}
                 </span>
               </Link>
+              {canDelete ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={deletingId === row.id}
+                  onClick={() => setPendingDelete(row)}
+                >
+                  {deletingId === row.id ? <Spinner size="sm" /> : 'Delete'}
+                </Button>
+              ) : null}
+              </div>
             ))}
           </div>
         )}
       </section>
+
+      <Modal
+        isOpen={Boolean(pendingDelete)}
+        onClose={() => {
+          if (!deletingId) setPendingDelete(null);
+        }}
+        title="Delete this query?"
+        description={
+          pendingDelete
+            ? `${pendingDelete.queryNumber} and its files will be removed. This cannot be undone.`
+            : undefined
+        }
+        size="sm"
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={Boolean(deletingId)}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={Boolean(deletingId)}
+              onClick={() => void confirmDelete()}
+            >
+              {deletingId ? <Spinner size="sm" /> : 'Delete'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          {pendingDelete
+            ? `${pendingDelete.displayCustomerName} · ${pendingDelete.projectLocation}`
+            : null}
+        </p>
+      </Modal>
 
       <DirectoryListPagination
         page={page}

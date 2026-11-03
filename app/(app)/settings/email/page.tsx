@@ -9,6 +9,7 @@ import { readApiJson } from '@/lib/utils/readApiResponse';
 
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button } from '@/components/ui/shadcn/button';
+import Spinner from '@/components/ui/Spinner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
@@ -261,7 +262,9 @@ export default function SettingsEmailPage() {
       )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="flex h-40 items-center justify-center">
+          <Spinner size="lg" />
+        </div>
       ) : (
         <Card>
           <CardHeader>

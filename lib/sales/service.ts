@@ -3,6 +3,7 @@ import { Prisma, type SalesAttachmentKind, type SalesClosure, type SalesQuotatio
 import { prisma } from '@/lib/db/prisma';
 import { notifyQueryCreated, notifyQuotationAssigned } from '@/lib/mail/notifySales';
 import { readCompanyOperationalSettings } from '@/lib/utils/companyOperationalSettings';
+import { deleteFromDrive } from '@/lib/utils/googleDrive';
 import { parsePartyListDateInput } from '@/lib/partyListsApi';
 
 import {
@@ -1032,6 +1033,38 @@ export async function createJobFromSales(params: {
 
 export async function listSalesmen(companyId: string) {
   return listSalesUsers(companyId);
+}
+
+export async function deleteSalesQuery(params: { companyId: string; id: string; access: SalesAccess }) {
+  if (!params.access.queryManage) throw new SalesError('Forbidden', 403);
+  const current = await prisma.salesQuery.findFirst({
+    where: { id: params.id, companyId: params.companyId },
+    select: {
+      id: true,
+      stage: true,
+      attachments: { select: { driveFileId: true } },
+    },
+  });
+  if (!current) throw new SalesError('Sales record not found', 404);
+  if (current.stage !== 'QUERY') throw new SalesError('Only a query can be deleted', 422);
+
+  for (const file of current.attachments) {
+    if (!file.driveFileId) continue;
+    try {
+      await deleteFromDrive(file.driveFileId, params.companyId);
+    } catch (error) {
+      console.error('Failed to delete sales file from Drive:', error);
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.salesQuery.update({
+      where: { id: current.id },
+      data: { acceptedOptionId: null },
+    });
+    await tx.salesQuery.delete({ where: { id: current.id } });
+  });
+  return { id: current.id };
 }
 
 const ALLOWED_MIMES = new Set([

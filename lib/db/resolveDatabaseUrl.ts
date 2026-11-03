@@ -16,6 +16,49 @@ export function normalizePostgresUrl(url: string): string {
   return url;
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+export function databaseUrlHost(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+export function isLoopbackDatabaseHost(host: string | null): boolean {
+  return host != null && LOOPBACK_HOSTS.has(host);
+}
+
+/**
+ * Next.js does not override a DATABASE_URL already set in the shell.
+ * A remote URL left over from a migrate command would make `npm run dev`
+ * talk to that server. In development, keep the local database from `.env`.
+ */
+export function chooseAppDatabaseUrl(
+  processUrl: string | undefined,
+  fileUrl: string | undefined,
+  nodeEnv: string | undefined,
+): string {
+  const fromProcess = processUrl?.trim() || undefined;
+  const fromFile = fileUrl?.trim() || undefined;
+
+  if (nodeEnv === 'development' && fromFile && fromProcess) {
+    const processHost = databaseUrlHost(fromProcess);
+    const fileHost = databaseUrlHost(fromFile);
+    if (isLoopbackDatabaseHost(fileHost) && processHost && !isLoopbackDatabaseHost(processHost)) {
+      return normalizePostgresUrl(fromFile);
+    }
+  }
+
+  const chosen = fromProcess ?? fromFile;
+  if (!chosen) {
+    throw new Error('DATABASE_URL is not set.');
+  }
+  return normalizePostgresUrl(chosen);
+}
+
 function readDirectUrl(): string | undefined {
   return process.env.DIRECT_DATABASE_URL?.trim() || process.env.DIRECT_URL?.trim() || undefined;
 }
