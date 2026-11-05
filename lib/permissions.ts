@@ -81,6 +81,7 @@ export const P = {
   SETTINGS_EMAIL: 'settings.email',
   SETTINGS_API: 'settings.api',
   SETTINGS_SERIAL: 'settings.serial_number',
+  ACCOUNTING_MANAGE: 'accounting.manage',
 
   // HR / Workforce
   HR_EMPLOYEE_VIEW: 'hr.employee.view',
@@ -161,6 +162,7 @@ export const ROLE_PRESETS: Record<string, Permission[]> = {
     P.SETTINGS_EMAIL,
     P.SETTINGS_API,
     P.SETTINGS_SERIAL,
+    P.ACCOUNTING_MANAGE,
     P.HR_EMPLOYEE_VIEW, P.HR_EMPLOYEE_CREATE, P.HR_EMPLOYEE_EDIT, P.HR_EMPLOYEE_DELETE,
     P.HR_DOCUMENT_VIEW, P.HR_DOCUMENT_CREATE, P.HR_DOCUMENT_EDIT, P.HR_DOCUMENT_DELETE,
     P.HR_DOCUMENT_TYPE_VIEW, P.HR_DOCUMENT_TYPE_CREATE, P.HR_DOCUMENT_TYPE_EDIT, P.HR_DOCUMENT_TYPE_DELETE,
@@ -398,6 +400,10 @@ export const PERMISSION_GROUPS: Array<{
   {
     group: 'Role Management',
     perms: [{ key: P.ROLE_MANAGE, label: 'Manage Roles' }],
+  },
+  {
+    group: 'Accounting',
+    perms: [{ key: P.ACCOUNTING_MANAGE, label: 'Account types, chart, journal, and trial balance' }],
   },
   {
     group: 'Settings — Workspace',

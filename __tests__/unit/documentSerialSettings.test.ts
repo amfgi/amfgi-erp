@@ -9,6 +9,7 @@ describe('document serial settings', () => {
       quotation: 1,
       purchaseOrder: 1,
       job: 1,
+      journal: 1,
       prefixes: defaultPrefixes,
     });
   });
@@ -24,6 +25,7 @@ describe('document serial settings', () => {
       quotation: 20,
       purchaseOrder: 1,
       job: 5000,
+      journal: 1,
       prefixes: defaultPrefixes,
     });
   });
@@ -41,6 +43,11 @@ describe('document serial settings', () => {
       purchaseOrder: 'PO',
       job: 'JOB',
     });
+  });
+
+  it('keeps a journal starting serial and ignores a blank one', () => {
+    expect(normalizeDocumentSerialSettings({ journal: 80 }).journal).toBe(80);
+    expect(normalizeDocumentSerialSettings({ journal: 0 }).journal).toBe(1);
   });
 
   it('starts at the entered serial, or after a higher number already issued', () => {

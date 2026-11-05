@@ -16,6 +16,7 @@ export type DocumentSerialSettings = {
   quotation: number;
   purchaseOrder: number;
   job: number;
+  journal: number;
   prefixes: DocumentSerialPrefixes;
 };
 
@@ -31,6 +32,7 @@ export const DEFAULT_DOCUMENT_SERIAL_SETTINGS: DocumentSerialSettings = {
   quotation: 1,
   purchaseOrder: 1,
   job: 1,
+  journal: 1,
   prefixes: { ...DEFAULT_DOCUMENT_SERIAL_PREFIXES },
 };
 
@@ -93,6 +95,7 @@ export function normalizeDocumentSerialSettings(raw: unknown): DocumentSerialSet
     quotation: readStart(record.quotation, fallback.quotation),
     purchaseOrder: readStart(record.purchaseOrder, fallback.purchaseOrder),
     job: readStart(record.job, fallback.job),
+    journal: readStart(record.journal, fallback.journal),
     prefixes: distinctPrefixes({
       query: readPrefix(record.query, prefixRecord.query, fallback.prefixes.query),
       quotation: readPrefix(record.quotation, prefixRecord.quotation, fallback.prefixes.quotation),

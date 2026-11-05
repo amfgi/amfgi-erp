@@ -283,6 +283,18 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 	},
 	{
 		type: 'group',
+		id: 'accounting',
+		label: 'Accounting',
+		icon: BookOpen,
+		anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE],
+		children: [
+			{ href: '/accounting/chart', label: 'Chart of accounts', anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE] },
+			{ href: '/accounting/journal', label: 'Journal', anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE] },
+			{ href: '/accounting/trial-balance', label: 'Trial balance', anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE] },
+		],
+	},
+	{
+		type: 'group',
 		id: 'settings',
 		label: 'Settings',
 		icon: Settings,
@@ -294,12 +306,18 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			P.SETTINGS_API,
 			P.SETTINGS_SERIAL,
 			P.SETTINGS_MANAGE,
+			P.ACCOUNTING_MANAGE,
 		],
 		children: [
 			{
 				href: '/settings/print-format',
 				label: 'Print format',
 				anyPerms: [P.SETTINGS_PRINT_FORMAT, P.SETTINGS_MANAGE],
+			},
+			{
+				href: '/settings/accounts',
+				label: 'Accounts',
+				anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE],
 			},
 			{
 				href: '/settings/serial-number',

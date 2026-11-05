@@ -46,6 +46,8 @@ const ROUTE_PERMISSIONS: RoutePermissionRule[] = [
     P.SETTINGS_API,
   ] },
   { prefix: '/settings/api', anyPerms: [P.SETTINGS_API, P.SETTINGS_MANAGE] },
+  { prefix: '/settings/accounts', anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE] },
+  { prefix: '/accounting', anyPerms: [P.ACCOUNTING_MANAGE, P.SETTINGS_MANAGE] },
   {
     prefix: '/settings',
     anyPerms: [

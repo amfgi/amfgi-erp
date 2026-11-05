@@ -32,9 +32,16 @@ type SerialItem = {
   nextNumber: string;
 };
 
+type JournalSerial = {
+  startFrom: number;
+  latestSerial: number | null;
+  nextNumber: number;
+};
+
 type SerialView = {
   year: string;
   items: SerialItem[];
+  journal: JournalSerial;
 };
 
 const emptyDraft = (): Record<DocumentSerialKey, string> => ({
@@ -59,6 +66,8 @@ export default function SettingsSerialNumberPage() {
   const [items, setItems] = useState<SerialItem[]>([]);
   const [draft, setDraft] = useState<Record<DocumentSerialKey, string>>(emptyDraft);
   const [prefixes, setPrefixes] = useState<DocumentSerialPrefixes>({ ...DEFAULT_DOCUMENT_SERIAL_PREFIXES });
+  const [journalDraft, setJournalDraft] = useState('1');
+  const [journalLatest, setJournalLatest] = useState<number | null>(null);
 
   const applyView = useCallback((view: SerialView) => {
     setYear(view.year);
@@ -73,6 +82,8 @@ export default function SettingsSerialNumberPage() {
       for (const item of view.items) next[item.key] = item.prefix;
       return next;
     });
+    setJournalDraft(String(view.journal?.startFrom ?? 1));
+    setJournalLatest(view.journal?.latestSerial ?? null);
   }, []);
 
   const load = useCallback(async () => {
@@ -121,13 +132,18 @@ export default function SettingsSerialNumberPage() {
       toast.error('Each starting tag must be different');
       return;
     }
+    const journal = normalizeDocumentSerial(journalDraft, 0);
+    if (journal < 1) {
+      toast.error('Enter a whole number for Journal');
+      return;
+    }
 
     setSaving(true);
     try {
       const res = await fetch('/api/settings/serial-number', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, prefixes: prefixPayload }),
+        body: JSON.stringify({ ...payload, journal, prefixes: prefixPayload }),
       });
       const json = await readApiJson<SerialView>(res);
       if (!res.ok || !json?.success || !json.data) {
@@ -149,6 +165,9 @@ export default function SettingsSerialNumberPage() {
     );
   }
 
+  const journalTyped = normalizeDocumentSerial(journalDraft, 0);
+  const journalNext = journalTyped >= 1 ? nextSerialFromHighest(journalLatest ?? 0, journalTyped) : null;
+
   if (!canManage) {
     return (
       <Card>
@@ -169,6 +188,7 @@ export default function SettingsSerialNumberPage() {
           Choose the starting tag and the serial for Queries, Quotations, Purchase Orders, and Jobs.
           A new number looks like {prefixes.job}{year}-1234. When the year changes, new numbers use the new year
           and start again from the serial you set. Numbers already issued keep their tag and year.
+          Journal entry numbers have no year. The next entry uses the serial you set, or the next number after the last one already issued.
           {isSuperAdmin ? '' : ' Only a super admin can change the starting tags.'}
         </p>
       </header>
@@ -235,6 +255,28 @@ export default function SettingsSerialNumberPage() {
               );
             })
           )}
+          {!loading ? (
+            <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-[12rem_1fr] sm:items-start">
+              <label htmlFor="serial-journal" className="pt-2 text-sm font-medium text-foreground">
+                Journal
+              </label>
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <Input
+                  id="serial-journal"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={journalDraft}
+                  onChange={(event) => setJournalDraft(event.target.value.replace(/\D/g, '').slice(0, 10))}
+                  className="w-36 font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Entry no. {journalTyped >= 1 ? journalTyped : ''}
+                  {journalLatest ? ` · Latest ${journalLatest}` : ''}
+                  {journalNext && journalNext !== journalTyped ? ` · Next number ${journalNext}` : ''}
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           <div>
             <Button type="button" onClick={() => void save()} disabled={loading || saving}>

@@ -120,6 +120,14 @@ model Company {
   salesWorkLogs             SalesWorkLog[]
   outboundEmails            OutboundEmail[]
   extraPermissions          UserCompanyExtraPermission[]
+  ledgerStatementGroups     LedgerStatementGroup[]
+  ledgerAccountTypes        LedgerAccountType[]
+  ledgerAccounts            LedgerAccount[]
+  journalEntries            JournalEntry[]
+  journalLines              JournalLine[]
+  journalTemplates          JournalTemplate[]
+  journalAttachments        JournalAttachment[]
+  journalCounter            JournalCounter?
 }
 
 model User {
@@ -2597,4 +2605,162 @@ enum WorkflowApprovalStatus {
   APPROVED
   REJECTED
   CANCELLED
+}
+
+enum FinancialStatementSection {
+  BALANCE_SHEET
+  PROFIT_AND_LOSS
+}
+
+enum AccountNormalSide {
+  DEBIT
+  CREDIT
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  SAVED
+}
+
+/// Company-defined statement group. Normal increase side is editable and is not stored on the journal.
+model LedgerStatementGroup {
+  id         String                    @id @default(cuid())
+  companyId  String
+  name       String
+  normalSide AccountNormalSide
+  reportsOn  FinancialStatementSection
+  sortOrder  Int                       @default(0)
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountTypes LedgerAccountType[]
+
+  @@unique([companyId, name])
+  @@index([companyId, sortOrder])
+}
+
+/// Company-defined account type. Decrease side is always the opposite of increaseSide.
+model LedgerAccountType {
+  id               String            @id @default(cuid())
+  companyId        String
+  statementGroupId String
+  name             String
+  increaseSide     AccountNormalSide
+  isActive         Boolean           @default(true)
+  sortOrder        Int               @default(0)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  company        Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  statementGroup LedgerStatementGroup @relation(fields: [statementGroupId], references: [id], onDelete: Restrict)
+  accounts       LedgerAccount[]
+
+  @@unique([companyId, name])
+  @@index([companyId, sortOrder])
+  @@index([statementGroupId])
+}
+
+model LedgerAccount {
+  id            String   @id @default(cuid())
+  companyId     String
+  accountTypeId String
+  parentId      String?
+  name          String
+  code          String?
+  description   String?
+  note          String?  @db.Text
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountType LedgerAccountType @relation(fields: [accountTypeId], references: [id], onDelete: Restrict)
+  parent      LedgerAccount?    @relation("LedgerAccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    LedgerAccount[]   @relation("LedgerAccountTree")
+  journalLines JournalLine[]
+
+  @@index([companyId, accountTypeId])
+  @@index([companyId, parentId])
+  @@index([companyId, isActive])
+}
+
+model JournalCounter {
+  companyId  String @id
+  lastNumber Int    @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model JournalEntry {
+  id              String             @id @default(cuid())
+  companyId       String
+  entryNumber     Int
+  entryDate       DateTime           @db.Date
+  status          JournalEntryStatus @default(DRAFT)
+  idempotencyKey  String?
+  reversedFromId  String?
+  reversedById    String?
+  createdById     String?
+  savedAt         DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reversedFrom JournalEntry?       @relation("JournalReversal", fields: [reversedFromId], references: [id], onDelete: Restrict)
+  reversals    JournalEntry[]      @relation("JournalReversal")
+  lines        JournalLine[]
+  attachments  JournalAttachment[]
+
+  @@unique([companyId, entryNumber])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, status, entryDate])
+  @@index([reversedFromId])
+}
+
+model JournalLine {
+  id             String  @id @default(cuid())
+  companyId      String
+  journalEntryId String
+  accountId      String
+  sortOrder      Int     @default(0)
+  debit          Decimal @default(0) @db.Decimal(18, 2)
+  credit         Decimal @default(0) @db.Decimal(18, 2)
+  memo           String?
+  partyName      String?
+  vatItem        String?
+  billable       Boolean @default(false)
+  jobLabel       String?
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, accountId])
+  @@index([journalEntryId, sortOrder])
+}
+
+model JournalTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  lines     Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+}
+
+model JournalAttachment {
+  id             String   @id @default(cuid())
+  companyId      String
+  journalEntryId String
+  fileName       String
+  createdAt      DateTime @default(now())
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@index([journalEntryId])
 }

@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { ensureDefaultEmployeeDocumentTypes } from '@/lib/hr/defaultDocumentTypes';
+import { ensureAccountingDefaults } from '@/lib/accounting/defaults';
 import { DEFAULT_EMPLOYEE_TYPE_SETTINGS } from '@/lib/hr/employeeTypeSettings';
 import { ensureAllSystemRoles } from '@/lib/auth/systemRoles';
 import { mergeStockControlSettingsIntoCompanySettings } from '@/lib/stock-control/settings';
@@ -78,6 +79,7 @@ export async function bootstrapFirstAdmin(
   });
 
   await ensureDefaultEmployeeDocumentTypes(db, company.id);
+  await ensureAccountingDefaults(db, company.id);
 
   const systemRoles = await ensureAllSystemRoles(db);
   const superAdminRoleId = systemRoles.admin?.id;

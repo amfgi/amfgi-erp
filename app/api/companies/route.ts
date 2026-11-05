@@ -5,6 +5,7 @@ import { prisma }          from '@/lib/db/prisma';
 import { GLOBAL_LIVE_UPDATE_COMPANY_ID, publishLiveUpdate } from '@/lib/live-updates/server';
 import { checkCompanyDeleteEligibility } from '@/lib/companies/checkCompanyDeleteEligibility';
 import { ensureCompanyFallbackWarehouse, normalizeWarehouseMode } from '@/lib/warehouses/companyWarehouseMode';
+import { ensureAccountingDefaults } from '@/lib/accounting/defaults';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
 import { z }                from 'zod';
 
@@ -132,6 +133,7 @@ export async function POST(req: Request) {
     });
 
     await ensureCompanyFallbackWarehouse(tx, created.id);
+    await ensureAccountingDefaults(tx, created.id);
 
     return tx.company.findUniqueOrThrow({
       where: { id: created.id },

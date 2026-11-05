@@ -116,6 +116,14 @@ export async function assignNextDocumentNumber(
   throw new Error('Could not assign the next number');
 }
 
+export async function highestIssuedJournalNumber(db: Db, companyId: string): Promise<number> {
+  const [counter, aggregate] = await Promise.all([
+    db.journalCounter.findUnique({ where: { companyId }, select: { lastNumber: true } }),
+    db.journalEntry.aggregate({ where: { companyId }, _max: { entryNumber: true } }),
+  ]);
+  return Math.max(counter?.lastNumber ?? 0, aggregate._max.entryNumber ?? 0);
+}
+
 export async function describeDocumentSerials(db: Db, companyId: string, year = salesYearCode()) {
   const settings = await readDocumentSerialSettings(db, companyId);
   const items: DocumentSerialView[] = [];
@@ -135,5 +143,17 @@ export async function describeDocumentSerials(db: Db, companyId: string, year = 
       nextNumber: formatDocumentNumber(prefix, year, nextSerial),
     });
   }
-  return { year, items };
+  const journalHighest = await highestIssuedJournalNumber(db, companyId);
+  const journalNext = nextSerialFromHighest(journalHighest, settings.journal);
+  return {
+    year,
+    items,
+    journal: {
+      key: 'journal' as const,
+      label: 'Journal',
+      startFrom: settings.journal,
+      latestSerial: journalHighest > 0 ? journalHighest : null,
+      nextNumber: journalNext,
+    },
+  };
 }

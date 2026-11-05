@@ -18,6 +18,7 @@ const BodySchema = z.object({
   quotation: z.number().int().min(1).max(MAX_DOCUMENT_SERIAL),
   purchaseOrder: z.number().int().min(1).max(MAX_DOCUMENT_SERIAL),
   job: z.number().int().min(1).max(MAX_DOCUMENT_SERIAL),
+  journal: z.number().int().min(1).max(MAX_DOCUMENT_SERIAL),
   prefixes: z.object({
     query: PrefixSchema,
     quotation: PrefixSchema,
@@ -75,6 +76,7 @@ export async function PUT(req: Request) {
     quotation: parsed.data.quotation,
     purchaseOrder: parsed.data.purchaseOrder,
     job: parsed.data.job,
+    journal: parsed.data.journal,
     prefixes,
   });
   await prisma.company.update({

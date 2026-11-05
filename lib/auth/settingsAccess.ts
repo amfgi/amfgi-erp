@@ -54,9 +54,15 @@ export function canAccessSettingsSerial(user: SettingsAccessUser): boolean {
   return SETTINGS_PAGE_PERMISSIONS.some((perm) => user.permissions.includes(perm));
 }
 
+export function canAccessSettingsAccounts(user: SettingsAccessUser): boolean {
+  if (user.isSuperAdmin) return true;
+  return hasPermission(user.permissions, P.ACCOUNTING_MANAGE);
+}
+
 export function canAccessAnySettingsPage(user: SettingsAccessUser): boolean {
   if (user.isSuperAdmin) return true;
   if (hasLegacySettingsManage(user.permissions)) return true;
+  if (user.permissions.includes(P.ACCOUNTING_MANAGE)) return true;
   return SETTINGS_PAGE_PERMISSIONS.some((perm) => user.permissions.includes(perm));
 }
 
@@ -75,9 +81,15 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     canAccess: canAccessSettingsPrintFormat,
   },
   {
+    href: '/settings/accounts',
+    label: 'Accounts',
+    description: 'Statement groups and account types',
+    canAccess: canAccessSettingsAccounts,
+  },
+  {
     href: '/settings/serial-number',
     label: 'Serial Number',
-    description: 'Starting serial for queries, quotations, purchase orders, and jobs',
+    description: 'Starting serial for queries, quotations, purchase orders, jobs, and journal entries',
     canAccess: canAccessSettingsSerial,
   },
   {
