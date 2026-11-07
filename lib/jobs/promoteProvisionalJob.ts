@@ -12,7 +12,7 @@ export class PromoteProvisionalJobError extends Error {
   }
 }
 
-function variationNumberAfterParentRename(
+export function variationNumberAfterParentRename(
   previousParentJobNumber: string,
   nextParentJobNumber: string,
   variationJobNumber: string,
@@ -25,7 +25,7 @@ function variationNumberAfterParentRename(
   return `${nextParentJobNumber.trim()}-${suffix}`;
 }
 
-async function cascadeAssignmentSnapshots(
+export async function cascadeAssignmentSnapshots(
   tx: Prisma.TransactionClient,
   params: {
     companyId: string;
