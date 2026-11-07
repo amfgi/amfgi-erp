@@ -4,6 +4,7 @@ import {
   addCustomSectionVersion,
   deleteCustomSectionVersion,
   renameCustomSectionVersion,
+  updateCustomSectionVersion,
 } from '@/lib/sales/customSections';
 import { SalesError } from '@/lib/sales/service';
 
@@ -27,9 +28,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const session = await requireSalesSession();
     if (!session.access.quotationManage) throw new SalesError('Forbidden', 403);
     const { id } = await params;
-    const body = (await req.json()) as { versionId?: unknown; name?: unknown };
+    const body = (await req.json()) as { versionId?: unknown; name?: unknown; content?: unknown };
     const versionId = typeof body.versionId === 'string' ? body.versionId : '';
     const name = typeof body.name === 'string' ? body.name : '';
+    if (body.content !== undefined) {
+      return successResponse(await updateCustomSectionVersion(session.companyId, id, versionId, name, body.content));
+    }
     return successResponse(await renameCustomSectionVersion(session.companyId, id, versionId, name));
   } catch (error) {
     return salesErrorResponse(error);

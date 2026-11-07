@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import {
   AlignCenter,
@@ -9,6 +9,7 @@ import {
   Bold,
   ChevronDown,
   Highlighter,
+  ImagePlus,
   Italic,
   List,
   ListOrdered,
@@ -20,7 +21,21 @@ import {
   Undo2,
 } from 'lucide-react';
 
+import {
+  PictureChrome,
+  clipboardImage,
+  findPicture,
+  pictureIsPositioned,
+  pictureMarkup,
+  pictureSource,
+  readPicture,
+  writePicture,
+  type PictureAnchor,
+  type PictureLayout,
+} from '@/components/sales/quotationPicture';
+import Modal from '@/components/ui/Modal';
 import Spinner from '@/components/ui/Spinner';
+import { Button } from '@/components/ui/shadcn/button';
 import {
   useCreateQuotationCustomSectionMutation,
   useCreateQuotationCustomSectionVersionMutation,
@@ -278,6 +293,7 @@ function SavedPresetPicker({
   items,
   emptyText,
   addLabel,
+  anchorId,
   onToggle,
   onChoose,
   onRename,
@@ -288,9 +304,10 @@ function SavedPresetPicker({
   hint: string;
   used: boolean;
   open: boolean;
-  items: Array<{ id: string; label: string }>;
+  items: Array<{ id: string; label: string; used?: boolean }>;
   emptyText: string;
   addLabel?: string;
+  anchorId?: string;
   onToggle: () => void;
   onChoose: (id: string) => void;
   onRename: (id: string, label: string) => void;
@@ -298,11 +315,11 @@ function SavedPresetPicker({
   onAddBlank?: () => void;
 }) {
   return (
-    <div className="relative">
+    <div className="relative" data-section-anchor={anchorId}>
       <button
         type="button"
         onClick={onToggle}
-        className={`w-full cursor-pointer rounded-md border px-3 py-2 text-left ${used ? 'border-border bg-muted/60 text-muted-foreground' : 'border-border bg-background hover:bg-muted/50'}`}
+        className={`w-full cursor-pointer rounded-md border px-3 py-2 text-left ${used ? 'quotation-section-used' : 'border-border bg-background hover:bg-muted/50'}`}
       >
         <span className="block text-sm font-medium">{used ? label : `+ ${label}`}</span>
         <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : hint}</span>
@@ -310,7 +327,7 @@ function SavedPresetPicker({
       {open ? (
         <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background py-1 shadow-lg">
           {items.length ? items.map((item) => (
-            <div key={item.id} className="flex items-center gap-1 pr-1 hover:bg-muted/60">
+            <div key={item.id} className={`flex items-center gap-1 pr-1 ${item.used ? 'quotation-section-used' : 'hover:bg-muted/60'}`}>
               <button type="button" className="min-w-0 flex-1 cursor-pointer px-3 py-1.5 text-left text-sm" onClick={() => onChoose(item.id)}>
                 {item.label}
               </button>
@@ -476,7 +493,7 @@ function RichText({
       data-allow-table={allowTable ? 'true' : undefined}
       suppressContentEditableWarning
       style={style}
-      className={`min-h-[1.25rem] outline-none ${allowTable ? '' : 'whitespace-pre-wrap'} ${readOnly ? '' : 'rounded-sm focus:bg-sky-50/80 focus:outline focus:outline-1 focus:outline-sky-400'} ${className ?? ''}`}
+      className={`quotation-rich min-h-[1.25rem] outline-none ${allowTable ? '' : 'whitespace-pre-wrap'} ${readOnly ? '' : 'rounded-sm focus:bg-sky-50/80 focus:outline focus:outline-1 focus:outline-sky-400'} ${className ?? ''}`}
       onFocus={(event) => onFocusField?.(event.currentTarget)}
       onKeyDown={(event) => {
         if (readOnly || (event.key !== 'Backspace' && event.key !== 'Delete')) return;
@@ -708,6 +725,8 @@ function FormatControls({
   onPrepare,
   tableReady,
   onInsertTable,
+  pictureReady,
+  onInsertPicture,
 }: {
   variant: 'full' | 'compact';
   marks: FormatMarks;
@@ -717,9 +736,12 @@ function FormatControls({
   onPrepare: () => void;
   tableReady?: boolean;
   onInsertTable?: (rows: number, cols: number) => void;
+  pictureReady?: boolean;
+  onInsertPicture?: (file: File) => void;
 }) {
   const [open, setOpen] = useState<'highlight' | 'color' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const pictureInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -812,6 +834,36 @@ function FormatControls({
           <ToolButton label="Bullets" onClick={() => onFormat('insertUnorderedList')}><List className="size-4" /></ToolButton>
           <ToolButton label="Numbering" onClick={() => onFormat('insertOrderedList')}><ListOrdered className="size-4" /></ToolButton>
           {onInsertTable ? <TableMenu disabled={!tableReady} onInsert={onInsertTable} /> : null}
+          {onInsertPicture ? (
+            <>
+              <button
+                type="button"
+                aria-label="Insert picture"
+                title={pictureReady ? 'Insert picture' : 'Click in the text, then insert a picture'}
+                disabled={!pictureReady}
+                className="inline-flex h-8 items-center justify-center gap-1 rounded border px-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                onMouseDown={(event) => {
+                  onPrepare();
+                  event.preventDefault();
+                }}
+                onClick={() => pictureInputRef.current?.click()}
+              >
+                <ImagePlus className="size-4" />
+                Picture
+              </button>
+              <input
+                ref={pictureInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file) onInsertPicture(file);
+                }}
+              />
+            </>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -866,22 +918,35 @@ export function QuotationSheet({
   const [highlight, setHighlight] = useState('#ffff00');
   const [fontColor, setFontColor] = useState('#c00000');
   const [tableReady, setTableReady] = useState(false);
+  const [pictureReady, setPictureReady] = useState(false);
+  const [pictureId, setPictureId] = useState<string | null>(null);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [pictureMore, setPictureMore] = useState(false);
+  const [pictureBox, setPictureBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const insertPictureRef = useRef<(file: File) => Promise<void>>(async () => {});
+  const commitPictureRef = useRef<(node: HTMLElement) => void>(() => {});
   const [presetMenu, setPresetMenu] = useState<string | null>(null);
   const [saveTerms, setSaveTerms] = useState<Array<{ label: string; value: string }> | null>(null);
   const [savePreset, setSavePreset] = useState<null | { kind: 'scope'; body: string } | { kind: 'specification'; rows: Array<{ label: string; value: string }> }>(null);
   const [saveSection, setSaveSection] = useState<null | {
     blockId: string;
-    sectionId?: string;
     name: string;
     body: string;
     minHeightMm: number;
     widthPercent: number;
+    parentSectionId: string;
   }>(null);
+  const [duplicatePrompt, setDuplicatePrompt] = useState<null | { sectionId: string; versionId?: string }>(null);
+  const [promptTop, setPromptTop] = useState(0);
+  const [highlightBlockId, setHighlightBlockId] = useState<string | null>(null);
+  const sectionListRef = useRef<HTMLDivElement>(null);
   const [saveName, setSaveName] = useState('');
   const [saveError, setSaveError] = useState('');
   const [renameTarget, setRenameTarget] = useState<null | { kind: 'terms' | 'section' | 'scope' | 'specification' | 'version'; id: string; sectionId?: string }>(null);
   const [renameName, setRenameName] = useState('');
   const [renameError, setRenameError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<null | { kind: 'terms' | 'section' | 'scope' | 'specification' | 'version'; id: string; name: string; sectionId?: string }>(null);
+  const [deleting, setDeleting] = useState(false);
   const termsQuery = useGetQuotationTermsTemplatesQuery(undefined, { skip: readOnly });
   const [createTerms, createTermsState] = useCreateQuotationTermsTemplateMutation();
   const [renameTerms, renameTermsState] = useUpdateQuotationTermsTemplateMutation();
@@ -962,6 +1027,7 @@ export function QuotationSheet({
       const pad = sheetRef.current;
       if (!selection?.rangeCount || !pad) {
         setBubble(null);
+        setPictureReady(false);
         return;
       }
       const node = selection.anchorNode;
@@ -970,11 +1036,13 @@ export function QuotationSheet({
       if (!node || !pad.contains(node) || !(editable instanceof HTMLElement) || !pad.contains(editable)) {
         setBubble(null);
         setTableReady(false);
+        setPictureReady(false);
         return;
       }
       savedRange.current = selection.getRangeAt(0).cloneRange();
       richField.current = editable;
       setTableReady(editable.dataset.allowTable === 'true');
+      setPictureReady(true);
       const nextMarks = readMarks(element);
       setMarks((current) => (sameMarks(current, nextMarks) ? current : nextMarks));
       if (selection.isCollapsed) {
@@ -1076,6 +1144,140 @@ export function QuotationSheet({
     return () => root.removeEventListener('focusout', onFocusOut);
   }, []);
 
+  useEffect(() => {
+    if (readOnly) return;
+    function onPointerDown(event: PointerEvent) {
+      if (event.button !== 0) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('.quotation-picture-chrome, .quotation-format')) return;
+      const img = target.closest('img.quotation-picture');
+      if (!(img instanceof HTMLImageElement) || !sheetRef.current?.contains(img)) {
+        setPictureId(null);
+        setLayoutOpen(false);
+        return;
+      }
+      event.preventDefault();
+      const id = img.dataset.id || '';
+      if (!id) return;
+      setPictureId(id);
+      setLayoutOpen(true);
+      const field = img.closest('[contenteditable="true"]');
+      if (field instanceof HTMLElement) richField.current = field;
+      const settings = readPicture(img);
+      if (!pictureIsPositioned(settings.layout, settings.anchor)) return;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const originX = settings.x;
+      const originY = settings.y;
+      const picture = img;
+      let moved = false;
+      function move(moveEvent: PointerEvent) {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < 3) return;
+        moved = true;
+        const x = Math.min(900, Math.max(-80, Math.round(originX + dx)));
+        const y = Math.min(1400, Math.max(-80, Math.round(originY + dy)));
+        writePicture(picture, { ...readPicture(picture), x, y });
+        const rect = picture.getBoundingClientRect();
+        setPictureBox({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+      }
+      function up() {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        if (moved) commitPictureRef.current(picture);
+      }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+    function onPaste(event: ClipboardEvent) {
+      const file = clipboardImage(event.clipboardData);
+      if (!file) return;
+      const target = event.target;
+      if (!(target instanceof Element) || !sheetRef.current?.contains(target)) return;
+      const field = target.closest('[contenteditable="true"]');
+      if (!(field instanceof HTMLElement)) return;
+      event.preventDefault();
+      richField.current = field;
+      const selection = window.getSelection();
+      if (selection?.rangeCount && field.contains(selection.anchorNode)) savedRange.current = selection.getRangeAt(0).cloneRange();
+      void insertPictureRef.current(file);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (!pictureId) return;
+      if (event.key === 'Escape') {
+        const target = event.target;
+        if (target instanceof Element && target.closest('.fixed.inset-0')) return;
+        setPictureId(null);
+        setLayoutOpen(false);
+        return;
+      }
+      if (!layoutOpen || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      const img = findPicture(sheetRef.current, pictureId);
+      const field = img?.closest('[contenteditable="true"]');
+      if (!img || !(field instanceof HTMLElement)) return;
+      event.preventDefault();
+      img.remove();
+      commitPictureRef.current(field);
+      setPictureId(null);
+      setLayoutOpen(false);
+      setPictureBox(null);
+    }
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [layoutOpen, pictureId, readOnly]);
+
+  useLayoutEffect(() => {
+    if (readOnly || !pictureId) {
+      setPictureBox(null);
+      return;
+    }
+    let frame = 0;
+    let tries = 0;
+    function measure() {
+      const img = findPicture(sheetRef.current, pictureId);
+      if (!img) {
+        const pending = sheetRef.current?.innerHTML.includes(`data-id="${pictureId}"`) ?? false;
+        if (!pending) {
+          setPictureId(null);
+          setLayoutOpen(false);
+        }
+        return;
+      }
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) {
+        if (tries < 10) {
+          tries += 1;
+          frame = window.requestAnimationFrame(measure);
+        }
+        return;
+      }
+      const next = { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height) };
+      setPictureBox((current) => (current && current.top === next.top && current.left === next.left && current.width === next.width && current.height === next.height ? current : next));
+    }
+    measure();
+    frame = window.requestAnimationFrame(measure);
+    const img = findPicture(sheetRef.current, pictureId);
+    img?.addEventListener('load', measure);
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      img?.removeEventListener('load', measure);
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [document, pictureId, readOnly]);
+
   function prepareFormat() {
     const selection = window.getSelection();
     const pad = sheetRef.current;
@@ -1121,6 +1323,7 @@ export function QuotationSheet({
       selection.addRange(savedRange.current);
     }
     window.document.execCommand('styleWithCSS', false, 'true');
+    let applied = true;
     if (command === 'heading') {
       if (field && isHeadingLevel(value)) applyHeading(field, value);
     } else if (command === 'fontSize') {
@@ -1129,7 +1332,7 @@ export function QuotationSheet({
       const range = window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0) : savedRange.current;
       if (field) paintFontSize(field, range, pt);
     } else {
-      window.document.execCommand(command, false, value);
+      applied = window.document.execCommand(command, false, value);
     }
     if (command === 'hiliteColor' && value && value !== 'transparent') setHighlight(value);
     if (command === 'foreColor' && value) setFontColor(value);
@@ -1141,6 +1344,7 @@ export function QuotationSheet({
       const anchorElement = anchor instanceof Element ? anchor : anchor?.parentElement ?? null;
       if (anchorElement) setMarks(readMarks(anchorElement));
     }
+    return applied;
   }
 
   function format(command: string, value?: string) {
@@ -1166,6 +1370,120 @@ export function QuotationSheet({
     const columnMarkup = `<col style="width:${share}%" />`.repeat(safeCols);
     applyCommand('insertHTML', `<table class="quotation-insert"><colgroup>${columnMarkup}</colgroup><tbody>${body}</tbody></table>`);
   }
+
+  function commitPicture(node: HTMLElement) {
+    const field = node instanceof HTMLImageElement ? node.closest('[contenteditable="true"]') : node;
+    if (!(field instanceof HTMLElement) || !field.isContentEditable) return;
+    pushHistory();
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    if (!(node instanceof HTMLImageElement) || !node.isConnected) return;
+    const rect = node.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    setPictureBox({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+  }
+
+  function changePicture(patch: { layout?: PictureLayout; anchor?: PictureAnchor; width?: number; x?: number; y?: number }) {
+    const img = findPicture(sheetRef.current, pictureId);
+    if (!img) return;
+    const current = readPicture(img);
+    let layout = patch.layout ?? current.layout;
+    let anchor = patch.anchor ?? current.anchor;
+    if (patch.anchor === 'page' && layout === 'inline') layout = 'square';
+    if (layout === 'inline') anchor = 'text';
+    let x = patch.x ?? current.x;
+    let y = patch.y ?? current.y;
+    const wasPositioned = pictureIsPositioned(current.layout, current.anchor);
+    const nextPositioned = pictureIsPositioned(layout, anchor);
+    if (nextPositioned && !wasPositioned && patch.x == null && patch.y == null) {
+      const field = img.closest('.quotation-rich');
+      if (field instanceof HTMLElement) {
+        const imgRect = img.getBoundingClientRect();
+        const fieldRect = field.getBoundingClientRect();
+        x = Math.min(900, Math.max(-80, Math.round(imgRect.left - fieldRect.left)));
+        y = Math.min(1400, Math.max(-80, Math.round(imgRect.top - fieldRect.top)));
+      }
+    }
+    if (!nextPositioned) {
+      x = 0;
+      y = 0;
+    }
+    const width = patch.width ?? current.width;
+    writePicture(img, { id: current.id, layout, anchor, width: Math.min(420, Math.max(40, width)), x, y });
+    commitPicture(img);
+  }
+
+  function previewPictureWidth(width: number) {
+    const img = findPicture(sheetRef.current, pictureId);
+    if (!img) return;
+    const current = readPicture(img);
+    writePicture(img, { ...current, width: Math.min(420, Math.max(40, Math.round(width))) });
+  }
+
+  function removePicture() {
+    const img = findPicture(sheetRef.current, pictureId);
+    if (!img) return;
+    const field = img.closest('[contenteditable="true"]');
+    img.remove();
+    if (field instanceof HTMLElement) commitPicture(field);
+    setPictureId(null);
+    setLayoutOpen(false);
+    setPictureBox(null);
+  }
+
+  async function insertPicture(file: File) {
+    const field = richField.current;
+    if (!field || !sheetRef.current?.contains(field)) {
+      toast.error('Click in the text, then insert a picture');
+      return;
+    }
+    let source: { src: string; width: number };
+    try {
+      source = await pictureSource(file);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message === 'large' ? 'That picture is too large' : 'Choose a PNG, JPG, WEBP, or GIF picture');
+      return;
+    }
+    if (!savedRange.current) {
+      const range = window.document.createRange();
+      range.selectNodeContents(field);
+      range.collapse(false);
+      savedRange.current = range;
+    }
+    const id = crypto.randomUUID();
+    const applied = applyCommand('insertHTML', pictureMarkup(id, source.src, source.width));
+    if (!applied) {
+      toast.error('Click in the text, then insert a picture');
+      return;
+    }
+    pushHistory();
+    setPictureId(id);
+    setLayoutOpen(true);
+  }
+
+  function resizePicture(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const img = findPicture(sheetRef.current, pictureId);
+    if (!img) return;
+    const picture = img;
+    const startX = event.clientX;
+    const start = readPicture(picture).width;
+    function move(moveEvent: PointerEvent) {
+      writePicture(picture, { ...readPicture(picture), width: Math.min(420, Math.max(40, Math.round(start + (moveEvent.clientX - startX)))) });
+      const rect = picture.getBoundingClientRect();
+      setPictureBox({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+    }
+    function up() {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      commitPicture(picture);
+    }
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  insertPictureRef.current = insertPicture;
+  commitPictureRef.current = commitPicture;
 
   undoEditRef.current = undoEdit;
   redoEditRef.current = redoEdit;
@@ -1226,11 +1544,66 @@ export function QuotationSheet({
     const content = version?.content ?? saved.content;
     pushHistory();
     const previous = new Set(document.blocks.map((block) => block.id));
-    const next = insertCustomSection(document, content, sectionId);
+    const next = insertCustomSection(document, content, sectionId, version?.id);
     update(next);
     setPresetMenu(null);
     const added = next.blocks.find((block) => !previous.has(block.id));
     if (added) window.requestAnimationFrame(() => window.document.getElementById(added.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
+
+  function placedSectionBlocks(sectionId: string) {
+    return document.blocks.filter((block): block is Extract<QuotationBlock, { type: 'blank' }> => block.type === 'blank' && block.sectionId === sectionId);
+  }
+
+  function requestSavedSection(sectionId: string, versionId?: string) {
+    const family = placedSectionBlocks(sectionId);
+    if (!family.length) {
+      insertSavedSection(sectionId, versionId);
+      return;
+    }
+    const exact = family.find((block) => (versionId ? block.versionId === versionId : !block.versionId));
+    const target = exact ?? family[0];
+    setDuplicatePrompt({ sectionId, versionId });
+    setHighlightBlockId(target.id);
+    window.requestAnimationFrame(() => {
+      const list = sectionListRef.current;
+      const row = list?.querySelector<HTMLElement>(`[data-section-anchor="${sectionId}"]`);
+      if (list && row) setPromptTop(Math.max(0, row.getBoundingClientRect().top - list.getBoundingClientRect().top));
+      window.document.getElementById(target.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
+  function cancelDuplicate() {
+    setDuplicatePrompt(null);
+    setHighlightBlockId(null);
+  }
+
+  function confirmDuplicate() {
+    if (!duplicatePrompt) return;
+    const { sectionId, versionId } = duplicatePrompt;
+    setDuplicatePrompt(null);
+    setHighlightBlockId(null);
+    insertSavedSection(sectionId, versionId);
+  }
+
+  async function saveLinkedSection(block: Extract<QuotationBlock, { type: 'blank' }>) {
+    if (!block.sectionId || renameSectionState.isLoading || renameCustomVersionState.isLoading) return;
+    const saved = customQuery.data?.find((entry) => entry.id === block.sectionId);
+    const version = block.versionId ? saved?.content.versions.find((entry) => entry.id === block.versionId) : undefined;
+    const name = (block.versionId ? version?.name : saved?.name) || plainText(block.name).slice(0, 80);
+    const content = {
+      name: block.name,
+      body: block.body,
+      minHeightMm: block.minHeightMm ?? 36,
+      widthPercent: block.widthPercent ?? 100,
+    };
+    try {
+      if (block.versionId) await renameCustomVersion({ id: block.sectionId, versionId: block.versionId, name, content }).unwrap();
+      else await renameSection({ id: block.sectionId, name, content }).unwrap();
+      toast.success('Section saved');
+    } catch (error) {
+      toast.error(mutationMessage(error, 'Could not save the section'));
+    }
   }
 
   async function submitSavedTerms(event: FormEvent) {
@@ -1274,26 +1647,30 @@ export function QuotationSheet({
     }
   }
 
-  async function removeSaved(kind: 'terms' | 'section' | 'scope' | 'specification', id: string, name: string) {
-    const label = kind === 'terms' ? 'terms' : kind === 'scope' ? 'scope' : kind === 'specification' ? 'specification' : 'section';
-    if (!window.confirm(`Delete the saved ${label} “${name}”? Quotations that already use it keep their copy.`)) return;
-    try {
-      if (kind === 'terms') await deleteTerms(id).unwrap();
-      else if (kind === 'scope' || kind === 'specification') await deletePreset({ id, kind }).unwrap();
-      else await deleteSection(id).unwrap();
-      toast.success(`Saved ${label} deleted`);
-    } catch (error) {
-      toast.error(mutationMessage(error, 'Could not delete'));
-    }
+  function askRemoveSaved(kind: 'terms' | 'section' | 'scope' | 'specification', id: string, name: string) {
+    setDeleteTarget({ kind, id, name });
   }
 
-  async function removeVersion(sectionId: string, versionId: string, name: string) {
-    if (!window.confirm(`Delete the version “${name}”? Quotations that already use it keep their copy.`)) return;
+  function askRemoveVersion(sectionId: string, versionId: string, name: string) {
+    setDeleteTarget({ kind: 'version', id: versionId, name, sectionId });
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    const label = target.kind === 'terms' ? 'terms' : target.kind === 'scope' ? 'scope' : target.kind === 'specification' ? 'specification' : target.kind === 'version' ? 'version' : 'section';
+    setDeleting(true);
     try {
-      await deleteCustomVersion({ id: sectionId, versionId }).unwrap();
-      toast.success('Version deleted');
+      if (target.kind === 'terms') await deleteTerms(target.id).unwrap();
+      else if (target.kind === 'scope' || target.kind === 'specification') await deletePreset({ id: target.id, kind: target.kind }).unwrap();
+      else if (target.kind === 'version' && target.sectionId) await deleteCustomVersion({ id: target.sectionId, versionId: target.id }).unwrap();
+      else await deleteSection(target.id).unwrap();
+      setDeleteTarget(null);
+      toast.success(target.kind === 'version' ? 'Version deleted' : `Saved ${label} deleted`);
     } catch (error) {
       toast.error(mutationMessage(error, 'Could not delete'));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1323,20 +1700,22 @@ export function QuotationSheet({
       widthPercent: saveSection.widthPercent,
     };
     try {
-      if (saveSection.sectionId) {
-        await createCustomVersion({ id: saveSection.sectionId, name: saveName, content }).unwrap();
-        toast.success('Version saved');
-      } else {
-        const created = await createCustomSection({ name: saveName, content }).unwrap();
-        const blockId = saveSection.blockId;
-        update({
-          ...document,
-          blocks: document.blocks.map((block) => (
-            block.id === blockId && block.type === 'blank' ? { ...block, sectionId: created.id } : block
-          )),
-        });
-        toast.success('Section saved');
-      }
+      const parentSectionId = saveSection.parentSectionId;
+      const created = parentSectionId
+        ? await createCustomVersion({ id: parentSectionId, name: saveName, content }).unwrap()
+        : await createCustomSection({ name: saveName, content }).unwrap();
+      const blockId = saveSection.blockId;
+      update({
+        ...document,
+        blocks: document.blocks.map((block) => {
+          if (block.id !== blockId || block.type !== 'blank') return block;
+          if (parentSectionId) return { ...block, sectionId: parentSectionId, versionId: created.id };
+          const next = { ...block, sectionId: created.id };
+          delete next.versionId;
+          return next;
+        }),
+      });
+      toast.success(parentSectionId ? 'Version saved' : 'Template saved');
       setSaveSection(null);
       setSaveName('');
     } catch (error) {
@@ -1344,12 +1723,19 @@ export function QuotationSheet({
     }
   }
 
+  const saveSectionParentName = saveSection?.parentSectionId
+    ? customQuery.data?.find((entry) => entry.id === saveSection.parentSectionId)?.name ?? ''
+    : '';
   const pad = padImageUrl(letterheadUrl);
+  const selectedPicture = pictureId ? findPicture(sheetRef.current, pictureId) : null;
+  const pictureSettings = selectedPicture ? readPicture(selectedPicture) : null;
 
   return (
     <div ref={sheetRef} className="quotation-sheet flex items-start gap-4">
       {readOnly ? null : (
-        <aside className="quotation-edit-only sticky top-0 z-20 max-h-[calc(100dvh-5rem)] w-56 shrink-0 space-y-3 self-start overflow-y-auto">
+        <aside className="quotation-edit-only sticky top-0 z-20 w-56 shrink-0 self-start">
+          <div ref={sectionListRef} className="relative">
+          <div className="max-h-[calc(100dvh-5rem)] space-y-3 overflow-y-auto">
           <div className="rounded-lg border border-border bg-background p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add a section</p>
             <p className="mt-1 text-[11px] leading-snug text-muted-foreground">A price option goes under the item list. Other sections stay above the closing.</p>
@@ -1377,7 +1763,7 @@ export function QuotationSheet({
                       onToggle={() => setPresetMenu((open) => (open === choice.type ? null : choice.type))}
                       onChoose={choice.type === 'terms' ? chooseSavedTerms : choice.type === 'scope' ? chooseSavedScope : chooseSavedSpecification}
                       onRename={(id, name) => openRename(choice.type, id, name)}
-                      onDelete={(id, name) => void removeSaved(choice.type, id, name)}
+                      onDelete={(id, name) => askRemoveSaved(choice.type, id, name)}
                       onAddBlank={choice.type !== 'terms' && !used ? () => {
                         addSection(choice.type);
                         setPresetMenu(null);
@@ -1390,21 +1776,23 @@ export function QuotationSheet({
                     <div key={choice.type} className="flex flex-col gap-2">
                       {(customQuery.data ?? []).map((item) => {
                         const versions = item.content.versions ?? [];
+                        const familyOnPage = document.blocks.some((block) => block.type === 'blank' && block.sectionId === item.id);
+                        const parentOnPage = document.blocks.some((block) => block.type === 'blank' && block.sectionId === item.id && !block.versionId);
                         if (versions.length === 0) {
                           return (
-                            <div key={item.id} className="flex items-stretch gap-1">
+                            <div key={item.id} data-section-anchor={item.id} className="flex items-stretch gap-1">
                               <button
                                 type="button"
-                                onClick={() => insertSavedSection(item.id)}
-                                className="min-w-0 flex-1 cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
+                                onClick={() => requestSavedSection(item.id)}
+                                className={`min-w-0 flex-1 cursor-pointer rounded-md border px-3 py-2 text-left ${parentOnPage ? 'quotation-section-used' : 'border-border bg-background hover:bg-muted/50'}`}
                               >
-                                <span className="block text-sm font-medium">+ {item.name}</span>
-                                <span className="block text-[11px] text-muted-foreground">Saved section</span>
+                                <span className="block text-sm font-medium">{parentOnPage ? item.name : `+ ${item.name}`}</span>
+                                <span className="block text-[11px] text-muted-foreground">{parentOnPage ? 'On the page' : 'Saved section'}</span>
                               </button>
                               <button type="button" aria-label={`Rename ${item.name}`} title="Rename" className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground" onClick={() => openRename('section', item.id, item.name)}>
                                 <Pencil className="size-3.5" />
                               </button>
-                              <button type="button" aria-label={`Delete ${item.name}`} title="Delete" className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground" onClick={() => void removeSaved('section', item.id, item.name)}>
+                              <button type="button" aria-label={`Delete ${item.name}`} title="Delete" className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground" onClick={() => askRemoveSaved('section', item.id, item.name)}>
                                 <Trash2 className="size-3.5" />
                               </button>
                             </div>
@@ -1415,19 +1803,27 @@ export function QuotationSheet({
                             key={item.id}
                             label={item.name}
                             hint="Saved section"
-                            used={false}
+                            anchorId={item.id}
+                            used={familyOnPage}
                             open={presetMenu === item.id}
-                            items={[{ id: item.id, label: item.name }, ...versions.map((version) => ({ id: version.id, label: version.name }))]}
+                            items={[
+                              { id: item.id, label: item.name, used: parentOnPage },
+                              ...versions.map((version) => ({
+                                id: version.id,
+                                label: version.name,
+                                used: document.blocks.some((block) => block.type === 'blank' && block.sectionId === item.id && block.versionId === version.id),
+                              })),
+                            ]}
                             emptyText="No saved versions yet"
                             onToggle={() => setPresetMenu((open) => (open === item.id ? null : item.id))}
-                            onChoose={(choiceId) => insertSavedSection(item.id, choiceId === item.id ? undefined : choiceId)}
+                            onChoose={(choiceId) => requestSavedSection(item.id, choiceId === item.id ? undefined : choiceId)}
                             onRename={(choiceId, name) => {
                               if (choiceId === item.id) openRename('section', item.id, name);
                               else openRename('version', choiceId, name, item.id);
                             }}
                             onDelete={(choiceId, name) => {
-                              if (choiceId === item.id) void removeSaved('section', item.id, name);
-                              else void removeVersion(item.id, choiceId, name);
+                              if (choiceId === item.id) askRemoveSaved('section', item.id, name);
+                              else askRemoveVersion(item.id, choiceId, name);
                             }}
                           />
                         );
@@ -1448,7 +1844,7 @@ export function QuotationSheet({
                     key={choice.type}
                     type="button"
                     onClick={() => addSection(choice.type)}
-                    className={`cursor-pointer rounded-md border px-3 py-2 text-left ${used ? 'border-border bg-muted/60 text-muted-foreground' : 'border-border bg-background hover:bg-muted/50'}`}
+                    className={`cursor-pointer rounded-md border px-3 py-2 text-left ${used ? 'quotation-section-used' : 'border-border bg-background hover:bg-muted/50'}`}
                   >
                     <span className="block text-sm font-medium">{used ? choice.label : `+ ${choice.label}`}</span>
                     <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : choice.hint}</span>
@@ -1457,6 +1853,17 @@ export function QuotationSheet({
               })}
             </div>
           </div>
+          </div>
+          {duplicatePrompt ? (
+            <div className="absolute left-full z-40 ml-2 w-60 rounded-lg border border-border bg-background p-3 shadow-lg" style={{ top: promptTop }}>
+              <p className="text-sm">This section is already on the page. Add it again?</p>
+              <div className="mt-3 flex justify-end gap-2">
+                <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={cancelDuplicate}>Cancel</button>
+                <button type="button" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" onClick={confirmDuplicate}>Add</button>
+              </div>
+            </div>
+          ) : null}
+          </div>
         </aside>
       )}
 
@@ -1464,7 +1871,7 @@ export function QuotationSheet({
         {readOnly ? null : (
           <div className="quotation-format quotation-edit-only sticky top-0 z-30 mb-3 flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 shadow-sm">
             <span className="mr-1 text-xs font-semibold uppercase tracking-wide">Format</span>
-            <FormatControls variant="full" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} tableReady={tableReady} onInsertTable={insertTable} />
+            <FormatControls variant="full" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} tableReady={tableReady} onInsertTable={insertTable} pictureReady={pictureReady} onInsertPicture={(file) => void insertPicture(file)} />
           </div>
         )}
         {bubble && !readOnly ? (
@@ -1561,7 +1968,11 @@ export function QuotationSheet({
                         setSaveError('');
                         setSavePreset({ kind: 'specification', rows: block.rows.map((row) => ({ label: row.label, value: row.value })) });
                       } : undefined}
-                      onSaveSection={block.type === 'blank' && !readOnly ? () => {
+                      onSaveSection={block.type === 'blank' && block.sectionId && !readOnly ? () => {
+                        if (block.type !== 'blank') return;
+                        void saveLinkedSection(block);
+                      } : undefined}
+                      onSaveSectionAsNew={block.type === 'blank' && !readOnly ? () => {
                         if (block.type !== 'blank') return;
                         setSaveTerms(null);
                         setSavePreset(null);
@@ -1569,13 +1980,14 @@ export function QuotationSheet({
                         setSaveName(plainText(block.name).slice(0, 80));
                         setSaveSection({
                           blockId: block.id,
-                          sectionId: block.sectionId,
                           name: block.name,
                           body: block.body,
                           minHeightMm: block.minHeightMm ?? 36,
                           widthPercent: block.widthPercent ?? 100,
+                          parentSectionId: block.sectionId ?? '',
                         });
                       } : undefined}
+                      spotlight={highlightBlockId === block.id}
                       onChange={(next) => patchBlock(block.id, next)}
                       onMove={(direction) => update(moveBlock(document, block.id, direction))}
                       onRemove={() => {
@@ -1591,6 +2003,26 @@ export function QuotationSheet({
           ))}
         </div>
       </div>
+      <Modal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        title={deleteTarget ? `Delete the saved ${deleteTarget.kind === 'version' ? 'version' : deleteTarget.kind === 'terms' ? 'terms' : deleteTarget.kind === 'scope' ? 'scope' : deleteTarget.kind === 'specification' ? 'specification' : 'section'} “${deleteTarget.name}”?` : 'Delete'}
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" size="sm" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting ? <Spinner size="sm" /> : 'Delete'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">Quotations that already use it keep their copy.</p>
+      </Modal>
       {renameTarget ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setRenameTarget(null)}>
           <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitRename(event)}>
@@ -1653,7 +2085,8 @@ export function QuotationSheet({
       {saveSection ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onMouseDown={() => setSaveSection(null)}>
           <form className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submitSavedSection(event)}>
-            <p className="text-sm font-semibold">{saveSection.sectionId ? 'Save a version as' : 'Save this section as'}</p>
+            <p className="text-sm font-semibold">Save as new template</p>
+            {saveSectionParentName ? <p className="mt-1 text-xs text-muted-foreground">New version under {saveSectionParentName}</p> : null}
             <input
               value={saveName}
               onChange={(event) => setSaveName(event.target.value)}
@@ -1669,6 +2102,30 @@ export function QuotationSheet({
             </div>
           </form>
         </div>
+      ) : null}
+      {pictureSettings && pictureBox && !readOnly ? (
+        <PictureChrome
+          box={pictureBox}
+          settings={pictureSettings}
+          layoutOpen={layoutOpen}
+          more={pictureMore}
+          onToggle={() => setLayoutOpen((open) => !open)}
+          onClose={() => setLayoutOpen(false)}
+          onMore={() => setPictureMore(true)}
+          onLayout={(layout) => changePicture({ layout })}
+          onAnchor={(anchor) => changePicture({ anchor })}
+          onWidth={previewPictureWidth}
+          onCommitWidth={(width) => {
+            const img = findPicture(sheetRef.current, pictureId);
+            if (!img) return;
+            const current = readPicture(img);
+            writePicture(img, { ...current, width: Math.min(420, Math.max(40, Math.round(width))) });
+            commitPicture(img);
+          }}
+          onPosition={(x, y) => changePicture({ x, y })}
+          onResize={resizePicture}
+          onRemove={removePicture}
+        />
       ) : null}
     </div>
   );
@@ -1753,6 +2210,8 @@ function BlockView({
   onSaveScope,
   onSaveSpecification,
   onSaveSection,
+  onSaveSectionAsNew,
+  spotlight = false,
   onChange,
   onMove,
   onRemove,
@@ -1764,6 +2223,8 @@ function BlockView({
   onSaveScope?: () => void;
   onSaveSpecification?: () => void;
   onSaveSection?: () => void;
+  onSaveSectionAsNew?: () => void;
+  spotlight?: boolean;
   onChange: (block: QuotationBlock, recordHistory?: boolean) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -1945,12 +2406,19 @@ function BlockView({
 
   if (block.type === 'blank') {
     return (
-      <div className={armed ? 'quotation-section-hot' : ''}>
+      <div className={armed || spotlight ? 'quotation-section-hot' : ''}>
         <div className={readOnly ? '' : 'quotation-draft-box rounded-md border border-dashed border-slate-400 p-2'} style={{ width: `${block.widthPercent ?? 100}%` }}>
           <div className="flex items-start justify-between gap-2">
             <RichText value={block.name} readOnly={readOnly} className="min-w-0 flex-1 text-[11pt] font-semibold" onChange={(name) => onChange({ ...block, name })} />
-            {onSaveSection ? (
-              <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSection}>Save</button>
+            {onSaveSection || onSaveSectionAsNew ? (
+              <div className="quotation-edit-only flex shrink-0 gap-1">
+                {onSaveSection ? (
+                  <button type="button" className="rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSection}>Save</button>
+                ) : null}
+                {onSaveSectionAsNew ? (
+                  <button type="button" className="rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSectionAsNew}>Save as new template</button>
+                ) : null}
+              </div>
             ) : null}
           </div>
           <RichText

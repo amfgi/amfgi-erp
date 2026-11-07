@@ -173,6 +173,8 @@ export {
   useForwardSalesToQuotationMutation,
   useGetSalesWorkLogQuery,
   useReviseSalesQuotationMutation,
+  useCheckQuotationSerialQuery,
+  useChangeQuotationSerialMutation,
   useReceivePurchaseOrderMutation,
   useSetSalesClosureMutation,
   useCreateJobFromSalesMutation,

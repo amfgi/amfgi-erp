@@ -41,7 +41,7 @@ function sectionBody(value: unknown): Omit<CustomSectionContent, 'versions'> | n
   const record = value as { name?: unknown; body?: unknown; minHeightMm?: unknown; widthPercent?: unknown };
   const name = sanitizeRichText(typeof record.name === 'string' ? record.name : '').slice(0, 500);
   const body = sanitizeRichText(typeof record.body === 'string' ? record.body : '');
-  if (!plainText(name) && !plainText(body)) return null;
+  if (!plainText(name) && !plainText(body) && !/<img\b/i.test(`${name}${body}`)) return null;
   return {
     name,
     body,
@@ -160,6 +160,38 @@ export async function renameCustomSection(companyId: string, id: string, name: s
   }
 }
 
+export async function updateCustomSection(companyId: string, id: string, name: string, payload: unknown) {
+  const { trimmed, nameKey } = cleanName(name);
+  const nextBody = sectionBody(payload);
+  if (!nextBody) throw new SalesError('Write a heading or some text before saving');
+  const current = await loadCustomSection(companyId, id);
+  const clash = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "QuotationCustomSection"
+    WHERE "companyId" = ${companyId} AND "nameKey" = ${nameKey} AND "id" <> ${id}
+    LIMIT 1
+  `;
+  if (clash.length || current.content.versions.some((version) => customSectionNameKey(version.name) === nameKey)) {
+    throw new SalesError('This name is already saved');
+  }
+  const content = { ...nextBody, versions: current.content.versions };
+  try {
+    const updated = await prisma.$executeRaw`
+      UPDATE "QuotationCustomSection"
+      SET "name" = ${trimmed},
+          "nameKey" = ${nameKey},
+          "content" = CAST(${JSON.stringify(content)} AS jsonb)
+      WHERE "id" = ${id} AND "companyId" = ${companyId}
+    `;
+    if (Number(updated) < 1) throw new SalesError('Saved section not found', 404);
+    return { id, name: trimmed };
+  } catch (error) {
+    if (error instanceof SalesError) throw error;
+    if (alreadySaved(error)) throw new SalesError('This name is already saved');
+    throw error;
+  }
+}
+
 async function loadCustomSection(companyId: string, id: string) {
   const rows = await prisma.$queryRaw<Array<{ id: string; name: string; content: unknown }>>`
     SELECT "id", "name", "content"
@@ -210,6 +242,25 @@ export async function renameCustomSectionVersion(companyId: string, sectionId: s
   await writeCustomSectionContent(companyId, sectionId, {
     ...current.content,
     versions: current.content.versions.map((entry) => (entry.id === versionId ? { ...entry, name: trimmed } : entry)),
+  });
+  return { id: versionId, name: trimmed };
+}
+
+export async function updateCustomSectionVersion(companyId: string, sectionId: string, versionId: string, name: string, payload: unknown) {
+  const { trimmed, nameKey } = cleanName(name);
+  const versionContent = sectionBody(payload);
+  if (!versionContent) throw new SalesError('Write a heading or some text before saving');
+  const current = await loadCustomSection(companyId, sectionId);
+  const version = current.content.versions.find((entry) => entry.id === versionId);
+  if (!version) throw new SalesError('Saved version not found', 404);
+  const taken = customSectionNameKey(current.name) === nameKey
+    || current.content.versions.some((entry) => entry.id !== versionId && customSectionNameKey(entry.name) === nameKey);
+  if (taken) throw new SalesError('This name is already saved');
+  await writeCustomSectionContent(companyId, sectionId, {
+    ...current.content,
+    versions: current.content.versions.map((entry) => (
+      entry.id === versionId ? { ...entry, name: trimmed, content: versionContent } : entry
+    )),
   });
   return { id: versionId, name: trimmed };
 }

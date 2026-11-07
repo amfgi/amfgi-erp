@@ -213,6 +213,19 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery'],
     }),
+    checkQuotationSerial: builder.query<{ number: string; available: boolean }, { id: string; serial: string }>({
+      query: ({ id, serial }) => `/sales/queries/${id}/quotation-number?serial=${encodeURIComponent(serial)}`,
+      transformResponse: (response: { data: { number: string; available: boolean } }) => response.data,
+    }),
+    changeQuotationSerial: builder.mutation<SalesRecord, { id: string; serial: string }>({
+      query: ({ id, serial }) => ({
+        url: `/sales/queries/${id}/quotation-number`,
+        method: 'POST',
+        body: { serial },
+      }),
+      transformResponse: (response: { data: SalesRecord }) => response.data,
+      invalidatesTags: ['SalesQuery'],
+    }),
     receivePurchaseOrder: builder.mutation<SalesRecord, { id: string; body: Record<string, unknown> }>({
       query: ({ id, body }) => ({ url: `/sales/queries/${id}/po-received`, method: 'POST', body }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
@@ -257,8 +270,8 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: { id: string; name: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
     }),
-    updateQuotationCustomSection: builder.mutation<{ id: string; name: string }, { id: string; name: string }>({
-      query: ({ id, name }) => ({ url: `/sales/custom-sections/${id}`, method: 'PATCH', body: { name } }),
+    updateQuotationCustomSection: builder.mutation<{ id: string; name: string }, { id: string; name: string; content?: CustomSectionBody }>({
+      query: ({ id, name, content }) => ({ url: `/sales/custom-sections/${id}`, method: 'PATCH', body: content ? { name, content } : { name } }),
       transformResponse: (response: { data: { id: string; name: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
     }),
@@ -272,8 +285,8 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: { id: string; name: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
     }),
-    updateQuotationCustomSectionVersion: builder.mutation<{ id: string; name: string }, { id: string; versionId: string; name: string }>({
-      query: ({ id, versionId, name }) => ({ url: `/sales/custom-sections/${id}/versions`, method: 'PATCH', body: { versionId, name } }),
+    updateQuotationCustomSectionVersion: builder.mutation<{ id: string; name: string }, { id: string; versionId: string; name: string; content?: CustomSectionBody }>({
+      query: ({ id, versionId, name, content }) => ({ url: `/sales/custom-sections/${id}/versions`, method: 'PATCH', body: content ? { versionId, name, content } : { versionId, name } }),
       transformResponse: (response: { data: { id: string; name: string } }) => response.data,
       invalidatesTags: ['QuotationCustomSection'],
     }),
@@ -327,6 +340,8 @@ export const {
   useUpdateSalesQueryMutation,
   useForwardSalesToQuotationMutation,
   useReviseSalesQuotationMutation,
+  useCheckQuotationSerialQuery,
+  useChangeQuotationSerialMutation,
   useReceivePurchaseOrderMutation,
   useSetSalesClosureMutation,
   useCreateJobFromSalesMutation,

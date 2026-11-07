@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   FORWARDED: 'Forwarded to quotation',
   EDITED_QUOTATION: 'Edited the quotation',
   REVISED: 'Issued a revision',
+  NUMBER_CHANGED: 'Changed the quotation number',
   PO_RECEIVED: 'Received the purchase order',
   SAVED_PO: 'Saved the purchase order',
   JOB_CREATED: 'Created the job',

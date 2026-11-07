@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import FileInput from '@/components/ui/FileInput';
 import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/Badge';
@@ -1810,10 +1811,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                       onPortalDownloadChange={setEditPortalDownloadEnabled}
                       labelClass={labelClass}
                     />
-                    <label className="block sm:col-span-2">
+                    <div className="block sm:col-span-2">
                       <span className={labelClass}>Replace file (PDF / JPEG / PNG / WebP)</span>
-                      <input name="documentEditFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
-                    </label>
+                      <FileInput name="documentEditFile" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
+                    </div>
                     </div>
                     <div className="flex justify-end gap-2">
                       <Button type="button" variant="ghost" disabled={isBusy} onClick={() => setEditingDoc(null)}>
@@ -1915,10 +1916,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                       onPortalDownloadChange={setAddPortalDownloadEnabled}
                       labelClass={labelClass}
                     />
-                    <label className="block sm:col-span-2">
+                    <div className="block sm:col-span-2">
                       <span className={labelClass}>Upload scan (PDF / JPEG / PNG / WebP)</span>
-                      <input name="documentFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
-                    </label>
+                      <FileInput name="documentFile" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
+                    </div>
                     </div>
                     )}
                     <div className="flex justify-end gap-2">

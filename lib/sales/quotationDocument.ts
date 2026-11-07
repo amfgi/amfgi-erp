@@ -27,7 +27,7 @@ export type QuotationBlock =
   | { id: string; type: 'terms'; name: string; rows: LabelRow[] }
   | { id: string; type: 'scope'; name: string; body: RichText }
   | { id: string; type: 'specification'; name: string; rows: LabelRow[] }
-  | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number; sectionId?: string }
+  | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number; sectionId?: string; versionId?: string }
   | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rows: PriceRow[] }
   | { id: string; type: 'closing'; name: string; body: RichText }
   | { id: string; type: 'signatures'; name: string; left: SignatureBlock; right: SignatureBlock };
@@ -81,12 +81,47 @@ export function plainText(value: string | null | undefined) {
     .trim();
 }
 
+export function quotationIncludesLine(projectDescription: string | null | undefined) {
+  const description = plainText(projectDescription).replace(/[.\s]+$/g, '').trim();
+  if (!description) return '';
+  return `THIS QUOTATION INCLUDES ${description}.`.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+const RICH_TEXT_TAGS = 'b|strong|i|em|u|span|font|br|p|div|h1|h2|h3|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col|img';
+const PICTURE_LAYOUTS = new Set(['inline', 'square', 'tight', 'through', 'top-bottom', 'behind', 'front']);
+
+function pictureNumber(tag: string, name: string, fallback: number, min: number, max: number) {
+  const raw = new RegExp(`\\s${name}\\s*=\\s*"(-?\\d+)"`, 'i').exec(tag)?.[1];
+  const number = Number(raw);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+function sanitizePictureTag(tag: string) {
+  const srcMatch = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+  const src = (srcMatch?.[1] ?? srcMatch?.[2] ?? '').replace(/\s/g, '');
+  if (!/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src) || src.length > 1_500_000) return '';
+  const layoutRaw = /\sdata-layout\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? 'inline';
+  const layout = PICTURE_LAYOUTS.has(layoutRaw) ? layoutRaw : 'inline';
+  const anchorRaw = /\sdata-anchor\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? 'text';
+  const anchor = layout === 'inline' || anchorRaw !== 'page' ? 'text' : 'page';
+  const width = pictureNumber(tag, 'data-width', 140, 40, 420);
+  const x = pictureNumber(tag, 'data-x', 0, -80, 900);
+  const y = pictureNumber(tag, 'data-y', 0, -80, 1400);
+  const idRaw = /\sdata-id\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? '';
+  const id = /^[A-Za-z0-9-]{8,80}$/.test(idRaw) ? idRaw : `pic${Math.random().toString(36).slice(2, 12)}`;
+  const positioned = anchor === 'page' || layout === 'behind' || layout === 'front';
+  const style = positioned ? `width:${width}px;left:${x}px;top:${y}px` : `width:${width}px`;
+  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="${layout}" data-anchor="${anchor}" data-width="${width}" data-x="${x}" data-y="${y}" alt="" draggable="false" contenteditable="false" style="${style}" />`;
+}
+
 export function sanitizeRichText(value: string | null | undefined) {
   return String(value ?? '')
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
     .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/javascript:/gi, '')
-    .replace(/<(?!\/?(b|strong|i|em|u|span|font|br|p|div|h1|h2|h3|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col)\b)[^>]*>/gi, '');
+    .replace(new RegExp(`<(?!\\/?(?:${RICH_TEXT_TAGS})\\b)[^>]*>`, 'gi'), '')
+    .replace(/<img\b[^>]*>/gi, (tag) => sanitizePictureTag(tag));
 }
 
 function moneyWordsUnderThousand(value: number): string {
@@ -247,7 +282,7 @@ export function emptyQuotationDocument(input?: {
     quoteTitle: input?.quoteTitle?.trim() || '',
     totalCostWords: '',
     project: input?.project?.trim() || '',
-    includesLine: 'THIS QUOTATION INCLUDES SUPPLY AND INSTALLATION OF GRP PANEL TYPE WATER TANKS.',
+    includesLine: quotationIncludesLine(input?.quoteTitle),
     blocks: [defaultOption(), defaultTerms(), defaultScope(), defaultSpecification(), defaultClosing(), defaultSignatures()],
   };
 }
@@ -371,6 +406,8 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
           ? {
               minHeightMm: clampNumber(block.minHeightMm, 24, 160, 36),
               widthPercent: clampNumber(block.widthPercent, 45, 100, 100),
+              ...(block.sectionId ? { sectionId: block.sectionId.slice(0, 80) } : { sectionId: undefined }),
+              ...(block.versionId ? { versionId: block.versionId.slice(0, 80) } : { versionId: undefined }),
             }
           : {}),
       };
@@ -459,6 +496,7 @@ export function insertCustomSection(
   document: QuotationDocument,
   content: { name: string; body: string; minHeightMm?: number; widthPercent?: number },
   sectionId?: string,
+  versionId?: string,
 ): QuotationDocument {
   return insertBlock(document, {
     id: id(),
@@ -468,6 +506,7 @@ export function insertCustomSection(
     minHeightMm: content.minHeightMm ?? 36,
     widthPercent: content.widthPercent ?? 100,
     ...(sectionId ? { sectionId } : {}),
+    ...(versionId ? { versionId } : {}),
   });
 }
 
@@ -557,8 +596,9 @@ type HydrateSource = {
 };
 
 export function documentFromRecord(source: HydrateSource): QuotationDocument {
+  const includesLine = quotationIncludesLine(source.projectDescription);
   const saved = readQuotationDocument(source.quotationDocument);
-  if (saved) return saved;
+  if (saved) return includesLine ? { ...saved, includesLine } : saved;
   const base = emptyQuotationDocument({
     customerName: source.customer?.name || source.customerName,
     phone: source.customer?.phone,

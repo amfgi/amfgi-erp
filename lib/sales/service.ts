@@ -21,6 +21,9 @@ import {
   formatQuotationNumber,
   phoneDigits,
   queryNumberKey,
+  quotationSerialNumber,
+  relabelQuotationRevision,
+  splitQuotationSerial,
 } from './format';
 
 export class SalesError extends Error {
@@ -723,6 +726,115 @@ export async function reviseQuotation(params: {
       detail: formatQuotationNumber(current.quotationNumber, next),
     });
   });
+  return getSalesRecord(companyId, id, access);
+}
+
+function quotationSerialTarget(base: string, serial: string) {
+  const parts = splitQuotationSerial(base);
+  if (!parts) throw new SalesError('This quotation number cannot be changed');
+  const number = quotationSerialNumber(parts.prefix, serial.trim());
+  if (!number) throw new SalesError('Enter a serial number');
+  return number;
+}
+
+async function loadQuotationBase(companyId: string, id: string) {
+  const current = await prisma.salesQuery.findFirst({
+    where: { id, companyId },
+    select: { id: true, quotationNumber: true, stage: true },
+  });
+  if (!current?.quotationNumber || current.stage === 'QUERY') {
+    throw new SalesError('This record has no quotation number', 404);
+  }
+  return current;
+}
+
+export async function checkQuotationSerial(params: {
+  companyId: string;
+  id: string;
+  access: SalesAccess;
+  serial: string;
+}) {
+  if (!params.access.quotationManage) throw new SalesError('Forbidden', 403);
+  const current = await loadQuotationBase(params.companyId, params.id);
+  const number = quotationSerialTarget(current.quotationNumber!, params.serial);
+  if (queryNumberKey(number) === queryNumberKey(current.quotationNumber!)) {
+    return { number, available: true };
+  }
+  const taken = await prisma.salesQuery.findFirst({
+    where: {
+      companyId: params.companyId,
+      quotationNumberKey: queryNumberKey(number),
+      NOT: { id: current.id },
+    },
+    select: { id: true },
+  });
+  return { number, available: !taken };
+}
+
+export async function changeQuotationSerial(params: {
+  companyId: string;
+  id: string;
+  access: SalesAccess;
+  actorId: string;
+  serial: string;
+}) {
+  const { companyId, id, access } = params;
+  if (!access.quotationManage) throw new SalesError('Forbidden', 403);
+  const current = await loadQuotationBase(companyId, id);
+  const number = quotationSerialTarget(current.quotationNumber!, params.serial);
+  if (queryNumberKey(number) === queryNumberKey(current.quotationNumber!)) {
+    return getSalesRecord(companyId, id, access);
+  }
+  try {
+    await prisma.$transaction(async (tx) => {
+      const fresh = await tx.salesQuery.findFirst({
+        where: { id, companyId },
+        select: { quotationNumber: true },
+      });
+      if (!fresh?.quotationNumber) throw new SalesError('This record has no quotation number', 404);
+      const next = quotationSerialTarget(fresh.quotationNumber, params.serial);
+      if (queryNumberKey(next) === queryNumberKey(fresh.quotationNumber)) return;
+      const taken = await tx.salesQuery.findFirst({
+        where: {
+          companyId,
+          quotationNumberKey: queryNumberKey(next),
+          NOT: { id },
+        },
+        select: { id: true },
+      });
+      if (taken) throw new SalesError('Not available, try another', 409);
+      await tx.salesQuery.update({
+        where: { id },
+        data: {
+          quotationNumber: next,
+          quotationNumberKey: queryNumberKey(next),
+        },
+      });
+      const revisions = await tx.salesQuotationRevision.findMany({
+        where: { companyId, salesQueryId: id },
+        select: { id: true, quotationLabel: true },
+      });
+      for (const revision of revisions) {
+        const quotationLabel = relabelQuotationRevision(revision.quotationLabel, fresh.quotationNumber, next);
+        if (quotationLabel === revision.quotationLabel) continue;
+        if (quotationLabel.length > 120) throw new SalesError('That serial is too long');
+        await tx.salesQuotationRevision.update({
+          where: { id: revision.id },
+          data: { quotationLabel },
+        });
+      }
+      await writeSalesWorkLog(tx, {
+        companyId,
+        salesQueryId: id,
+        actorId: params.actorId,
+        action: 'NUMBER_CHANGED',
+        detail: `${fresh.quotationNumber} → ${next}`,
+      });
+    });
+  } catch (error) {
+    if (isUniqueConflict(error)) throw new SalesError('Not available, try another', 409);
+    throw error;
+  }
   return getSalesRecord(companyId, id, access);
 }
 

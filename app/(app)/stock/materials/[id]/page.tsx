@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { cn } from '@/lib/utils';
+import FileInput from '@/components/ui/FileInput';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import toast from 'react-hot-toast';
@@ -1211,9 +1212,9 @@ function MaterialEditor({
                   <option value="photo-gallery">Photo Gallery</option>
                   <option value="document">Documents</option>
                 </select>
-                <input
-                  type="file"
+                <FileInput
                   accept={uploadType === 'document' ? '.pdf,.doc,.docx,.xls,.xlsx,.txt,image/*' : 'image/jpeg,image/png,image/webp'}
+                  selectedNames={selectedUploadFile ? [selectedUploadFile.name] : []}
                   onChange={(e) => setSelectedUploadFile(e.target.files?.[0] ?? null)}
                   className={inputClassName()}
                 />

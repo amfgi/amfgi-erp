@@ -1,20 +1,23 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Download } from 'lucide-react';
+import { Download, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import FileInput from '@/components/ui/FileInput';
 import { Button } from '@/components/ui/shadcn/button';
 import Spinner from '@/components/ui/Spinner';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Modal from '@/components/ui/Modal';
 import { acceptedOptionId, QuotationSheet } from '@/components/sales/QuotationSheet';
+import QuotationSerialModal from '@/components/sales/QuotationSerialModal';
 import { salesAccess } from '@/lib/sales/access';
-import { dateInputValue } from '@/lib/sales/format';
-import { downloadQuotationPdf } from '@/lib/sales/downloadQuotationPdf';
-import { documentFromRecord, optionBlocks, plainText, quotationFileName, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
+import { dateInputValue, quotationBaseFromDisplay, splitQuotationSerial } from '@/lib/sales/format';
+import { downloadQuotationPdf, quotationPdfBlob } from '@/lib/sales/downloadQuotationPdf';
+import { documentFromRecord, optionBlocks, optionTotal, plainText, quotationFileName, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
 import {
   useCreateJobFromSalesMutation,
   useCreateSalesQueryMutation,
@@ -34,6 +37,48 @@ import type { SalesAttachment, SalesRevision } from '@/store/api/endpoints/sales
 const INPUT_CLASS =
   'mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
 const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
+
+function revisionPrintedDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+function revisionDate(revision: SalesRevision) {
+  const printed = readQuotationDocument(revision.snapshot.quotationDocument)?.date;
+  return revisionPrintedDate(printed || dateInputValue(revision.createdAt));
+}
+
+function revisionGrandTotal(revision: SalesRevision) {
+  const document = readQuotationDocument(revision.snapshot.quotationDocument);
+  const block = document ? optionBlocks(document)[0] : undefined;
+  if (block) return optionTotal(block);
+  const option = revision.snapshot.options[0];
+  if (!option) return 0;
+  return option.lines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0);
+}
+
+function revisionMoney(value: number) {
+  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function whenRevisionReady(root: HTMLElement) {
+  const start = Date.now();
+  let last = '';
+  let stable = 0;
+  while (Date.now() - start < 2500) {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    const pages = [...root.querySelectorAll('.quotation-page')].map((page) => page.textContent?.length ?? 0).join(',');
+    const imagesReady = [...root.querySelectorAll('img')].every((img) => img.complete);
+    if (pages && pages === last && imagesReady) {
+      stable += 1;
+      if (stable >= 2) return;
+    } else {
+      stable = 0;
+      last = pages;
+    }
+  }
+}
 
 function SalesWorkLogDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const workLogQuery = useGetSalesWorkLogQuery(id);
@@ -125,7 +170,7 @@ function Section({
   allowSticky = false,
 }: {
   eyebrow: string;
-  title: string;
+  title: React.ReactNode;
   description?: string;
   children: React.ReactNode;
   allowSticky?: boolean;
@@ -177,11 +222,17 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const [startDate, setStartDate] = useState('');
   const [acceptedIndex, setAcceptedIndex] = useState<number | null>(null);
   const acceptedForRecord = useRef<string | null>(null);
+  const [serialOpen, setSerialOpen] = useState(false);
+  const [reviseOpen, setReviseOpen] = useState(false);
   const [poDate, setPoDate] = useState('');
   const [poValue, setPoValue] = useState('');
   const [budgetDetails, setBudgetDetails] = useState('');
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState('');
-  const [viewRevision, setViewRevision] = useState<SalesRevision | null>(null);
+  const [viewChoice, setViewChoice] = useState<SalesRevision | null>(null);
+  const [documentRevision, setDocumentRevision] = useState<SalesRevision | null>(null);
+  const [pdfRevision, setPdfRevision] = useState<SalesRevision | null>(null);
+  const [pdfReadyUrl, setPdfReadyUrl] = useState<string | null>(null);
+  const [portalReady, setPortalReady] = useState(false);
   const [quotationDocument, setQuotationDocument] = useState<QuotationDocument | null>(null);
   const [quotationSaveState, setQuotationSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -193,6 +244,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const quotationSaveFlight = useRef<Promise<void> | null>(null);
   const quotationLatest = useRef({ startDate: '', document: null as QuotationDocument | null });
   const sheetRef = useRef<HTMLDivElement>(null);
+  const pdfRootRef = useRef<HTMLDivElement>(null);
+  const pdfRun = useRef(0);
   const [closure, setClosureValue] = useState<'LOST' | 'CANCELLED'>('LOST');
   const [closureReason, setClosureReason] = useState('');
   const [clientFiles, setClientFiles] = useState<File[]>([]);
@@ -369,14 +422,97 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     }
   }
 
+  function openRevisionPdf(revision: SalesRevision) {
+    if (pdfRevision) return;
+    const savedDocument = readQuotationDocument(revision.snapshot.quotationDocument);
+    if (!savedDocument) {
+      toast.error('This version has no saved document');
+      return;
+    }
+    if (pdfReadyUrl) {
+      URL.revokeObjectURL(pdfReadyUrl);
+      setPdfReadyUrl(null);
+    }
+    setViewChoice(null);
+    setPdfRevision(revision);
+  }
+
+  function openPreparedPdf() {
+    if (!pdfReadyUrl) return;
+    const tab = window.open(pdfReadyUrl, '_blank');
+    if (!tab) {
+      toast.error('Allow pop-ups to view the PDF');
+      return;
+    }
+    const url = pdfReadyUrl;
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setPdfReadyUrl(null);
+  }
+
+  useEffect(() => setPortalReady(true), []);
+
+  useEffect(() => {
+    if (!documentRevision) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setDocumentRevision(null);
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [documentRevision]);
+
+  useEffect(() => {
+    if (!pdfRevision && !pdfReadyUrl) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [pdfRevision, pdfReadyUrl]);
+
+  useEffect(() => {
+    if (!pdfRevision) return;
+    const run = ++pdfRun.current;
+    void (async () => {
+      try {
+        let root = pdfRootRef.current;
+        const start = Date.now();
+        while (!root && Date.now() - start < 1000) {
+          await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+          root = pdfRootRef.current;
+        }
+        if (pdfRun.current !== run) return;
+        if (!root) throw new Error('The quotation page is not ready');
+        await whenRevisionReady(root);
+        if (pdfRun.current !== run) return;
+        const blob = await quotationPdfBlob(root);
+        if (pdfRun.current !== run) return;
+        const url = URL.createObjectURL(blob);
+        const tab = window.open(url, '_blank');
+        if (tab && !tab.closed) {
+          window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        } else {
+          setPdfReadyUrl(url);
+        }
+      } catch (error) {
+        if (pdfRun.current === run) toast.error(error instanceof Error ? error.message : 'Could not open the PDF');
+      } finally {
+        if (pdfRun.current === run) setPdfRevision(null);
+      }
+    })();
+  }, [pdfRevision]);
+
   async function onRevise() {
-    const base = record?.quotationNumber?.replace(/-R\d+$/, '') ?? '';
-    const nextRevision = record ? `${base}-R${record.quotationRevision + 1}` : '';
-    if (!id || !quotationDocument || !confirm(`Issue the next revision? The quotation number will be ${nextRevision}.`)) return;
+    if (!id || !quotationDocument || reviseState.isLoading) return;
     try {
       await updateQuery({ id, body: quotationBody() }).unwrap();
       await revise(id).unwrap();
       toast.success('Revision issued');
+      setReviseOpen(false);
       router.push('/sales/quotations');
     } catch (error) {
       toast.error(apiError(error));
@@ -658,7 +794,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
               {quotationSaveState === 'saving' ? <span className="self-center text-xs text-muted-foreground">Saving…</span> : null}
               {quotationSaveState === 'saved' ? <span className="self-center text-xs text-muted-foreground">Saved</span> : null}
               {quotationSaveState === 'error' ? <span className="self-center text-xs text-destructive">Not saved</span> : null}
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onRevise()}>
+              <Button type="button" variant="outline" size="sm" disabled={busy || !quotationDocument} onClick={() => setReviseOpen(true)}>
                 Revise
               </Button>
               <Button type="button" variant="outline" size="sm" disabled={busy || pdfBusy || !quotationDocument} onClick={() => void openQuotationPdf('quotation')}>
@@ -779,10 +915,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           <textarea value={extraNotes} onChange={(event) => setExtraNotes(event.target.value)} disabled={lockedQuery} rows={3} className={`${INPUT_CLASS} resize-none`} />
         </label>
         {section === 'query' && !lockedQuery ? (
-          <label className={LABEL_CLASS}>
+          <div className={LABEL_CLASS}>
             Client files
-            <input type="file" multiple className={INPUT_CLASS} onChange={(event) => setClientFiles(Array.from(event.target.files ?? []))} />
-          </label>
+            <FileInput
+              multiple
+              className={INPUT_CLASS}
+              selectedNames={clientFiles.map((file) => file.name)}
+              onChange={(event) => setClientFiles(Array.from(event.target.files ?? []))}
+            />
+          </div>
         ) : (
           <p className={LABEL_CLASS}>Client files</p>
         )}
@@ -793,7 +934,24 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       </Section>
 
       {section !== 'query' ? (
-        <Section eyebrow="Quotation" title={record?.quotationNumber || 'Quotation'} description={record ? `Source query ${record.queryNumber}` : undefined} allowSticky>
+        <Section
+          eyebrow="Quotation"
+          title={
+            section === 'quotation' && record?.quotationNumber && access.quotationManage && splitQuotationSerial(quotationBaseFromDisplay(record.quotationNumber, record.quotationRevision)) ? (
+              <button
+                type="button"
+                className="bg-transparent p-0 text-left font-semibold text-inherit underline-offset-2 hover:underline"
+                onClick={() => setSerialOpen(true)}
+              >
+                {record.quotationNumber}
+              </button>
+            ) : (
+              record?.quotationNumber || 'Quotation'
+            )
+          }
+          description={record ? `Source query ${record.queryNumber}` : undefined}
+          allowSticky
+        >
           <div className="grid gap-4 md:grid-cols-2">
             <label className={LABEL_CLASS}>
               When to start
@@ -844,19 +1002,42 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
                 <p className="text-sm text-muted-foreground">No earlier version has been saved.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {record.revisions.map((revision) => (
-                    <div key={revision.id} className="flex items-center justify-between gap-3 text-sm">
-                      <span>{revision.quotationLabel}</span>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setViewRevision(revision)}>
-                        View
-                      </Button>
-                    </div>
-                  ))}
+                    {record.revisions.map((revision) => (
+                      <div key={revision.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <dl className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="min-w-0">
+                            <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Number</dt>
+                            <dd className="mt-0.5 truncate text-sm font-medium">{revision.quotationLabel}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Date</dt>
+                            <dd className="mt-0.5 text-sm">{revisionDate(revision)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Grand total</dt>
+                            <dd className="mt-0.5 text-sm tabular-nums">{revisionMoney(revisionGrandTotal(revision))}</dd>
+                          </div>
+                        </dl>
+                        <Button type="button" variant="outline" size="sm" className="shrink-0 self-start sm:self-center" onClick={() => setViewChoice(revision)}>
+                          View
+                        </Button>
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
           ) : null}
         </Section>
+      ) : null}
+
+      {section === 'quotation' && record?.quotationNumber ? (
+        <QuotationSerialModal
+          recordId={record.id}
+          quotationNumber={record.quotationNumber}
+          quotationRevision={record.quotationRevision}
+          isOpen={serialOpen}
+          onClose={() => setSerialOpen(false)}
+        />
       ) : null}
 
       {section === 'purchaseOrder' && record ? (
@@ -879,10 +1060,14 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
               <input type="number" step="0.01" value={poValue} onChange={(event) => setPoValue(event.target.value)} disabled={!purchaseOrderEditable} className={INPUT_CLASS} />
             </label>
             {purchaseOrderEditable ? (
-              <label className={LABEL_CLASS}>
+              <div className={LABEL_CLASS}>
                 PO file
-                <input type="file" className={INPUT_CLASS} onChange={(event) => setPoFile(event.target.files?.[0] ?? null)} />
-              </label>
+                <FileInput
+                  className={INPUT_CLASS}
+                  selectedNames={poFile ? [poFile.name] : []}
+                  onChange={(event) => setPoFile(event.target.files?.[0] ?? null)}
+                />
+              </div>
             ) : (
               <p className={LABEL_CLASS}>PO file</p>
             )}
@@ -982,62 +1167,148 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         />
       </Modal>
 
+      <Modal
+        isOpen={reviseOpen}
+        onClose={() => {
+          if (!reviseState.isLoading) setReviseOpen(false);
+        }}
+        title="Issue the next revision?"
+        description={
+          record
+            ? `The quotation number will be ${(record.quotationNumber ?? '').replace(/-R\d+$/, '')}-R${record.quotationRevision + 1}.`
+            : undefined
+        }
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" disabled={reviseState.isLoading} onClick={() => setReviseOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" disabled={reviseState.isLoading || !quotationDocument} onClick={() => void onRevise()}>
+              {reviseState.isLoading ? <Spinner size="sm" /> : 'Revise'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          The current quotation is kept as the previous version. The new revision uses the next number.
+        </p>
+      </Modal>
+
       {id && logOpen ? <SalesWorkLogDialog id={id} onClose={() => setLogOpen(false)} /> : null}
 
       <Modal
-        isOpen={Boolean(viewRevision)}
-        onClose={() => setViewRevision(null)}
-        title={viewRevision?.quotationLabel ?? 'Previous version'}
-        description="This version is read-only."
-        actions={
-          <Button type="button" variant="ghost" size="sm" onClick={() => setViewRevision(null)}>
-            Close
-          </Button>
-        }
+        isOpen={Boolean(viewChoice)}
+        onClose={() => setViewChoice(null)}
+        title={viewChoice?.quotationLabel || 'Previous version'}
+        size="sm"
       >
-        {viewRevision ? (
-          <div className="space-y-4 text-sm">
-            {readQuotationDocument(viewRevision.snapshot.quotationDocument) ? (
-              <div className="overflow-x-auto">
+        <div className="flex flex-col gap-2">
+          <Button type="button" variant="outline" size="sm" disabled={Boolean(pdfRevision)} onClick={() => viewChoice && openRevisionPdf(viewChoice)}>
+            {pdfRevision ? 'Preparing PDF…' : 'View as PDF'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!viewChoice) return;
+              setDocumentRevision(viewChoice);
+              setViewChoice(null);
+            }}
+          >
+            View as Document
+          </Button>
+        </div>
+      </Modal>
+      {portalReady && documentRevision ? createPortal(
+        <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={documentRevision.quotationLabel}>
+          <div className="absolute inset-0 bg-black/60" />
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setDocumentRevision(null)}
+            className="fixed right-4 top-4 z-20 inline-flex size-9 items-center justify-center rounded-full bg-background text-foreground shadow-md"
+          >
+            <X className="size-5" aria-hidden />
+          </button>
+          <div className="relative z-10 h-full overflow-auto" onClick={() => setDocumentRevision(null)}>
+            <div className="mx-auto w-fit max-w-full px-4 py-10" onClick={(event) => event.stopPropagation()}>
+              {readQuotationDocument(documentRevision.snapshot.quotationDocument) ? (
                 <QuotationSheet
-                  document={readQuotationDocument(viewRevision.snapshot.quotationDocument)!}
+                  document={readQuotationDocument(documentRevision.snapshot.quotationDocument)!}
                   readOnly
-                  quotationNumber={viewRevision.quotationLabel}
+                  quotationNumber={documentRevision.quotationLabel}
                   letterheadUrl={record?.company?.letterheadUrl}
                 />
-              </div>
-            ) : (
-            <>
-            <p className="text-muted-foreground">
-              {viewRevision.snapshot.quotationMode === 'MULTIPLE' ? 'Multiple options' : 'Single option'}
-              {viewRevision.snapshot.startDate ? ` · Start ${dateInputValue(viewRevision.snapshot.startDate)}` : ''}
-            </p>
-            {viewRevision.snapshot.options.map((option, optionIndex) => {
-              const subtotal = option.lines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0);
-              return (
-                <div key={optionIndex} className="space-y-2 rounded-lg border border-border p-3">
-                  <p className="font-medium">{option.name || `Option ${optionIndex + 1}`}</p>
-                  {option.lines.map((line, lineIndex) => (
-                    <div key={lineIndex}>
-                      <p>
-                        {line.item} · {line.quantity} × {line.unitPrice} = {Number(line.lineTotal).toFixed(2)}
-                      </p>
-                      {line.fields.map((field, fieldIndex) => (
-                        <p key={fieldIndex} className="text-muted-foreground">
-                          {field.value || field.label}
-                        </p>
-                      ))}
-                    </div>
-                  ))}
-                  <p>VAT {Number(option.vatAmount).toFixed(2)} · Grand total {(subtotal + Number(option.vatAmount || 0)).toFixed(2)}</p>
+              ) : (
+                <div className="w-[min(210mm,calc(100vw-2rem))] space-y-4 rounded-md bg-background p-6 text-sm shadow-lg">
+                  <p className="text-muted-foreground">
+                    {documentRevision.snapshot.quotationMode === 'MULTIPLE' ? 'Multiple options' : 'Single option'}
+                    {documentRevision.snapshot.startDate ? ` · Start ${dateInputValue(documentRevision.snapshot.startDate)}` : ''}
+                  </p>
+                  {documentRevision.snapshot.options.map((option, optionIndex) => {
+                    const subtotal = option.lines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0);
+                    return (
+                      <div key={optionIndex} className="space-y-2 rounded-lg border border-border p-3">
+                        <p className="font-medium">{option.name || `Option ${optionIndex + 1}`}</p>
+                        {option.lines.map((line, lineIndex) => (
+                          <div key={lineIndex}>
+                            <p>
+                              {line.item} · {line.quantity} × {line.unitPrice} = {Number(line.lineTotal).toFixed(2)}
+                            </p>
+                            {line.fields.map((field, fieldIndex) => (
+                              <p key={fieldIndex} className="text-muted-foreground">
+                                {field.value || field.label}
+                              </p>
+                            ))}
+                          </div>
+                        ))}
+                        <p>VAT {Number(option.vatAmount).toFixed(2)} · Grand total {(subtotal + Number(option.vatAmount || 0)).toFixed(2)}</p>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-            </>
-            )}
+              )}
+            </div>
           </div>
-        ) : null}
-      </Modal>
+        </div>,
+        document.body,
+      ) : null}
+      {portalReady && (pdfRevision || pdfReadyUrl) ? createPortal(
+        <>
+          {pdfRevision && readQuotationDocument(pdfRevision.snapshot.quotationDocument) ? (
+            <div ref={pdfRootRef} className="pointer-events-none fixed left-0 top-0 z-[80] w-[210mm]" aria-hidden>
+              <QuotationSheet
+                document={readQuotationDocument(pdfRevision.snapshot.quotationDocument)!}
+                readOnly
+                quotationNumber={pdfRevision.quotationLabel}
+                letterheadUrl={record?.company?.letterheadUrl}
+              />
+            </div>
+          ) : null}
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background">
+            <div className="flex w-72 flex-col items-center gap-3 rounded-xl bg-card px-6 py-6 text-center text-card-foreground shadow-2xl">
+              {pdfRevision ? (
+                <>
+                  <Spinner />
+                  <p className="text-sm font-medium">Preparing PDF…</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">PDF is ready</p>
+                  <Button type="button" size="sm" onClick={openPreparedPdf}>Open PDF</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => {
+                    if (pdfReadyUrl) URL.revokeObjectURL(pdfReadyUrl);
+                    setPdfReadyUrl(null);
+                  }}>Close</Button>
+                </>
+              )}
+            </div>
+          </div>
+        </>,
+        document.body,
+      ) : null}
 
       <Modal
         isOpen={jobOpen}

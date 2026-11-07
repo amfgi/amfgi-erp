@@ -1,6 +1,6 @@
 import { successResponse } from '@/lib/utils/apiResponse';
 import { requireSalesSession, salesErrorResponse } from '@/lib/sales/http';
-import { deleteCustomSection, renameCustomSection } from '@/lib/sales/customSections';
+import { deleteCustomSection, renameCustomSection, updateCustomSection } from '@/lib/sales/customSections';
 import { SalesError } from '@/lib/sales/service';
 
 export const dynamic = 'force-dynamic';
@@ -10,8 +10,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const session = await requireSalesSession();
     if (!session.access.quotationManage) throw new SalesError('Forbidden', 403);
     const { id } = await params;
-    const body = (await req.json()) as { name?: unknown };
+    const body = (await req.json()) as { name?: unknown; content?: unknown };
     const name = typeof body.name === 'string' ? body.name : '';
+    if (body.content !== undefined) return successResponse(await updateCustomSection(session.companyId, id, name, body.content));
     return successResponse(await renameCustomSection(session.companyId, id, name));
   } catch (error) {
     return salesErrorResponse(error);

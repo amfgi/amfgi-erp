@@ -154,6 +154,19 @@ async function buildPdf(pages: HTMLElement[], fileDeadline: number) {
   return blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' });
 }
 
+export async function quotationPdfBlob(root: HTMLElement): Promise<Blob> {
+  const pages = [...root.querySelectorAll<HTMLElement>('.quotation-page')];
+  if (!pages.length) throw new Error('The quotation page is not ready');
+  root.classList.add('quotation-capturing');
+  try {
+    return await buildPdf(pages, Date.now() + FILE_BUDGET_MS);
+  } catch (error) {
+    throw failure(error);
+  } finally {
+    root.classList.remove('quotation-capturing');
+  }
+}
+
 export async function downloadQuotationPdf(root: HTMLElement, fileName: string): Promise<'saved' | 'cancelled'> {
   const pages = [...root.querySelectorAll<HTMLElement>('.quotation-page')];
   if (!pages.length) throw new Error('The quotation page is not ready');
