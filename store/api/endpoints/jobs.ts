@@ -1053,6 +1053,38 @@ export const jobsApi = appApi.injectEndpoints({
       },
     }),
 
+    checkJobSerial: builder.query<{ number: string; available: boolean }, { id: string; serial: string }>({
+      query: ({ id, serial }) => `/jobs/${id}/job-number?serial=${encodeURIComponent(serial)}`,
+      transformResponse: (r: { data: { number: string; available: boolean } }) => r.data,
+    }),
+
+    changeJobSerial: builder.mutation<
+      { id: string; jobNumber: string; variationsUpdated: number; assignmentsUpdated: number; affectedJobIds: string[] },
+      { id: string; serial: string }
+    >({
+      query: ({ id, serial }) => ({
+        url: `/jobs/${id}/job-number`,
+        method: 'POST',
+        body: { serial },
+      }),
+      transformResponse: (r: {
+        data: { id: string; jobNumber: string; variationsUpdated: number; assignmentsUpdated: number; affectedJobIds: string[] };
+      }) => r.data,
+      invalidatesTags: (result, _error, arg) => [
+        ...jobListInvalidationTags(result?.affectedJobIds ?? [arg.id]),
+        { type: 'SalesQuery' },
+      ],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          invalidateJobCaches(dispatch, data.affectedJobIds);
+          notifyJobLiveUpdate({ action: 'updated' });
+        } catch {
+          /* mutation failed — skip live notify */
+        }
+      },
+    }),
+
     promoteProvisionalJob: builder.mutation<
       { job: Job; assignmentsUpdated: number; variationsUpdated: number; affectedJobIds: string[] },
       { id: string; customerId: string; note?: string | null }
@@ -1178,6 +1210,8 @@ export const {
   useGetDispatchBudgetWarningMutation,
   useCreateJobMutation,
   useUpdateJobMutation,
+  useCheckJobSerialQuery,
+  useChangeJobSerialMutation,
   usePromoteProvisionalJobMutation,
   useDeleteJobMutation,
   useBulkImportParentJobsMutation,
