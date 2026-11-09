@@ -18,6 +18,9 @@ const LABELS: Record<string, string> = {
   JOB_CREATED: 'Created the job',
   STATUS: 'Updated the status',
   FILE_UPLOADED: 'Uploaded a file',
+  DOCUMENT_UPLOADED: 'Uploaded a quotation document',
+  DOCUMENT_NOTE: 'Changed a quotation document note',
+  DOCUMENT_REMOVED: 'Removed a quotation document',
 };
 
 export function salesWorkLabel(action: string) {

@@ -91,6 +91,7 @@ export {
   useLazyGetJobsForExportQuery,
   JOB_PAGE_SIZE_OPTIONS,
   useGetJobByIdQuery,
+  useGetJobQuotationDocumentsQuery,
   useGetJobMaterialsQuery,
   useGetJobItemsQuery,
   useAddJobItemMutation,
@@ -174,6 +175,12 @@ export {
   useUpdateSalesQueryMutation,
   useForwardSalesToQuotationMutation,
   useGetSalesWorkLogQuery,
+  useGetQuotationDocumentsQuery,
+  useCreateQuotationDocumentTypeMutation,
+  useRemoveQuotationDocumentTypeMutation,
+  useAddQuotationDocumentMutation,
+  useUpdateQuotationDocumentNoteMutation,
+  useRemoveQuotationDocumentMutation,
   useReviseSalesQuotationMutation,
   useCheckQuotationSerialQuery,
   useChangeQuotationSerialMutation,
@@ -195,6 +202,10 @@ export {
   useCreateQuotationSectionPresetMutation,
   useUpdateQuotationSectionPresetMutation,
   useDeleteQuotationSectionPresetMutation,
+  useGetQuotationTemplatesQuery,
+  useGetQuotationTemplateQuery,
+  useLazyGetQuotationTemplateQuery,
+  useCreateQuotationTemplateMutation,
 } from './api/endpoints/sales';
 
 export {

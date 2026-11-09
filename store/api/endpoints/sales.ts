@@ -62,6 +62,18 @@ export type SalesAttachment = {
   createdAt: string;
 };
 
+export type QuotationDocumentFile = {
+  id: string;
+  typeId: string;
+  typeName: string;
+  fileName: string;
+  mimeType: string;
+  viewerUrl: string;
+  note: string | null;
+  carriedToPurchaseOrder: boolean;
+  createdAt: string;
+};
+
 export type SalesRecord = {
   id: string;
   queryNumber: string;
@@ -208,8 +220,19 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery'],
     }),
-    reviseSalesQuotation: builder.mutation<SalesRecord, string>({
-      query: (id) => ({ url: `/sales/queries/${id}/revise`, method: 'POST' }),
+    reviseSalesQuotation: builder.mutation<
+      SalesRecord,
+      { id: string; fromRevisionId?: string; quotationDocument?: QuotationDocument; startDate?: string | null }
+    >({
+      query: ({ id, fromRevisionId, quotationDocument, startDate }) => ({
+        url: `/sales/queries/${id}/revise`,
+        method: 'POST',
+        body: {
+          ...(fromRevisionId ? { fromRevisionId } : {}),
+          ...(quotationDocument ? { quotationDocument } : {}),
+          ...(startDate !== undefined ? { startDate } : {}),
+        },
+      }),
       transformResponse: (response: { data: SalesRecord }) => response.data,
       invalidatesTags: ['SalesQuery'],
     }),
@@ -318,6 +341,54 @@ const salesApi = appApi.injectEndpoints({
       transformResponse: (response: { data: { id: string } }) => response.data,
       invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationSectionPreset', id: arg.kind }],
     }),
+    getQuotationTemplates: builder.query<Array<{ id: string; name: string; key: string }>, void>({
+      query: () => '/sales/quotation-templates',
+      transformResponse: (response: { data: Array<{ id: string; name: string; key: string }> }) => response.data,
+      providesTags: ['QuotationTemplate'],
+    }),
+    getQuotationTemplate: builder.query<{ id: string; name: string; document: QuotationDocument }, string>({
+      query: (id) => `/sales/quotation-templates/${id}`,
+      transformResponse: (response: { data: { id: string; name: string; document: QuotationDocument } }) => response.data,
+      providesTags: (_result, _error, id) => [{ type: 'QuotationTemplate', id }],
+    }),
+    createQuotationTemplate: builder.mutation<{ id: string; name: string }, { name: string; document: QuotationDocument }>({
+      query: (body) => ({ url: '/sales/quotation-templates', method: 'POST', body }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: ['QuotationTemplate'],
+    }),
+    getQuotationDocuments: builder.query<
+      { types: Array<{ id: string; name: string }>; documents: QuotationDocumentFile[] },
+      string
+    >({
+      query: (id) => `/sales/queries/${id}/documents`,
+      transformResponse: (response: { data: { types: Array<{ id: string; name: string }>; documents: QuotationDocumentFile[] } }) => response.data,
+      providesTags: (_result, _error, id) => [{ type: 'QuotationDocument', id }],
+    }),
+    createQuotationDocumentType: builder.mutation<{ id: string; name: string }, { id: string; name: string }>({
+      query: ({ id, name }) => ({ url: `/sales/queries/${id}/document-types`, method: 'POST', body: { name } }),
+      transformResponse: (response: { data: { id: string; name: string } }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationDocument', id: arg.id }],
+    }),
+    removeQuotationDocumentType: builder.mutation<{ id: string }, { id: string; typeId: string }>({
+      query: ({ id, typeId }) => ({ url: `/sales/queries/${id}/document-types/${typeId}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: ['QuotationDocument'],
+    }),
+    addQuotationDocument: builder.mutation<QuotationDocumentFile, { id: string; body: FormData }>({
+      query: ({ id, body }) => ({ url: `/sales/queries/${id}/documents`, method: 'POST', body }),
+      transformResponse: (response: { data: QuotationDocumentFile }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationDocument', id: arg.id }, { type: 'SalesQuery', id: arg.id }],
+    }),
+    updateQuotationDocumentNote: builder.mutation<QuotationDocumentFile, { id: string; salesQueryId: string; note: string }>({
+      query: ({ id, note }) => ({ url: `/sales/documents/${id}`, method: 'PATCH', body: { note } }),
+      transformResponse: (response: { data: QuotationDocumentFile }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationDocument', id: arg.salesQueryId }, { type: 'SalesQuery', id: arg.salesQueryId }],
+    }),
+    removeQuotationDocument: builder.mutation<{ id: string }, { id: string; salesQueryId: string }>({
+      query: ({ id }) => ({ url: `/sales/documents/${id}`, method: 'DELETE' }),
+      transformResponse: (response: { data: { id: string } }) => response.data,
+      invalidatesTags: (_result, _error, arg) => [{ type: 'QuotationDocument', id: arg.salesQueryId }, { type: 'SalesQuery', id: arg.salesQueryId }],
+    }),
     getSalesWorkLog: builder.query<SalesWorkLogEntry[], string>({
       query: (id) => `/sales/queries/${id}/work-log`,
       transformResponse: (response: { data: SalesWorkLogEntry[] }) => response.data,
@@ -360,6 +431,10 @@ export const {
   useCreateQuotationSectionPresetMutation,
   useUpdateQuotationSectionPresetMutation,
   useDeleteQuotationSectionPresetMutation,
+  useGetQuotationTemplatesQuery,
+  useGetQuotationTemplateQuery,
+  useLazyGetQuotationTemplateQuery,
+  useCreateQuotationTemplateMutation,
 } = salesApi;
 
 export type CustomSectionBody = {
@@ -380,3 +455,9 @@ export type SectionPreset =
   | { id: string; name: string; kind: 'specification'; rows: Array<{ label: string; value: string }> };
 
 export const useGetSalesWorkLogQuery = salesApi.endpoints.getSalesWorkLog.useQuery;
+export const useGetQuotationDocumentsQuery = salesApi.endpoints.getQuotationDocuments.useQuery;
+export const useCreateQuotationDocumentTypeMutation = salesApi.endpoints.createQuotationDocumentType.useMutation;
+export const useRemoveQuotationDocumentTypeMutation = salesApi.endpoints.removeQuotationDocumentType.useMutation;
+export const useAddQuotationDocumentMutation = salesApi.endpoints.addQuotationDocument.useMutation;
+export const useUpdateQuotationDocumentNoteMutation = salesApi.endpoints.updateQuotationDocumentNote.useMutation;
+export const useRemoveQuotationDocumentMutation = salesApi.endpoints.removeQuotationDocument.useMutation;

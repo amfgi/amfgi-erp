@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db/prisma';
 
-import { plainText, sanitizeRichText } from './quotationDocument';
+import { DEFAULT_BLANK_HEIGHT_MM, MAX_BLANK_HEIGHT_MM, MIN_BLANK_HEIGHT_MM, plainText, sanitizeRichText } from './quotationDocument';
 import { SalesError } from './service';
 
 export type CustomSectionVersion = {
@@ -45,7 +45,7 @@ function sectionBody(value: unknown): Omit<CustomSectionContent, 'versions'> | n
   return {
     name,
     body,
-    minHeightMm: clamp(record.minHeightMm, 24, 160, 36),
+    minHeightMm: clamp(record.minHeightMm, MIN_BLANK_HEIGHT_MM, MAX_BLANK_HEIGHT_MM, DEFAULT_BLANK_HEIGHT_MM),
     widthPercent: clamp(record.widthPercent, 45, 100, 100),
   };
 }

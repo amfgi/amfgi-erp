@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Download, X } from 'lucide-react';
+import { Check, ChevronDown, Download, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import FileInput from '@/components/ui/FileInput';
@@ -13,11 +13,13 @@ import Spinner from '@/components/ui/Spinner';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Modal from '@/components/ui/Modal';
 import { acceptedOptionId, QuotationSheet } from '@/components/sales/QuotationSheet';
+import QuotationDocumentLinks from '@/components/sales/QuotationDocumentLinks';
+import QuotationDocumentsModal from '@/components/sales/QuotationDocumentsModal';
 import QuotationSerialModal from '@/components/sales/QuotationSerialModal';
 import { salesAccess } from '@/lib/sales/access';
 import { dateInputValue, quotationBaseFromDisplay, splitQuotationSerial } from '@/lib/sales/format';
 import { downloadQuotationPdf, quotationPdfBlob } from '@/lib/sales/downloadQuotationPdf';
-import { documentFromRecord, optionBlocks, optionTotal, plainText, quotationFileName, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
+import { applyQuotationTemplate, documentFromRecord, optionBlocks, optionTotal, plainText, quotationFileName, quotationTemplateKey, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
 import {
   useCreateJobFromSalesMutation,
   useCreateSalesQueryMutation,
@@ -27,6 +29,10 @@ import {
   useGetSalesmenQuery,
   useGetSalesQueryQuery,
   useGetSalesWorkLogQuery,
+  useGetQuotationDocumentsQuery,
+  useCreateQuotationTemplateMutation,
+  useGetQuotationTemplatesQuery,
+  useLazyGetQuotationTemplateQuery,
   useReviseSalesQuotationMutation,
   useSetSalesClosureMutation,
   useUpdateSalesQueryMutation,
@@ -60,6 +66,11 @@ function revisionGrandTotal(revision: SalesRevision) {
 
 function revisionMoney(value: number) {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function nextQuotationLabel(quotationNumber: string | null | undefined, quotationRevision: number) {
+  const base = (quotationNumber ?? '').replace(/-R\d+$/, '');
+  return `${base}-R${quotationRevision + 1}`;
 }
 
 async function whenRevisionReady(root: HTMLElement) {
@@ -168,22 +179,110 @@ function Section({
   description,
   children,
   allowSticky = false,
+  collapsible = false,
+  defaultOpen = false,
+  hideDescriptionWhenCollapsed = false,
 }: {
   eyebrow: string;
   title: React.ReactNode;
   description?: string;
   children: React.ReactNode;
   allowSticky?: boolean;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  hideDescriptionWhenCollapsed?: boolean;
 }) {
+  const startsOpen = !collapsible || defaultOpen;
+  const [open, setOpen] = useState(startsOpen);
+  const [revealed, setRevealed] = useState(startsOpen);
+  const clip = !allowSticky || !open || !revealed;
+  const heading = (
+    <>
+      <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</span>
+      <span className="mt-1 block text-lg font-semibold text-foreground">{title}</span>
+      {description && !(hideDescriptionWhenCollapsed && !open) ? <span className="mt-1 block text-sm font-normal text-muted-foreground">{description}</span> : null}
+      {collapsible && !open ? <span className="mt-1 block text-xs font-normal text-muted-foreground">Click to expand</span> : null}
+    </>
+  );
+
   return (
-    <section className={`${allowSticky ? 'overflow-visible' : 'overflow-hidden'} rounded-lg border border-border bg-card shadow-sm`}>
-      <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</p>
-        <h2 className="mt-1 text-lg font-semibold text-foreground">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+    <section className={`${clip ? 'overflow-hidden' : 'overflow-visible'} rounded-lg border border-border bg-card shadow-sm`}>
+      {collapsible ? (
+        <button
+          type="button"
+          className={`flex w-full items-start justify-between gap-3 bg-muted/30 px-4 py-4 text-left sm:px-5 ${open ? 'border-b border-border' : ''}`}
+          aria-expanded={open}
+          onClick={() => {
+            setRevealed(false);
+            setOpen((current) => !current);
+          }}
+        >
+          <span className="min-w-0">{heading}</span>
+          <ChevronDown className={`mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-out ${open ? 'rotate-180' : ''}`} />
+        </button>
+      ) : (
+        <div className="border-b border-border bg-muted/30 px-4 py-4 sm:px-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{eyebrow}</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">{title}</h2>
+          {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+        </div>
+      )}
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+        onTransitionEnd={(event) => {
+          if (event.propertyName !== 'grid-template-rows' || event.target !== event.currentTarget) return;
+          setRevealed(open);
+        }}
+      >
+        <div className={clip ? 'min-h-0 overflow-hidden' : 'overflow-visible'} inert={collapsible && !open ? true : undefined}>
+          <div className="space-y-4 p-4 sm:p-5">{children}</div>
+        </div>
       </div>
-      <div className="space-y-4 p-4 sm:p-5">{children}</div>
     </section>
+  );
+}
+
+function CarriedQuotationDocuments({
+  files,
+}: {
+  files: React.ComponentProps<typeof QuotationDocumentLinks>['files'];
+}) {
+  const [open, setOpen] = useState(false);
+  const hasFiles = files.length > 0;
+  const note = !hasFiles
+    ? 'No quotation documents'
+    : open
+      ? 'Latest file of each type, carried from the quotation.'
+      : 'Click to expand';
+  return (
+    <div className="rounded-xl border border-border bg-accent">
+      <button
+        type="button"
+        className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left ${hasFiles ? '' : 'cursor-default'}`}
+        aria-expanded={hasFiles ? open : undefined}
+        onClick={() => {
+          if (hasFiles) setOpen((current) => !current);
+        }}
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-foreground">Quotation documents</span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">{note}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="inline-flex min-w-6 items-center justify-center rounded-full border border-border bg-card px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground">
+            {files.length}
+          </span>
+          <span className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-foreground">
+            From quotation
+          </span>
+        </span>
+      </button>
+      {open && hasFiles ? (
+        <div className="px-4 pb-3.5">
+          <QuotationDocumentLinks files={files} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -198,12 +297,18 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   });
   const recordQuery = useGetSalesQueryQuery(id ?? '', { skip: !id });
   const record = recordQuery.data;
+  const quotationDocumentsQuery = useGetQuotationDocumentsQuery(id ?? '', {
+    skip: !id || section !== 'purchaseOrder',
+  });
   const customersQuery = useGetCustomersQuery();
   const salesmenQuery = useGetSalesmenQuery();
   const [createQuery, createState] = useCreateSalesQueryMutation();
   const [updateQuery, updateState] = useUpdateSalesQueryMutation();
   const [forwardQuotation, forwardQuotationState] = useForwardSalesToQuotationMutation();
   const [revise, reviseState] = useReviseSalesQuotationMutation();
+  const [createTemplate, createTemplateState] = useCreateQuotationTemplateMutation();
+  const [loadTemplate] = useLazyGetQuotationTemplateQuery();
+  const templatesQuery = useGetQuotationTemplatesQuery(undefined, { skip: section !== 'quotation' });
   const [receivePurchaseOrder, receivePurchaseOrderState] = useReceivePurchaseOrderMutation();
   const [setClosure, closureState] = useSetSalesClosureMutation();
   const [createJob, createJobState] = useCreateJobFromSalesMutation();
@@ -224,6 +329,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const acceptedForRecord = useRef<string | null>(null);
   const [serialOpen, setSerialOpen] = useState(false);
   const [reviseOpen, setReviseOpen] = useState(false);
+  const [templateAskOpen, setTemplateAskOpen] = useState(false);
+  const [templateNameOpen, setTemplateNameOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateSnapshot, setTemplateSnapshot] = useState<string | null>(null);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [sheetVisible, setSheetVisible] = useState(true);
+  const [reviseFrom, setReviseFrom] = useState<SalesRevision | null>(null);
+  const [branchEpoch, setBranchEpoch] = useState(0);
   const [poDate, setPoDate] = useState('');
   const [poValue, setPoValue] = useState('');
   const [budgetDetails, setBudgetDetails] = useState('');
@@ -242,6 +356,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const saveGeneration = useRef(0);
   const pauseQuotationSave = useRef(false);
   const quotationSaveFlight = useRef<Promise<void> | null>(null);
+  const branchRevisionId = useRef<string | null>(null);
+  const branchFlight = useRef<Promise<void> | null>(null);
   const quotationLatest = useRef({ startDate: '', document: null as QuotationDocument | null });
   const sheetRef = useRef<HTMLDivElement>(null);
   const pdfRootRef = useRef<HTMLDivElement>(null);
@@ -254,6 +370,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   const [assignOpen, setAssignOpen] = useState(false);
   const [assigneeId, setAssigneeId] = useState('');
   const [logOpen, setLogOpen] = useState(false);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
   const [jobSaving, setJobSaving] = useState(false);
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
@@ -310,6 +427,25 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       })),
     [salesmenQuery.data],
   );
+  const templateItems = useMemo(
+    () => (templatesQuery.data ?? []).map((template) => ({ id: template.id, label: template.name })),
+    [templatesQuery.data],
+  );
+  const matchedTemplateId = useMemo(() => {
+    if (!quotationDocument || !templatesQuery.data) return '';
+    const key = quotationTemplateKey(quotationDocument);
+    return templatesQuery.data.find((template) => template.key === key)?.id ?? '';
+  }, [quotationDocument, templatesQuery.data]);
+  const templateUnchanged = useMemo(() => {
+    if (!quotationDocument) return false;
+    if (matchedTemplateId) return true;
+    return Boolean(templateSnapshot) && quotationTemplateKey(quotationDocument) === templateSnapshot;
+  }, [quotationDocument, matchedTemplateId, templateSnapshot]);
+
+  useEffect(() => {
+    if (section !== 'quotation' || !templatesQuery.data || templatesQuery.isFetching) return;
+    setSelectedTemplateId(matchedTemplateId);
+  }, [section, templatesQuery.data, templatesQuery.isFetching, matchedTemplateId]);
 
   const lockedQuery = Boolean(record && record.stage !== 'QUERY');
   const quotationEditable = record?.stage === 'QUOTATION' && record.closure === 'OPEN' && access.quotationManage;
@@ -337,32 +473,62 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       if (!payload.document) return;
       const payloadKey = JSON.stringify({ startDate: payload.startDate, quotationDocument: payload.document });
       setQuotationSaveState('saving');
-      const flight = updateQuery({ id, body: { startDate: payload.startDate, quotationDocument: payload.document } })
-        .unwrap()
-        .then(() => {
-          if (saveGeneration.current !== generation) return;
-          savedQuotationKey.current = payloadKey;
-          const currentKey = JSON.stringify({
-            startDate: quotationLatest.current.startDate,
-            quotationDocument: quotationLatest.current.document,
-          });
-          if (currentKey === payloadKey) {
-            quotationDirty.current = false;
-            setQuotationSaveState('saved');
-          }
-        })
-        .catch((error: unknown) => {
-          if (saveGeneration.current !== generation) return;
-          setQuotationSaveState('error');
-          toast.error(apiError(error));
+      const finish = () => {
+        if (saveGeneration.current !== generation) return;
+        savedQuotationKey.current = payloadKey;
+        const currentKey = JSON.stringify({
+          startDate: quotationLatest.current.startDate,
+          quotationDocument: quotationLatest.current.document,
         });
+        if (currentKey === payloadKey) {
+          quotationDirty.current = false;
+          setQuotationSaveState('saved');
+        }
+      };
+      const fail = (error: unknown) => {
+        if (saveGeneration.current !== generation) return;
+        setQuotationSaveState('error');
+        toast.error(apiError(error));
+      };
+      const flight = (async () => {
+        if (branchFlight.current) await branchFlight.current.catch(() => undefined);
+        const fromRevisionId = branchRevisionId.current;
+        if (fromRevisionId) {
+          branchRevisionId.current = null;
+          const request = revise({
+            id,
+            fromRevisionId,
+            quotationDocument: payload.document ?? undefined,
+            startDate: payload.startDate || null,
+          })
+            .unwrap()
+            .then(() => undefined);
+          branchFlight.current = request;
+          try {
+            await request;
+            finish();
+          } catch (error) {
+            branchRevisionId.current = fromRevisionId;
+            fail(error);
+          } finally {
+            if (branchFlight.current === request) branchFlight.current = null;
+          }
+          return;
+        }
+        try {
+          await updateQuery({ id, body: { startDate: payload.startDate, quotationDocument: payload.document } }).unwrap();
+          finish();
+        } catch (error) {
+          fail(error);
+        }
+      })();
       quotationSaveFlight.current = flight;
       void flight.finally(() => {
         if (quotationSaveFlight.current === flight) quotationSaveFlight.current = null;
       });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [id, quotationDocument, quotationEditable, section, startDate, updateQuery]);
+  }, [id, quotationDocument, quotationEditable, revise, section, startDate, updateQuery]);
   const purchaseOrderEditable = record?.stage === 'PURCHASE_ORDER' && record.closure === 'OPEN' && access.purchaseOrdersManage;
   const currency = record?.currencyCode ?? '';
   const quotationLabel = record?.quotationNumber || record?.queryNumber || 'New query';
@@ -506,16 +672,84 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     })();
   }, [pdfRevision]);
 
+  async function onSaveTemplate() {
+    const document = quotationLatest.current.document;
+    const name = templateName.trim();
+    if (!document || !name || createTemplateState.isLoading) return;
+    try {
+      const saved = await createTemplate({ name, document }).unwrap();
+      setSelectedTemplateId(saved.id);
+      setTemplateSnapshot(quotationTemplateKey(document));
+      toast.success('Template saved');
+      setTemplateNameOpen(false);
+      setTemplateName('');
+    } catch (error) {
+      toast.error(apiError(error));
+    }
+  }
+
+  async function onSelectTemplate(templateId: string) {
+    const current = quotationLatest.current.document;
+    if (!templateId || !current || applyingTemplate) return;
+    setApplyingTemplate(true);
+    setSheetVisible(false);
+    try {
+      const template = await loadTemplate(templateId).unwrap();
+      const next = applyQuotationTemplate(current, template.document);
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+      setBranchEpoch((value) => value + 1);
+      setQuotationDocument(next);
+      setSelectedTemplateId(templateId);
+      setTemplateSnapshot(quotationTemplateKey(next));
+      await new Promise((resolve) => window.setTimeout(resolve, 40));
+      setSheetVisible(true);
+    } catch (error) {
+      setSheetVisible(true);
+      toast.error(apiError(error));
+    } finally {
+      setApplyingTemplate(false);
+    }
+  }
+
   async function onRevise() {
     if (!id || !quotationDocument || reviseState.isLoading) return;
     try {
+      branchRevisionId.current = null;
       await updateQuery({ id, body: quotationBody() }).unwrap();
-      await revise(id).unwrap();
+      await revise({ id }).unwrap();
       toast.success('Revision issued');
       setReviseOpen(false);
       router.push('/sales/quotations');
     } catch (error) {
       toast.error(apiError(error));
+    }
+  }
+
+  async function onReviseFrom(revision: SalesRevision) {
+    if (!id) return;
+    const document = readQuotationDocument(revision.snapshot.quotationDocument);
+    if (!document) {
+      toast.error('That version has no quotation document');
+      return;
+    }
+    try {
+      pauseQuotationSave.current = true;
+      await settleQuotationSave();
+      if (quotationDirty.current && quotationLatest.current.document) {
+        await updateQuery({ id, body: quotationBody() }).unwrap();
+      }
+      quotationDirty.current = true;
+      branchRevisionId.current = revision.id;
+      setBranchEpoch((value) => value + 1);
+      setStartDate(dateInputValue(revision.snapshot.startDate));
+      setQuotationDocument(document);
+      setReviseFrom(null);
+      requestAnimationFrame(() => sheetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    } catch (error) {
+      branchRevisionId.current = null;
+      toast.error(apiError(error));
+    } finally {
+      pauseQuotationSave.current = false;
     }
   }
 
@@ -779,6 +1013,11 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
               Working log
             </Button>
           ) : null}
+          {section === 'quotation' && record ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setDocumentsOpen(true)}>
+              Documents
+            </Button>
+          ) : null}
           {section === 'query' && queryOpen && access.queryManage ? (
             <>
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSaveQuery()}>
@@ -791,8 +1030,37 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           ) : null}
           {section === 'quotation' && quotationEditable ? (
             <>
-              {quotationSaveState === 'saving' ? <span className="self-center text-xs text-muted-foreground">Saving…</span> : null}
-              {quotationSaveState === 'saved' ? <span className="self-center text-xs text-muted-foreground">Saved</span> : null}
+              <div className="w-56">
+                <SearchSelect
+                  items={templateItems}
+                  value={selectedTemplateId}
+                  onChange={(templateId) => void onSelectTemplate(templateId)}
+                  placeholder="Select template"
+                  openOnFocus
+                  browseAllOnOpen
+                  minCharactersToSearch={0}
+                  dropdownInPortal
+                  loading={templatesQuery.isFetching || applyingTemplate}
+                  disabled={!quotationDocument || applyingTemplate}
+                  inputProps={{ className: 'h-8 rounded-md px-3 py-1 text-sm', 'aria-label': 'Select template' }}
+                  renderItem={(item) => (
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">{item.label}</span>
+                      {item.id === selectedTemplateId ? <Check className="size-4 shrink-0" aria-label="Selected" /> : null}
+                    </span>
+                  )}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!quotationDocument || templateUnchanged}
+                title={templateUnchanged ? 'No changes from this template' : undefined}
+                onClick={() => setTemplateAskOpen(true)}
+              >
+                Save as Quotation Template
+              </Button>
               {quotationSaveState === 'error' ? <span className="self-center text-xs text-destructive">Not saved</span> : null}
               <Button type="button" variant="outline" size="sm" disabled={busy || !quotationDocument} onClick={() => setReviseOpen(true)}>
                 Revise
@@ -822,6 +1090,8 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         eyebrow="Query"
         title="Project"
         description="The query number is assigned when you save. Forwarding assigns a separate quotation number."
+        collapsible={section !== 'query'}
+        hideDescriptionWhenCollapsed
       >
         <div className="grid gap-4 md:grid-cols-2">
           <label className={LABEL_CLASS}>
@@ -951,6 +1221,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           }
           description={record ? `Source query ${record.queryNumber}` : undefined}
           allowSticky
+          collapsible={section === 'purchaseOrder'}
+          defaultOpen
+          hideDescriptionWhenCollapsed
         >
           <div className="grid gap-4 md:grid-cols-2">
             <label className={LABEL_CLASS}>
@@ -978,8 +1251,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             ) : <span />}
           </div>
           {quotationDocument ? (
-            <div ref={sheetRef} className="min-w-0">
+            <div ref={sheetRef} className={`min-w-0 transition-opacity duration-200 ease-out ${sheetVisible ? 'opacity-100' : 'opacity-0'}`}>
               <QuotationSheet
+                key={branchEpoch}
                 document={quotationDocument}
                 onChange={setQuotationDocument}
                 readOnly={!quotationEditable}
@@ -1018,9 +1292,16 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
                             <dd className="mt-0.5 text-sm tabular-nums">{revisionMoney(revisionGrandTotal(revision))}</dd>
                           </div>
                         </dl>
-                        <Button type="button" variant="outline" size="sm" className="shrink-0 self-start sm:self-center" onClick={() => setViewChoice(revision)}>
-                          View
-                        </Button>
+                        <div className="flex shrink-0 gap-2 self-start sm:self-center">
+                          {quotationEditable ? (
+                            <Button type="button" variant="outline" size="sm" onClick={() => setReviseFrom(revision)}>
+                              Revise
+                            </Button>
+                          ) : null}
+                          <Button type="button" variant="outline" size="sm" onClick={() => setViewChoice(revision)}>
+                            View
+                          </Button>
+                        </div>
                       </div>
                     ))}
                 </div>
@@ -1028,6 +1309,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             </div>
           ) : null}
         </Section>
+      ) : null}
+
+      {section === 'quotation' && record ? (
+        <QuotationDocumentsModal
+          salesQueryId={record.id}
+          canManage={quotationEditable}
+          isOpen={documentsOpen}
+          onClose={() => setDocumentsOpen(false)}
+        />
       ) : null}
 
       {section === 'quotation' && record?.quotationNumber ? (
@@ -1046,6 +1336,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
           title={record.poNumber || 'Purchase order'}
           description={`Quotation ${record.quotationNumber || '—'} · Query ${record.queryNumber}`}
         >
+          <CarriedQuotationDocuments
+            files={(quotationDocumentsQuery.data?.documents ?? []).filter((file) => file.carriedToPurchaseOrder)}
+          />
           <div className="grid gap-4 md:grid-cols-2">
             <label className={LABEL_CLASS}>
               PO number
@@ -1168,6 +1461,71 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       </Modal>
 
       <Modal
+        isOpen={templateAskOpen}
+        onClose={() => setTemplateAskOpen(false)}
+        title="Do you want to save this as template?"
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={() => setTemplateAskOpen(false)}>
+              No
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setTemplateAskOpen(false);
+                setTemplateName('');
+                setTemplateNameOpen(true);
+              }}
+            >
+              Yes
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          The quotation number and the details at the top are filled in when this template is used. Item names stay, and unit price and quantity are saved blank.
+        </p>
+      </Modal>
+
+      <Modal
+        isOpen={templateNameOpen}
+        onClose={() => {
+          if (!createTemplateState.isLoading) setTemplateNameOpen(false);
+        }}
+        title="Enter name of the template"
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" disabled={createTemplateState.isLoading} onClick={() => setTemplateNameOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" disabled={createTemplateState.isLoading || !templateName.trim()} onClick={() => void onSaveTemplate()}>
+              {createTemplateState.isLoading ? <Spinner size="sm" /> : 'Save'}
+            </Button>
+          </>
+        }
+      >
+        <label className={LABEL_CLASS}>
+          Template name
+          <input
+            value={templateName}
+            onChange={(event) => setTemplateName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void onSaveTemplate();
+              }
+            }}
+            maxLength={80}
+            autoFocus
+            className={INPUT_CLASS}
+          />
+        </label>
+      </Modal>
+
+      <Modal
         isOpen={reviseOpen}
         onClose={() => {
           if (!reviseState.isLoading) setReviseOpen(false);
@@ -1175,7 +1533,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
         title="Issue the next revision?"
         description={
           record
-            ? `The quotation number will be ${(record.quotationNumber ?? '').replace(/-R\d+$/, '')}-R${record.quotationRevision + 1}.`
+            ? `The quotation number will be ${nextQuotationLabel(record.quotationNumber, record.quotationRevision)}.`
             : undefined
         }
         size="sm"
@@ -1192,6 +1550,29 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       >
         <p className="text-sm text-muted-foreground">
           The current quotation is kept as the previous version. The new revision uses the next number.
+        </p>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(reviseFrom)}
+        onClose={() => setReviseFrom(null)}
+        title={reviseFrom ? `Do you want to revise from ${reviseFrom.quotationLabel}?` : 'Revise'}
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={() => setReviseFrom(null)}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={() => reviseFrom && void onReviseFrom(reviseFrom)}>
+              Open in Quotation document
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          {record
+            ? `This version opens in the quotation document. A change saves automatically as ${nextQuotationLabel(record.quotationNumber, record.quotationRevision)}, and the earlier versions stay linked.`
+            : 'This version opens in the quotation document.'}
         </p>
       </Modal>
 

@@ -23,14 +23,28 @@ export type SignatureBlock = {
   email: string;
 };
 
-export type QuotationBlock =
+export const MIN_SECTION_GAP_MM = 2;
+export const MAX_SECTION_GAP_MM = 80;
+export const MIN_BLANK_HEIGHT_MM = 6;
+export const MAX_BLANK_HEIGHT_MM = 160;
+export const DEFAULT_BLANK_HEIGHT_MM = 6;
+
+type QuotationBlockShape =
   | { id: string; type: 'terms'; name: string; rows: LabelRow[] }
   | { id: string; type: 'scope'; name: string; body: RichText }
   | { id: string; type: 'specification'; name: string; rows: LabelRow[] }
   | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number; sectionId?: string; versionId?: string }
-  | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rows: PriceRow[] }
+  | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rowHeights?: Record<string, number>; rows: PriceRow[] }
   | { id: string; type: 'closing'; name: string; body: RichText }
   | { id: string; type: 'signatures'; name: string; left: SignatureBlock; right: SignatureBlock };
+
+export type QuotationBlock = QuotationBlockShape & { gapMm?: number };
+
+export function sectionGapMm(block: { gapMm?: number }) {
+  const number = Number(block.gapMm);
+  if (!Number.isFinite(number)) return MIN_SECTION_GAP_MM;
+  return Math.min(MAX_SECTION_GAP_MM, Math.max(MIN_SECTION_GAP_MM, Math.round(number)));
+}
 
 export type QuotationCustomer = {
   name: string;
@@ -228,7 +242,7 @@ export function defaultOption(): QuotationBlock {
 }
 
 export function defaultBlank(): QuotationBlock {
-  return { id: id(), type: 'blank', name: '', body: '', minHeightMm: 36, widthPercent: 100 };
+  return { id: id(), type: 'blank', name: '', body: '', minHeightMm: DEFAULT_BLANK_HEIGHT_MM, widthPercent: 100 };
 }
 
 export function quotationFileName(document: Pick<QuotationDocument, 'fileName' | 'fileNameCustomized' | 'customer'>, quotationNumber: string) {
@@ -304,6 +318,11 @@ function clampNumber(value: number | undefined, min: number, max: number, fallba
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+function withStoredGap<T extends QuotationBlock>(block: T): T {
+  if (block.gapMm == null) return block;
+  return { ...block, gapMm: clampNumber(block.gapMm, MIN_SECTION_GAP_MM, MAX_SECTION_GAP_MM, MIN_SECTION_GAP_MM) };
+}
+
 const DEFAULT_PRICE_WIDTH: Record<string, number> = {
   sl: 8,
   item: 20,
@@ -323,6 +342,19 @@ export function priceColumnWidths(block: Extract<QuotationBlock, { type: 'option
   });
   const sum = values.reduce((total, value) => total + value, 0) || 1;
   return Object.fromEntries(keys.map((key, index) => [key, (values[index] / sum) * 100]));
+}
+
+function sanitizeRowHeights(heights: Record<string, number> | undefined, rowIds: string[]) {
+  if (!heights || typeof heights !== 'object') return undefined;
+  const allowed = new Set(['header', 'total', ...rowIds]);
+  const next: Record<string, number> = {};
+  for (const [key, value] of Object.entries(heights)) {
+    if (!allowed.has(key)) continue;
+    const number = Number(value);
+    if (!Number.isFinite(number)) continue;
+    next[key] = Math.min(80, Math.max(6, Math.round(number * 10) / 10));
+  }
+  return Object.keys(next).length ? next : undefined;
 }
 
 function sanitizePriceWidths(widths: Record<string, number> | undefined, columnIds: string[]) {
@@ -352,6 +384,60 @@ function sanitizePriceColumns(columns: PriceColumn[] | undefined): PriceColumn[]
   return next;
 }
 
+const EMPTY_TEMPLATE_CUSTOMER: QuotationCustomer = {
+  name: '',
+  city: '',
+  tel: '',
+  fax: '',
+  contactName: '',
+  contactNumber: '',
+  email: '',
+};
+
+/** Stored template: header details stay empty so a later quotation can fill them, and item prices are blank. */
+export function quotationTemplateDocument(document: QuotationDocument): QuotationDocument {
+  const saved = sanitizeDocument(document);
+  return {
+    ...saved,
+    trn: '',
+    date: '',
+    customer: { ...EMPTY_TEMPLATE_CUSTOMER },
+    quoteTitle: '',
+    totalCostWords: '',
+    project: '',
+    includesLine: '',
+    fileName: '',
+    fileNameCustomized: false,
+    blocks: saved.blocks.map((block) => (
+      block.type === 'option'
+        ? { ...block, rows: block.rows.map((row) => ({ ...row, unitPrice: '', quantity: '' })) }
+        : block
+    )),
+  };
+}
+
+/** Stable comparison key for template content. Header details, unit price, and quantity are ignored. */
+export function quotationTemplateKey(document: QuotationDocument): string {
+  return JSON.stringify(quotationTemplateDocument(document));
+}
+
+/** Puts the current quotation's number-side details back on a saved template. Prices stay blank. */
+export function applyQuotationTemplate(current: QuotationDocument, template: QuotationDocument): QuotationDocument {
+  const body = quotationTemplateDocument(template);
+  return sanitizeDocument({
+    ...body,
+    trn: current.trn,
+    date: current.date,
+    customer: { ...current.customer },
+    quoteTitle: current.quoteTitle,
+    totalCostWords: current.totalCostWords,
+    project: current.project,
+    includesLine: current.includesLine,
+    fileName: current.fileName,
+    fileNameCustomized: current.fileNameCustomized,
+  });
+}
+
 export function sanitizeDocument(document: QuotationDocument): QuotationDocument {
   return {
     ...document,
@@ -376,15 +462,16 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
       block.type === 'terms' || block.type === 'scope' || block.type === 'specification' || block.type === 'blank' || block.type === 'option' || block.type === 'closing' || block.type === 'signatures'
     )).map((block) => {
       if (block.type === 'terms' || block.type === 'specification') {
-        return { ...block, name: block.name.slice(0, 120), rows: block.rows.map((entry) => ({ ...entry, label: sanitizeRichText(entry.label), value: sanitizeRichText(entry.value) })) };
+        return withStoredGap({ ...block, name: block.name.slice(0, 120), rows: block.rows.map((entry) => ({ ...entry, label: sanitizeRichText(entry.label), value: sanitizeRichText(entry.value) })) });
       }
       if (block.type === 'option') {
         const columns = sanitizePriceColumns(block.columns);
-        return {
+        return withStoredGap({
           ...block,
           name: block.name.slice(0, 160),
           columns,
           widths: sanitizePriceWidths(block.widths, columns.map((column) => column.id)),
+          rowHeights: sanitizeRowHeights(block.rowHeights, block.rows.map((entry) => entry.id)),
           rows: block.rows.map((entry) => ({
             ...entry,
             item: sanitizeRichText(entry.item),
@@ -393,24 +480,24 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
             quantity: String(entry.quantity ?? '').slice(0, 20),
             extras: Object.fromEntries(columns.map((column) => [column.id, sanitizeRichText(entry.extras?.[column.id])])),
           })),
-        };
+        });
       }
       if (block.type === 'signatures') {
-        return block;
+        return withStoredGap(block);
       }
-      return {
+      return withStoredGap({
         ...block,
         name: block.name.slice(0, 120),
         body: sanitizeRichText(block.body),
         ...(block.type === 'blank'
           ? {
-              minHeightMm: clampNumber(block.minHeightMm, 24, 160, 36),
+              minHeightMm: clampNumber(block.minHeightMm, MIN_BLANK_HEIGHT_MM, MAX_BLANK_HEIGHT_MM, DEFAULT_BLANK_HEIGHT_MM),
               widthPercent: clampNumber(block.widthPercent, 45, 100, 100),
               ...(block.sectionId ? { sectionId: block.sectionId.slice(0, 80) } : { sectionId: undefined }),
               ...(block.versionId ? { versionId: block.versionId.slice(0, 80) } : { versionId: undefined }),
             }
           : {}),
-      };
+      });
     }),
   };
 }
@@ -503,7 +590,7 @@ export function insertCustomSection(
     type: 'blank',
     name: content.name,
     body: content.body,
-    minHeightMm: content.minHeightMm ?? 36,
+    minHeightMm: content.minHeightMm ?? DEFAULT_BLANK_HEIGHT_MM,
     widthPercent: content.widthPercent ?? 100,
     ...(sectionId ? { sectionId } : {}),
     ...(versionId ? { versionId } : {}),
@@ -565,6 +652,29 @@ export function moveBlock(document: QuotationDocument, blockId: string, directio
   const [block] = blocks.splice(index, 1);
   blocks.splice(next, 0, block);
   return { ...document, blocks };
+}
+
+export function placeBlock(document: QuotationDocument, blockId: string, beforeId: string | null): QuotationDocument {
+  if (beforeId === blockId) return document;
+  const from = document.blocks.findIndex((block) => block.id === blockId);
+  if (from < 0) return document;
+  const moving = document.blocks[from];
+  const movingFooter = FOOTER_TYPES.has(moving.type);
+  const blocks = document.blocks.filter((block) => block.id !== blockId);
+  let insertAt = blocks.length;
+  if (beforeId) {
+    const target = blocks.findIndex((block) => block.id === beforeId);
+    if (target < 0) return document;
+    if (FOOTER_TYPES.has(blocks[target].type) !== movingFooter) return document;
+    insertAt = target;
+  } else if (!movingFooter) {
+    const footerAt = blocks.findIndex((block) => FOOTER_TYPES.has(block.type));
+    insertAt = footerAt < 0 ? blocks.length : footerAt;
+  }
+  const next = [...blocks];
+  next.splice(insertAt, 0, moving);
+  if (next.every((block, index) => block.id === document.blocks[index]?.id)) return document;
+  return { ...document, blocks: next };
 }
 
 export function removeBlock(document: QuotationDocument, blockId: string): QuotationDocument {

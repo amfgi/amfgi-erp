@@ -12,10 +12,11 @@ import { canChangeJobSerial } from '@/lib/jobs/jobSerial';
 import { StatusBadge } from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
+import QuotationDocumentLinks from '@/components/sales/QuotationDocumentLinks';
 import JobConsumptionCostingSection from '@/components/jobs/JobConsumptionCostingSection';
 import JobScopeFilter, { type JobScopeOption } from '@/components/jobs/JobScopeFilter';
 import TransactionLedger from '@/components/transactions/TransactionLedger';
-import { useGetCustomersQuery, useGetJobByIdQuery, useGetJobMaterialsQuery, useGetJobsQuery } from '@/store/hooks';
+import { useGetCustomersQuery, useGetJobByIdQuery, useGetJobMaterialsQuery, useGetJobQuotationDocumentsQuery, useGetJobsQuery } from '@/store/hooks';
 
 const JobCostEnginePage = dynamic(() => import('@/app/(app)/jobs/[id]/cost-engine/page'), {
   ssr: false,
@@ -105,6 +106,7 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
   const [serialOpen, setSerialOpen] = useState(false);
 
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(id);
+  const quotationDocumentsQuery = useGetJobQuotationDocumentsQuery(id);
   const { data: customers = [] } = useGetCustomersQuery();
   const { data: jobs = [] } = useGetJobsQuery();
 
@@ -276,6 +278,16 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
           <p className="mt-1 text-xs text-muted-foreground">LPO {String((job as { lpoNumber?: string | null }).lpoNumber ?? '-')}</p>
         </div>
       </div>
+
+      {quotationDocumentsQuery.data?.linked ? (
+        <section className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-4 shadow-sm">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Quotation documents</p>
+            <p className="mt-1 text-sm text-muted-foreground">Latest file of each type from the quotation. View and download only.</p>
+          </div>
+          <QuotationDocumentLinks files={quotationDocumentsQuery.data.documents} />
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4">
         <div className="flex flex-wrap gap-2">

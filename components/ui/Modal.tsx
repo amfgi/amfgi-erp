@@ -25,6 +25,8 @@ const sizes = {
   '2xl': 'sm:max-w-6xl',
 };
 
+let openModalCount = 0;
+
 export default function Modal({
   isOpen,
   onClose,
@@ -40,10 +42,12 @@ export default function Modal({
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handler);
+    openModalCount += 1;
     document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', handler);
-      document.body.style.overflow = '';
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) document.body.style.overflow = '';
     };
   }, [isOpen, onClose]);
 

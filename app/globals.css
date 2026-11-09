@@ -386,6 +386,22 @@ html.light .divide-white\/5 > :not(:first-child) {
   will-change: transform, opacity;
 }
 
+@keyframes type-menu-out {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.type-menu-out {
+  animation: type-menu-out 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
 .drawer-panel-leave {
   animation: drawer-panel-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
   will-change: transform, opacity;
@@ -530,17 +546,13 @@ html.light .to-emerald-950\/40 {
 
 /* Quotation pad stays a white printed page in both themes.
    html uses user-select:none. Any ancestor with that value makes Chrome
-   drop the caret after one letter in these fields, including section titles. */
+   ignore Backspace and drop the caret in these fields. */
 html.quotation-editing,
-html.quotation-editing body {
-  -webkit-user-select: text;
-  user-select: text;
-}
-
+html.quotation-editing body,
 .quotation-pad,
 .quotation-pad * {
-  -webkit-user-select: text;
-  user-select: text;
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 .quotation-pad {
@@ -625,10 +637,22 @@ html.quotation-editing body {
   white-space: pre-wrap;
 }
 
+.quotation-pad table.quotation-insert td:has(> .quotation-cell-box),
+.quotation-pad table.quotation-insert th:has(> .quotation-cell-box) {
+  padding: 0;
+}
+
+.quotation-pad .quotation-cell-box {
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 2px 4px;
+}
+
 .quotation-pad table.quotation-item-table th,
 .quotation-pad table.quotation-item-table td {
   height: auto;
   overflow-wrap: anywhere;
+  position: relative;
   white-space: normal;
   vertical-align: top;
 }
@@ -691,7 +715,8 @@ html.quotation-editing body {
 }
 
 html.quotation-editing .quotation-picture {
-  user-select: none;
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 html.quotation-editing .quotation-picture[data-layout='behind'],
@@ -705,6 +730,75 @@ html.quotation-editing .quotation-picture[data-anchor='page'] {
   outline: 2px solid #7eb4ea;
   outline-offset: 3px;
   background: rgba(204, 228, 247, 0.55);
+}
+
+html.quotation-editing .quotation-section {
+  padding-right: 1.25rem;
+}
+
+html.quotation-editing .quotation-section [contenteditable='true'],
+html.quotation-editing .quotation-section input,
+html.quotation-editing .quotation-section textarea,
+html.quotation-editing .quotation-section select {
+  cursor: text;
+}
+
+html.quotation-editing .quotation-section button {
+  cursor: pointer;
+}
+
+html.quotation-editing .quotation-section table {
+  cursor: auto;
+}
+
+html.quotation-editing .quotation-section .quotation-gap-handle {
+  cursor: ns-resize;
+}
+
+html.quotation-editing .quotation-section button.quotation-section-grip {
+  cursor: grab;
+}
+
+.quotation-gap-handle {
+  position: absolute;
+  left: 0;
+  right: 1.5rem;
+  top: 0;
+  z-index: 20;
+  min-height: 8px;
+  transform: translateY(-100%);
+}
+
+.quotation-gap-handle:hover,
+.quotation-gap-handle:active {
+  background: rgba(91, 155, 213, 0.28);
+}
+
+.quotation-section-grip {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  display: inline-flex;
+  height: 16px;
+  width: 34px;
+  transform: translate(-50%, -50%);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #7eb4ea;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3b6f9a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.16);
+}
+
+.quotation-section-grip.is-selected,
+.quotation-section-grip:hover {
+  background: #d6ebfa;
+  color: #1d4f73;
+}
+
+.quotation-drop-before {
+  box-shadow: 0 -3px 0 #5b9bd5;
 }
 
 .quotation-section-used {

@@ -39,6 +39,8 @@ export const appApi = createApi({
     'QuotationTermsTemplate',
     'QuotationCustomSection',
     'QuotationSectionPreset',
+    'QuotationTemplate',
+    'QuotationDocument',
   ],
   endpoints: () => ({}),
 });

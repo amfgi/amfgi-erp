@@ -15,6 +15,7 @@ import { canSeeStage, hidesPurchaseOrders, type SalesAccess } from './access';
 import { findSalesUser, listSalesUsers } from './salesUsers';
 import { allocateJobNumber } from '@/lib/jobs/allocateJobNumber';
 import { assignNextDocumentNumber } from '@/lib/sales/nextDocumentSerial';
+import { latestIdsByType } from './quotationDocumentList';
 import { closureWorkDetail, writeSalesWorkLog } from './workLog';
 import {
   type DocumentKind,
@@ -695,35 +696,80 @@ export async function reviseQuotation(params: {
   id: string;
   access: SalesAccess;
   actorId: string;
+  fromRevisionId?: string | null;
+  quotationDocument?: unknown;
+  startDate?: string | null;
 }) {
   const { companyId, id, access } = params;
   if (!access.quotationManage) throw new SalesError('Forbidden', 403);
   const current = await loadRecord(companyId, id);
   if (current.stage !== 'QUOTATION') throw new SalesError('Only a quotation can be revised');
   if (current.closure !== 'OPEN') throw new SalesError('Reopen this record before revising it');
-  const next = current.quotationRevision + 1;
-  const label = formatQuotationNumber(current.quotationNumber, current.quotationRevision);
-  if (!current.quotationNumber || label.length > 100) throw new SalesError('This quotation number cannot take another revision');
+  const savedDocument = params.quotationDocument == null ? null : readQuotationDocument(params.quotationDocument);
+  if (params.quotationDocument != null && !savedDocument) {
+    throw new SalesError('The quotation document is incomplete');
+  }
+  const documentOptions = savedDocument ? optionsFromDocument(savedDocument) : null;
+  const mode = documentOptions ? (documentOptions.length > 1 ? 'MULTIPLE' : 'SINGLE') : current.quotationMode;
+  if (documentOptions) assertOptions(mode, documentOptions, false);
+  let sourceLabel: string | null = null;
+  if (params.fromRevisionId) {
+    const source = await prisma.salesQuotationRevision.findFirst({
+      where: { id: params.fromRevisionId, companyId, salesQueryId: current.id },
+      select: { quotationLabel: true },
+    });
+    if (!source) throw new SalesError('That version was not found', 404);
+    sourceLabel = source.quotationLabel;
+  }
   await prisma.$transaction(async (tx) => {
+    if (params.fromRevisionId) await lockSalesQuery(tx, companyId, current.id);
+    const archived = params.fromRevisionId
+      ? await tx.salesQuery.findFirst({ where: { id: current.id, companyId }, include: recordInclude })
+      : current;
+    if (!archived) throw new SalesError('Sales record not found', 404);
+    if (archived.stage !== 'QUOTATION') throw new SalesError('Only a quotation can be revised');
+    if (archived.closure !== 'OPEN') throw new SalesError('Reopen this record before revising it');
+    const next = archived.quotationRevision + 1;
+    const label = formatQuotationNumber(archived.quotationNumber, archived.quotationRevision);
+    if (!archived.quotationNumber || label.length > 100) throw new SalesError('This quotation number cannot take another revision');
+    if (params.fromRevisionId) {
+      const source = await tx.salesQuotationRevision.findFirst({
+        where: { id: params.fromRevisionId, companyId, salesQueryId: archived.id },
+        select: { id: true },
+      });
+      if (!source) throw new SalesError('That version was not found', 404);
+    }
     await tx.salesQuotationRevision.create({
       data: {
         companyId,
-        salesQueryId: current.id,
-        revision: current.quotationRevision,
+        salesQueryId: archived.id,
+        revision: archived.quotationRevision,
         quotationLabel: label,
-        snapshot: quotationSnapshot(current),
+        snapshot: quotationSnapshot(archived),
       },
     });
+    if (documentOptions) await replaceOptions(tx, archived, documentOptions);
+    const startDate = params.startDate?.slice(0, 10);
     await tx.salesQuery.update({
-      where: { id: current.id },
-      data: { quotationRevision: next, quotationIssuedAt: new Date() },
+      where: { id: archived.id },
+      data: {
+        quotationRevision: next,
+        quotationIssuedAt: new Date(),
+        ...(savedDocument
+          ? { quotationDocument: savedDocument as Prisma.InputJsonValue, quotationMode: mode }
+          : {}),
+        ...(params.fromRevisionId && params.startDate !== undefined
+          ? { startDate: startDate ? new Date(`${startDate}T00:00:00Z`) : null }
+          : {}),
+      },
     });
+    const issued = formatQuotationNumber(archived.quotationNumber, next);
     await writeSalesWorkLog(tx, {
       companyId,
-      salesQueryId: current.id,
+      salesQueryId: archived.id,
       actorId: params.actorId,
       action: 'REVISED',
-      detail: formatQuotationNumber(current.quotationNumber, next),
+      detail: sourceLabel ? `${issued} from ${sourceLabel}` : issued,
     });
   });
   return getSalesRecord(companyId, id, access);
@@ -924,6 +970,17 @@ export async function receivePurchaseOrder(params: {
         poNumberKey: queryNumberKey(poNumber),
       },
     });
+    const documentRows = await tx.salesQuotationDocument.findMany({
+      where: { companyId: params.companyId, salesQueryId: current.id },
+      select: { id: true, typeId: true, createdAt: true },
+    });
+    const carriedIds = latestIdsByType(documentRows);
+    if (carriedIds.length) {
+      await tx.salesQuotationDocument.updateMany({
+        where: { id: { in: carriedIds }, companyId: params.companyId },
+        data: { carriedToPurchaseOrder: true },
+      });
+    }
     await writeSalesWorkLog(tx, {
       companyId: params.companyId,
       salesQueryId: current.id,
@@ -1188,7 +1245,44 @@ const ALLOWED_MIMES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/acad',
+  'application/x-acad',
+  'application/dwg',
+  'application/x-dwg',
+  'image/vnd.dwg',
+  'application/dxf',
+  'application/x-dxf',
+  'image/vnd.dxf',
+  'model/vnd.dwf',
+  'application/x-dwf',
+  'model/vnd.dwfx',
+  'application/x-dgn',
+  'image/vnd.dgn',
 ]);
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  dwg: 'application/acad',
+  dxf: 'image/vnd.dxf',
+  dwf: 'model/vnd.dwf',
+  dwfx: 'model/vnd.dwfx',
+  dgn: 'image/vnd.dgn',
+};
+
+export function uploadMimeType(file: Pick<File, 'name' | 'type'>): string {
+  if (ALLOWED_MIMES.has(file.type)) return file.type;
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const fromName = MIME_BY_EXTENSION[extension];
+  return fromName ?? '';
+}
 
 export function assertSalesUpload(params: {
   access: SalesAccess;
@@ -1210,9 +1304,12 @@ export function assertSalesUpload(params: {
   if (!allowed) throw new SalesError('Forbidden', 403);
 }
 
-export function assertUploadFile(file: File) {
-  if (!ALLOWED_MIMES.has(file.type)) throw new SalesError('Upload a PDF, image, Word, or Excel file');
+export function assertUploadFile(file: File): string {
+  const mimeType = uploadMimeType(file);
+  if (!mimeType) throw new SalesError('Upload a PDF, image, Word, Excel, or drawing file');
+  if (file.size <= 0) throw new SalesError('The file is empty');
   if (file.size > 20 * 1024 * 1024) throw new SalesError('File size must not exceed 20 MB');
+  return mimeType;
 }
 
 export async function getAttachmentForDownload(companyId: string, id: string, access: SalesAccess) {

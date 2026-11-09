@@ -571,6 +571,15 @@ export const jobsApi = appApi.injectEndpoints({
       providesTags: [{ type: 'Job', id: 'LIST' }],
     }),
 
+    getJobQuotationDocuments: builder.query<
+      { linked: boolean; documents: Array<{ id: string; typeId: string; typeName: string; fileName: string; viewerUrl: string; note: string | null; createdAt: string }> },
+      string
+    >({
+      query: (id) => `/jobs/${id}/quotation-documents`,
+      transformResponse: (response: { data: { linked: boolean; documents: Array<{ id: string; typeId: string; typeName: string; fileName: string; viewerUrl: string; note: string | null; createdAt: string }> } }) => response.data,
+      providesTags: (_result, _error, id) => [{ type: 'Job', id }, { type: 'QuotationDocument', id }],
+    }),
+
     getJobById: builder.query<JobWithMaterials, string>({
       query: (id) => `/jobs/${id}`,
       transformResponse: (r: { data: JobWithMaterials }) => r.data,
@@ -1175,6 +1184,7 @@ export const {
   useLazyGetJobsForExportQuery,
   useGetJobsForExportQuery,
   useGetJobByIdQuery,
+  useGetJobQuotationDocumentsQuery,
   useGetJobMaterialsQuery,
   useGetJobItemsQuery,
   useAddJobItemMutation,
