@@ -1,4 +1,5 @@
 import {
+  annotateLinesForWeeklyOffPay,
   annotatePaidWeeklyOffLines,
   isPaidNeighbourDay,
   resolvePaidWeeklyOffDates,
@@ -173,6 +174,19 @@ describe('resolvePaidWeeklyOffDates', () => {
     expect(forMode('CUSTOM')).toEqual([]);
   });
 
+  it('pays a worked fixed-monthly Sunday even when weekly-off OT is enabled', () => {
+    const lines = [
+      line('2026-08-14', 'PRESENT', { isSunday: false }),
+      line('2026-08-15', 'ABSENT', { isSunday: false, workedMinutes: 0 }),
+      line('2026-08-16', 'PRESENT', { isSunday: true }),
+      line('2026-08-17', 'PRESENT', { isSunday: false }),
+    ];
+    expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual(['2026-08-16']);
+    expect([
+      ...resolvePaidWeeklyOffDates(lines, { ...sandwichedConfig, payExcludedWeekdayWorkAtOt: true }),
+    ]).toEqual(['2026-08-16']);
+  });
+
   it('leaves a worked weekly off on OT-only pay in hourly and daily wage', () => {
     const lines = [
       line('2026-07-04', 'PRESENT'),
@@ -185,6 +199,25 @@ describe('resolvePaidWeeklyOffDates', () => {
     expect([
       ...resolvePaidWeeklyOffDates(lines, { ...sandwichedConfig, mode: 'DAILY_WAGE' }),
     ]).toEqual([]);
+  });
+});
+
+describe('annotateLinesForWeeklyOffPay', () => {
+  it('keeps a fixed-monthly Sunday paid when an earlier hourly package skips worked Sundays', () => {
+    const lines = [
+      line('2026-08-14', 'PRESENT', { isSunday: false }),
+      line('2026-08-15', 'ABSENT', { isSunday: false, workedMinutes: 0 }),
+      line('2026-08-16', 'PRESENT', { isSunday: true }),
+      line('2026-08-17', 'PRESENT', { isSunday: false }),
+    ];
+    const hourly: PayTypeConfig = { ...sandwichedConfig, mode: 'HOURLY_SPLIT' };
+    const monthly = sandwichedConfig;
+    const annotated = annotateLinesForWeeklyOffPay(lines, hourly, (entry) => ({
+      compensation: { monthlyBasic: 2500, monthlyAllowance: 0, dailyRate: 0 },
+      config: entry.workDate < '2026-08-16' ? hourly : monthly,
+    }));
+    expect(annotated.find((entry) => entry.workDate === '2026-08-16')?.isPaidWeeklyOff).toBe(true);
+    expect(annotated.find((entry) => entry.workDate === '2026-08-14')?.isPaidWeeklyOff).toBe(false);
   });
 });
 

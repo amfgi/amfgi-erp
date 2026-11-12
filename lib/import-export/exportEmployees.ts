@@ -27,7 +27,9 @@ export function exportEmployeesToXlsx(
     pickExportRowColumns(employeeToExportRow(employee), columns)
   );
   const stamp = new Date().toISOString().slice(0, 10);
-  const sheets: Array<{ name: string; rows: Array<Record<string, string | number | boolean>> | string[][] }> = [];
+  const sheets: Array<{ name: string; rows: Array<Record<string, string | number | boolean>> | string[][] }> = [
+    { name: 'Employees', rows },
+  ];
 
   if (includeInstructions) {
     sheets.push({
@@ -44,8 +46,6 @@ export function exportEmployeesToXlsx(
       ],
     });
   }
-
-  sheets.push({ name: 'Employees', rows });
 
   downloadWorkbook(`${label}-export-${stamp}.xlsx`, sheets);
 }

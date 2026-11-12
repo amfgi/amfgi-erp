@@ -553,7 +553,7 @@ function buildPaidWeeklyOffDayRow(
   let otHourRate = 0;
   let totalHours = 0;
 
-  if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) {
+  if (config.mode !== 'MONTHLY_CALENDAR_DEDUCT' && shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) {
     const lineBasic = lineBasicHours(line);
     const basicHourRate = lineBasic ? dailyRate / lineBasic : 0;
     const otRow = buildExcludedWeekdayWorkDayRow(

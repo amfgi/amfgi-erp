@@ -559,7 +559,9 @@ export default function PayTypeEditorTable({
                         {mode === 'DAILY_WAGE'
                           ? null
                           : 'Monthly basic and allowance are then spread over every calendar day, so a full month still pays exactly the monthly salary. '}
-                        Worked weekly off-days keep their OT-only treatment.
+                        {mode === 'MONTHLY_CALENDAR_DEDUCT'
+                          ? 'On fixed monthly pay, that Sunday still earns the normal daily rate when attendance shows hours. Pay weekly off work at OT rate does not replace it.'
+                          : 'Worked weekly off-days keep their OT-only treatment.'}
                       </span>
                     </span>
                   </label>

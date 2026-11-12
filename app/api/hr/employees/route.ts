@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import type { Employee, Prisma } from '@prisma/client';
 import { Prisma as PrismaNS } from '@prisma/client';
-import { allocateNextEmployeeCode } from '@/lib/hr/allocateEmployeeCode';
+import { allocateNextEmployeeCode, lockEmployeeCodeAllocation } from '@/lib/hr/allocateEmployeeCode';
 import { provisionEmployeeUser } from '@/lib/hr/provisionEmployeeUser';
 import {
   checkEmployeeEmailUserConflict,
@@ -321,17 +321,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const requestedCode = d.employeeCode?.trim() || '';
-    const autoAllocate = !requestedCode;
     let lastError: unknown = null;
 
-    for (let attempt = 0; attempt < (autoAllocate ? 5 : 1); attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const employeeCode = autoAllocate
-          ? (await allocateNextEmployeeCode(prisma, companyId)).code
-          : requestedCode;
-
         const result = await prisma.$transaction(async (tx) => {
+          await lockEmployeeCodeAllocation(tx, companyId);
+          const employeeCode = (await allocateNextEmployeeCode(tx, companyId)).code;
           const emp = await tx.employee.create({
             data: {
               companyId,
@@ -409,7 +405,7 @@ export async function POST(req: Request) {
           e instanceof PrismaNS.PrismaClientKnownRequestError
             ? e.code === 'P2002'
             : e instanceof Error && e.message.includes('Unique constraint');
-        if (!autoAllocate || !isUnique) throw e;
+        if (!isUnique) throw e;
       }
     }
 

@@ -7,7 +7,7 @@ import {
   resolveExcludedWeekdays,
 } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import { shouldPayExcludedWeekdayWorkAtOtOnly } from '@/lib/hr/payroll/excludedWeekdayOtPay';
-import type { PayLineInput, PayTypeConfig } from '@/lib/hr/payroll/types';
+import type { LinePayContext, PayLineInput, PayTypeConfig } from '@/lib/hr/payroll/types';
 
 /** True when a non-weekly-off day counts as a paid neighbour for the sandwiched rule. */
 export function isPaidNeighbourDay(line: PayLineInput): boolean {
@@ -76,7 +76,12 @@ export function resolvePaidWeeklyOffDates(
     if (!isExcludedWeekdayYmd(line.workDate, excluded)) continue;
     if (isPayrollHolidayLine(line)) continue;
     if (isLeavePaidForPay(line)) continue;
-    if (shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) continue;
+    // Fixed monthly keeps the daily salary on a qualifying Sunday. Hours and the
+    // weekly-off OT checkbox do not remove it. Hourly and daily wage still pay
+    // worked weekly off-days at OT only.
+    if (config.mode !== 'MONTHLY_CALENDAR_DEDUCT' && shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) {
+      continue;
+    }
 
     const needBefore = hasNonExcludedWeekdayInMonth(line.workDate, excluded, 'before');
     const needAfter = hasNonExcludedWeekdayInMonth(line.workDate, excluded, 'after');
@@ -106,6 +111,49 @@ export function resolvePaidWeeklyOffDates(
   }
 
   return paid;
+}
+
+function weeklyOffConfigKey(config: PayTypeConfig): string {
+  const excluded = (config.excludedWeekdays ?? []).join(',');
+  const ot = config.payExcludedWeekdayWorkAtOt ? '1' : '0';
+  return `${config.mode}:${config.weeklyOffPayRule ?? 'NONE'}:${excluded}:${ot}`;
+}
+
+/**
+ * Stamp isPaidWeeklyOff per line. One package uses primaryConfig. Several packages
+ * in the month each keep their own paid dates, so an hourly package cannot drop a
+ * fixed-monthly Sunday.
+ */
+export function annotateLinesForWeeklyOffPay(
+  lines: PayLineInput[],
+  primaryConfig: PayTypeConfig,
+  resolveLineContext?: (line: PayLineInput) => LinePayContext
+): PayLineInput[] {
+  if (!resolveLineContext) {
+    return annotatePaidWeeklyOffLines(lines, primaryConfig);
+  }
+
+  const paidByKey = new Map<string, Set<string>>();
+  for (const line of lines) {
+    const config = resolveLineContext(line).config;
+    const key = weeklyOffConfigKey(config);
+    if (paidByKey.has(key)) continue;
+    paidByKey.set(
+      key,
+      config.weeklyOffPayRule === 'SANDWICHED'
+        ? resolvePaidWeeklyOffDates(lines, config)
+        : new Set()
+    );
+  }
+
+  return lines.map((line) => {
+    const config = resolveLineContext(line).config;
+    const paidDates = paidByKey.get(weeklyOffConfigKey(config));
+    return {
+      ...line,
+      isPaidWeeklyOff: Boolean(paidDates?.has(line.workDate)),
+    };
+  });
 }
 
 /** Stamp isPaidWeeklyOff on pay lines for the given config. */

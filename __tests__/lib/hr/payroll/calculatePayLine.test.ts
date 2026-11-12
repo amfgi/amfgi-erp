@@ -517,6 +517,71 @@ describe('calculatePayLine', () => {
     expect(restDay?.totalSalary).toBeCloseTo(presentDay?.basicHourSalary! + presentDay?.allowance!, 1);
   });
 
+  it('pays the daily total on a worked fixed-monthly Sunday even when weekly-off OT is enabled', () => {
+    const config: PayTypeConfig = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT',
+      deductDenominator: 'CALENDAR_DAYS',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+      payExcludedWeekdayWorkAtOt: true,
+      otPercent: 125,
+    };
+    const lines = annotatePaidWeeklyOffLines(
+      [
+        {
+          workDate: '2026-08-14',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 8 * 60,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-08-15',
+          status: 'ABSENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-08-16',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 8 * 60,
+          isSunday: true,
+        },
+        {
+          workDate: '2026-08-17',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 8 * 60,
+          isSunday: false,
+        },
+      ],
+      config
+    );
+    const result = calculatePayLine({
+      month: '2026-08',
+      config,
+      compensation: { monthlyBasic: 2500, monthlyAllowance: 500, dailyRate: 0 },
+      lines,
+    });
+    const sunday = result.days.find((day) => day.date === '2026-08-16');
+    const monday = result.days.find((day) => day.date === '2026-08-17');
+    expect(lines.find((entry) => entry.workDate === '2026-08-16')?.isPaidWeeklyOff).toBe(true);
+    expect(sunday?.totalHours).toBe(0);
+    expect(sunday?.otHourSalary).toBe(0);
+    expect(sunday?.basicHourSalary).toBeCloseTo(monday?.basicHourSalary ?? 0, 1);
+    expect(sunday?.allowance).toBeCloseTo(monday?.allowance ?? 0, 1);
+    expect(sunday?.totalSalary).toBeCloseTo(
+      (monday?.basicHourSalary ?? 0) + (monday?.allowance ?? 0),
+      1
+    );
+  });
+
   it('full month on calendar-days + sandwiched weekly off totals monthly basic + allowance', () => {
     const config: PayTypeConfig = {
       mode: 'MONTHLY_CALENDAR_DEDUCT',

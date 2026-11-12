@@ -181,3 +181,51 @@ export function previewEmployeeCodeExample(
 ): string {
   return formatEmployeeCode(settings, normalizeEmployeeCodeSettings(settings).startFrom, referenceDate);
 }
+
+export type EmployeeCodeRenumberSource = {
+  id: string;
+  employeeCode: string;
+  fullName: string;
+  hireDate: Date | null;
+  createdAt: Date;
+};
+
+export type EmployeeCodeRenumberRow = {
+  id: string;
+  fullName: string;
+  oldCode: string;
+  newCode: string;
+};
+
+/** Hire date when it exists, otherwise the record's created date. */
+function arrivalTime(employee: EmployeeCodeRenumberSource): number {
+  const hire = employee.hireDate?.getTime();
+  if (hire !== undefined && Number.isFinite(hire)) return hire;
+  return employee.createdAt.getTime();
+}
+
+/** Whoever arrived earlier gets the smaller number. One date or both is enough. */
+export function planEmployeeCodeRenumber(
+  employees: EmployeeCodeRenumberSource[],
+  settings: EmployeeCodeSettings,
+  referenceDate = new Date()
+): EmployeeCodeRenumberRow[] {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  const sorted = [...employees].sort((a, b) => {
+    const arrived = arrivalTime(a) - arrivalTime(b);
+    if (arrived !== 0) return arrived;
+    const created = a.createdAt.getTime() - b.createdAt.getTime();
+    if (created !== 0) return created;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  return sorted.map((employee, index) => ({
+    id: employee.id,
+    fullName: employee.fullName,
+    oldCode: employee.employeeCode,
+    newCode: formatEmployeeCode(normalized, normalized.startFrom + index, referenceDate),
+  }));
+}
+
+export function temporaryEmployeeCode(employeeId: string): string {
+  return `__tmp__${employeeId}`;
+}

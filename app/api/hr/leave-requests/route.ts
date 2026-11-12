@@ -15,6 +15,9 @@ import { z } from 'zod';
 
 const companySelect = { id: true, name: true, slug: true } as const;
 
+const LEAVE_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] as const;
+const LEAVE_SORTS = ['submitted', 'startDesc', 'startAsc'] as const;
+
 const CreateSchema = z.object({
   companyId: z.string().min(1).optional(),
   employeeId: z.string().min(1),
@@ -59,7 +62,15 @@ export async function GET(req: Request) {
   const { companyIds } = ctx;
 
   const status = searchParams.get('status');
+  if (status && !LEAVE_STATUSES.includes(status as (typeof LEAVE_STATUSES)[number])) {
+    return errorResponse('Invalid status', 400);
+  }
+  const sort = searchParams.get('sort') || 'submitted';
+  if (!LEAVE_SORTS.includes(sort as (typeof LEAVE_SORTS)[number])) {
+    return errorResponse('Invalid sort', 400);
+  }
   const employeeId = searchParams.get('employeeId');
+  const leaveTypeId = searchParams.get('leaveTypeId')?.trim() || '';
 
   let workDateFilter: { startDate?: { lte: Date }; endDate?: { gte: Date } } = {};
   if (workDateRaw) {
@@ -73,18 +84,29 @@ export async function GET(req: Request) {
     try {
       const from = dateFromYmd(ymdFromInput(fromRaw));
       const to = dateFromYmd(ymdFromInput(toRaw));
+      if (from.getTime() > to.getTime()) {
+        return errorResponse('From date must be on or before the to date', 400);
+      }
       workDateFilter = { startDate: { lte: to }, endDate: { gte: from } };
     } catch {
       return errorResponse('Invalid from/to date', 400);
     }
   }
 
+  const orderBy =
+    sort === 'startDesc'
+      ? { startDate: 'desc' as const }
+      : sort === 'startAsc'
+        ? { startDate: 'asc' as const }
+        : { submittedAt: 'desc' as const };
+
   const rows = await prisma.leaveRequest.findMany({
     where: {
       ...companyIdWhere(companyIds),
       ...workDateFilter,
-      ...(status ? { status: status as 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' } : {}),
+      ...(status ? { status: status as (typeof LEAVE_STATUSES)[number] } : {}),
       ...(employeeId ? { employeeId } : {}),
+      ...(leaveTypeId ? { leaveTypeId } : {}),
     },
     include: {
       company: { select: companySelect },
@@ -94,7 +116,7 @@ export async function GET(req: Request) {
       reviewedBy: { select: { id: true, name: true } },
       leaveTypeRef: { select: { id: true, name: true, code: true, rules: true } },
     },
-    orderBy: { submittedAt: 'desc' },
+    orderBy,
     take: 200,
   });
 

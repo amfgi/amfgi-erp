@@ -92,6 +92,7 @@ model Company {
   mobileAccessTokens       EmployeeMobileAccessToken[]
   visaPeriods              VisaPeriod[]
   employeeDocuments        EmployeeDocument[]
+  employeeExtraFiles       EmployeeExtraFile[]
   workforceExpertises      WorkforceExpertise[]
   employeeMetaOptions      EmployeeMetaOption[]
   materialWarehouseStocks  MaterialWarehouseStock[]
@@ -1888,6 +1889,7 @@ model Employee {
   userLink              User?                       @relation("EmployeeUserLink")
   visaPeriods           VisaPeriod[]
   documents             EmployeeDocument[]
+  extraFiles            EmployeeExtraFile[]
   assignmentMembers     WorkAssignmentMember[]
   scheduleAbsences      ScheduleAbsence[]
   driverRunLogs         DriverRunLog[]
@@ -1983,6 +1985,25 @@ model EmployeeDocument {
   @@index([companyId, expiryDate])
   @@index([companyId, visaPeriodId])
   @@index([companyId, documentTypeId])
+}
+
+/// Extra files kept beside typed HR documents. The file name is the record name.
+model EmployeeExtraFile {
+  id          String   @id @default(cuid())
+  companyId   String
+  employeeId  String
+  fileName    String
+  extension   String
+  mimeType    String
+  sizeBytes   Int
+  mediaUrl    String
+  driveFileId String
+  createdAt   DateTime @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Cascade)
+
+  @@index([companyId, employeeId, createdAt])
 }
 
 model WorkSchedule {

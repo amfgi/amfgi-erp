@@ -10,6 +10,7 @@ import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { DocumentPortalSelfServiceFields } from '@/components/hr/DocumentPortalSelfServiceFields';
 import EmployeeCompensationPanel from '@/components/hr/EmployeeCompensationPanel';
+import EmployeeExtraFiles from '@/components/hr/EmployeeExtraFiles';
 import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
 import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
 import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect';
@@ -1138,7 +1139,14 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                   </label>
                   <label className="block">
                     <span className={labelClass}>Employee code</span>
-                    <input name="employeeCode" required defaultValue={emp.employeeCode} disabled={!canEdit} className={fieldClass} />
+                    <input
+                      name="employeeCode"
+                      defaultValue={emp.employeeCode}
+                      readOnly
+                      disabled
+                      className={fieldClass}
+                    />
+                    <span className="mt-1 block text-[11px] text-slate-500">Assigned by the system from Employee ID format.</span>
                   </label>
                   <label className="block">
                     <span className={labelClass}>Nationality (country)</span>
@@ -2001,6 +2009,13 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                   </div>
                 </div>
               )}
+
+              <EmployeeExtraFiles
+                employeeId={employeeId}
+                canView={canDocView}
+                canCreate={canDocCreate}
+                canDelete={canDocDelete}
+              />
             </div>
           )}
 

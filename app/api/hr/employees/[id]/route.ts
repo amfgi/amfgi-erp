@@ -17,6 +17,7 @@ import {
   requireHrSession,
 } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
+import { deleteFromDrive } from '@/lib/utils/googleDrive';
 import { mergeProfileExtensionForStatusChange } from '@/lib/hr/employeeLeavePeriod';
 import {
   assertCanPatchEmployeeAccountFields,
@@ -149,7 +150,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     const data: Prisma.EmployeeUpdateInput = {};
-    if (d.employeeCode !== undefined) data.employeeCode = d.employeeCode.trim();
     if (d.fullName !== undefined) data.fullName = d.fullName.trim();
     if (d.preferredName !== undefined) data.preferredName = d.preferredName?.trim() || null;
     if (d.email !== undefined) data.email = emailNorm === undefined ? undefined : emailNorm ?? null;
@@ -286,6 +286,18 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const eligibility = await checkEmployeeDeleteEligibility(prisma, companyId, id);
   if (!eligibility.canDelete) {
     return errorResponse(formatEmployeeDeleteBlockMessage(eligibility), 400);
+  }
+
+  const extraFiles = await prisma.employeeExtraFile.findMany({
+    where: { companyId, employeeId: id },
+    select: { driveFileId: true },
+  });
+  for (const file of extraFiles) {
+    try {
+      await deleteFromDrive(file.driveFileId, companyId);
+    } catch (error) {
+      console.error('Failed to delete extra employee file from Drive:', error);
+    }
   }
 
   await prisma.employee.delete({ where: { id } });

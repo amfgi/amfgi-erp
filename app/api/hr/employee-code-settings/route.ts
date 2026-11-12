@@ -2,7 +2,11 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/db/prisma';
-import { allocateNextEmployeeCode } from '@/lib/hr/allocateEmployeeCode';
+import {
+  allocateNextEmployeeCode,
+  applyEmployeeCodeRenumber,
+  previewEmployeeCodeRenumber,
+} from '@/lib/hr/allocateEmployeeCode';
 import {
   EMPLOYEE_CODE_COUNTING_STYLES,
   normalizeEmployeeCodeSettings,
@@ -17,6 +21,11 @@ import {
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import { P } from '@/lib/permissions';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
+
+const RenumberSchema = z.object({
+  companyId: z.string().min(1).optional(),
+  confirm: z.boolean().optional(),
+});
 
 const BodySchema = z.object({
   companyId: z.string().min(1).optional(),
@@ -106,4 +115,38 @@ export async function PUT(req: Request) {
     exampleCode: previewEmployeeCodeExample(settings),
     nextCodePreview,
   });
+}
+
+export async function POST(req: Request) {
+  const body = await req.json();
+  const parsed = RenumberSchema.safeParse(body);
+  if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? 'Validation error', 422);
+
+  const authCtx = await requireHrSession({ permission: P.HR_EMPLOYEE_EDIT });
+  if (!authCtx.ok) return authCtx.response;
+  if (!hasPerm(authCtx.session.user, P.HR_EMPLOYEE_EDIT)) return errorResponse('Forbidden', 403);
+
+  const writeCompanyId = resolveHrWriteCompanyId({
+    requestedCompanyId: parsed.data.companyId,
+    activeCompanyId: authCtx.session.user.activeCompanyId,
+  });
+  if (!writeCompanyId) return errorResponse('companyId is required', 400);
+  if (!authCtx.companyIds.includes(writeCompanyId)) return errorResponse('Forbidden', 403);
+
+  if (!parsed.data.confirm) {
+    const rows = await previewEmployeeCodeRenumber(prisma, writeCompanyId);
+    return successResponse({ rows, applied: false });
+  }
+
+  const rows = await applyEmployeeCodeRenumber(prisma, writeCompanyId);
+  const { code: nextCodePreview } = await allocateNextEmployeeCode(prisma, writeCompanyId);
+
+  publishLiveUpdate({
+    companyId: writeCompanyId,
+    channel: 'hr',
+    entity: 'employee',
+    action: 'updated',
+  });
+
+  return successResponse({ rows, applied: true, nextCodePreview });
 }

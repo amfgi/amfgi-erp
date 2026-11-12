@@ -64,7 +64,8 @@ type EmployeeOption = {
   preferredName: string | null;
 };
 
-type StatusFilter = 'PENDING' | 'APPROVED' | 'ALL';
+type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
+type LeaveSort = 'submitted' | 'startDesc' | 'startAsc';
 
 function statusBadgeClass(status: string) {
   const map: Record<string, string> = {
@@ -96,6 +97,16 @@ function leaveTypeDeductsBalance(type: LeaveTypeOption | undefined): boolean {
   return deductFromBalanceFromRules(parseLeaveTypeRules(type.rules));
 }
 
+function monthBounds(month: string): { from: string; to: string } | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]);
+  if (monthIndex < 1 || monthIndex > 12) return null;
+  const lastDay = new Date(year, monthIndex, 0).getDate();
+  const mm = String(monthIndex).padStart(2, '0');
+  return { from: `${year}-${mm}-01`, to: `${year}-${mm}-${String(lastDay).padStart(2, '0')}` };
+}
 function rowDeductsBalance(row: LeaveRow): boolean {
   if (row.leaveTypeRef) return leaveTypeDeductsBalance(row.leaveTypeRef as LeaveTypeOption);
   return row.leaveType === 'ANNUAL' || row.leaveType === 'ONE_DAY';
@@ -121,6 +132,11 @@ export default function HrLeavePage() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('PENDING');
   const [search, setSearch] = useState('');
+  const [month, setMonth] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [filterLeaveTypeId, setFilterLeaveTypeId] = useState('');
+  const [sort, setSort] = useState<LeaveSort>('submitted');
   const [requests, setRequests] = useState<LeaveRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
@@ -189,6 +205,10 @@ export default function HrLeavePage() {
   }, [companyId, companyOptions.length, router, searchParams]);
 
   useEffect(() => {
+    setFilterLeaveTypeId('');
+  }, [companyId]);
+
+  useEffect(() => {
     if (!canView || !companyId) return;
     void Promise.all([
       fetch(`/api/hr/employees?limit=500&companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' }).then((r) => r.json()),
@@ -210,8 +230,21 @@ export default function HrLeavePage() {
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
-    const params = new URLSearchParams({ companyId });
+    const dateRangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
+    if (dateRangeInvalid) {
+      setRequests([]);
+      const statsRes = await fetch(`/api/hr/leave/stats?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
+      const statsJson = await readApiJson<Stats>(statsRes);
+      if (statsRes.ok && statsJson?.success) setStats(statsJson.data as Stats);
+      return;
+    }
+    const params = new URLSearchParams({ companyId, sort });
     if (statusFilter !== 'ALL') params.set('status', statusFilter);
+    if (filterLeaveTypeId) params.set('leaveTypeId', filterLeaveTypeId);
+    if (fromDate && toDate) {
+      params.set('from', fromDate);
+      params.set('to', toDate);
+    }
     const q = params.toString();
     const [reqRes, statsRes] = await Promise.all([
       fetch(`/api/hr/leave-requests?${q}`, { cache: 'no-store' }),
@@ -221,7 +254,7 @@ export default function HrLeavePage() {
     const statsJson = await readApiJson<Stats>(statsRes);
     if (reqRes.ok && reqJson?.success) setRequests(reqJson.data as LeaveRow[]);
     if (statsRes.ok && statsJson?.success) setStats(statsJson.data as Stats);
-  }, [companyId, statusFilter]);
+  }, [companyId, statusFilter, fromDate, toDate, filterLeaveTypeId, sort]);
 
   useEffect(() => {
     if (!canView || !companyId) return;
@@ -280,6 +313,20 @@ export default function HrLeavePage() {
       })
       .catch(() => setEditBalance(null));
   }, [companyId, editModal, editStart]);
+
+  const leaveTypeFilterItems = useMemo(
+    () =>
+      leaveTypes.map((type) => ({
+        id: type.id,
+        label: type.name,
+        searchText: `${type.code} ${type.name}`,
+      })),
+    [leaveTypes],
+  );
+  const dateRangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
+  const hasDateFilter = Boolean(fromDate && toDate && !dateRangeInvalid);
+  const extraFiltersActive =
+    Boolean(month || fromDate || toDate || filterLeaveTypeId) || sort !== 'submitted';
 
   const visibleRequests = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -523,25 +570,118 @@ export default function HrLeavePage() {
         </div>
       ) : null}
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {(['PENDING', 'APPROVED', 'ALL'] as const).map((key) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={statusFilter === key ? 'default' : 'outline'}
-              onClick={() => setStatusFilter(key)}
-            >
-              {key === 'PENDING' ? 'Pending' : key === 'APPROVED' ? 'Approved' : 'All'}
-            </Button>
-          ))}
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {(['PENDING', 'APPROVED', 'REJECTED', 'ALL'] as const).map((key) => (
+              <Button
+                key={key}
+                size="sm"
+                variant={statusFilter === key ? 'default' : 'outline'}
+                onClick={() => setStatusFilter(key)}
+              >
+                {key === 'PENDING' ? 'Pending' : key === 'APPROVED' ? 'Approved' : key === 'REJECTED' ? 'Rejected' : 'All'}
+              </Button>
+            ))}
+          </div>
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, code, or leave type…"
+            className="max-w-xs"
+          />
         </div>
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search employee or leave type…"
-          className="max-w-xs"
-        />
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <label className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Month</span>
+            <Input
+              type="month"
+              value={month}
+              onChange={(event) => {
+                const nextMonth = event.target.value;
+                setMonth(nextMonth);
+                const bounds = monthBounds(nextMonth);
+                setFromDate(bounds?.from ?? '');
+                setToDate(bounds?.to ?? '');
+              }}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">From</span>
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(event) => {
+                setMonth('');
+                setFromDate(event.target.value);
+              }}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">To</span>
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(event) => {
+                setMonth('');
+                setToDate(event.target.value);
+              }}
+            />
+          </label>
+          <div className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Leave type</span>
+            <SearchSelect
+              items={leaveTypeFilterItems}
+              value={filterLeaveTypeId}
+              onChange={setFilterLeaveTypeId}
+              placeholder="All types"
+              minCharactersToSearch={0}
+              openOnFocus
+              clearOnEmptyInput
+              dropdownInPortal
+            />
+          </div>
+          <label className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sort</span>
+            <select
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as LeaveSort)}
+            >
+              <option value="submitted">Submitted newest</option>
+              <option value="startDesc">Leave date newest</option>
+              <option value="startAsc">Leave date oldest</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <div className="space-y-1">
+            <p>
+              {visibleRequests.length} {visibleRequests.length === 1 ? 'request' : 'requests'}
+            </p>
+            {!dateRangeInvalid && !hasDateFilter && requests.length >= 200 ? (
+              <p>Showing the latest 200. Choose a month to see older leave.</p>
+            ) : null}
+          </div>
+          {extraFiltersActive ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setMonth('');
+                setFromDate('');
+                setToDate('');
+                setFilterLeaveTypeId('');
+                setSort('submitted');
+              }}
+            >
+              Clear
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -550,11 +690,13 @@ export default function HrLeavePage() {
         ) : visibleRequests.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              {statusFilter === 'PENDING'
-                ? 'No pending requests. Use Record leave to assign leave directly.'
-                : 'No leave requests match this filter.'}
+              {dateRangeInvalid
+                ? 'From date must be on or before the to date.'
+                : statusFilter === 'PENDING'
+                  ? 'No pending requests. Use Record leave to assign leave directly.'
+                  : 'No leave requests match this filter.'}
             </p>
-            {canApprove && statusFilter === 'PENDING' ? (
+            {canApprove && statusFilter === 'PENDING' && !dateRangeInvalid ? (
               <Button className="mt-4" size="sm" onClick={openRecordModal}>
                 Record leave
               </Button>

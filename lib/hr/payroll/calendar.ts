@@ -60,6 +60,19 @@ export function centsToMoney(cents: number): number {
   return cents / 100;
 }
 
+/**
+ * Payroll gross is a whole dirham. After normal 2-decimal rounding, a fraction
+ * below 0.75 stays on the lower dirham; 0.75 and above goes to the next one.
+ */
+export function roundGrossToWholeDirham(amount: number): number {
+  const cents = moneyToCents(amount);
+  const sign = cents < 0 ? -1 : 1;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100);
+  const fraction = abs % 100;
+  return sign * (fraction >= 75 ? whole + 1 : whole);
+}
+
 /** Sum money values in integer cents to avoid floating-point drift (e.g. 26 × 46.15). */
 export function sumMoney(values: number[]): number {
   if (values.length === 0) return 0;

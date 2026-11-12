@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 
 import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
+import Modal from '@/components/ui/Modal';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
@@ -27,6 +28,13 @@ type ApiPayload = {
   nextCodePreview: string;
 };
 
+type RenumberRow = {
+  id: string;
+  fullName: string;
+  oldCode: string;
+  newCode: string;
+};
+
 export default function EmployeeCodeSettingsPage() {
   const { data: session } = useSession();
   const { options: companyOptions } = useHrAccessibleCompanies();
@@ -34,7 +42,12 @@ export default function EmployeeCodeSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<EmployeeCodeSettings>(DEFAULT_EMPLOYEE_CODE_SETTINGS);
+  const [savedSettings, setSavedSettings] = useState<EmployeeCodeSettings>(DEFAULT_EMPLOYEE_CODE_SETTINGS);
   const [nextCodePreview, setNextCodePreview] = useState('');
+  const [previewRows, setPreviewRows] = useState<RenumberRow[] | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const isSA = session?.user?.isSuperAdmin ?? false;
   const perms = (session?.user?.permissions ?? []) as string[];
@@ -82,7 +95,10 @@ export default function EmployeeCodeSettingsPage() {
       }
       const payload = json.data as ApiPayload;
       setSettings(payload.settings);
+      setSavedSettings(payload.settings);
       setNextCodePreview(payload.nextCodePreview);
+      setPreviewRows(null);
+      setPreviewOpen(false);
     } finally {
       setLoading(false);
     }
@@ -123,10 +139,67 @@ export default function EmployeeCodeSettingsPage() {
       }
       const payload = json.data as ApiPayload;
       setSettings(payload.settings);
+      setSavedSettings(payload.settings);
       setNextCodePreview(payload.nextCodePreview);
+      setPreviewRows(null);
+      setPreviewOpen(false);
       toast.success('Employee ID settings saved');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const settingsDirty = JSON.stringify(settings) !== JSON.stringify(savedSettings);
+
+  const loadPreview = async () => {
+    if (!canEdit || previewing || settingsDirty) return;
+    if (!companyId) {
+      toast.error('Select a company');
+      return;
+    }
+    setPreviewOpen(true);
+    setPreviewRows(null);
+    setPreviewing(true);
+    try {
+      const res = await fetch('/api/hr/employee-code-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, confirm: false }),
+      });
+      const json = await readApiJson<{ rows?: RenumberRow[] }>(res);
+      if (!res.ok || !json?.success || !json.data) {
+        setPreviewOpen(false);
+        toast.error(json?.error ?? 'Failed to preview employee IDs');
+        return;
+      }
+      setPreviewRows(json.data.rows ?? []);
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const applyIds = async () => {
+    if (!canEdit || applying || !previewRows?.length) return;
+    setApplying(true);
+    try {
+      const res = await fetch('/api/hr/employee-code-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, confirm: true }),
+      });
+      const json = await readApiJson<{ nextCodePreview?: string }>(res);
+      if (!res.ok || !json?.success || !json.data) {
+        toast.error(json?.error ?? 'Failed to apply employee IDs');
+        return;
+      }
+      setPreviewOpen(false);
+      setPreviewRows(null);
+      if (typeof json.data.nextCodePreview === 'string') {
+        setNextCodePreview(json.data.nextCodePreview);
+      }
+      toast.success('Employee IDs updated');
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -147,7 +220,7 @@ export default function EmployeeCodeSettingsPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employee setup</p>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Employee ID format</h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Set the company prefix and counting style used when creating new employees. Existing codes are not changed.
+            Set the company prefix and counting style. Saving changes the next ID only. Existing employees keep their IDs until you apply a new series.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -250,6 +323,90 @@ export default function EmployeeCodeSettingsPage() {
           </aside>
         </div>
       )}
+
+      {canEdit && companyId && !loading ? (
+        <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="max-w-2xl space-y-1">
+              <h2 className="text-sm font-semibold text-foreground">Apply new IDs to existing employees</h2>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Preview uses the saved format. Earlier hire date comes first. If hire date is missing, the date the record was created is used.
+                Nothing is written until you confirm. Attendance, leave, schedule, pay, documents, and login stay on the same person.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={previewing || applying || settingsDirty}
+              onClick={() => void loadPreview()}
+            >
+              {previewing ? 'Loading preview…' : 'Preview new IDs'}
+            </Button>
+          </div>
+          {settingsDirty ? (
+            <p className="text-xs text-amber-700 dark:text-amber-300">Save the format first. The preview uses the saved settings.</p>
+          ) : null}
+        </section>
+      ) : null}
+
+      <Modal
+        isOpen={previewOpen}
+        onClose={() => {
+          if (!applying) setPreviewOpen(false);
+        }}
+        title="Preview new IDs"
+        description="Nothing is written until you apply. Earlier hire date comes first. If hire date is missing, the date the record was created is used."
+        size="xl"
+        actions={
+          <>
+            <Button type="button" variant="outline" disabled={applying} onClick={() => setPreviewOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" disabled={applying || previewing || !previewRows?.length} onClick={() => void applyIds()}>
+              {applying ? 'Applying…' : 'Apply these IDs'}
+            </Button>
+          </>
+        }
+      >
+        {previewing || !previewRows ? (
+          <p className="text-sm text-muted-foreground">Loading preview…</p>
+        ) : (
+          <div className="max-h-[min(60vh,28rem)] overflow-auto rounded-md border border-border">
+            <table className="w-full border-separate border-spacing-0 text-left text-sm">
+              <thead>
+                <tr>
+                  {['Name', 'Current ID', 'New ID'].map((heading) => (
+                    <th
+                      key={heading}
+                      className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-4 text-muted-foreground">
+                      This company has no employees.
+                    </td>
+                  </tr>
+                ) : (
+                  previewRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="border-t border-border bg-card px-3 py-2">{row.fullName}</td>
+                      <td className="border-t border-border bg-card px-3 py-2 font-mono text-xs">{row.oldCode}</td>
+                      <td className="border-t border-border bg-card px-3 py-2 font-mono text-xs">{row.newCode}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
