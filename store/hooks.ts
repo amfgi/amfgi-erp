@@ -60,6 +60,8 @@ export {
   useDeactivateMaterialMutation,
   useGetCrossCompanyMaterialsQuery,
   useBulkCreateMaterialsMutation,
+  usePreviewMaterialColumnUpdateMutation,
+  useApplyMaterialColumnUpdateMutation,
   useCreateMaterialUomMutation,
   useDeleteMaterialUomMutation,
   useGetMaterialAssemblyQuery,
