@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { cn } from '@/lib/utils';
 import Modal from '@/components/ui/Modal';
@@ -345,6 +346,7 @@ function MaterialEditor({
     : parseFloat(unitCost) || 0;
 
   const pageTitle = isCreateMode ? 'New material' : material.name;
+  useBreadcrumbLabel(isCreateMode ? null : material?.name);
   const pageSubtitle = isCreateMode
     ? 'Set the stock base, costing, and warehouse defaults in one compact pass.'
     : 'Update stock settings, packaging conversions, and change history.';
@@ -767,7 +769,7 @@ function MaterialEditor({
 
         <div className="flex shrink-0 flex-wrap gap-2">
           {!isCreateMode ? (
-            <Button variant="outline" size="sm" onClick={() => router.push('/stock/materials')}>
+            <Button variant="outline" size="sm" data-nav-href="/stock/materials" onClick={() => router.push('/stock/materials')}>
               Back to materials
             </Button>
           ) : null}

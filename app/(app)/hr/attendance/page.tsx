@@ -388,11 +388,25 @@ export default function HrAttendancePage() {
                   return (
                     <ContextMenu key={`${day.kind}-${dateYmd}`}>
                       <ContextMenuTrigger asChild>
-                        <tr className={rowClassName} title="Right-click for actions">
+                        <tr className={rowClassName} data-radix-context-menu-trigger="" title="Right-click for actions">
                           {rowCells}
                         </tr>
                       </ContextMenuTrigger>
                       <ContextMenuContent>
+                        {canOpenSheet ? (
+                          <ContextMenuItem onSelect={() => router.push(attendanceCreateHref(dateYmd, companyId))}>
+                            Open
+                          </ContextMenuItem>
+                        ) : null}
+                        {canOpenSheet ? (
+                          <ContextMenuItem
+                            onSelect={() => {
+                              window.open(attendanceCreateHref(dateYmd, companyId), '_blank', 'noopener,noreferrer');
+                            }}
+                          >
+                            Open in new tab
+                          </ContextMenuItem>
+                        ) : null}
                         {canOpenSheet ? (
                           <ContextMenuItem
                             onSelect={() => void openAttendanceSheetWithScheduleCheck(dateYmd)}

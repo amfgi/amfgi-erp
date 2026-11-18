@@ -10,6 +10,7 @@ import EmployeeImportModal from '@/components/hr/EmployeeImportModal';
 import EmployeeExportModal from '@/components/hr/EmployeeExportModal';
 import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
 import HrCompanySearchSelect from '@/components/hr/HrCompanySearchSelect';
+import SearchSelect from '@/components/ui/SearchSelect';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -68,6 +69,7 @@ function buildDirectorySearchParams(input: {
   portal: PortalFilter;
   compensation: CompensationFilter;
   companyId: string;
+  designation: string;
   page: number;
   pageSize: number;
   includeCompensation: boolean;
@@ -79,6 +81,7 @@ function buildDirectorySearchParams(input: {
   if (input.employeeType !== 'ALL') params.set('employeeType', input.employeeType);
   if (input.portal !== 'ALL') params.set('portal', input.portal);
   if (input.companyId.trim()) params.set('companyId', input.companyId.trim());
+  if (input.designation.trim()) params.set('designation', input.designation.trim());
   if (input.includeCompensation && input.compensation !== 'ALL') {
     params.set('compensation', input.compensation);
   }
@@ -122,6 +125,19 @@ function prettyEmployeeType(type: string | null | undefined) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="inline-flex h-6 max-w-full items-center gap-1 rounded-full border border-border bg-muted px-2 text-xs text-foreground hover:bg-muted/80"
+    >
+      <span className="truncate">{label}</span>
+      <span aria-hidden className="text-muted-foreground">×</span>
+    </button>
+  );
 }
 
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint: string }) {
@@ -295,6 +311,7 @@ export default function HrEmployeesPage() {
     parseCompensation(searchParams.get('compensation')),
   );
   const [companyId, setCompanyId] = useState(() => searchParams.get('companyId') ?? '');
+  const [designation, setDesignation] = useState(() => searchParams.get('designation') ?? '');
   const [pageSize, setPageSizeState] = useState(() =>
     parseListLimit(searchParams.get('pageSize'), HR_EMPLOYEE_PAGE_SIZE_OPTIONS),
   );
@@ -354,6 +371,11 @@ export default function HrEmployeesPage() {
     setPageState(1);
   }, []);
 
+  const setDesignationFilter = useCallback((next: string) => {
+    setDesignation(next);
+    setPageState(1);
+  }, []);
+
   const setSearchQuery = useCallback((next: string) => {
     setQ(next);
     setPageState(1);
@@ -367,6 +389,7 @@ export default function HrEmployeesPage() {
       portal,
       compensation,
       companyId,
+      designation,
       page,
       pageSize,
       includeCompensation: canViewCompensation,
@@ -386,6 +409,7 @@ export default function HrEmployeesPage() {
     portal,
     compensation,
     companyId,
+    designation,
     page,
     pageSize,
     canViewCompensation,
@@ -406,6 +430,7 @@ export default function HrEmployeesPage() {
       employeeType,
       portal,
       ...(companyId.trim() ? { companyId: companyId.trim() } : {}),
+      ...(designation.trim() ? { designation: designation.trim() } : {}),
       ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
     },
     { skip: !canView },
@@ -423,6 +448,17 @@ export default function HrEmployeesPage() {
     employeeTypeChoices.includes(employeeType)
       ? employeeType
       : 'ALL';
+  const designationOptions = useMemo(() => {
+    const names = employeesPage?.designations ?? [];
+    const items = names.map((name) => ({ id: name, label: name, searchText: name }));
+    if (employeesPage?.designationBlank) {
+      items.unshift({ id: '__none__', label: 'No designation', searchText: 'none blank empty' });
+    }
+    if (designation && designation !== '__none__' && !names.includes(designation)) {
+      items.push({ id: designation, label: designation, searchText: designation });
+    }
+    return items;
+  }, [designation, employeesPage?.designationBlank, employeesPage?.designations]);
   const stats = employeesPage?.stats ?? { active: 0, onLeave: 0, portalEnabled: 0 };
 
   const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
@@ -454,7 +490,7 @@ export default function HrEmployeesPage() {
             },
           ]
         : []),
-    ]);
+    ], `/hr/employees/${employeeId}`);
   };
 
   if (!canView) {
@@ -485,90 +521,98 @@ export default function HrEmployeesPage() {
         </div>
       </header>
 
-      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div
-            className={cn(
-              'grid min-w-0 flex-1 gap-4 sm:grid-cols-2',
-              canViewCompensation ? 'xl:grid-cols-6' : 'xl:grid-cols-5',
-            )}
-          >
-            <div className="space-y-2 sm:col-span-2 xl:col-span-1">
-              <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search</span>
-              <Input
-                value={q}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name, employee code, or mobile number"
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2 xl:col-span-1">
-              <HrCompanySearchSelect
-                value={companyId}
-                onChange={setCompanyFilter}
-                allowClear
-                label="Company"
-                placeholder="All companies"
-              />
-            </div>
-            <div className="space-y-2">
-              <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Status</span>
-              <Select value={status} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | EmployeeStatus)}>
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Type</span>
-              <Select
-                value={selectedEmployeeType}
-                onChange={(e) => setEmployeeTypeFilter(e.target.value as 'ALL' | '__none__' | string)}
-              >
-                <option value="ALL">All types</option>
-                <option value="__none__">No type</option>
-                {employeeTypeChoices.map((t) => (
-                  <option key={t} value={t}>
-                    {prettyEmployeeType(t)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Portal</span>
-              <Select value={portal} onChange={(e) => setPortalFilter(e.target.value as PortalFilter)}>
-                <option value="ALL">All</option>
-                <option value="enabled">Enabled only</option>
-                <option value="disabled">Disabled only</option>
-              </Select>
-            </div>
-            {canViewCompensation ? (
-              <div className="space-y-2">
-                <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Compensation
-                </span>
-                <Select
-                  value={compensation}
-                  onChange={(e) => setCompensationFilter(e.target.value as CompensationFilter)}
-                >
-                  <option value="ALL">All</option>
-                  <option value="set">Compensation set</option>
-                  <option value="not_set">Not set</option>
-                </Select>
-              </div>
-            ) : null}
+      <section className="rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={q}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search name, code, or mobile"
+            aria-label="Search employees"
+            className="h-9 min-w-44 flex-1 basis-52"
+          />
+          <div className="w-44 min-w-36">
+            <HrCompanySearchSelect
+              value={companyId}
+              onChange={setCompanyFilter}
+              allowClear
+              label=""
+              className="space-y-0"
+              inputClassName="h-9 shadow-none"
+              placeholder="All companies"
+            />
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-right">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {refreshing ? 'Refreshing records' : 'Directory status'}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {list.length} of {totalEmployees} employee{totalEmployees === 1 ? '' : 's'} on this page
-              </p>
-            </div>
+          <Select
+            aria-label="Status"
+            className="h-9 w-32"
+            value={status}
+            onChange={(e) => setStatusFilter(e.target.value as 'ALL' | EmployeeStatus)}
+          >
+            {STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            aria-label="Type"
+            className="h-9 w-32"
+            value={selectedEmployeeType}
+            onChange={(e) => setEmployeeTypeFilter(e.target.value as 'ALL' | '__none__' | string)}
+          >
+            <option value="ALL">All types</option>
+            <option value="__none__">No type</option>
+            {employeeTypeChoices.map((t) => (
+              <option key={t} value={t}>
+                {prettyEmployeeType(t)}
+              </option>
+            ))}
+          </Select>
+          <div className="w-44 min-w-36">
+            <SearchSelect
+              items={designationOptions}
+              value={designation}
+              onChange={setDesignationFilter}
+              placeholder="Designation"
+              openOnFocus
+              browseAllOnOpen
+              minCharactersToSearch={0}
+              dropdownInPortal
+              allowClearButton
+              clearOnEmptyInput
+              inputProps={{
+                'aria-label': 'Designation',
+                className:
+                  'h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring',
+              }}
+            />
+          </div>
+          <Select
+            aria-label="Portal"
+            className="h-9 w-32"
+            value={portal}
+            onChange={(e) => setPortalFilter(e.target.value as PortalFilter)}
+          >
+            <option value="ALL">All portal</option>
+            <option value="enabled">Portal on</option>
+            <option value="disabled">Portal off</option>
+          </Select>
+          {canViewCompensation ? (
+            <Select
+              aria-label="Compensation"
+              className="h-9 w-40"
+              value={compensation}
+              onChange={(e) => setCompensationFilter(e.target.value as CompensationFilter)}
+            >
+              <option value="ALL">All pay</option>
+              <option value="set">Pay set</option>
+              <option value="not_set">Pay not set</option>
+            </Select>
+          ) : null}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {refreshing ? 'Refreshing… ' : ''}
+              {list.length} of {totalEmployees}
+            </span>
             {canView ? (
               <Button type="button" size="sm" variant="outline" onClick={() => setExportModalOpen(true)}>
                 Export
@@ -586,6 +630,51 @@ export default function HrEmployeesPage() {
             ) : null}
           </div>
         </div>
+        {q.trim() || status !== 'ALL' || selectedEmployeeType !== 'ALL' || portal !== 'ALL' || companyId || designation || (canViewCompensation && compensation !== 'ALL') ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {q.trim() ? <FilterChip label={`Search: ${q.trim()}`} onRemove={() => setSearchQuery('')} /> : null}
+            {companyId ? <FilterChip label="Company" onRemove={() => setCompanyFilter('')} /> : null}
+            {status !== 'ALL' ? <FilterChip label={prettyStatus(status)} onRemove={() => setStatusFilter('ALL')} /> : null}
+            {selectedEmployeeType !== 'ALL' ? (
+              <FilterChip
+                label={selectedEmployeeType === '__none__' ? 'No type' : prettyEmployeeType(selectedEmployeeType)}
+                onRemove={() => setEmployeeTypeFilter('ALL')}
+              />
+            ) : null}
+            {designation ? (
+              <FilterChip
+                label={designation === '__none__' ? 'No designation' : designation}
+                onRemove={() => setDesignationFilter('')}
+              />
+            ) : null}
+            {portal !== 'ALL' ? (
+              <FilterChip label={portal === 'enabled' ? 'Portal on' : 'Portal off'} onRemove={() => setPortalFilter('ALL')} />
+            ) : null}
+            {canViewCompensation && compensation !== 'ALL' ? (
+              <FilterChip
+                label={compensation === 'set' ? 'Pay set' : 'Pay not set'}
+                onRemove={() => setCompensationFilter('ALL')}
+              />
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs"
+              onClick={() => {
+                setSearchQuery('');
+                setCompanyFilter('');
+                setStatusFilter('ALL');
+                setEmployeeTypeFilter('ALL');
+                setDesignationFilter('');
+                setPortalFilter('ALL');
+                setCompensationFilter('ALL');
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <EmployeeImportModal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} />
@@ -598,6 +687,7 @@ export default function HrEmployeesPage() {
           employeeType: selectedEmployeeType,
           portal,
           ...(companyId.trim() ? { companyId: companyId.trim() } : {}),
+          ...(designation.trim() ? { designation: designation.trim() } : {}),
           ...(canViewCompensation && compensation !== 'ALL' ? { compensation } : {}),
         }}
         employeeTypeChoices={employeeTypeChoices}

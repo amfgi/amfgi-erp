@@ -1,6 +1,8 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import {
+  codeSettingsForEmploymentType,
+  employeeCodeRenumberClash,
   nextEmployeeCodeFromExisting,
   planEmployeeCodeRenumber,
   readEmployeeCodeSettingsFromCompanyData,
@@ -26,23 +28,31 @@ export async function loadEmployeeCodeSettings(
  * Allocates the next employee code for a company from live codes + company settings.
  * Caller should retry on unique constraint races.
  */
+export class EmployeeCodeClashError extends Error {
+  constructor() {
+    super('Two employees would receive the same ID. Change the prefixes so the series stay separate.');
+    this.name = 'EmployeeCodeClashError';
+  }
+}
+
 export async function allocateNextEmployeeCode(
   db: DbClient,
   companyId: string,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  employmentType?: string | null,
 ): Promise<{ code: string; settings: EmployeeCodeSettings }> {
   const settings = await loadEmployeeCodeSettings(db, companyId);
-  const prefix = settings.prefix;
+  const series = codeSettingsForEmploymentType(settings, employmentType);
   const rows = await db.employee.findMany({
     where: {
       companyId,
-      employeeCode: { startsWith: prefix, mode: 'insensitive' },
+      employeeCode: { startsWith: series.prefix, mode: 'insensitive' },
     },
     select: { employeeCode: true },
   });
   const code = nextEmployeeCodeFromExisting(
     rows.map((row) => row.employeeCode),
-    settings,
+    series,
     referenceDate
   );
   return { code, settings };
@@ -60,6 +70,7 @@ const renumberSelect = {
   id: true,
   employeeCode: true,
   fullName: true,
+  employmentType: true,
   hireDate: true,
   createdAt: true,
 } as const;
@@ -100,6 +111,7 @@ export async function applyEmployeeCodeRenumber(
         select: renumberSelect,
       });
       const plan = planEmployeeCodeRenumber(employees, settings, referenceDate);
+      if (employeeCodeRenumberClash(plan)) throw new EmployeeCodeClashError();
 
       for (const row of plan) {
         await tx.employee.update({

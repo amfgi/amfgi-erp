@@ -5,6 +5,14 @@ import {
 } from '@/lib/hr/employeeListQuery';
 
 describe('employee list query filters', () => {
+  it('filters by designation', () => {
+    const where = buildEmployeeListWhere('company-1', { designation: 'Worker' });
+    expect(where).toMatchObject({
+      companyId: 'company-1',
+      AND: [{ designation: 'Worker' }],
+    });
+  });
+
   it('applies employment type filter in prisma where', () => {
     const where = buildEmployeeListWhere('company-1', { employmentType: 'Permanent' });
     expect(where).toMatchObject({

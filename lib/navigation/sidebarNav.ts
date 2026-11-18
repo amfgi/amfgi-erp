@@ -9,6 +9,7 @@ import {
   CalendarCheck,
 	CalendarClock,
 	Contact,
+	FileText,
 	LayoutDashboard,
 	Package,
 	Settings,
@@ -177,6 +178,13 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 	},
 	{
 		type: 'link',
+		href: '/hr/employees/history',
+		label: 'Employee History & Reports',
+		icon: FileText,
+		perm: 'hr.employee.view',
+	},
+	{
+		type: 'link',
 		href: '/hr/employee-setup',
 		label: 'Employee Setup',
 		icon: SlidersHorizontal,
@@ -227,6 +235,11 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			{
 				href: '/hr/payroll/preview',
 				label: 'Payroll preview',
+				perm: 'hr.payroll.compensation',
+			},
+			{
+				href: '/hr/payroll/fines',
+				label: 'Fine management',
 				perm: 'hr.payroll.compensation',
 			},
 			{

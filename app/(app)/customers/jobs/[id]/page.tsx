@@ -16,6 +16,7 @@ import JobConsumptionCostingSection from '@/components/jobs/JobConsumptionCostin
 import JobScopeFilter, { type JobScopeOption } from '@/components/jobs/JobScopeFilter';
 import TransactionLedger from '@/components/transactions/TransactionLedger';
 import { useGetCustomersQuery, useGetJobByIdQuery, useGetJobMaterialsQuery, useGetJobsQuery } from '@/store/hooks';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 
 const JobCostEnginePage = dynamic(() => import('@/app/(app)/jobs/[id]/cost-engine/page'), {
   ssr: false,
@@ -105,6 +106,7 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
   const [serialOpen, setSerialOpen] = useState(false);
 
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(id);
+  useBreadcrumbLabel(job?.jobNumber);
   const { data: customers = [] } = useGetCustomersQuery();
   const { data: jobs = [] } = useGetJobsQuery();
 
@@ -234,7 +236,7 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
 
         <div className="flex shrink-0 flex-wrap gap-2">
           {isVariation ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/stock/job-budget/${id}`)}>
+            <Button type="button" variant="secondary" size="sm" data-nav-href={`/stock/job-budget/${id}`} onClick={() => router.push(`/stock/job-budget/${id}`)}>
               Costing & Budget
             </Button>
           ) : (
@@ -242,6 +244,7 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
               type="button"
               variant="secondary"
               size="sm"
+              data-nav-href={`/customers/jobs/form?mode=variation&parentJobId=${id}&customerId=${job.customerId}`}
               onClick={() =>
                 router.push(`/customers/jobs/form?mode=variation&parentJobId=${id}&customerId=${job.customerId}`)
               }

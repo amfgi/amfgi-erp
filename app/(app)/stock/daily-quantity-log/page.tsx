@@ -228,6 +228,7 @@ export default function DailyQuantityLogLandingPage() {
                 {pageRows.map((row) => (
                   <tr
                     key={`${row.status}-${row.workDate}-${row.scheduleId ?? 'fin'}`}
+                    data-nav-href={`/stock/daily-quantity-log/${row.workDate}`}
                     onClick={() => openDate(row.workDate)}
                     className="cursor-pointer transition-colors hover:bg-muted/50"
                   >

@@ -292,7 +292,7 @@ export default function CustomerJobsPage() {
       });
     }
 
-    openContextMenu(e.clientX, e.clientY, options);
+      openContextMenu(e.clientX, e.clientY, options, `/customers/jobs/${job.id}`);
   };
 
   const statTiles = [
@@ -329,7 +329,7 @@ export default function CustomerJobsPage() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => router.push('/customers')}>
+          <Button type="button" variant="outline" size="sm" data-nav-href="/customers" onClick={() => router.push('/customers')}>
             Customers
           </Button>
           {canView ? (
@@ -384,7 +384,7 @@ export default function CustomerJobsPage() {
             </Button>
           ) : null}
           {canCreate && jobSourceMode !== 'EXTERNAL_ONLY' ? (
-            <Button type="button" size="sm" onClick={handleCreateJob}>
+            <Button type="button" size="sm" data-nav-href="/customers/jobs/form?mode=create" onClick={handleCreateJob}>
               Add job
             </Button>
           ) : null}

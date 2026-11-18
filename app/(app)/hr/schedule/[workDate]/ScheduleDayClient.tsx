@@ -917,8 +917,12 @@ function draftsEqual(a: AsgDraft[], b: AsgDraft[]): boolean {
 }
 
 function normalizeDraft(raw: Partial<AsgDraft>, fallbackIndex = 0): AsgDraft {
-  const baseMembers = Array.isArray(raw.members) ? normalizeMemberList(raw.members) : [];
-  const derived = extractSubTeamsFromMembers(baseMembers);
+  const incomingMembers = Array.isArray(raw.members) ? raw.members : [];
+  const slotOrderedMembers = [...incomingMembers].sort(
+    (left, right) => (left.slot ?? 0) - (right.slot ?? 0),
+  );
+  const derived = extractSubTeamsFromMembers(slotOrderedMembers);
+  const baseMembers = slotOrderedMembers.length > 0 ? normalizeMemberList(slotOrderedMembers) : [];
   const subTeams = Array.isArray(raw.subTeams) && raw.subTeams.length > 0
     ? raw.subTeams.map((subTeam, index) => ({
         id: subTeam.id || createClientId(),

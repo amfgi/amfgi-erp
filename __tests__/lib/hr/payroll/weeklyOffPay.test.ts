@@ -251,5 +251,39 @@ describe('isPaidNeighbourDay', () => {
       isPaidNeighbourDay(line('2026-07-01', 'ABSENT', { isHoliday: true, holidayPaid: true }))
     ).toBe(true);
     expect(isPaidNeighbourDay(line('2026-07-01', 'ABSENT'))).toBe(false);
+    expect(
+      isPaidNeighbourDay(
+        line('2026-07-06', 'LEAVE', {
+          leaveType: 'ANNUAL',
+          leaveTypeCode: 'ANNUAL',
+          leaveRequestId: 'lr',
+          leavePayPercent: 0,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('does not pay an annual-leave Sunday, and still pays the Sunday beside that leave', () => {
+    const lines = [
+      line('2026-07-04', 'PRESENT'),
+      line('2026-07-05', 'LEAVE', {
+        leaveType: 'ANNUAL',
+        leaveTypeCode: 'ANNUAL',
+        leaveRequestId: 'sun',
+        leavePayPercent: 0,
+      }),
+      line('2026-07-06', 'LEAVE', {
+        leaveType: 'ANNUAL',
+        leaveTypeCode: 'ANNUAL',
+        leaveRequestId: 'mon',
+        leavePayPercent: 0,
+      }),
+      line('2026-07-11', 'PRESENT'),
+      line('2026-07-12', 'ABSENT'),
+      line('2026-07-13', 'PRESENT'),
+    ];
+    const dates = resolvePaidWeeklyOffDates(lines, sandwichedConfig);
+    expect(dates.has('2026-07-05')).toBe(false);
+    expect(dates.has('2026-07-12')).toBe(true);
   });
 });

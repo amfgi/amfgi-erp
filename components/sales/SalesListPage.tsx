@@ -130,7 +130,7 @@ export default function SalesListPage({
           <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p>
         </div>
         {canAdd ? (
-          <Button type="button" size="sm" onClick={() => router.push(addHref!)}>
+          <Button type="button" size="sm" data-nav-href={addHref} onClick={() => router.push(addHref!)}>
             {addLabel}
           </Button>
         ) : null}

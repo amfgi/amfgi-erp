@@ -1,4 +1,5 @@
 import { isPayrollLeaveLine, leavePayFraction } from '@/lib/hr/attendanceLeavePay';
+import { ANNUAL_LEAVE_NOT_ADDED_DETAIL, isAnnualLeaveCode } from '@/lib/hr/leaveTypes';
 import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
 import { holidayDayPayAmount } from '@/lib/hr/payroll/resolveHolidayPayStructure';
 import {
@@ -95,6 +96,57 @@ function applyFixedSalaryComponentsPerPackage(params: {
 
   if (fixedNetTotal !== 0) params.breakdown.salaryComponentsFixed = fixedNetTotal;
   return gross;
+}
+
+function annualLeaveZeroDay(line: PayLineInput): PayDayBreakdown {
+  const label =
+    line.leaveTypeLabel?.trim() ||
+    (line.leaveType ? line.leaveType.replace(/_/g, ' ') : 'Annual leave');
+  return finishPayDayBreakdown({
+    date: line.workDate,
+    status: `Leave (${label})`,
+    basicHours: 0,
+    otHours: 0,
+    basicHourRate: 0,
+    basicHourSalary: 0,
+    otHourRate: 0,
+    otHourSalary: 0,
+    allowance: 0,
+    totalSalary: 0,
+    detail: ANNUAL_LEAVE_NOT_ADDED_DETAIL,
+  });
+}
+
+/**
+ * Fixed monthly pay starts from the full lump, so a 0% leave day would not reduce it.
+ * Remove each approved ANNUAL day's basic share and fixed-allowance share.
+ * Attendance allowance is already left out once that day's pay percent is 0.
+ */
+function advancePaidAnnualLeaveCut(params: {
+  month: string;
+  lines: PayLineInput[];
+  lineCtx: (line: PayLineInput) => LinePayContext;
+}): number {
+  const groups = new Map<string, { days: number; ctx: LinePayContext }>();
+  for (const line of params.lines) {
+    if (!isAnnualLeaveCode(line.leaveTypeCode)) continue;
+    const ctx = params.lineCtx(line);
+    const key = ctx.packageId ?? 'default';
+    const group = groups.get(key);
+    if (group) group.days += 1;
+    else groups.set(key, { days: 1, ctx });
+  }
+
+  let cut = 0;
+  for (const group of groups.values()) {
+    const denom = resolveCalendarDeductDayCount(params.month, group.ctx.config);
+    if (denom <= 0) continue;
+    const days = Math.min(group.days, denom);
+    const basic = Math.max(0, group.ctx.compensation.monthlyBasic);
+    const fixedEarnings = Math.max(0, group.ctx.compensation.salaryComponents?.fixedEarnings ?? 0);
+    cut += (basic * days) / denom + (fixedEarnings * days) / denom;
+  }
+  return roundMoney(cut);
 }
 
 function groupLinesByPackage(
@@ -612,6 +664,22 @@ function buildCalendarDeductDayRow(
     });
   }
 
+  if (isAnnualLeaveCode(line.leaveTypeCode) && isPayrollLeaveLine(line)) {
+    return buildLeavePayDayRow(
+      line,
+      dailyRate,
+      resolvePerDayComponentSplit({
+        line,
+        compensation,
+        month,
+        excludedWeekdays: resolveExcludedWeekdays(config),
+        lines: packageLines,
+        config,
+        splitMap,
+      })
+    );
+  }
+
   if (line.isPaidWeeklyOff) {
     return buildPaidWeeklyOffDayRow(
       line,
@@ -738,7 +806,10 @@ export function calculatePayLine(params: {
         excludedWeekdayOtTotal += row.totalSalary;
         return row;
       }
-      if (!shouldPayHolidayWorkedOt(line)) return emptyPayDayBreakdown(line);
+      if (!shouldPayHolidayWorkedOt(line)) {
+        if (isAnnualLeaveCode(line.leaveTypeCode)) return annualLeaveZeroDay(line);
+        return emptyPayDayBreakdown(line);
+      }
       const lineBasic = lineBasicHours(line);
       const basicHourRate = lineBasic && dailyRate > 0 ? dailyRate / lineBasic : 0;
       const { otPay, otHourRate } = holidayWorkedOtPay(line, basicHourRate, ctx.config);
@@ -778,6 +849,11 @@ export function calculatePayLine(params: {
           excludedWeekdays: resolveExcludedWeekdays(config),
           config,
         });
+    const annualLeaveCut = advancePaidAnnualLeaveCut({ month, lines, lineCtx });
+    if (annualLeaveCut > 0) {
+      breakdown.annualLeaveNotAdded = annualLeaveCut;
+      gross = roundMoney(gross - annualLeaveCut);
+    }
     return {
       gross,
       breakdown,

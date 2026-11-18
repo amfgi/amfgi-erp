@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import AppNavigationSidebar from '@/components/layout/Sidebar';
+import AppBreadcrumb from '@/components/layout/AppBreadcrumb';
 import { SidebarInset, SidebarProvider } from '@/components/ui/shadcn/sidebar';
 
 const SIDEBAR_COLLAPSED_KEY = 'amfgi-sidebar-collapsed';
@@ -128,7 +129,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(16,185,129,0.08),transparent)]"
             aria-hidden
           />
-          <div className="relative mx-auto w-full max-w-[1680px] px-4 py-4 sm:px-5 sm:py-5 lg:px-8 lg:py-6">{children}</div>
+          <div className="relative mx-auto w-full max-w-[1680px] px-4 py-4 sm:px-5 sm:py-5 lg:px-8 lg:py-6">
+            <Suspense fallback={null}>
+              <AppBreadcrumb />
+            </Suspense>
+            {children}
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>

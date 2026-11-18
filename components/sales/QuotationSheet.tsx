@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 import Spinner from '@/components/ui/Spinner';
+import { cleanPastedHtml, pastedPlainTextHtml } from '@/lib/sales/cleanPastedHtml';
 import {
   useCreateQuotationCustomSectionMutation,
   useCreateQuotationCustomSectionVersionMutation,
@@ -68,8 +69,11 @@ import {
 
 const PAGE_INNER_MM = 229;
 
+let noteQuotationEdit: (step: boolean) => void = () => {};
+
 const FONTS = ['Calibri', 'Cambria', 'Arial', 'Times New Roman', 'Georgia', 'Verdana', 'Tahoma', 'Trebuchet MS', 'Courier New', 'Segoe UI', 'Garamond'] as const;
 const SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36'] as const;
+const LINE_HEIGHTS = ['1', '1.15', '1.3', '1.5', '1.75', '2', '2.5', '3'] as const;
 
 const HIGHLIGHTS = [
   { name: 'Yellow', value: '#ffff00' },
@@ -112,6 +116,7 @@ type FormatMarks = {
   align: 'left' | 'center' | 'right';
   fontFamily: string;
   fontSize: string;
+  lineHeight: string;
   heading: HeadingLevel;
 };
 
@@ -122,6 +127,7 @@ const DEFAULT_MARKS: FormatMarks = {
   align: 'left',
   fontFamily: 'Calibri',
   fontSize: '11',
+  lineHeight: '1.15',
   heading: 'normal',
 };
 
@@ -139,6 +145,29 @@ function matchSize(px: number) {
   return SIZES.reduce((nearest, size) => (Math.abs(Number(size) - pt) < Math.abs(Number(nearest) - pt) ? size : nearest), SIZES[3]);
 }
 
+function explicitLineHeight(element: Element | null) {
+  let node = element;
+  while (node) {
+    if (node instanceof HTMLElement) {
+      const inline = Number.parseFloat(node.style.lineHeight);
+      if (Number.isFinite(inline)) {
+        const matched = LINE_HEIGHTS.find((option) => Math.abs(Number(option) - inline) < 0.02);
+        if (matched) return matched;
+      }
+      if (node.getAttribute('contenteditable') === 'true') break;
+    }
+    node = node.parentElement;
+  }
+  return '';
+}
+
+function matchLineHeight(fontSizePx: number, lineHeight: string) {
+  const size = fontSizePx || 14.67;
+  const height = Number.parseFloat(lineHeight);
+  const ratio = Number.isFinite(height) && height > 0 ? height / size : 1.15;
+  return LINE_HEIGHTS.reduce((nearest, option) => (Math.abs(Number(option) - ratio) < Math.abs(Number(nearest) - ratio) ? option : nearest), LINE_HEIGHTS[1]);
+}
+
 function sameMarks(left: FormatMarks, right: FormatMarks) {
   return left.bold === right.bold
     && left.italic === right.italic
@@ -146,6 +175,7 @@ function sameMarks(left: FormatMarks, right: FormatMarks) {
     && left.align === right.align
     && left.fontFamily === right.fontFamily
     && left.fontSize === right.fontSize
+    && left.lineHeight === right.lineHeight
     && left.heading === right.heading;
 }
 
@@ -167,6 +197,7 @@ function readMarks(element: Element | null): FormatMarks {
     align,
     fontFamily: matchFont(style.fontFamily),
     fontSize: matchSize(parseFloat(style.fontSize) || 14.67),
+    lineHeight: explicitLineHeight(element) || matchLineHeight(parseFloat(style.fontSize) || 14.67, style.lineHeight),
     heading: readHeading(element),
   };
 }
@@ -204,6 +235,37 @@ function paintFontSize(field: HTMLElement, range: Range | null, pt: string, keep
     node.style.fontSize = `${(keepHeading ? headingPointSize(node) : null) ?? pt}pt`;
     node.removeAttribute('size');
   }
+}
+
+function applyLineHeight(field: HTMLElement, value: string) {
+  const height = LINE_HEIGHTS.includes(value as (typeof LINE_HEIGHTS)[number]) ? value : '1.15';
+  const selection = window.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const blocks = [...field.querySelectorAll<HTMLElement>('p, div, li, h1, h2, h3, td, th')].filter((node) => {
+    if (node === field || !field.contains(node) || !range) return false;
+    try {
+      return range.intersectsNode(node);
+    } catch {
+      return false;
+    }
+  });
+  const leaves = blocks.filter((node) => !blocks.some((other) => other !== node && node.contains(other)));
+  if (leaves.length) {
+    for (const block of leaves) block.style.lineHeight = height;
+    return;
+  }
+  const anchor = selection?.anchorNode;
+  const element = anchor instanceof Element ? anchor : anchor?.parentElement ?? null;
+  const block = element?.closest('p, div, li, h1, h2, h3, td, th');
+  if (block instanceof HTMLElement && block !== field && field.contains(block)) {
+    block.style.lineHeight = height;
+    return;
+  }
+  const wrapper = field.ownerDocument.createElement('div');
+  wrapper.style.lineHeight = height;
+  if (!field.childNodes.length) wrapper.appendChild(field.ownerDocument.createElement('br'));
+  while (field.firstChild) wrapper.appendChild(field.firstChild);
+  field.appendChild(wrapper);
 }
 
 function paintHeadingBlock(block: HTMLElement, level: HeadingLevel) {
@@ -467,6 +529,60 @@ function RichText({
     caret.current = caretOffset(node);
   }
 
+  function commitField() {
+    const field = ref.current;
+    if (!field) return;
+    paintFontSize(field, null, '11', true);
+    const html = field.innerHTML;
+    emitted.current = html;
+    rememberCaret();
+    onChange?.(html);
+  }
+
+  function insertPastedHtml(html: string) {
+    const field = ref.current;
+    if (!field) return;
+    field.focus();
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && !field.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      const range = window.document.createRange();
+      range.selectNodeContents(field);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    const before = field.innerHTML;
+    let inserted = false;
+    try {
+      inserted = window.document.execCommand('insertHTML', false, html);
+    } catch {
+      inserted = false;
+    }
+    if (!inserted && selection?.rangeCount) {
+      const range = selection.getRangeAt(0);
+      if (field.contains(range.commonAncestorContainer)) {
+        range.deleteContents();
+        const holder = window.document.createElement('div');
+        holder.innerHTML = html;
+        const fragment = window.document.createDocumentFragment();
+        let last: ChildNode | null = null;
+        while (holder.firstChild) {
+          last = holder.firstChild;
+          fragment.appendChild(last);
+        }
+        range.insertNode(fragment);
+        if (last) {
+          range.setStartAfter(last);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+    }
+    if (field.innerHTML === before) return;
+    commitField();
+  }
+
   return (
     <div
       ref={ref}
@@ -478,6 +594,19 @@ function RichText({
       style={style}
       className={`min-h-[1.25rem] outline-none ${allowTable ? '' : 'whitespace-pre-wrap'} ${readOnly ? '' : 'rounded-sm focus:bg-sky-50/80 focus:outline focus:outline-1 focus:outline-sky-400'} ${className ?? ''}`}
       onFocus={(event) => onFocusField?.(event.currentTarget)}
+      onPaste={(event) => {
+        if (readOnly) return;
+        const data = event.clipboardData;
+        if (!data) return;
+        event.preventDefault();
+        const html = data.getData('text/html');
+        const plain = data.getData('text/plain');
+        let next = html ? cleanPastedHtml(html, allowTable) : '';
+        if (!plainText(next)) next = pastedPlainTextHtml(plain);
+        if (!next) return;
+        noteQuotationEdit(true);
+        insertPastedHtml(next);
+      }}
       onKeyDown={(event) => {
         if (readOnly || (event.key !== 'Backspace' && event.key !== 'Delete')) return;
         const node = ref.current;
@@ -561,7 +690,7 @@ function ToolButton({
       aria-label={label}
       title={label}
       aria-pressed={pressed}
-      className="inline-flex h-8 min-w-8 items-center justify-center rounded border px-1"
+      className="inline-flex h-7 min-w-7 items-center justify-center rounded border px-0.5"
       onMouseDown={preventToolbarMouseDown}
       onClick={onClick}
     >
@@ -600,7 +729,7 @@ function SwatchMenu({
         type="button"
         aria-label={label}
         title={label}
-        className="inline-flex h-8 w-8 flex-col items-center justify-center rounded-l border px-1"
+        className="inline-flex h-7 w-6 flex-col items-center justify-center rounded-l border px-0.5"
         onMouseDown={preventToolbarMouseDown}
         onClick={() => onPick(current)}
       >
@@ -611,11 +740,11 @@ function SwatchMenu({
         type="button"
         aria-label={`${label} colors`}
         title={`${label} colors`}
-        className="inline-flex h-8 w-4 items-center justify-center rounded-r border border-l-0"
+        className="inline-flex h-7 w-3.5 items-center justify-center rounded-r border border-l-0"
         onMouseDown={preventToolbarMouseDown}
         onClick={onToggle}
       >
-        <ChevronDown className="size-3" />
+        <ChevronDown className="size-2.5" />
       </button>
       {open ? (
         <div className="absolute left-0 top-full z-50 mt-1 w-[9.5rem] rounded border border-[#d4d4d4] bg-white p-2 shadow-lg" onMouseDown={preventToolbarMouseDown}>
@@ -668,7 +797,7 @@ function TableMenu({ disabled, onInsert }: { disabled: boolean; onInsert: (rows:
   return (
     <span ref={rootRef} className="relative">
       <ToolButton label={disabled ? 'Click in the description, then insert a table' : 'Insert table'} onClick={() => { if (!disabled) setOpen((current) => !current); }}>
-        <Table2 className={`size-4 ${disabled ? 'opacity-40' : ''}`} />
+        <Table2 className={`size-3.5 ${disabled ? 'opacity-40' : ''}`} />
       </ToolButton>
       {open ? (
         <div className="absolute left-0 top-full z-50 mt-1 rounded border border-[#d4d4d4] bg-white p-2 shadow-lg" onMouseDown={preventToolbarMouseDown}>
@@ -731,12 +860,12 @@ function FormatControls({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="flex flex-wrap items-center gap-1">
+    <div ref={rootRef} className="flex flex-wrap items-center gap-0.5">
       {variant === 'full' ? (
         <>
-          <ToolButton label="Undo" onClick={() => onFormat('undo')}><Undo2 className="size-4" /></ToolButton>
-          <ToolButton label="Redo" onClick={() => onFormat('redo')}><Redo2 className="size-4" /></ToolButton>
-          <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
+          <ToolButton label="Undo" onClick={() => onFormat('undo')}><Undo2 className="size-3.5" /></ToolButton>
+          <ToolButton label="Redo" onClick={() => onFormat('redo')}><Redo2 className="size-3.5" /></ToolButton>
+          <span className="mx-px h-4 w-px bg-[#d4d4d4]" />
         </>
       ) : null}
       <select
@@ -745,20 +874,20 @@ function FormatControls({
         value={marks.heading}
         onMouseDown={onPrepare}
         onChange={(event) => onFormat('heading', event.target.value)}
-        className="h-8 max-w-[8.5rem] rounded border px-1 text-sm"
+        className="h-7 max-w-[4.5rem] rounded border px-1 text-xs"
       >
         {(Object.keys(HEADING_STYLES) as HeadingLevel[]).map((level) => (
-          <option key={level} value={level}>{HEADING_STYLES[level].label}</option>
+          <option key={level} value={level}>{level === 'normal' ? 'Normal' : level.toUpperCase()}</option>
         ))}
       </select>
-      <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
+      <span className="mx-px h-4 w-px bg-[#d4d4d4]" />
       <select
         aria-label="Font"
         title="Font"
         value={marks.fontFamily}
         onMouseDown={onPrepare}
         onChange={(event) => onFormat('fontName', event.target.value)}
-        className="h-8 max-w-[9.5rem] rounded border px-1 text-sm"
+        className="h-7 max-w-[6.5rem] rounded border px-1 text-xs"
         style={{ fontFamily: marks.fontFamily }}
       >
         {FONTS.map((family) => (
@@ -771,16 +900,28 @@ function FormatControls({
         value={marks.fontSize}
         onMouseDown={onPrepare}
         onChange={(event) => onFormat('fontSize', event.target.value)}
-        className="h-8 w-14 rounded border px-1 text-sm"
+        className="h-7 w-12 rounded border px-0.5 text-xs"
       >
         {SIZES.map((size) => (
           <option key={size} value={size}>{size}</option>
         ))}
       </select>
-      <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
-      <ToolButton label="Bold" pressed={marks.bold} onClick={() => onFormat('bold')}><Bold className="size-4" /></ToolButton>
-      <ToolButton label="Italic" pressed={marks.italic} onClick={() => onFormat('italic')}><Italic className="size-4" /></ToolButton>
-      <ToolButton label="Underline" pressed={marks.underline} onClick={() => onFormat('underline')}><Underline className="size-4" /></ToolButton>
+      <select
+        aria-label="Line height"
+        title="Line height"
+        value={marks.lineHeight}
+        onMouseDown={onPrepare}
+        onChange={(event) => onFormat('lineHeight', event.target.value)}
+        className={`h-7 w-14 rounded border px-0.5 text-xs font-semibold ${marks.lineHeight ? 'bg-[#cce4f7]' : ''}`}
+      >
+        {LINE_HEIGHTS.map((height) => (
+          <option key={height} value={height}>{height}</option>
+        ))}
+      </select>
+      <span className="mx-px h-4 w-px bg-[#d4d4d4]" />
+      <ToolButton label="Bold" pressed={marks.bold} onClick={() => onFormat('bold')}><Bold className="size-3.5" /></ToolButton>
+      <ToolButton label="Italic" pressed={marks.italic} onClick={() => onFormat('italic')}><Italic className="size-3.5" /></ToolButton>
+      <ToolButton label="Underline" pressed={marks.underline} onClick={() => onFormat('underline')}><Underline className="size-3.5" /></ToolButton>
       <SwatchMenu
         label="Font color"
         open={open === 'color'}
@@ -789,7 +930,7 @@ function FormatControls({
         colors={TEXT_COLORS}
         current={fontColor}
         automatic="#111111"
-        icon={<span className="text-sm font-semibold leading-none">A</span>}
+        icon={<span className="text-xs font-semibold leading-none">A</span>}
         onPick={(color) => onFormat('foreColor', color)}
       />
       <SwatchMenu
@@ -805,12 +946,12 @@ function FormatControls({
       />
       {variant === 'full' ? (
         <>
-          <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
-          <ToolButton label="Align left" pressed={marks.align === 'left'} onClick={() => onFormat('justifyLeft')}><AlignLeft className="size-4" /></ToolButton>
-          <ToolButton label="Align center" pressed={marks.align === 'center'} onClick={() => onFormat('justifyCenter')}><AlignCenter className="size-4" /></ToolButton>
-          <ToolButton label="Align right" pressed={marks.align === 'right'} onClick={() => onFormat('justifyRight')}><AlignRight className="size-4" /></ToolButton>
-          <ToolButton label="Bullets" onClick={() => onFormat('insertUnorderedList')}><List className="size-4" /></ToolButton>
-          <ToolButton label="Numbering" onClick={() => onFormat('insertOrderedList')}><ListOrdered className="size-4" /></ToolButton>
+          <span className="mx-px h-4 w-px bg-[#d4d4d4]" />
+          <ToolButton label="Align left" pressed={marks.align === 'left'} onClick={() => onFormat('justifyLeft')}><AlignLeft className="size-3.5" /></ToolButton>
+          <ToolButton label="Align center" pressed={marks.align === 'center'} onClick={() => onFormat('justifyCenter')}><AlignCenter className="size-3.5" /></ToolButton>
+          <ToolButton label="Align right" pressed={marks.align === 'right'} onClick={() => onFormat('justifyRight')}><AlignRight className="size-3.5" /></ToolButton>
+          <ToolButton label="Bullets" onClick={() => onFormat('insertUnorderedList')}><List className="size-3.5" /></ToolButton>
+          <ToolButton label="Numbering" onClick={() => onFormat('insertOrderedList')}><ListOrdered className="size-3.5" /></ToolButton>
           {onInsertTable ? <TableMenu disabled={!tableReady} onInsert={onInsertTable} /> : null}
         </>
       ) : null}
@@ -904,10 +1045,15 @@ export function QuotationSheet({
   );
   const undoStack = useRef<QuotationDocument[]>([]);
   const redoStack = useRef<QuotationDocument[]>([]);
+  const historyKind = useRef<'coalesce' | 'step'>('coalesce');
+  const historyBurst = useRef<{ key: string; at: number } | null>(null);
   const documentRef = useRef(document);
   const undoEditRef = useRef<() => void>(() => {});
   const redoEditRef = useRef<() => void>(() => {});
   documentRef.current = document;
+  noteQuotationEdit = (step: boolean) => {
+    if (step) historyKind.current = 'step';
+  };
   const [pagesOfIds, setPagesOfIds] = useState<string[][] | null>(null);
   const [layoutNonce, setLayoutNonce] = useState(0);
   const options = optionBlocks(document);
@@ -921,19 +1067,34 @@ export function QuotationSheet({
       return keep;
     });
   }, [acceptedOptionIndex, document.blocks]);
-  function update(next: QuotationDocument) {
-    onChange?.(syncTotalCostWords(next));
+  function recordBeforeChange(step: boolean) {
+    const now = Date.now();
+    const burst = historyBurst.current;
+    if (!step && burst?.key === 'text' && now - burst.at < 700) {
+      burst.at = now;
+      return;
+    }
+    const snapshot = documentRef.current;
+    const previous = undoStack.current[undoStack.current.length - 1];
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(snapshot)) {
+      undoStack.current.push(structuredClone(snapshot));
+      if (undoStack.current.length > 100) undoStack.current.shift();
+    }
+    redoStack.current = [];
+    historyBurst.current = { key: step ? `step-${now}` : 'text', at: now };
   }
 
-  function pushHistory() {
-    undoStack.current.push(structuredClone(documentRef.current));
-    if (undoStack.current.length > 50) undoStack.current.shift();
-    redoStack.current = [];
+  function update(next: QuotationDocument, step = false) {
+    const explicit = step || historyKind.current === 'step';
+    historyKind.current = 'coalesce';
+    const synced = syncTotalCostWords(next);
+    if (JSON.stringify(documentRef.current) === JSON.stringify(synced)) return;
+    recordBeforeChange(explicit);
+    onChange?.(synced);
   }
 
   function patchBlock(blockId: string, block: QuotationBlock, recordHistory = false) {
-    if (recordHistory) pushHistory();
-    update({ ...document, blocks: document.blocks.map((entry) => (entry.id === blockId ? block : entry)) });
+    update({ ...document, blocks: document.blocks.map((entry) => (entry.id === blockId ? block : entry)) }, recordHistory);
   }
 
   const blockIds = useMemo(() => ['header', ...visibleBlocks.map((block) => block.id)], [visibleBlocks]);
@@ -994,24 +1155,20 @@ export function QuotationSheet({
       const redo = key === 'y' || (key === 'z' && event.shiftKey);
       const undo = key === 'z' && !event.shiftKey;
       if (!undo && !redo) return;
+      const pad = sheetRef.current;
       const target = event.target;
-      if (target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
-      if (undo && undoStack.current.length) {
-        event.preventDefault();
-        undoEditRef.current();
-      }
-      if (redo && redoStack.current.length) {
-        event.preventDefault();
-        redoEditRef.current();
-      }
+      if (!pad || !(target instanceof Node) || !pad.contains(target)) return;
+      event.preventDefault();
+      if (undo) undoEditRef.current();
+      if (redo) redoEditRef.current();
     }
     window.document.addEventListener('selectionchange', remember);
     window.addEventListener('scroll', remember, true);
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     return () => {
       window.document.removeEventListener('selectionchange', remember);
       window.removeEventListener('scroll', remember, true);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, []);
 
@@ -1089,26 +1246,26 @@ export function QuotationSheet({
   }
 
   function restoreDocument(next: QuotationDocument) {
-    onChange?.(syncTotalCostWords(next));
+    const synced = syncTotalCostWords(next);
+    documentRef.current = synced;
+    onChange?.(synced);
   }
 
   function undoEdit() {
     const previous = undoStack.current.pop();
-    if (!previous) {
-      applyCommand('undo');
-      return;
-    }
+    if (!previous) return;
     redoStack.current.push(structuredClone(documentRef.current));
+    historyBurst.current = null;
+    historyKind.current = 'coalesce';
     restoreDocument(previous);
   }
 
   function redoEdit() {
     const next = redoStack.current.pop();
-    if (!next) {
-      applyCommand('redo');
-      return;
-    }
+    if (!next) return;
     undoStack.current.push(structuredClone(documentRef.current));
+    historyBurst.current = null;
+    historyKind.current = 'coalesce';
     restoreDocument(next);
   }
 
@@ -1120,6 +1277,7 @@ export function QuotationSheet({
       selection.removeAllRanges();
       selection.addRange(savedRange.current);
     }
+    historyKind.current = 'step';
     window.document.execCommand('styleWithCSS', false, 'true');
     if (command === 'heading') {
       if (field && isHeadingLevel(value)) applyHeading(field, value);
@@ -1128,12 +1286,15 @@ export function QuotationSheet({
       window.document.execCommand('fontSize', false, '7');
       const range = window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0) : savedRange.current;
       if (field) paintFontSize(field, range, pt);
+    } else if (command === 'lineHeight') {
+      if (field) applyLineHeight(field, value || '1.15');
     } else {
       window.document.execCommand(command, false, value);
     }
     if (command === 'hiliteColor' && value && value !== 'transparent') setHighlight(value);
     if (command === 'foreColor' && value) setFontColor(value);
     field?.dispatchEvent(new Event('input', { bubbles: true }));
+    if (historyKind.current === 'step') historyKind.current = 'coalesce';
     const nextSelection = window.getSelection();
     if (nextSelection?.rangeCount) {
       savedRange.current = nextSelection.getRangeAt(0).cloneRange();
@@ -1176,18 +1337,17 @@ export function QuotationSheet({
         window.document.getElementById(document.blocks.find((block) => block.type === type)?.id || '')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      update(insertBlock(document, type === 'scope' ? defaultScope() : defaultSpecification()));
+      update(insertBlock(document, type === 'scope' ? defaultScope() : defaultSpecification()), true);
       return;
     }
-    update(insertBlock(document, type === 'option' ? defaultOption() : defaultBlank()));
+    update(insertBlock(document, type === 'option' ? defaultOption() : defaultBlank()), true);
   }
 
   function chooseSavedTerms(templateId: string) {
     const template = termsQuery.data?.find((entry) => entry.id === templateId);
     if (!template) return;
-    pushHistory();
     const next = applySavedTerms(document, template.rows);
-    update(next);
+    update(next, true);
     setPresetMenu(null);
     const termsId = next.blocks.find((block) => block.type === 'terms')?.id;
     if (termsId) window.requestAnimationFrame(() => window.document.getElementById(termsId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -1201,9 +1361,8 @@ export function QuotationSheet({
   function chooseSavedScope(presetId: string) {
     const preset = scopePresets.data?.find((entry) => entry.id === presetId);
     if (!preset || preset.kind !== 'scope') return;
-    pushHistory();
     const next = applySavedScope(document, preset.body);
-    update(next);
+    update(next, true);
     setPresetMenu(null);
     focusBlock(next, 'scope');
   }
@@ -1211,9 +1370,8 @@ export function QuotationSheet({
   function chooseSavedSpecification(presetId: string) {
     const preset = specificationPresets.data?.find((entry) => entry.id === presetId);
     if (!preset || preset.kind !== 'specification') return;
-    pushHistory();
     const next = applySavedSpecification(document, preset.rows);
-    update(next);
+    update(next, true);
     setPresetMenu(null);
     focusBlock(next, 'specification');
   }
@@ -1224,10 +1382,9 @@ export function QuotationSheet({
     const version = versionId ? saved.content.versions?.find((entry) => entry.id === versionId) : undefined;
     if (versionId && !version) return;
     const content = version?.content ?? saved.content;
-    pushHistory();
     const previous = new Set(document.blocks.map((block) => block.id));
     const next = insertCustomSection(document, content, sectionId);
-    update(next);
+    update(next, true);
     setPresetMenu(null);
     const added = next.blocks.find((block) => !previous.has(block.id));
     if (added) window.requestAnimationFrame(() => window.document.getElementById(added.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -1462,8 +1619,7 @@ export function QuotationSheet({
 
       <div className="min-w-0 flex-1">
         {readOnly ? null : (
-          <div className="quotation-format quotation-edit-only sticky top-0 z-30 mb-3 flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 shadow-sm">
-            <span className="mr-1 text-xs font-semibold uppercase tracking-wide">Format</span>
+          <div className="quotation-format quotation-edit-only sticky top-0 z-30 mb-2 flex flex-wrap items-center gap-0.5 rounded-md border px-1.5 py-1 shadow-sm">
             <FormatControls variant="full" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} tableReady={tableReady} onInsertTable={insertTable} />
           </div>
         )}
@@ -1577,11 +1733,8 @@ export function QuotationSheet({
                         });
                       } : undefined}
                       onChange={(next) => patchBlock(block.id, next)}
-                      onMove={(direction) => update(moveBlock(document, block.id, direction))}
-                      onRemove={() => {
-                        pushHistory();
-                        update(removeBlock(document, block.id));
-                      }}
+                      onMove={(direction) => update(moveBlock(document, block.id, direction), true)}
+                      onRemove={() => update(removeBlock(document, block.id), true)}
                     />
                   </section>
                 ))}

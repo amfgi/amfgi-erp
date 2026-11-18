@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
@@ -11,6 +12,7 @@ import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { DocumentPortalSelfServiceFields } from '@/components/hr/DocumentPortalSelfServiceFields';
 import EmployeeCompensationPanel from '@/components/hr/EmployeeCompensationPanel';
 import EmployeeExtraFiles from '@/components/hr/EmployeeExtraFiles';
+import { EmployeeRecords } from '@/components/hr/EmployeeRecords';
 import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
 import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
 import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect';
@@ -66,7 +68,7 @@ import { cn } from '@/lib/utils';
 import { driveStoredUrlToOpenUrl } from '@/lib/utils/googleDriveUrl';
 import toast from 'react-hot-toast';
 
-type Tab = 'overview' | 'visa' | 'documents' | 'compensation' | 'access';
+type Tab = 'overview' | 'visa' | 'documents' | 'compensation' | 'access' | 'records';
 
 interface CatalogDocType {
   id: string;
@@ -292,6 +294,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   const { data: session, update } = useSession();
   const { openMenu } = useGlobalContextMenu();
   const [emp, setEmp] = useState<EmployeeRecord | null>(null);
+  useBreadcrumbLabel(emp?.fullName);
   const [catalogDocTypes, setCatalogDocTypes] = useState<CatalogDocType[]>([]);
   const [expertiseCatalog, setExpertiseCatalog] = useState<string[]>([]);
   const [selectedExpertises, setSelectedExpertises] = useState<string[]>([]);
@@ -331,6 +334,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   const canView = isSA || perms.includes('hr.employee.view');
   const canEdit = isSA || perms.includes('hr.employee.edit');
   const canDelete = isSA || perms.includes('hr.employee.delete');
+  const canPayroll = isSA || perms.includes('hr.payroll.compensation');
   const canCompensation = session?.user ? canHrCompensationView(session.user) : false;
   const canCompensationAdd = session?.user ? canHrCompensationAddPackage(session.user) : false;
   const canCompensationRecordChange = session?.user ? canHrCompensationRecordChange(session.user) : false;
@@ -988,6 +992,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     ...(canAccountAccess
       ? [{ id: 'access' as const, label: 'Account access', hint: 'Portal login & Google sign-in' }]
       : []),
+    { id: 'records', label: 'Records', hint: 'Warnings and advances' },
   ];
 
   const fieldClass =
@@ -1064,6 +1069,17 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
               }}
             >
               Back to directory
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                const company = emp.companyId ? `?companyId=${encodeURIComponent(emp.companyId)}` : '';
+                sessionStorage.setItem('hr-history-open-employee', `${employeeId}\n${Date.now()}`);
+                router.push(`/hr/employees/history${company}`);
+              }}
+            >
+              History report
             </Button>
             {canDelete ? (
               <Button
@@ -2017,6 +2033,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                 canDelete={canDocDelete}
               />
             </div>
+          )}
+
+          {tab === 'records' && (
+            <EmployeeRecords employeeId={employeeId} canEditWarnings={canEdit} canPayroll={canPayroll} />
           )}
 
           {tab === 'compensation' && canCompensation && (

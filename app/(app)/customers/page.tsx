@@ -572,6 +572,7 @@ export default function CustomersPage() {
         if (index < options.length - 1) item.push({ divider: true });
         return item;
       }),
+      `/customers/jobs/${job.id}`,
     );
   };
 
@@ -835,6 +836,7 @@ export default function CustomersPage() {
                     {canCreate ? (
                       <Button
                         type="button"
+                        data-nav-href={`/customers/jobs/form?mode=create&customerId=${selectedCustomer.id}`}
                   onClick={() => router.push(`/customers/jobs/form?mode=create&customerId=${selectedCustomer.id}`)}
                       >
                         Create job

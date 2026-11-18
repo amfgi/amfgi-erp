@@ -5,6 +5,8 @@ export type EmployeeCodeCountingStyle = (typeof EMPLOYEE_CODE_COUNTING_STYLES)[n
 export type EmployeeCodeSettings = {
   /** Leading text, e.g. EMP or AMF */
   prefix: string;
+  /** Leading text used only when Employment Type is Temporary. Blank keeps the company prefix. */
+  temporaryPrefix: string;
   /** Between prefix / period / number. Use "" for none. */
   separator: string;
   /** Zero-pad width for the numeric counter (1–12). */
@@ -16,6 +18,7 @@ export type EmployeeCodeSettings = {
 
 export const DEFAULT_EMPLOYEE_CODE_SETTINGS: EmployeeCodeSettings = {
   prefix: 'EMP',
+  temporaryPrefix: '',
   separator: '-',
   padLength: 4,
   countingStyle: 'SEQUENTIAL',
@@ -93,11 +96,34 @@ export function normalizeEmployeeCodeSettings(raw: unknown): EmployeeCodeSetting
   const rec = raw as Record<string, unknown>;
   return {
     prefix: normalizePrefix(rec.prefix, fallback.prefix),
+    temporaryPrefix: normalizePrefix(rec.temporaryPrefix, ''),
     separator: normalizeSeparator(rec.separator, fallback.separator),
     padLength: normalizePadLength(rec.padLength, fallback.padLength),
     countingStyle: normalizeCountingStyle(rec.countingStyle, fallback.countingStyle),
     startFrom: normalizeStartFrom(rec.startFrom, fallback.startFrom),
   };
+}
+
+export function isTemporaryEmploymentType(value: string | null | undefined): boolean {
+  return (value ?? '').trim().toLowerCase() === 'temporary';
+}
+
+/** True when the two prefixes would be read as one series. A blank temporary prefix does not clash. */
+export function employeeCodePrefixesClash(prefix: string, temporaryPrefix: string): boolean {
+  const company = prefix.trim().toLowerCase();
+  const temporary = temporaryPrefix.trim().toLowerCase();
+  if (!company || !temporary) return false;
+  return company === temporary || company.startsWith(temporary) || temporary.startsWith(company);
+}
+
+/** Company settings, with the prefix swapped only for a Temporary employee who has a saved temporary prefix. */
+export function codeSettingsForEmploymentType(
+  settings: EmployeeCodeSettings,
+  employmentType: string | null | undefined,
+): EmployeeCodeSettings {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  if (!isTemporaryEmploymentType(employmentType) || !normalized.temporaryPrefix) return normalized;
+  return { ...normalized, prefix: normalized.temporaryPrefix };
 }
 
 export function readEmployeeCodeSettingsFromCompanyData(input: {
@@ -186,6 +212,7 @@ export type EmployeeCodeRenumberSource = {
   id: string;
   employeeCode: string;
   fullName: string;
+  employmentType?: string | null;
   hireDate: Date | null;
   createdAt: Date;
 };
@@ -193,6 +220,7 @@ export type EmployeeCodeRenumberSource = {
 export type EmployeeCodeRenumberRow = {
   id: string;
   fullName: string;
+  employmentType: string | null;
   oldCode: string;
   newCode: string;
 };
@@ -204,6 +232,28 @@ function arrivalTime(employee: EmployeeCodeRenumberSource): number {
   return employee.createdAt.getTime();
 }
 
+function compareArrival(a: EmployeeCodeRenumberSource, b: EmployeeCodeRenumberSource): number {
+  const arrived = arrivalTime(a) - arrivalTime(b);
+  if (arrived !== 0) return arrived;
+  const created = a.createdAt.getTime() - b.createdAt.getTime();
+  if (created !== 0) return created;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+function numberSeries(
+  employees: EmployeeCodeRenumberSource[],
+  settings: EmployeeCodeSettings,
+  referenceDate: Date,
+): EmployeeCodeRenumberRow[] {
+  return [...employees].sort(compareArrival).map((employee, index) => ({
+    id: employee.id,
+    fullName: employee.fullName,
+    employmentType: employee.employmentType?.trim() || null,
+    oldCode: employee.employeeCode,
+    newCode: formatEmployeeCode(settings, settings.startFrom + index, referenceDate),
+  }));
+}
+
 /** Whoever arrived earlier gets the smaller number. One date or both is enough. */
 export function planEmployeeCodeRenumber(
   employees: EmployeeCodeRenumberSource[],
@@ -211,19 +261,38 @@ export function planEmployeeCodeRenumber(
   referenceDate = new Date()
 ): EmployeeCodeRenumberRow[] {
   const normalized = normalizeEmployeeCodeSettings(settings);
-  const sorted = [...employees].sort((a, b) => {
-    const arrived = arrivalTime(a) - arrivalTime(b);
-    if (arrived !== 0) return arrived;
-    const created = a.createdAt.getTime() - b.createdAt.getTime();
-    if (created !== 0) return created;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  const separateTemporarySeries = normalized.temporaryPrefix.length > 0;
+  const temporaryPeople = separateTemporarySeries
+    ? employees.filter((employee) => isTemporaryEmploymentType(employee.employmentType))
+    : [];
+  const companyPeople = separateTemporarySeries
+    ? employees.filter((employee) => !isTemporaryEmploymentType(employee.employmentType))
+    : employees;
+  const rows = [
+    ...numberSeries(companyPeople, normalized, referenceDate),
+    ...numberSeries(
+      temporaryPeople,
+      { ...normalized, prefix: normalized.temporaryPrefix },
+      referenceDate,
+    ),
+  ];
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return [...employees].sort(compareArrival).flatMap((employee) => {
+    const row = byId.get(employee.id);
+    return row ? [row] : [];
   });
-  return sorted.map((employee, index) => ({
-    id: employee.id,
-    fullName: employee.fullName,
-    oldCode: employee.employeeCode,
-    newCode: formatEmployeeCode(normalized, normalized.startFrom + index, referenceDate),
-  }));
+}
+
+export function employeeCodeRenumberClash(rows: EmployeeCodeRenumberRow[]): string | null {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = row.newCode.trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      return 'Two employees would receive the same ID. Change the prefixes so the series stay separate.';
+    }
+    seen.add(key);
+  }
+  return null;
 }
 
 export function temporaryEmployeeCode(employeeId: string): string {

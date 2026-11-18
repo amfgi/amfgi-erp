@@ -341,7 +341,7 @@ export default function MaterialsPage() {
         });
       }
 
-      openContextMenu(e.clientX, e.clientY, options);
+      openContextMenu(e.clientX, e.clientY, options, `/stock/materials/${material.id}`);
     },
     [canDelete, openContextMenu, router]
   );
@@ -581,7 +581,7 @@ export default function MaterialsPage() {
             <Button type="button" variant="secondary" size="sm" onClick={handleExport}>
               Export Excel
             </Button>
-            <Button type="button" size="sm" onClick={() => router.push('/stock/materials/new')}>
+            <Button type="button" size="sm" data-nav-href="/stock/materials/new" onClick={() => router.push('/stock/materials/new')}>
               Add material
             </Button>
           </div>

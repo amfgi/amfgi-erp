@@ -1,7 +1,11 @@
 import { prisma } from '@/lib/db/prisma';
 import { getOrCreateLeaveBalance, remainingLeaveDays } from '@/lib/hr/leaveBalance';
 import { createLeaveRequest } from '@/lib/hr/leaveRequestService';
+import { addCalendarDays, assessLeaveReturn, dubaiTodayYmd } from '@/lib/hr/leaveReturn';
 import { countLeaveDaysInclusive } from '@/lib/hr/leaveTypes';
+import { parsePayTypeConfig } from '@/lib/hr/payroll/parsePayTypeConfig';
+import { resolveExcludedWeekdays } from '@/lib/hr/payroll/payTypeConfigHelpers';
+import { resolveCompensationPackageForDate } from '@/lib/hr/payroll/resolveCompensationForPayroll';
 import { ensureLeaveTypesReady } from '@/lib/hr/seedLeaveTypes';
 import { dateFromYmd, ymdFromInput } from '@/lib/hr/workDate';
 import { P } from '@/lib/permissions';
@@ -17,6 +21,12 @@ const companySelect = { id: true, name: true, slug: true } as const;
 
 const LEAVE_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] as const;
 const LEAVE_SORTS = ['submitted', 'startDesc', 'startAsc'] as const;
+
+function ymdFromDb(value: Date | string): string {
+  return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+}
+
+const emptyReturn = { returnDate: null, returnResult: null, extraDays: null };
 
 const CreateSchema = z.object({
   companyId: z.string().min(1).optional(),
@@ -71,6 +81,7 @@ export async function GET(req: Request) {
   }
   const employeeId = searchParams.get('employeeId');
   const leaveTypeId = searchParams.get('leaveTypeId')?.trim() || '';
+  const includeReturn = searchParams.get('includeReturn') === '1';
 
   let workDateFilter: { startDate?: { lte: Date }; endDate?: { gte: Date } } = {};
   if (workDateRaw) {
@@ -146,7 +157,116 @@ export async function GET(req: Request) {
     })
   );
 
-  return successResponse(enriched);
+  if (!includeReturn) return successResponse(enriched);
+
+  const today = dubaiTodayYmd();
+  const approved = enriched.filter((row) => row.status === 'APPROVED' && ymdFromDb(row.endDate) < today);
+  if (approved.length === 0) {
+    return successResponse(enriched.map((row) => ({ ...row, ...assessLeaveReturn({
+      status: row.status,
+      endDate: ymdFromDb(row.endDate),
+      today,
+      attendance: [],
+    }) })));
+  }
+
+  const employeeIds = [...new Set(approved.map((row) => row.employeeId))];
+  const from = addCalendarDays(
+    approved.map((row) => ymdFromDb(row.endDate)).sort()[0] ?? today,
+    1
+  );
+  const scope = companyIdWhere(companyIds);
+  const [attendanceRows, compensationRows, otherLeaveRows] = await Promise.all([
+    prisma.attendanceEntry.findMany({
+      where: {
+        ...scope,
+        employeeId: { in: employeeIds },
+        workDate: { gte: dateFromYmd(from), lte: dateFromYmd(today) },
+      },
+      select: { companyId: true, employeeId: true, workDate: true, status: true },
+    }),
+    prisma.employeeCompensation.findMany({
+      where: { ...scope, employeeId: { in: employeeIds } },
+      select: {
+        id: true,
+        companyId: true,
+        employeeId: true,
+        effectiveFrom: true,
+        effectiveTo: true,
+        createdAt: true,
+        payType: { select: { config: true } },
+      },
+    }),
+    prisma.leaveRequest.findMany({
+      where: {
+        ...scope,
+        employeeId: { in: employeeIds },
+        status: 'APPROVED',
+        startDate: { lte: dateFromYmd(today) },
+        endDate: { gte: dateFromYmd(from) },
+      },
+      select: { id: true, companyId: true, employeeId: true, startDate: true, endDate: true },
+    }),
+  ]);
+
+  const attendanceByEmployee = new Map<string, Array<{ workDate: string; status: string }>>();
+  for (const row of attendanceRows) {
+    const key = `${row.companyId}:${row.employeeId}`;
+    const list = attendanceByEmployee.get(key) ?? [];
+    list.push({ workDate: ymdFromDb(row.workDate), status: row.status });
+    attendanceByEmployee.set(key, list);
+  }
+
+  const packagesByEmployee = new Map<string, typeof compensationRows>();
+  for (const row of compensationRows) {
+    const key = `${row.companyId}:${row.employeeId}`;
+    const list = packagesByEmployee.get(key) ?? [];
+    list.push(row);
+    packagesByEmployee.set(key, list);
+  }
+
+  const leaveByEmployee = new Map<string, Array<{ id: string; startDate: string; endDate: string }>>();
+  for (const row of otherLeaveRows) {
+    const key = `${row.companyId}:${row.employeeId}`;
+    const list = leaveByEmployee.get(key) ?? [];
+    list.push({ id: row.id, startDate: ymdFromDb(row.startDate), endDate: ymdFromDb(row.endDate) });
+    leaveByEmployee.set(key, list);
+  }
+
+  const excludedCache = new Map<string, number[]>();
+  const withReturn = enriched.map((row) => {
+    if (row.status !== 'APPROVED') return { ...row, ...emptyReturn };
+    const key = `${row.companyId}:${row.employeeId}`;
+    const packages = packagesByEmployee.get(key) ?? [];
+    return {
+      ...row,
+      ...assessLeaveReturn({
+        status: row.status,
+        endDate: ymdFromDb(row.endDate),
+        today,
+        attendance: attendanceByEmployee.get(key) ?? [],
+        otherApprovedLeave: (leaveByEmployee.get(key) ?? []).filter((leave) => leave.id !== row.id),
+        excludedWeekdaysForDate: (workDate) => {
+          const active = resolveCompensationPackageForDate(packages, workDate);
+          const cacheKey = active ? active.id : `${key}:none`;
+          const cached = excludedCache.get(cacheKey);
+          if (cached) return cached;
+          let excluded = [0];
+          if (active) {
+            try {
+              excluded = resolveExcludedWeekdays(parsePayTypeConfig(active.payType.config));
+            } catch {
+              excluded = [0];
+            }
+          }
+          excludedCache.set(cacheKey, excluded);
+          return excluded;
+        },
+      }),
+    };
+  });
+
+  return successResponse(withReturn);
 }
 
 export async function POST(req: Request) {

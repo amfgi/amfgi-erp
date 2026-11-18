@@ -2,6 +2,7 @@
 
 import { type ChangeEvent, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -722,6 +723,7 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
   const [undoStack, setUndoStack] = useState<BuilderState[]>([]);
   const [redoStack, setRedoStack] = useState<BuilderState[]>([]);
   const form = draft ?? initialForm;
+  useBreadcrumbLabel(formulaId ? form.name : null);
   const storedFormulaConstants = useMemo(() => getStoredFormulaConstants(form.globalFields), [form.globalFields]);
   const hydratedPlaygroundFormulaIdRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);

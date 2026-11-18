@@ -831,6 +831,7 @@ export default function GoodsReceiptPage() {
                 <Button
                   type="button"
                   size="sm"
+                  data-nav-href={`/stock/goods-receipt/receive?edit=${viewEntry.receiptNumber}`}
                   onClick={() => router.push(`/stock/goods-receipt/receive?edit=${viewEntry.receiptNumber}`)}
                 >
                   {receiptHasConsumedLines(viewEntry) ? 'Open bill' : 'Edit receipt'}

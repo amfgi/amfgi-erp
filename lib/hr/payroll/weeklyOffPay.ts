@@ -1,4 +1,5 @@
 import { isLeavePaidForPay } from '@/lib/hr/attendanceLeavePay';
+import { isAnnualLeaveCode } from '@/lib/hr/leaveTypes';
 import { isPayrollHolidayLine } from '@/lib/hr/payroll/holidayPayLine';
 import { daysInMonth, isExcludedWeekdayYmd } from '@/lib/hr/payroll/calendar';
 import { isAttendancePresentLine } from '@/lib/hr/payroll/payDayStatus';
@@ -12,6 +13,8 @@ import type { LinePayContext, PayLineInput, PayTypeConfig } from '@/lib/hr/payro
 /** True when a non-weekly-off day counts as a paid neighbour for the sandwiched rule. */
 export function isPaidNeighbourDay(line: PayLineInput): boolean {
   if (isPayrollHolidayLine(line)) return true;
+  // Annual leave pays 0, but it still counts as a neighbour so nearby weekly offs stay paid.
+  if (isAnnualLeaveCode(line.leaveTypeCode)) return true;
   if (isLeavePaidForPay(line)) return true;
   if (line.status === 'PRESENT' || line.status === 'HALF_DAY') return true;
   if (isAttendancePresentLine(line)) return true;
@@ -75,6 +78,7 @@ export function resolvePaidWeeklyOffDates(
   for (const line of sorted) {
     if (!isExcludedWeekdayYmd(line.workDate, excluded)) continue;
     if (isPayrollHolidayLine(line)) continue;
+    if (isAnnualLeaveCode(line.leaveTypeCode)) continue;
     if (isLeavePaidForPay(line)) continue;
     // Fixed monthly keeps the daily salary on a qualifying Sunday. Hours and the
     // weekly-off OT checkbox do not remove it. Hourly and daily wage still pay

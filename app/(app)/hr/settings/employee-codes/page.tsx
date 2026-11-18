@@ -26,11 +26,13 @@ type ApiPayload = {
   settings: EmployeeCodeSettings;
   exampleCode: string;
   nextCodePreview: string;
+  nextTemporaryCodePreview?: string | null;
 };
 
 type RenumberRow = {
   id: string;
   fullName: string;
+  employmentType?: string | null;
   oldCode: string;
   newCode: string;
 };
@@ -44,6 +46,8 @@ export default function EmployeeCodeSettingsPage() {
   const [settings, setSettings] = useState<EmployeeCodeSettings>(DEFAULT_EMPLOYEE_CODE_SETTINGS);
   const [savedSettings, setSavedSettings] = useState<EmployeeCodeSettings>(DEFAULT_EMPLOYEE_CODE_SETTINGS);
   const [nextCodePreview, setNextCodePreview] = useState('');
+  const [nextTemporaryCodePreview, setNextTemporaryCodePreview] = useState<string | null>(null);
+  const [codeClash, setCodeClash] = useState<string | null>(null);
   const [previewRows, setPreviewRows] = useState<RenumberRow[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -65,6 +69,11 @@ export default function EmployeeCodeSettingsPage() {
   );
 
   const liveExample = useMemo(() => previewEmployeeCodeExample(settings), [settings]);
+  const temporaryExample = useMemo(() => {
+    const prefix = settings.temporaryPrefix.trim();
+    if (!prefix) return '';
+    return previewEmployeeCodeExample({ ...settings, prefix });
+  }, [settings]);
   const styleHint = EMPLOYEE_CODE_COUNTING_STYLE_OPTIONS.find(
     (option) => option.value === settings.countingStyle,
   )?.description;
@@ -94,10 +103,13 @@ export default function EmployeeCodeSettingsPage() {
         return;
       }
       const payload = json.data as ApiPayload;
-      setSettings(payload.settings);
-      setSavedSettings(payload.settings);
+      const loaded = { ...DEFAULT_EMPLOYEE_CODE_SETTINGS, ...payload.settings, temporaryPrefix: payload.settings.temporaryPrefix ?? '' };
+      setSettings(loaded);
+      setSavedSettings(loaded);
       setNextCodePreview(payload.nextCodePreview);
+      setNextTemporaryCodePreview(payload.nextTemporaryCodePreview ?? null);
       setPreviewRows(null);
+      setCodeClash(null);
       setPreviewOpen(false);
     } finally {
       setLoading(false);
@@ -141,7 +153,9 @@ export default function EmployeeCodeSettingsPage() {
       setSettings(payload.settings);
       setSavedSettings(payload.settings);
       setNextCodePreview(payload.nextCodePreview);
+      setNextTemporaryCodePreview(payload.nextTemporaryCodePreview ?? null);
       setPreviewRows(null);
+      setCodeClash(null);
       setPreviewOpen(false);
       toast.success('Employee ID settings saved');
     } finally {
@@ -166,13 +180,14 @@ export default function EmployeeCodeSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, confirm: false }),
       });
-      const json = await readApiJson<{ rows?: RenumberRow[] }>(res);
+      const json = await readApiJson<{ rows?: RenumberRow[]; clash?: string | null }>(res);
       if (!res.ok || !json?.success || !json.data) {
         setPreviewOpen(false);
         toast.error(json?.error ?? 'Failed to preview employee IDs');
         return;
       }
       setPreviewRows(json.data.rows ?? []);
+      setCodeClash(json.data.clash ?? null);
     } finally {
       setPreviewing(false);
     }
@@ -187,16 +202,18 @@ export default function EmployeeCodeSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, confirm: true }),
       });
-      const json = await readApiJson<{ nextCodePreview?: string }>(res);
+      const json = await readApiJson<{ nextCodePreview?: string; nextTemporaryCodePreview?: string | null }>(res);
       if (!res.ok || !json?.success || !json.data) {
         toast.error(json?.error ?? 'Failed to apply employee IDs');
         return;
       }
       setPreviewOpen(false);
       setPreviewRows(null);
+      setCodeClash(null);
       if (typeof json.data.nextCodePreview === 'string') {
         setNextCodePreview(json.data.nextCodePreview);
       }
+      setNextTemporaryCodePreview(json.data.nextTemporaryCodePreview ?? null);
       toast.success('Employee IDs updated');
     } finally {
       setApplying(false);
@@ -256,6 +273,20 @@ export default function EmployeeCodeSettingsPage() {
                 </p>
               </label>
               <label className="block space-y-1.5">
+                <span className={labelClass}>Prefix for Temporary Employee</span>
+                <Input
+                  value={settings.temporaryPrefix}
+                  disabled={!canEdit}
+                  maxLength={40}
+                  onChange={(e) => update('temporaryPrefix', e.target.value)}
+                  placeholder="TEMP"
+                  className="font-mono"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Used only when Employment Type is Temporary. Leave blank to keep the company prefix.
+                </p>
+              </label>
+              <label className="block space-y-1.5">
                 <span className={labelClass}>Separator</span>
                 <Input
                   value={settings.separator}
@@ -310,12 +341,20 @@ export default function EmployeeCodeSettingsPage() {
             <div>
               <p className={labelClass}>Example (start from)</p>
               <p className="mt-1 font-mono text-lg font-semibold tracking-tight text-foreground">{liveExample}</p>
+              {temporaryExample ? (
+                <p className="mt-1 font-mono text-sm text-foreground">{temporaryExample}</p>
+              ) : null}
             </div>
             <div>
               <p className={labelClass}>Next code for this company</p>
               <p className="mt-1 font-mono text-sm text-emerald-700 dark:text-emerald-300">
                 {nextCodePreview || '—'}
               </p>
+              {nextTemporaryCodePreview ? (
+                <p className="mt-2 font-mono text-sm text-emerald-700 dark:text-emerald-300">
+                  Temporary: {nextTemporaryCodePreview}
+                </p>
+              ) : null}
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 Next code is computed from existing employee IDs that match this format. Saving updates the rule for future creates only.
               </p>
@@ -363,7 +402,7 @@ export default function EmployeeCodeSettingsPage() {
             <Button type="button" variant="outline" disabled={applying} onClick={() => setPreviewOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={applying || previewing || !previewRows?.length} onClick={() => void applyIds()}>
+            <Button type="button" disabled={applying || previewing || !previewRows?.length || Boolean(codeClash)} onClick={() => void applyIds()}>
               {applying ? 'Applying…' : 'Apply these IDs'}
             </Button>
           </>
@@ -372,11 +411,13 @@ export default function EmployeeCodeSettingsPage() {
         {previewing || !previewRows ? (
           <p className="text-sm text-muted-foreground">Loading preview…</p>
         ) : (
+          <div className="space-y-3">
+            {codeClash ? <p className="text-sm text-amber-700 dark:text-amber-300">{codeClash}</p> : null}
           <div className="max-h-[min(60vh,28rem)] overflow-auto rounded-md border border-border">
             <table className="w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr>
-                  {['Name', 'Current ID', 'New ID'].map((heading) => (
+                  {['Name', 'Employment type', 'Current ID', 'New ID'].map((heading) => (
                     <th
                       key={heading}
                       className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
@@ -389,7 +430,7 @@ export default function EmployeeCodeSettingsPage() {
               <tbody>
                 {previewRows.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-3 py-4 text-muted-foreground">
+                    <td colSpan={4} className="px-3 py-4 text-muted-foreground">
                       This company has no employees.
                     </td>
                   </tr>
@@ -397,6 +438,7 @@ export default function EmployeeCodeSettingsPage() {
                   previewRows.map((row) => (
                     <tr key={row.id}>
                       <td className="border-t border-border bg-card px-3 py-2">{row.fullName}</td>
+                      <td className="border-t border-border bg-card px-3 py-2">{row.employmentType || '—'}</td>
                       <td className="border-t border-border bg-card px-3 py-2 font-mono text-xs">{row.oldCode}</td>
                       <td className="border-t border-border bg-card px-3 py-2 font-mono text-xs">{row.newCode}</td>
                     </tr>
@@ -404,6 +446,7 @@ export default function EmployeeCodeSettingsPage() {
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         )}
       </Modal>

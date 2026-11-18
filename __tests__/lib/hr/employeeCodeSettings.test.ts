@@ -1,7 +1,11 @@
 import {
   DEFAULT_EMPLOYEE_CODE_SETTINGS,
+  codeSettingsForEmploymentType,
+  employeeCodePrefixesClash,
+  employeeCodeRenumberClash,
   extractMaxSequenceFromCodes,
   formatEmployeeCode,
+  isTemporaryEmploymentType,
   nextEmployeeCodeFromExisting,
   normalizeEmployeeCodeSettings,
   planEmployeeCodeRenumber,
@@ -83,6 +87,41 @@ describe('employeeCodeSettings', () => {
       'EMP-0003',
     );
   });
+
+  it('keeps a blank temporary prefix blank', () => {
+    expect(normalizeEmployeeCodeSettings({ prefix: 'AMFGI' }).temporaryPrefix).toBe('');
+    expect(normalizeEmployeeCodeSettings({ temporaryPrefix: '   ' }).temporaryPrefix).toBe('');
+    expect(normalizeEmployeeCodeSettings({ temporaryPrefix: ' TEMP ' }).temporaryPrefix).toBe('TEMP');
+  });
+
+  it('rejects equal or overlapping prefixes and allows separate ones', () => {
+    expect(employeeCodePrefixesClash('EMP', 'EMP')).toBe(true);
+    expect(employeeCodePrefixesClash('EMP', 'emp2')).toBe(true);
+    expect(employeeCodePrefixesClash('T', 'TEMP')).toBe(true);
+    expect(employeeCodePrefixesClash('AMFGI', 'TEMP')).toBe(false);
+    expect(employeeCodePrefixesClash('AMFGI', '')).toBe(false);
+  });
+
+  it('recognizes only the Temporary employment type', () => {
+    expect(isTemporaryEmploymentType(' Temporary ')).toBe(true);
+    expect(isTemporaryEmploymentType('TEMPORARY')).toBe(true);
+    expect(isTemporaryEmploymentType('Full-time')).toBe(false);
+    expect(isTemporaryEmploymentType('Temporary Employee')).toBe(false);
+    expect(isTemporaryEmploymentType(null)).toBe(false);
+  });
+
+  it('gives Temporary its own next number and leaves the company series in place', () => {
+    const settings = { ...DEFAULT_EMPLOYEE_CODE_SETTINGS, prefix: 'AMFGI', temporaryPrefix: 'TEMP' };
+    const codes = ['AMFGI-0008', 'TEMP-0003'];
+    expect(nextEmployeeCodeFromExisting(codes, codeSettingsForEmploymentType(settings, 'Temporary'), ref)).toBe('TEMP-0004');
+    expect(nextEmployeeCodeFromExisting(codes, codeSettingsForEmploymentType(settings, 'Full-time'), ref)).toBe('AMFGI-0009');
+    expect(nextEmployeeCodeFromExisting(codes, codeSettingsForEmploymentType(settings, null), ref)).toBe('AMFGI-0009');
+  });
+
+  it('uses the company prefix for Temporary while the temporary prefix is blank', () => {
+    const settings = { ...DEFAULT_EMPLOYEE_CODE_SETTINGS, prefix: 'AMFGI', temporaryPrefix: '' };
+    expect(nextEmployeeCodeFromExisting(['AMFGI-0008'], codeSettingsForEmploymentType(settings, 'Temporary'), ref)).toBe('AMFGI-0009');
+  });
 });
 
 describe('planEmployeeCodeRenumber', () => {
@@ -163,6 +202,43 @@ describe('planEmployeeCodeRenumber', () => {
       ref
     );
     expect(rows[0]?.newCode).toBe('EMP-2026-001');
+  });
+
+  it('keeps Temporary on its own prefix and everyone else on the company prefix', () => {
+    const rows = planEmployeeCodeRenumber(
+      [
+        { ...person('full', 'AMFGI-0002', '2020-01-01', '2020-01-01'), employmentType: 'Full-time' },
+        { ...person('temp', 'AMFGI-0001', '2019-01-01', '2019-01-01'), employmentType: 'temporary' },
+        { ...person('other', 'AMFGI-0003', '2021-01-01', '2021-01-01'), employmentType: 'Part-time' },
+      ],
+      { ...DEFAULT_EMPLOYEE_CODE_SETTINGS, prefix: 'AMFGI', temporaryPrefix: 'TEMP' },
+      ref,
+    );
+    expect(rows.map((row) => [row.id, row.newCode])).toEqual([
+      ['temp', 'TEMP-0001'],
+      ['full', 'AMFGI-0001'],
+      ['other', 'AMFGI-0002'],
+    ]);
+    expect(employeeCodeRenumberClash(rows)).toBeNull();
+  });
+
+  it('keeps one company series when the temporary prefix is blank', () => {
+    const rows = planEmployeeCodeRenumber(
+      [
+        { ...person('temp', 'OLD-1', '2019-01-01', '2019-01-01'), employmentType: 'Temporary' },
+        { ...person('full', 'OLD-2', '2020-01-01', '2020-01-01'), employmentType: 'Full-time' },
+      ],
+      { ...DEFAULT_EMPLOYEE_CODE_SETTINGS, prefix: 'AMFGI', temporaryPrefix: '' },
+      ref,
+    );
+    expect(rows.map((row) => row.newCode)).toEqual(['AMFGI-0001', 'AMFGI-0002']);
+  });
+
+  it('stops when the two series would share an ID', () => {
+    expect(employeeCodeRenumberClash([
+      { id: 'a', fullName: 'A', employmentType: 'Full-time', oldCode: 'A-1', newCode: 'AMFGI-0001' },
+      { id: 'b', fullName: 'B', employmentType: 'Temporary', oldCode: 'B-1', newCode: 'amfgi-0001' },
+    ])).toMatch(/same ID/);
   });
 
   it('keeps temporary codes distinct from each other and from the final codes', () => {

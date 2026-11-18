@@ -1,5 +1,5 @@
 import { isPayrollLeaveLine } from '@/lib/hr/attendanceLeavePay';
-import { isPaidLeaveType } from '@/lib/hr/leaveTypes';
+import { isAnnualLeaveCode, isPaidLeaveType } from '@/lib/hr/leaveTypes';
 import {
   daysInMonth,
   denomDaysExcludingWeekdays,
@@ -22,6 +22,15 @@ function workedHoursFromMinutes(minutes: number): number {
   return Math.max(0, minutes) / 60;
 }
 
+/** Annual leave is paid in advance, so formulas must not treat that code as paid leave. */
+function formulaCountsAsPaidLeave(line: PayLineInput): boolean {
+  if (isAnnualLeaveCode(line.leaveTypeCode)) return false;
+  return (
+    isPayrollLeaveLine(line) &&
+    isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY')
+  );
+}
+
 function buildMonthScope(params: {
   month: string;
   config: PayTypeConfig;
@@ -40,9 +49,7 @@ function buildMonthScope(params: {
     workedHoursTotal += workedHours;
     if (isPayrollLeaveLine(line)) {
       leaveDays += 1;
-      if (isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY')) {
-        paidLeaveDays += 1;
-      }
+      if (formulaCountsAsPaidLeave(line)) paidLeaveDays += 1;
       continue;
     }
     if (line.status === 'ABSENT') absentDays += 1;
@@ -86,11 +93,7 @@ function buildDayScope(
 ): FormulaScope {
   const workedHours = workedHoursFromMinutes(line.workedMinutes);
   const isLeave = isPayrollLeaveLine(line) ? 1 : 0;
-  const isPaidLeave =
-    isPayrollLeaveLine(line) &&
-    isPaidLeaveType(line.leaveType as 'ANNUAL' | 'SICK' | 'EMERGENCY' | 'ONE_DAY')
-      ? 1
-      : 0;
+  const isPaidLeave = formulaCountsAsPaidLeave(line) ? 1 : 0;
   const isAbsent = line.status === 'ABSENT' && !isPayrollLeaveLine(line) ? 1 : 0;
   const isPresent = line.status === 'PRESENT' ? 1 : 0;
 

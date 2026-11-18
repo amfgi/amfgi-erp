@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
+import type { LeaveReturnResult } from '@/lib/hr/leaveReturn';
 import { deductFromBalanceFromRules, parseLeaveTypeRules } from '@/lib/hr/leaveTypeRules';
 import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,9 @@ type LeaveRow = {
   reviewNote: string | null;
   reviewedAt: string | null;
   dayCount: number;
+  returnDate?: string | null;
+  returnResult?: LeaveReturnResult | null;
+  extraDays?: number | null;
   leaveTypeRef?: { id: string; name: string; code: string; rules?: unknown } | null;
   employee: { id: string; fullName: string; preferredName: string | null; employeeCode: string };
   reviewedBy?: { id: string; name: string | null } | null;
@@ -66,6 +70,31 @@ type EmployeeOption = {
 
 type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
 type LeaveSort = 'submitted' | 'startDesc' | 'startAsc';
+type ReturnFilter = 'ALL' | 'LATE' | 'NOT_RETURNED' | 'NOT_MARKED';
+
+function returnResultLabel(result: LeaveReturnResult): string {
+  const labels: Record<LeaveReturnResult, string> = {
+    ON_TIME: 'On time',
+    LATE: 'Late',
+    STILL_ON_LEAVE: 'Still on leave',
+    NOT_RETURNED: 'Not returned',
+    NOT_MARKED: 'Not marked',
+    ANOTHER_LEAVE: 'Another leave',
+  };
+  return labels[result];
+}
+
+function returnResultClass(result: LeaveReturnResult): string {
+  const map: Record<LeaveReturnResult, string> = {
+    ON_TIME: 'bg-emerald-500/15 text-emerald-900 dark:text-emerald-200',
+    LATE: 'bg-red-500/15 text-red-900 dark:text-red-200',
+    STILL_ON_LEAVE: 'bg-sky-500/15 text-sky-900 dark:text-sky-200',
+    NOT_RETURNED: 'bg-amber-500/15 text-amber-900 dark:text-amber-200',
+    NOT_MARKED: 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
+    ANOTHER_LEAVE: 'bg-violet-500/15 text-violet-900 dark:text-violet-200',
+  };
+  return map[result];
+}
 
 function statusBadgeClass(status: string) {
   const map: Record<string, string> = {
@@ -79,6 +108,12 @@ function statusBadgeClass(status: string) {
 
 function leaveTypeLabel(row: LeaveRow) {
   return row.leaveTypeRef?.name ?? row.leaveType.replace(/_/g, ' ');
+}
+
+function isSickLeaveReject(review: { action: 'approve' | 'reject'; row: LeaveRow }): boolean {
+  if (review.action !== 'reject') return false;
+  const code = (review.row.leaveTypeRef?.code ?? review.row.leaveType).trim().toUpperCase();
+  return code === 'SICK';
 }
 
 function employeeName(employee: EmployeeOption | LeaveRow['employee']) {
@@ -136,6 +171,7 @@ export default function HrLeavePage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [filterLeaveTypeId, setFilterLeaveTypeId] = useState('');
+  const [returnFilter, setReturnFilter] = useState<ReturnFilter>('ALL');
   const [sort, setSort] = useState<LeaveSort>('submitted');
   const [requests, setRequests] = useState<LeaveRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -161,6 +197,7 @@ export default function HrLeavePage() {
     allowOverride?: boolean;
   } | null>(null);
   const [reviewNote, setReviewNote] = useState('');
+  const [salaryDeductionDays, setSalaryDeductionDays] = useState('');
 
   const [editModal, setEditModal] = useState<LeaveRow | null>(null);
   const [editLeaveTypeId, setEditLeaveTypeId] = useState('');
@@ -238,7 +275,7 @@ export default function HrLeavePage() {
       if (statsRes.ok && statsJson?.success) setStats(statsJson.data as Stats);
       return;
     }
-    const params = new URLSearchParams({ companyId, sort });
+    const params = new URLSearchParams({ companyId, sort, includeReturn: '1' });
     if (statusFilter !== 'ALL') params.set('status', statusFilter);
     if (filterLeaveTypeId) params.set('leaveTypeId', filterLeaveTypeId);
     if (fromDate && toDate) {
@@ -326,13 +363,14 @@ export default function HrLeavePage() {
   const dateRangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
   const hasDateFilter = Boolean(fromDate && toDate && !dateRangeInvalid);
   const extraFiltersActive =
-    Boolean(month || fromDate || toDate || filterLeaveTypeId) || sort !== 'submitted';
+    Boolean(month || fromDate || toDate || filterLeaveTypeId) || sort !== 'submitted' || returnFilter !== 'ALL';
 
   const visibleRequests = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return requests;
-    return requests.filter((row) =>
-      [
+    return requests.filter((row) => {
+      if (returnFilter !== 'ALL' && row.returnResult !== returnFilter) return false;
+      if (!q) return true;
+      return [
         row.employee.fullName,
         row.employee.preferredName ?? '',
         row.employee.employeeCode,
@@ -342,9 +380,9 @@ export default function HrLeavePage() {
       ]
         .join(' ')
         .toLowerCase()
-        .includes(q)
-    );
-  }, [requests, search]);
+        .includes(q);
+    });
+  }, [requests, returnFilter, search]);
 
   const selectedLeaveType = leaveTypes.find((t) => t.id === recordLeaveTypeId);
   const recordDayCount = useMemo(() => {
@@ -461,6 +499,15 @@ export default function HrLeavePage() {
 
   const submitReview = async () => {
     if (!reviewModal || !canApprove) return;
+    const sickReject = isSickLeaveReject(reviewModal);
+    let deductionDays: number | undefined;
+    if (sickReject) {
+      if (!/^\d+$/.test(salaryDeductionDays.trim())) {
+        toast.error('Enter how many days of salary should be cut');
+        return;
+      }
+      deductionDays = Number(salaryDeductionDays.trim());
+    }
     const res = await fetch(`/api/hr/leave-requests/${reviewModal.row.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -469,6 +516,7 @@ export default function HrLeavePage() {
         action: reviewModal.action,
         reviewNote: reviewNote.trim() || undefined,
         allowInsufficientBalance: reviewModal.allowOverride,
+        ...(deductionDays != null ? { salaryDeductionDays: deductionDays } : {}),
       }),
     });
     const json = await readApiJson(res);
@@ -542,8 +590,9 @@ export default function HrLeavePage() {
                 sets the approved date range and deducts balance when the leave type requires it.
               </li>
               <li>
-                <strong className="text-foreground">Daily attendance</strong> — mark absent/present on the attendance day
-                sheet. Compare both to spot early return or overstay.
+                <strong className="text-foreground">Daily attendance</strong> — mark absent or present on the attendance
+                day sheet. This list compares that sheet with the approved dates and shows the return, whether it was on
+                time, and any extra days.
               </li>
               <li>
                 <strong className="text-foreground">Entitlement</strong> — auto-filled from the Annual leave type (HR Setup
@@ -583,6 +632,17 @@ export default function HrLeavePage() {
                 {key === 'PENDING' ? 'Pending' : key === 'APPROVED' ? 'Approved' : key === 'REJECTED' ? 'Rejected' : 'All'}
               </Button>
             ))}
+            <select
+              className="flex h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+              value={returnFilter}
+              onChange={(event) => setReturnFilter(event.target.value as ReturnFilter)}
+              aria-label="Return"
+            >
+              <option value="ALL">All returns</option>
+              <option value="LATE">Late</option>
+              <option value="NOT_RETURNED">Not returned</option>
+              <option value="NOT_MARKED">Not marked</option>
+            </select>
           </div>
           <Input
             value={search}
@@ -675,6 +735,7 @@ export default function HrLeavePage() {
                 setFromDate('');
                 setToDate('');
                 setFilterLeaveTypeId('');
+                setReturnFilter('ALL');
                 setSort('submitted');
               }}
             >
@@ -704,12 +765,15 @@ export default function HrLeavePage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
+            <table className="w-full min-w-[1120px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Leave type</th>
                   <th className="px-4 py-3 font-medium">Dates</th>
+                  <th className="px-4 py-3 font-medium">Return</th>
+                  <th className="px-4 py-3 font-medium">Result</th>
+                  <th className="px-4 py-3 font-medium">Extra days</th>
                   <th className="px-4 py-3 font-medium">Days</th>
                   <th className="px-4 py-3 font-medium">Balance left</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -732,6 +796,21 @@ export default function HrLeavePage() {
                     </td>
                     <td className="px-4 py-3">{leaveTypeLabel(row)}</td>
                     <td className="px-4 py-3 tabular-nums">{formatDateRange(row.startDate, row.endDate)}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {row.returnDate ? String(row.returnDate).slice(0, 10) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.returnResult ? (
+                        <Badge className={cn('font-medium', returnResultClass(row.returnResult))}>
+                          {returnResultLabel(row.returnResult)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {row.extraDays == null ? <span className="text-muted-foreground">—</span> : row.extraDays}
+                    </td>
                     <td className="px-4 py-3 tabular-nums">{row.dayCount}</td>
                     <td className="px-4 py-3 tabular-nums">
                       {row.balance && rowDeductsBalance(row) ? (
@@ -756,6 +835,7 @@ export default function HrLeavePage() {
                               size="sm"
                               onClick={() => {
                                 setReviewNote('');
+                                setSalaryDeductionDays('');
                                 setReviewModal({ row, action: 'approve' });
                               }}
                             >
@@ -766,6 +846,7 @@ export default function HrLeavePage() {
                               variant="outline"
                               onClick={() => {
                                 setReviewNote('');
+                                setSalaryDeductionDays('');
                                 setReviewModal({ row, action: 'approve', allowOverride: true });
                               }}
                             >
@@ -776,6 +857,7 @@ export default function HrLeavePage() {
                               variant="destructive"
                               onClick={() => {
                                 setReviewNote('');
+                                setSalaryDeductionDays('');
                                 setReviewModal({ row, action: 'reject' });
                               }}
                             >
@@ -1033,6 +1115,21 @@ export default function HrLeavePage() {
       >
         {reviewModal?.allowOverride ? (
           <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">Balance override enabled — insufficient days will still be approved.</p>
+        ) : null}
+        {reviewModal && isSickLeaveReject(reviewModal) ? (
+          <label className="mb-3 block text-sm">
+            <span className="text-muted-foreground">How many days of salary should be cut?</span>
+            <Input
+              className="mt-1"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={salaryDeductionDays}
+              onChange={(e) => setSalaryDeductionDays(e.target.value)}
+              placeholder="0"
+            />
+          </label>
         ) : null}
         <label className="block text-sm">
           <span className="text-muted-foreground">Message to employee (optional)</span>

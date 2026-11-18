@@ -900,7 +900,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             <textarea value={purchaseOrderNotes} onChange={(event) => setPurchaseOrderNotes(event.target.value)} disabled={!purchaseOrderEditable} rows={3} className={`${INPUT_CLASS} resize-none`} />
           </label>
           {record.job ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/customers/jobs/${record.job!.id}`)}>
+            <Button type="button" variant="outline" size="sm" data-nav-href={`/customers/jobs/${record.job!.id}`} onClick={() => router.push(`/customers/jobs/${record.job!.id}`)}>
               Open job {record.job.jobNumber}
             </Button>
           ) : purchaseOrderEditable && access.jobCreate ? (

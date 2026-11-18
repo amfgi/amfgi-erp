@@ -96,7 +96,7 @@ export default function StockJobBudgetPage() {
         },
       ];
 
-      openContextMenu(e.clientX, e.clientY, options);
+      openContextMenu(e.clientX, e.clientY, options, `/stock/job-budget/${job.id}`);
     },
     [openContextMenu, openJobBudget],
   );

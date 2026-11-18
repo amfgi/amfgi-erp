@@ -351,6 +351,7 @@ export default function HrScheduleListPage() {
                   return (
                     <tr
                       key={row.id}
+                      data-nav-href={scheduleDayHref(workDateYmd, companyId)}
                       onDoubleClick={() => router.push(scheduleDayHref(workDateYmd, companyId))}
                       title="Double-click to open"
                       className={cn(

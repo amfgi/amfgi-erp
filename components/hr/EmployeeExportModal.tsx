@@ -212,7 +212,7 @@ export default function EmployeeExportModal({
     setStatusValues(directoryFilterValueToArray(filters.status));
     setPortalValues(directoryFilterValueToArray(filters.portal));
     setEmployeeTypeValues(directoryFilterValueToArray(filters.employeeType));
-    setDesignationValues([]);
+    setDesignationValues(directoryFilterValueToArray(filters.designation));
     setDepartmentValues([]);
     setEmploymentTypeValues([]);
     setSignatureGroupValues([]);

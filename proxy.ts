@@ -80,6 +80,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/terms-of-service') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/integrations/') ||
+    pathname === '/api/hr/visa-expiry-notices' ||
     pathname === '/unauthorized'
   ) {
     return NextResponse.next();

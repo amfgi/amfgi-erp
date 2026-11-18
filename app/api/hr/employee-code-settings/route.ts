@@ -5,10 +5,14 @@ import { prisma } from '@/lib/db/prisma';
 import {
   allocateNextEmployeeCode,
   applyEmployeeCodeRenumber,
+  EmployeeCodeClashError,
+  loadEmployeeCodeSettings,
   previewEmployeeCodeRenumber,
 } from '@/lib/hr/allocateEmployeeCode';
 import {
   EMPLOYEE_CODE_COUNTING_STYLES,
+  employeeCodePrefixesClash,
+  employeeCodeRenumberClash,
   normalizeEmployeeCodeSettings,
   previewEmployeeCodeExample,
   readEmployeeCodeSettingsFromCompanyData,
@@ -30,11 +34,20 @@ const RenumberSchema = z.object({
 const BodySchema = z.object({
   companyId: z.string().min(1).optional(),
   prefix: z.string().min(1).max(40),
+  temporaryPrefix: z.string().max(40).optional(),
   separator: z.string().max(1),
   padLength: z.number().int().min(1).max(12),
   countingStyle: z.enum(EMPLOYEE_CODE_COUNTING_STYLES),
   startFrom: z.number().int().min(1).max(1_000_000_000),
 });
+
+async function codePreview(companyId: string, settings: { temporaryPrefix: string }) {
+  const { code: nextCodePreview } = await allocateNextEmployeeCode(prisma, companyId);
+  const nextTemporaryCodePreview = settings.temporaryPrefix
+    ? (await allocateNextEmployeeCode(prisma, companyId, new Date(), 'Temporary')).code
+    : null;
+  return { nextCodePreview, nextTemporaryCodePreview };
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -61,12 +74,12 @@ export async function GET(req: Request) {
   if (!company) return errorResponse('Company not found', 404);
 
   const settings = readEmployeeCodeSettingsFromCompanyData(company);
-  const { code: nextCodePreview } = await allocateNextEmployeeCode(prisma, ctx.companyId);
+  const preview = await codePreview(ctx.companyId, settings);
 
   return successResponse({
     settings,
     exampleCode: previewEmployeeCodeExample(settings),
-    nextCodePreview,
+    ...preview,
   });
 }
 
@@ -88,11 +101,18 @@ export async function PUT(req: Request) {
 
   const settings = normalizeEmployeeCodeSettings({
     prefix: parsed.data.prefix,
+    temporaryPrefix: parsed.data.temporaryPrefix ?? '',
     separator: parsed.data.separator,
     padLength: parsed.data.padLength,
     countingStyle: parsed.data.countingStyle,
     startFrom: parsed.data.startFrom,
   });
+  if (employeeCodePrefixesClash(settings.prefix, settings.temporaryPrefix)) {
+    return errorResponse(
+      'The temporary prefix must differ from the company prefix, and one must not begin with the other.',
+      422,
+    );
+  }
 
   await prisma.company.update({
     where: { id: writeCompanyId },
@@ -101,7 +121,7 @@ export async function PUT(req: Request) {
     },
   });
 
-  const { code: nextCodePreview } = await allocateNextEmployeeCode(prisma, writeCompanyId);
+  const preview = await codePreview(writeCompanyId, settings);
 
   publishLiveUpdate({
     companyId: writeCompanyId,
@@ -113,7 +133,7 @@ export async function PUT(req: Request) {
   return successResponse({
     settings,
     exampleCode: previewEmployeeCodeExample(settings),
-    nextCodePreview,
+    ...preview,
   });
 }
 
@@ -135,11 +155,17 @@ export async function POST(req: Request) {
 
   if (!parsed.data.confirm) {
     const rows = await previewEmployeeCodeRenumber(prisma, writeCompanyId);
-    return successResponse({ rows, applied: false });
+    return successResponse({ rows, applied: false, clash: employeeCodeRenumberClash(rows) });
   }
 
-  const rows = await applyEmployeeCodeRenumber(prisma, writeCompanyId);
-  const { code: nextCodePreview } = await allocateNextEmployeeCode(prisma, writeCompanyId);
+  let rows;
+  try {
+    rows = await applyEmployeeCodeRenumber(prisma, writeCompanyId);
+  } catch (error) {
+    if (error instanceof EmployeeCodeClashError) return errorResponse(error.message, 422);
+    throw error;
+  }
+  const preview = await codePreview(writeCompanyId, await loadEmployeeCodeSettings(prisma, writeCompanyId));
 
   publishLiveUpdate({
     companyId: writeCompanyId,
@@ -148,5 +174,5 @@ export async function POST(req: Request) {
     action: 'updated',
   });
 
-  return successResponse({ rows, applied: true, nextCodePreview });
+  return successResponse({ rows, applied: true, ...preview });
 }

@@ -1,0 +1,50 @@
+import { parseAdvanceAmount, parseRecordDate } from '@/lib/hr/employeeRecordValidation';
+import { parseFineDescription, updateEmployeeFine } from '@/lib/hr/employeeFineService';
+import { requireHrSession } from '@/lib/hr/requireHrSession';
+import { P } from '@/lib/permissions';
+import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const body = (await req.json().catch(() => null)) as {
+    companyId?: string;
+    fineDate?: unknown;
+    description?: unknown;
+    amount?: unknown;
+    status?: unknown;
+  } | null;
+  if (!body) return errorResponse('Invalid request', 400);
+
+  const ctx = await requireHrSession({
+    permission: P.HR_PAYROLL_COMPENSATION,
+    companyId: body.companyId,
+  });
+  if (!ctx.ok) return ctx.response;
+
+  const fineDate = parseRecordDate(body.fineDate);
+  const description = parseFineDescription(body.description);
+  const amount = parseAdvanceAmount(body.amount);
+  if (!fineDate) return errorResponse('Enter a date', 400);
+  if (!description) return errorResponse('Enter a description', 400);
+  if (!amount) return errorResponse('Enter a fine amount greater than 0', 400);
+
+  let status: 'APPROVED' | 'REJECTED' | undefined;
+  if (body.status != null && body.status !== '') {
+    if (body.status !== 'APPROVED' && body.status !== 'REJECTED') {
+      return errorResponse('Status must be Approved or Rejected', 400);
+    }
+    status = body.status;
+  }
+
+  const { id } = await params;
+  const result = await updateEmployeeFine({
+    id,
+    companyIds: ctx.companyIds,
+    fineDate,
+    description,
+    amount,
+    status,
+    reviewedById: ctx.session.user.id ?? null,
+  });
+  if ('error' in result) return errorResponse(result.error, result.status);
+  return successResponse({ fine: result.fine });
+}

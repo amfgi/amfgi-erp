@@ -233,7 +233,7 @@ export async function runEmployeeBulkImport(
         try {
           emp = await prisma.$transaction(async (tx) => {
             await lockEmployeeCodeAllocation(tx, companyId);
-            const { code } = await allocateNextEmployeeCode(tx, companyId);
+            const { code } = await allocateNextEmployeeCode(tx, companyId, new Date(), row.employmentType);
             return tx.employee.create({
               data: employeeCreateData(companyId, row, patch, nationality ?? null, code),
             });

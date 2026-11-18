@@ -622,7 +622,7 @@ export default function DailyQuantityLogEntryPage() {
         <Alert variant="destructive">
           <AlertDescription>Invalid date in URL.</AlertDescription>
         </Alert>
-        <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => router.push('/stock/daily-quantity-log')}>
+        <Button type="button" variant="secondary" size="sm" className="w-fit" data-nav-href="/stock/daily-quantity-log" onClick={() => router.push('/stock/daily-quantity-log')}>
           Back to list
         </Button>
       </div>
