@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
 import { Alert, AlertDescription } from '@/components/ui/shadcn/alert';
 import { Button } from '@/components/ui/shadcn/button';
+import FileInput from '@/components/ui/FileInput';
 import Modal from '@/components/ui/Modal';
 import {
   mapManualStockAdjustmentImportRows,
@@ -649,10 +650,15 @@ export default function ManualStockAdjustmentsPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Import Excel or CSV</label>
-                <input
-                  type="file"
+                <FileInput
                   accept=".xlsx,.xls,.csv"
                   onChange={handleImportFile}
+                  selectedNames={importFileName ? [importFileName] : []}
+                  onClear={() => {
+                    setImportFileName('');
+                    setImportLines([]);
+                    setImportErrors([]);
+                  }}
                   className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
                 />
                 {importFileName ? (
