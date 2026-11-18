@@ -8,7 +8,9 @@ import toast from 'react-hot-toast';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { cn } from '@/lib/utils';
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import JobSerialModal from '@/components/jobs/JobSerialModal';
 import SearchSelect from '@/components/ui/SearchSelect';
+import { canChangeJobSerial } from '@/lib/jobs/jobSerial';
 import { emptyJobContactRow, jobContactsToRows, primaryJobContactPersonFromRows, rowsToJobContactsPayload, type JobContactRow } from '@/lib/jobContactFormUi';
 import { WORKFORCE_EXPERTISE_OPTIONS } from '@/lib/hr/workforceProfile';
 import { useCreateJobMutation, useGetCustomersQuery, useGetJobsQuery, useUpdateJobMutation } from '@/store/hooks';
@@ -206,6 +208,7 @@ export default function CustomerJobFormPage() {
   const [createJob, { isLoading: isCreating }] = useCreateJobMutation();
   const [updateJob, { isLoading: isUpdating }] = useUpdateJobMutation();
   const [isProvisional, setIsProvisional] = useState(false);
+  const [serialOpen, setSerialOpen] = useState(false);
 
   const mode = getMode(searchParams.get('mode'));
   const jobId = searchParams.get('id');
@@ -273,6 +276,7 @@ export default function CustomerJobFormPage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const canCreate = isSA || perms.includes('job.create');
   const canEdit = isSA || perms.includes('job.edit');
+  const serialEditable = mode === 'edit' && Boolean(jobId) && canChangeJobSerial(currentJob, canEdit);
 
   useEffect(() => {
     if (!session?.user?.activeCompanyId) return;
@@ -514,12 +518,26 @@ export default function CustomerJobFormPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <label className={LABEL_CLASS}>
                   Job number
-                  <input
-                    value={mode === 'edit' ? form.jobNumber : 'Assigned when you save'}
-                    disabled
-                    className={INPUT_CLASS}
-                  />
-                  {mode === 'create' ? (
+                  {serialEditable && jobId ? (
+                    <button
+                      type="button"
+                      onClick={() => setSerialOpen(true)}
+                      className={`${INPUT_CLASS} text-left hover:underline`}
+                    >
+                      {form.jobNumber}
+                    </button>
+                  ) : (
+                    <input
+                      value={mode === 'edit' ? form.jobNumber : 'Assigned when you save'}
+                      disabled
+                      className={INPUT_CLASS}
+                    />
+                  )}
+                  {serialEditable ? (
+                    <p className="mt-2 text-xs normal-case tracking-normal text-muted-foreground">
+                      Change the serial. The prefix stays the same, and variations follow the new number.
+                    </p>
+                  ) : mode === 'create' ? (
                     <p className="mt-2 text-xs normal-case tracking-normal text-muted-foreground">
                       Format J26-0001. The year and the next serial are assigned when you save.
                     </p>
@@ -760,6 +778,17 @@ export default function CustomerJobFormPage() {
           </div>
         </aside>
       </div>
+      {serialEditable && jobId ? (
+        <JobSerialModal
+          jobId={jobId}
+          jobNumber={form.jobNumber}
+          isOpen={serialOpen}
+          onClose={() => setSerialOpen(false)}
+          onChanged={(jobNumber) => {
+            setFormDraft((current) => (current ? { ...current, jobNumber } : null));
+          }}
+        />
+      ) : null}
     </form>
   );
 }

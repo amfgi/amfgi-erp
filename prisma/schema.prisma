@@ -112,11 +112,14 @@ model Company {
   quotationTermsTemplates   QuotationTermsTemplate[]
   quotationCustomSections   QuotationCustomSection[]
   quotationSectionPresets   QuotationSectionPreset[]
+  quotationTemplates        QuotationTemplate[]
   salesQuotationOptions     SalesQuotationOption[]
   salesQuotationLines       SalesQuotationLine[]
   salesQuotationLineFields  SalesQuotationLineField[]
   salesQuotationRevisions   SalesQuotationRevision[]
   salesAttachments          SalesAttachment[]
+  salesDocumentTypes        SalesDocumentType[]
+  salesQuotationDocuments   SalesQuotationDocument[]
   salesWorkLogs             SalesWorkLog[]
   outboundEmails            OutboundEmail[]
   extraPermissions          UserCompanyExtraPermission[]
@@ -161,6 +164,7 @@ model User {
   salesQueriesAssigned        SalesQuery[]                 @relation("SalesQueryAssignee")
   salesWorkLogs               SalesWorkLog[]
   salesAttachmentsUploaded    SalesAttachment[]            @relation("SalesAttachmentUploadedBy")
+  salesQuotationDocumentsUploaded SalesQuotationDocument[] @relation("SalesQuotationDocumentUploadedBy")
   outboundEmailsReceived      OutboundEmail[]              @relation("OutboundEmailRecipient")
   extraPermissions            UserCompanyExtraPermission[]
 
@@ -1193,6 +1197,7 @@ model SalesQuery {
   acceptedOption SalesQuotationOption?   @relation("SalesAcceptedOption", fields: [acceptedOptionId], references: [id])
   revisions      SalesQuotationRevision[]
   attachments    SalesAttachment[]
+  quotationDocuments SalesQuotationDocument[]
   workLogs       SalesWorkLog[]
 
   @@unique([companyId, id])
@@ -1263,6 +1268,20 @@ model QuotationSectionPreset {
 
   @@unique([companyId, kind, nameKey])
   @@index([companyId, kind, name])
+}
+
+model QuotationTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  document  Json
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, nameKey])
+  @@index([companyId, name])
 }
 
 model SalesQuotationOption {
@@ -1352,6 +1371,43 @@ model SalesAttachment {
   uploadedBy User       @relation("SalesAttachmentUploadedBy", fields: [uploadedById], references: [id])
 
   @@index([companyId, salesQueryId, kind])
+}
+
+model SalesDocumentType {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String   @db.VarChar(80)
+  nameKey   String   @db.VarChar(80)
+  createdAt DateTime @default(now())
+
+  company   Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents SalesQuotationDocument[]
+
+  @@unique([companyId, nameKey])
+  @@index([companyId, name])
+}
+
+model SalesQuotationDocument {
+  id                     String   @id @default(cuid())
+  companyId              String
+  salesQueryId           String
+  typeId                 String
+  fileName               String
+  mimeType               String
+  driveFileId            String
+  viewerUrl              String   @db.Text
+  note                   String?  @db.VarChar(500)
+  uploadedById           String
+  carriedToPurchaseOrder Boolean  @default(false)
+  createdAt              DateTime @default(now())
+
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesQuery SalesQuery        @relation(fields: [companyId, salesQueryId], references: [companyId, id], onDelete: Cascade)
+  type       SalesDocumentType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  uploadedBy User              @relation("SalesQuotationDocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([companyId, salesQueryId, createdAt])
+  @@index([typeId])
 }
 
 model Supplier {

@@ -1,3 +1,7 @@
+import type {
+  MaterialColumnChange,
+  MaterialColumnClassification,
+} from '@/lib/import-export/materialColumnUpdate';
 import { LIST_PAGE_SIZE_OPTIONS } from '@/lib/pagination/serverList';
 import { appApi } from '../appApi';
 
@@ -259,6 +263,66 @@ export const materialsApi = appApi.injectEndpoints({
       invalidatesTags: [{ type: 'Material', id: 'LIST' }],
     }),
 
+    previewMaterialColumnUpdate: builder.mutation<
+      MaterialColumnClassification & {
+        summary: { update: number; unchanged: number; skipped: number };
+      },
+      { rows: (string | number | boolean | null)[][] }
+    >({
+      query: ({ rows }) => ({
+        url: '/materials/column-update',
+        method: 'POST',
+        body: { mode: 'preview', rows },
+      }),
+      transformResponse: (r: {
+        data: MaterialColumnClassification & {
+          summary: { update: number; unchanged: number; skipped: number };
+        };
+      }) => r.data,
+    }),
+
+    applyMaterialColumnUpdate: builder.mutation<
+      {
+        updated: number;
+        skipped: number;
+        results: Array<{
+          rowNumber: number;
+          materialId: string;
+          status: 'updated' | 'skipped';
+          reason: string | null;
+          appliedFields: string[];
+        }>;
+      },
+      {
+        rows: Array<{
+          rowNumber: number;
+          materialId: string;
+          itemName: string;
+          changes: MaterialColumnChange[];
+        }>;
+      }
+    >({
+      query: ({ rows }) => ({
+        url: '/materials/column-update',
+        method: 'POST',
+        body: { mode: 'apply', rows },
+      }),
+      transformResponse: (r: {
+        data: {
+          updated: number;
+          skipped: number;
+          results: Array<{
+            rowNumber: number;
+            materialId: string;
+            status: 'updated' | 'skipped';
+            reason: string | null;
+            appliedFields: string[];
+          }>;
+        };
+      }) => r.data,
+      invalidatesTags: [{ type: 'Material', id: 'LIST' }, 'StockValuation'],
+    }),
+
     createMaterialUom: builder.mutation<
       MaterialUomDto,
       { materialId: string; body: Record<string, unknown> }
@@ -396,6 +460,8 @@ export const {
   useDeactivateMaterialMutation,
   useGetCrossCompanyMaterialsQuery,
   useBulkCreateMaterialsMutation,
+  usePreviewMaterialColumnUpdateMutation,
+  useApplyMaterialColumnUpdateMutation,
   useCreateMaterialUomMutation,
   useDeleteMaterialUomMutation,
   useGetMaterialAssemblyQuery,
