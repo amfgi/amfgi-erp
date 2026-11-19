@@ -126,7 +126,7 @@ function sanitizePictureTag(tag: string) {
   const id = /^[A-Za-z0-9-]{8,80}$/.test(idRaw) ? idRaw : `pic${Math.random().toString(36).slice(2, 12)}`;
   const positioned = anchor === 'page' || layout === 'behind' || layout === 'front';
   const style = positioned ? `width:${width}px;left:${x}px;top:${y}px` : `width:${width}px`;
-  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="${layout}" data-anchor="${anchor}" data-width="${width}" data-x="${x}" data-y="${y}" alt="" draggable="false" contenteditable="false" style="${style}" />`;
+  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="${layout}" data-anchor="${anchor}" data-width="${width}" data-x="${x}" data-y="${y}" alt="" draggable="false" contenteditable="false" style="${style}">`;
 }
 
 export function sanitizeRichText(value: string | null | undefined) {
@@ -483,7 +483,18 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
         });
       }
       if (block.type === 'signatures') {
-        return withStoredGap(block);
+        const side = (entry: SignatureBlock): SignatureBlock => ({
+          name: sanitizeRichText(entry.name),
+          phone: sanitizeRichText(entry.phone),
+          title: sanitizeRichText(entry.title),
+          email: sanitizeRichText(entry.email),
+        });
+        return withStoredGap({
+          ...block,
+          name: sanitizeRichText(block.name),
+          left: side(block.left),
+          right: side(block.right),
+        });
       }
       return withStoredGap({
         ...block,

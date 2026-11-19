@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Check, ChevronDown, Download, X } from 'lucide-react';
+import { ArrowRight, BookmarkPlus, Check, ChevronDown, Download, FilePenLine, Files, PackageCheck, Save, ScrollText, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import FileInput from '@/components/ui/FileInput';
 import { Button } from '@/components/ui/shadcn/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/shadcn/tooltip';
 import Spinner from '@/components/ui/Spinner';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Modal from '@/components/ui/Modal';
@@ -43,6 +44,37 @@ import type { SalesAttachment, SalesRevision } from '@/store/api/endpoints/sales
 const INPUT_CLASS =
   'mt-1.5 w-full rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60';
 const LABEL_CLASS = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
+
+function IconAction({
+  label,
+  text,
+  disabled,
+  onClick,
+  variant = 'outline',
+  children,
+}: {
+  label: string;
+  text?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  variant?: 'outline' | 'ghost' | 'default';
+  children: ReactNode;
+}) {
+  const visible = text ?? label;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">
+          <Button type="button" variant={variant} size="sm" className="h-8 gap-1.5 px-2.5" disabled={disabled} aria-label={label} onClick={onClick}>
+            {children}
+            <span className="text-xs font-medium">{visible}</span>
+          </Button>
+        </span>
+      </TooltipTrigger>
+      {visible === label ? null : <TooltipContent>{label}</TooltipContent>}
+    </Tooltip>
+  );
+}
 
 function revisionPrintedDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -234,7 +266,7 @@ function Section({
           setRevealed(open);
         }}
       >
-        <div className={clip ? 'min-h-0 overflow-hidden' : 'overflow-visible'} inert={collapsible && !open ? true : undefined}>
+        <div className={`min-w-0 ${clip ? 'min-h-0 overflow-hidden' : 'overflow-visible'}`} inert={collapsible && !open ? true : undefined}>
           <div className="space-y-4 p-4 sm:p-5">{children}</div>
         </div>
       </div>
@@ -972,6 +1004,17 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     receivePurchaseOrderState.isLoading ||
     closureState.isLoading ||
     createJobState.isLoading;
+  const headerStatus = pdfBusy
+    ? 'Preparing PDF…'
+    : forwardQuotationState.isLoading
+      ? 'Forwarding…'
+      : reviseState.isLoading
+        ? 'Revising…'
+        : receivePurchaseOrderState.isLoading
+          ? 'Receiving PO…'
+          : quotationSaveState === 'saving' || updateState.isLoading || createState.isLoading || closureState.isLoading || createJobState.isLoading
+            ? 'Saving…'
+            : null;
 
   if (id && recordQuery.isError) {
     return <p className="text-sm text-muted-foreground">This record is not available.</p>;
@@ -1003,29 +1046,35 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             </p>
           ) : null}
         </div>
+        <TooltipProvider delayDuration={300}>
         <div className="flex flex-wrap items-center gap-2">
-          {busy || pdfBusy ? <Spinner size="sm" /> : null}
-          <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
-            Cancel
-          </Button>
+          {headerStatus ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Spinner size="sm" />
+              {headerStatus}
+            </span>
+          ) : null}
+          <IconAction label="Cancel" variant="ghost" onClick={() => router.back()}>
+            <X className="size-4" />
+          </IconAction>
           {id ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setLogOpen(true)}>
-              Working log
-            </Button>
+            <IconAction label="Working log" text="Log" onClick={() => setLogOpen(true)}>
+              <ScrollText className="size-4" />
+            </IconAction>
           ) : null}
           {section === 'quotation' && record ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setDocumentsOpen(true)}>
-              Documents
-            </Button>
+            <IconAction label="Documents" text="Files" onClick={() => setDocumentsOpen(true)}>
+              <Files className="size-4" />
+            </IconAction>
           ) : null}
           {section === 'query' && queryOpen && access.queryManage ? (
             <>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSaveQuery()}>
-                Save
-              </Button>
-              <Button type="button" size="sm" disabled={busy} onClick={openForward}>
-                Forward to quotation
-              </Button>
+              <IconAction label="Save" variant="outline" disabled={busy} onClick={() => void onSaveQuery()}>
+                <Save className="size-4" />
+              </IconAction>
+              <IconAction label="Forward to quotation" text="Forward" variant="outline" disabled={busy} onClick={openForward}>
+                <ArrowRight className="size-4" />
+              </IconAction>
             </>
           ) : null}
           {section === 'quotation' && quotationEditable ? (
@@ -1051,39 +1100,38 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
                   )}
                 />
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
+              <IconAction
+                label={templateUnchanged ? 'No changes from this template' : 'Save as Quotation Template'}
+                text="Template"
                 disabled={!quotationDocument || templateUnchanged}
-                title={templateUnchanged ? 'No changes from this template' : undefined}
                 onClick={() => setTemplateAskOpen(true)}
               >
-                Save as Quotation Template
-              </Button>
+                <BookmarkPlus className="size-4" />
+              </IconAction>
               {quotationSaveState === 'error' ? <span className="self-center text-xs text-destructive">Not saved</span> : null}
-              <Button type="button" variant="outline" size="sm" disabled={busy || !quotationDocument} onClick={() => setReviseOpen(true)}>
-                Revise
-              </Button>
-              <Button type="button" variant="outline" size="sm" disabled={busy || pdfBusy || !quotationDocument} onClick={() => void openQuotationPdf('quotation')}>
-                {pdfBusy ? 'Preparing PDF…' : 'Download PDF'}
-              </Button>
-              <Button type="button" size="sm" disabled={busy} onClick={() => void onReceivePurchaseOrder()}>
-                PO Received
-              </Button>
+              <IconAction label="Revise" disabled={busy || !quotationDocument} onClick={() => setReviseOpen(true)}>
+                <FilePenLine className="size-4" />
+              </IconAction>
+              <IconAction label="Download PDF" text="PDF" disabled={busy || pdfBusy || !quotationDocument} onClick={() => void openQuotationPdf('quotation')}>
+                <Download className="size-4" />
+              </IconAction>
+              <IconAction label="PO Received" text="PO received" variant="outline" disabled={busy} onClick={() => void onReceivePurchaseOrder()}>
+                <PackageCheck className="size-4" />
+              </IconAction>
             </>
           ) : null}
           {section === 'purchaseOrder' && record ? (
-            <Button type="button" variant="outline" size="sm" disabled={busy || pdfBusy} onClick={() => void openQuotationPdf('po')}>
-              {pdfBusy ? 'Preparing PDF…' : 'Download PDF'}
-            </Button>
+            <IconAction label="Download PDF" text="PDF" disabled={busy || pdfBusy} onClick={() => void openQuotationPdf('po')}>
+              <Download className="size-4" />
+            </IconAction>
           ) : null}
           {section === 'purchaseOrder' && purchaseOrderEditable ? (
-            <Button type="button" size="sm" disabled={busy} onClick={() => void onSavePurchaseOrder()}>
-              Save
-            </Button>
+            <IconAction label="Save" variant="default" disabled={busy} onClick={() => void onSavePurchaseOrder()}>
+              <Save className="size-4" />
+            </IconAction>
           ) : null}
         </div>
+        </TooltipProvider>
       </header>
 
       <Section
@@ -1378,7 +1426,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
             <textarea value={purchaseOrderNotes} onChange={(event) => setPurchaseOrderNotes(event.target.value)} disabled={!purchaseOrderEditable} rows={3} className={`${INPUT_CLASS} resize-none`} />
           </label>
           {record.job ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/customers/jobs/${record.job!.id}`)}>
+            <Button type="button" variant="outline" size="sm" data-nav-href={`/customers/jobs/${record.job!.id}`} onClick={() => router.push(`/customers/jobs/${record.job!.id}`)}>
               Open job {record.job.jobNumber}
             </Button>
           ) : purchaseOrderEditable && access.jobCreate ? (
