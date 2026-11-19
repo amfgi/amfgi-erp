@@ -491,6 +491,7 @@ export default function EmployeeHistoryPage() {
                   {employees.map((employee) => (
                     <tr
                       key={employee.id}
+                      data-nav-href={`/hr/employees/${employee.id}`}
                       className="cursor-pointer border-b border-white/5 text-slate-200 hover:bg-white/5"
                       onClick={() => selectEmployee(employee.id)}
                     >

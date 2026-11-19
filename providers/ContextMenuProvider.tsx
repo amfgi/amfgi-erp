@@ -56,8 +56,7 @@ function isInternalPageHref(raw: string | null | undefined) {
   if (
     path.startsWith('/api/') ||
     path.startsWith('/print') ||
-    path.includes('-print') ||
-    path.startsWith('/settings/print-template')
+    path.includes('-print')
   ) {
     return null;
   }

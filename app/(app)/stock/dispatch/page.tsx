@@ -247,6 +247,15 @@ export default function DispatchPage() {
     return getBaseNotes(entry.notes);
   }
 
+  function entryEditHref(entry: Entry): string {
+    if (entry.isDeliveryNote) return deliveryNoteEditHref(entry);
+    const dateStr =
+      typeof entry.dispatchDate === 'string'
+        ? entry.dispatchDate.split('T')[0]
+        : new Date(entry.dispatchDate).toISOString().split('T')[0];
+    return `/stock/dispatch/entry?jobId=${entry.jobId}&date=${dateStr}`;
+  }
+
   function deliveryNoteEditHref(entry: Entry): string {
     if (entry.deliveryNoteId) {
       return `/stock/dispatch/delivery-note?deliveryNoteId=${entry.deliveryNoteId}`;
@@ -450,13 +459,7 @@ export default function DispatchPage() {
 
   const buildRowContextMenu = useCallback(
     (entry: Entry): ContextMenuOption[] => {
-      const dateStr =
-        typeof entry.dispatchDate === 'string'
-          ? entry.dispatchDate.split('T')[0]
-          : new Date(entry.dispatchDate).toISOString().split('T')[0];
-      const editPath = entry.isDeliveryNote
-        ? deliveryNoteEditHref(entry)
-        : `/stock/dispatch/entry?jobId=${entry.jobId}&date=${dateStr}`;
+      const editPath = entryEditHref(entry);
       const options: ContextMenuOption[] = [
         { label: 'View details', action: () => setViewModal({ open: true, entry }) },
       ];
@@ -740,7 +743,7 @@ export default function DispatchPage() {
           onRowDoubleClick={(entry) => handleRowDoubleClick(entry)}
           onRowContextMenu={(entry, e) => {
             setSelectedRowId(entry.id);
-            openContextMenu(e.clientX, e.clientY, buildRowContextMenu(entry));
+            openContextMenu(e.clientX, e.clientY, buildRowContextMenu(entry), entryEditHref(entry));
           }}
           serverPagination={{
             page,

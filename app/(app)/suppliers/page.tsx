@@ -372,6 +372,7 @@ export default function SuppliersPage() {
         if (index < options.length - 1) item.push({ divider: true });
         return item;
       }),
+      canEdit ? `/suppliers/${supplier.id}/edit` : undefined,
     );
   };
 
@@ -620,6 +621,7 @@ export default function SuppliersPage() {
               type="button"
               variant="secondary"
               size="sm"
+              data-nav-href={`/suppliers/${detailsSupplier.id}/edit`}
               onClick={() => {
                 router.push(`/suppliers/${detailsSupplier.id}/edit`);
                 setDetailsSupplierId(null);

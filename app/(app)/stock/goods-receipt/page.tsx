@@ -363,7 +363,12 @@ export default function GoodsReceiptPage() {
         });
       }
 
-      openContextMenu(e.clientX, e.clientY, options);
+      openContextMenu(
+        e.clientX,
+        e.clientY,
+        options,
+        entry.status === 'active' ? `/stock/goods-receipt/receive?edit=${entry.receiptNumber}` : undefined,
+      );
     },
     [canDelete, openContextMenu, router]
   );
@@ -912,6 +917,11 @@ export default function GoodsReceiptPage() {
                       <Button
                         type="button"
                         size="sm"
+                        data-nav-href={
+                          adjustmentImpactModal.entry
+                            ? `/stock/goods-receipt/receive?edit=${adjustmentImpactModal.entry.receiptNumber}`
+                            : undefined
+                        }
                         onClick={() => {
                           if (!adjustmentImpactModal.entry) return;
                           setAdjustmentImpactModal({ open: false, entry: null, data: null, reason: '' });

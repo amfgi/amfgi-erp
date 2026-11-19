@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import DataTable from '@/components/ui/DataTable';
 import BulkImportModal from '@/components/materials/BulkImportModal';
+import MaterialColumnUpdateModal from '@/components/materials/MaterialColumnUpdateModal';
 import MaterialQuickReportModal from '@/components/materials/MaterialQuickReportModal';
 import toast from 'react-hot-toast';
 import type { Column } from '@/components/ui/DataTable';
@@ -131,8 +132,10 @@ export default function MaterialsPage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const isSA = session?.user?.isSuperAdmin ?? false;
   const canDelete = isSA || perms.includes('material.delete');
+  const canEdit = isSA || perms.includes('material.edit');
 
   const [importModal, setImportModal] = useState(false);
+  const [columnUpdateOpen, setColumnUpdateOpen] = useState(false);
   const [quickReportMaterial, setQuickReportMaterial] = useState<Material | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const { data: importMaterials = [] } = useGetMaterialsForExportQuery(undefined, {
@@ -565,7 +568,7 @@ export default function MaterialsPage() {
               : 'Review stock health, move inventory, and jump into material setup without leaving the main grid.'}
           </p>
           {lowStockOnly ? (
-            <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={() => router.push('/stock/materials')}>
+            <Button type="button" variant="link" size="sm" className="h-auto px-0" data-nav-href="/stock/materials" onClick={() => router.push('/stock/materials')}>
               Show all materials
             </Button>
           ) : null}
@@ -575,6 +578,11 @@ export default function MaterialsPage() {
             {`${formatCount(totalMaterials)} ${lowStockOnly ? 'low stock' : 'active'} material${totalMaterials === 1 ? '' : 's'}`}
           </p>
           <div className="flex flex-wrap gap-2 sm:justify-end">
+            {canEdit ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => setColumnUpdateOpen(true)}>
+                Update from Excel
+              </Button>
+            ) : null}
             <Button type="button" variant="secondary" size="sm" onClick={() => setImportModal(true)}>
               Import Excel
             </Button>
@@ -640,6 +648,8 @@ export default function MaterialsPage() {
         onClose={() => setImportModal(false)}
         existingMaterials={importMaterials}
       />
+
+      <MaterialColumnUpdateModal isOpen={columnUpdateOpen} onClose={() => setColumnUpdateOpen(false)} />
 
       <MaterialQuickReportModal
         material={quickReportMaterial}
