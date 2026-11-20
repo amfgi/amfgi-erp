@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { resolveAuthUrl } from '@/lib/auth/authEnv';
+
 import type { SalesAccess } from './access';
 import { findSalesUser } from './salesUsers';
 import { createSalesQuery, forwardToQuotation, SalesError } from './service';
@@ -64,6 +66,13 @@ function sourceNote(requestedBy?: string | null) {
   return name ? `Customer service API. Requested by ${name}` : 'Customer service API';
 }
 
+export function integrationQueryOpenUrl(id: string) {
+  const path = `/sales/queries/form?id=${encodeURIComponent(id)}`;
+  const base = resolveAuthUrl();
+  if (!base) return path;
+  return new URL(path, `${base}/`).toString();
+}
+
 export async function createIntegratedSalesQuery(companyId: string, input: IntegrationSalesQueryInput) {
   const salesman = await findSalesUser(companyId, input.salesmanId);
   if (!salesman) throw new SalesError('Choose an active user who has a sales permission.');
@@ -109,6 +118,7 @@ export async function createIntegratedSalesQuery(companyId: string, input: Integ
   return {
     id: record.id,
     queryNumber: record.queryNumber,
+    url: integrationQueryOpenUrl(record.id),
     customerId: record.customerId,
     customerCreated: created.customerCreated,
     stage: record.stage,

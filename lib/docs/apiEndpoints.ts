@@ -63,7 +63,7 @@ export const API_DOC_SECTIONS: ApiDocSection[] = [
         methods: 'POST',
         path: '/api/integrations/sales/queries',
         auth: 'integration_key',
-        summary: 'Create a query. salesmanId is required. assigneeId is required only when forwardToQuotation is true, and it may be a different user.',
+        summary: 'Create a query. salesmanId is required. assigneeId is required only when forwardToQuotation is true, and it may be a different user. A successful create returns queryNumber and url. url is that server’s AUTH_URL plus /sales/queries/form?id=. Test and main use the same path; only AUTH_URL changes.',
       },
     ],
   },
