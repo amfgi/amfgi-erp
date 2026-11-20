@@ -29,6 +29,7 @@ import {
   useGetCustomersQuery,
   useGetSalesmenQuery,
   useGetSalesQueryQuery,
+  useGetSalesRevisionsQuery,
   useGetSalesWorkLogQuery,
   useGetQuotationDocumentsQuery,
   useCreateQuotationTemplateMutation,
@@ -329,6 +330,9 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
   });
   const recordQuery = useGetSalesQueryQuery(id ?? '', { skip: !id });
   const record = recordQuery.data;
+  const revisionsQuery = useGetSalesRevisionsQuery(id ?? '', {
+    skip: !id || section !== 'quotation' || !record || record.revisions.length === 0,
+  });
   const quotationDocumentsQuery = useGetQuotationDocumentsQuery(id ?? '', {
     skip: !id || section !== 'purchaseOrder',
   });
@@ -1322,9 +1326,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
               ) : null}
               {record.revisions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No earlier version has been saved.</p>
+              ) : revisionsQuery.isError ? (
+                <p className="text-sm text-muted-foreground">Previous versions could not be loaded.</p>
+              ) : !revisionsQuery.data ? (
+                <div className="flex h-16 items-center justify-center">
+                  <Spinner size="lg" />
+                </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                    {record.revisions.map((revision) => (
+                    {revisionsQuery.data.map((revision) => (
                       <div key={revision.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                         <dl className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
                           <div className="min-w-0">

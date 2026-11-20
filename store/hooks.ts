@@ -171,6 +171,7 @@ export {
 export {
   useGetSalesQueriesQuery,
   useGetSalesQueryQuery,
+  useGetSalesRevisionsQuery,
   useGetSalesmenQuery,
   useCreateSalesQueryMutation,
   useDeleteSalesQueryMutation,

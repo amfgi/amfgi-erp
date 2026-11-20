@@ -63,7 +63,10 @@ const recordInclude = {
       },
     },
   },
-  revisions: { orderBy: { revision: 'asc' as const } },
+  revisions: {
+    orderBy: { revision: 'asc' as const },
+    select: { id: true, revision: true, quotationLabel: true, createdAt: true },
+  },
   attachments: { orderBy: { createdAt: 'asc' as const } },
   job: { select: { id: true, jobNumber: true } },
   company: { select: { letterheadUrl: true, name: true } },
@@ -254,6 +257,26 @@ export async function getSalesRecord(companyId: string, id: string, access: Sale
   assertVisible(access, record.stage);
   const currencyCode = await currencyFor(companyId);
   return presentSalesRecord(record, currencyCode);
+}
+
+export async function listSalesRevisions(companyId: string, id: string, access: SalesAccess) {
+  const record = await prisma.salesQuery.findFirst({
+    where: { id, companyId },
+    select: { id: true, stage: true },
+  });
+  if (!record) throw new SalesError('Sales record not found', 404);
+  assertVisible(access, record.stage);
+  return prisma.salesQuotationRevision.findMany({
+    where: { companyId, salesQueryId: id },
+    orderBy: { revision: 'asc' },
+    select: {
+      id: true,
+      revision: true,
+      quotationLabel: true,
+      snapshot: true,
+      createdAt: true,
+    },
+  });
 }
 
 type NewCustomerInput = {

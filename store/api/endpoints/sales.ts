@@ -18,10 +18,14 @@ export type SalesLine = {
   fields: SalesLineField[];
 };
 
-export type SalesRevision = {
+export type SalesRevisionMeta = {
   id: string;
   revision: number;
   quotationLabel: string;
+  createdAt: string;
+};
+
+export type SalesRevision = SalesRevisionMeta & {
   snapshot: {
     quotationMode: 'SINGLE' | 'MULTIPLE';
     startDate: string | null;
@@ -39,7 +43,6 @@ export type SalesRevision = {
       }>;
     }>;
   };
-  createdAt: string;
 };
 
 export type SalesOption = {
@@ -99,7 +102,7 @@ export type SalesRecord = {
   poValue: number | null;
   budgetDetails: string | null;
   purchaseOrderNotes: string | null;
-  revisions: SalesRevision[];
+  revisions: SalesRevisionMeta[];
   jobId: string | null;
   currencyCode: string;
   customer: {
@@ -190,6 +193,11 @@ const salesApi = appApi.injectEndpoints({
     getSalesQuery: builder.query<SalesRecord, string>({
       query: (id) => `/sales/queries/${id}`,
       transformResponse: (response: { data: SalesRecord }) => response.data,
+      providesTags: (_result, _error, id) => [{ type: 'SalesQuery', id }],
+    }),
+    getSalesRevisions: builder.query<SalesRevision[], string>({
+      query: (id) => `/sales/queries/${id}/revisions`,
+      transformResponse: (response: { data: SalesRevision[] }) => response.data,
       providesTags: (_result, _error, id) => [{ type: 'SalesQuery', id }],
     }),
     getSalesmen: builder.query<SalesmanOption[], void>({
@@ -405,6 +413,7 @@ const salesApi = appApi.injectEndpoints({
 export const {
   useGetSalesQueriesQuery,
   useGetSalesQueryQuery,
+  useGetSalesRevisionsQuery,
   useGetSalesmenQuery,
   useCreateSalesQueryMutation,
   useDeleteSalesQueryMutation,
