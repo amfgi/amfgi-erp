@@ -20,7 +20,7 @@ import QuotationSerialModal from '@/components/sales/QuotationSerialModal';
 import { salesAccess } from '@/lib/sales/access';
 import { dateInputValue, quotationBaseFromDisplay, splitQuotationSerial } from '@/lib/sales/format';
 import { downloadQuotationPdf, quotationPdfBlob } from '@/lib/sales/downloadQuotationPdf';
-import { applyQuotationTemplate, documentFromRecord, optionBlocks, optionTotal, plainText, quotationFileName, quotationTemplateKey, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
+import { applyQuotationTemplate, documentFromRecord, optionBlocks, optionTotal, plainText, quotationAutosaveKey, quotationFileName, quotationTemplateKey, readQuotationDocument, type QuotationDocument } from '@/lib/sales/quotationDocument';
 import {
   useCreateJobFromSalesMutation,
   useCreateSalesQueryMutation,
@@ -434,9 +434,17 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
     setBudgetDetails(record.budgetDetails ?? '');
     setPurchaseOrderNotes(record.purchaseOrderNotes ?? '');
     if (!quotationDirty.current) {
-      quotationReady.current = false;
-      setStartDate(dateInputValue(record.startDate));
-      setQuotationDocument(documentFromRecord(record));
+      const nextDate = dateInputValue(record.startDate);
+      const nextDocument = documentFromRecord(record);
+      const nextKey = quotationAutosaveKey(nextDate, nextDocument);
+      const currentKey = quotationAutosaveKey(quotationLatest.current.startDate, quotationLatest.current.document);
+      if (nextKey !== currentKey) {
+        savedQuotationKey.current = nextKey;
+        quotationReady.current = true;
+        quotationDirty.current = false;
+        setStartDate(nextDate);
+        setQuotationDocument(nextDocument);
+      }
     }
   }, [record]);
 
@@ -489,7 +497,7 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
 
   useEffect(() => {
     if (section !== 'quotation' || !quotationEditable || !id || !quotationDocument) return;
-    const key = JSON.stringify({ startDate, quotationDocument });
+    const key = quotationAutosaveKey(startDate, quotationDocument);
     if (!quotationReady.current) {
       savedQuotationKey.current = key;
       quotationReady.current = true;
@@ -507,15 +515,15 @@ export default function SalesRecordForm({ section }: { section: 'query' | 'quota
       const generation = ++saveGeneration.current;
       const payload = quotationLatest.current;
       if (!payload.document) return;
-      const payloadKey = JSON.stringify({ startDate: payload.startDate, quotationDocument: payload.document });
+      const payloadKey = quotationAutosaveKey(payload.startDate, payload.document);
       setQuotationSaveState('saving');
       const finish = () => {
         if (saveGeneration.current !== generation) return;
         savedQuotationKey.current = payloadKey;
-        const currentKey = JSON.stringify({
-          startDate: quotationLatest.current.startDate,
-          quotationDocument: quotationLatest.current.document,
-        });
+        const currentKey = quotationAutosaveKey(
+          quotationLatest.current.startDate,
+          quotationLatest.current.document,
+        );
         if (currentKey === payloadKey) {
           quotationDirty.current = false;
           setQuotationSaveState('saved');

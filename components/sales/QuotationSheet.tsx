@@ -77,6 +77,7 @@ import {
   MIN_SECTION_GAP_MM,
   optionBlocks,
   optionTotal,
+  sameRichText,
   padImageUrl,
   placeBlock,
   plainText,
@@ -970,7 +971,7 @@ function RichText({
     paintFontSize(node, null, '11', true);
     const cleaned = node.innerHTML;
     emitted.current = cleaned;
-    if (normalizedHtml(cleaned) !== normalizedHtml(next)) onChange?.(cleaned);
+    if (!sameRichText(cleaned, next)) onChange?.(cleaned);
     if (focused) {
       node.focus();
       placeCaret(node, caret.current ?? node.textContent?.length ?? 0);
