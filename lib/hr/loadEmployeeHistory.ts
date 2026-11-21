@@ -5,6 +5,7 @@ import { displayNationalityCountryName } from '@/lib/hr/countryNames';
 import { documentOverlapsHistoryRange } from '@/lib/hr/employeeHistorySections';
 import { dubaiTodayYmd } from '@/lib/hr/leaveReturn';
 import { tenureLabel } from '@/lib/hr/employeeTenure';
+import { fineHistoryDescription } from '@/lib/hr/payroll/fineInstallments';
 import { parsePayTypeConfig } from '@/lib/hr/payroll/parsePayTypeConfig';
 import { resolveExcludedWeekdays } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import { resolveCompensationPackageForDate } from '@/lib/hr/payroll/resolveCompensationForPayroll';
@@ -256,7 +257,13 @@ export async function loadEmployeeHistory(input: {
         fineDate: { gte: fromDate, lte: toDate },
       },
       orderBy: [{ fineDate: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, fineDate: true, amount: true, description: true },
+      select: {
+        id: true,
+        fineDate: true,
+        amount: true,
+        description: true,
+        installments: { select: { payrollMonth: true }, orderBy: { sequence: 'asc' } },
+      },
     }),
     prisma.employeeWarning.findMany({
       where: { companyId: input.companyId, employeeId: employee.id, warningDate: { gte: fromDate, lte: toDate } },
@@ -396,7 +403,10 @@ export async function loadEmployeeHistory(input: {
       id: row.id,
       date: ymdFromDb(row.fineDate) ?? '',
       amount: Number(row.amount),
-      description: row.description,
+      description: fineHistoryDescription(
+        row.description,
+        row.installments.map((installment) => installment.payrollMonth)
+      ),
     })),
     warnings: warnings.map((row) => ({
       id: row.id,

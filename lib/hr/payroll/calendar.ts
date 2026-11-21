@@ -1,5 +1,10 @@
 const DUBAI_TZ = 'Asia/Dubai';
 
+/** Calendar day in Dubai, YYYY-MM-DD. Payroll months follow this timezone. */
+export function dubaiTodayYmd(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(now);
+}
+
 export function daysInMonth(month: string): number {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('Invalid month YYYY-MM');
   const [y, m] = month.split('-').map(Number);

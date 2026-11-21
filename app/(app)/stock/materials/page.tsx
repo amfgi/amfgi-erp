@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import * as XLSX from 'xlsx';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import DataTable from '@/components/ui/DataTable';
@@ -135,6 +136,7 @@ export default function MaterialsPage() {
   const canEdit = isSA || perms.includes('material.edit');
 
   const [importModal, setImportModal] = useState(false);
+  const materialExport = useSingleFlight();
   const [columnUpdateOpen, setColumnUpdateOpen] = useState(false);
   const [quickReportMaterial, setQuickReportMaterial] = useState<Material | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
@@ -586,7 +588,13 @@ export default function MaterialsPage() {
             <Button type="button" variant="secondary" size="sm" onClick={() => setImportModal(true)}>
               Import Excel
             </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={handleExport}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              loading={materialExport.pending}
+              onClick={() => void materialExport.run(handleExport)}
+            >
               Export Excel
             </Button>
             <Button type="button" size="sm" data-nav-href="/stock/materials/new" onClick={() => router.push('/stock/materials/new')}>

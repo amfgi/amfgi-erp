@@ -1,5 +1,6 @@
-import { parseAdvanceAmount, parseRecordDate } from '@/lib/hr/employeeRecordValidation';
+import { parseAdvanceAmount } from '@/lib/hr/employeeRecordValidation';
 import { parseFineDescription, updateEmployeeFine } from '@/lib/hr/employeeFineService';
+import { parseFineRecovery } from '@/lib/hr/payroll/fineInstallments';
 import { requireHrSession } from '@/lib/hr/requireHrSession';
 import { P } from '@/lib/permissions';
 import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
@@ -7,10 +8,10 @@ import { errorResponse, successResponse } from '@/lib/utils/apiResponse';
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const body = (await req.json().catch(() => null)) as {
     companyId?: string;
-    fineDate?: unknown;
     description?: unknown;
     amount?: unknown;
     status?: unknown;
+    recovery?: unknown;
   } | null;
   if (!body) return errorResponse('Invalid request', 400);
 
@@ -20,10 +21,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (!ctx.ok) return ctx.response;
 
-  const fineDate = parseRecordDate(body.fineDate);
   const description = parseFineDescription(body.description);
   const amount = parseAdvanceAmount(body.amount);
-  if (!fineDate) return errorResponse('Enter a date', 400);
   if (!description) return errorResponse('Enter a description', 400);
   if (!amount) return errorResponse('Enter a fine amount greater than 0', 400);
 
@@ -35,14 +34,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     status = body.status;
   }
 
+  let recovery = null;
+  if (status === 'APPROVED') {
+    const parsed = parseFineRecovery(body.recovery);
+    if ('error' in parsed) return errorResponse(parsed.error, 400);
+    recovery = parsed.recovery;
+  }
+
   const { id } = await params;
   const result = await updateEmployeeFine({
     id,
     companyIds: ctx.companyIds,
-    fineDate,
     description,
     amount,
     status,
+    recovery,
     reviewedById: ctx.session.user.id ?? null,
   });
   if ('error' in result) return errorResponse(result.error, result.status);

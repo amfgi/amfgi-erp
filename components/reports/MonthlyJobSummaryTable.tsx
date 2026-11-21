@@ -58,7 +58,7 @@ export default function MonthlyJobSummaryTable({
           {sheets.length === 1 ? '' : 's'} with activity in {dateRangeLabel}. Excel export includes a Summary index sheet
           plus one sheet per {groupLabel}, linked by job number.
         </p>
-        <Button type="button" variant="outline" size="sm" onClick={onDownload} disabled={downloading}>
+        <Button type="button" variant="outline" size="sm" onClick={onDownload} loading={downloading} disabled={downloading}>
           {downloading ? 'Preparing…' : 'Download Excel'}
         </Button>
       </div>

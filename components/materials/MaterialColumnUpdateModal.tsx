@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/shadcn/button';
@@ -69,10 +69,12 @@ export default function MaterialColumnUpdateModal({
   const [tab, setTab] = useState<ReviewTab>('update');
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<{ updated: number; skipped: number; notes: ApplyNote[] } | null>(null);
+  const actionLock = useRef(false);
 
   const busy = isPreviewing || isApplying;
 
   const reset = useCallback(() => {
+    actionLock.current = false;
     setStep('upload');
     setPreview(null);
     setTab('update');
@@ -82,12 +84,14 @@ export default function MaterialColumnUpdateModal({
 
   const requestClose = () => {
     if (busy) return;
+    if (actionLock.current && step !== 'result') return;
     reset();
     onClose();
   };
 
   const handleFile = async (file: File | undefined) => {
-    if (!file || busy) return;
+    if (!file || actionLock.current || busy) return;
+    actionLock.current = true;
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
@@ -114,16 +118,19 @@ export default function MaterialColumnUpdateModal({
       setStep('review');
     } catch (err: unknown) {
       toast.error(errorMessage(err));
+    } finally {
+      actionLock.current = false;
     }
   };
 
   const handleApply = async () => {
-    if (!preview || busy) return;
+    if (actionLock.current || !preview || busy) return;
     const pending = preview.rows.filter(
       (row): row is ClassifiedMaterialRow & { materialId: string; itemName: string } =>
         row.status === 'update' && Boolean(row.materialId) && Boolean(row.itemName)
     );
     if (pending.length === 0) return;
+    actionLock.current = true;
 
     let updated = 0;
     let skipped = 0;
@@ -152,6 +159,7 @@ export default function MaterialColumnUpdateModal({
       setStep('result');
       toast.success(`Updated ${updated} material${updated === 1 ? '' : 's'}`);
     } catch (err: unknown) {
+      actionLock.current = false;
       setProgress(null);
       toast.error(
         updated > 0
@@ -319,11 +327,17 @@ export default function MaterialColumnUpdateModal({
           ) : null}
 
           <div className="flex gap-3">
-            <Button type="button" variant="ghost" className="flex-1" disabled={busy} onClick={reset}>
+            <Button type="button" variant="ghost" className="flex-1" disabled={busy || progress !== null} onClick={reset}>
               Back
             </Button>
-            <Button type="button" className="flex-1" disabled={busy || updateRows.length === 0} onClick={handleApply}>
-              {isApplying ? 'Updating…' : `Apply ${updateRows.length} change${updateRows.length === 1 ? '' : 's'}`}
+            <Button
+              type="button"
+              className="flex-1"
+              loading={isApplying || progress !== null}
+              disabled={busy || updateRows.length === 0}
+              onClick={() => void handleApply()}
+            >
+              {isApplying || progress ? 'Updating…' : `Apply ${updateRows.length} change${updateRows.length === 1 ? '' : 's'}`}
             </Button>
           </div>
         </div>

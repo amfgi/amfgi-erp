@@ -18,6 +18,7 @@ import JobQuickEditModal from '@/components/jobs/JobQuickEditModal';
 import JobPromoteModal from '@/components/jobs/JobPromoteModal';
 import JobDeleteModal from '@/components/jobs/JobDeleteModal';
 import ParentJobImportModal from '@/components/jobs/ParentJobImportModal';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { exportJobVariationsToXlsx } from '@/lib/import-export/exportJobVariations';
 import { exportParentJobsToXlsx } from '@/lib/import-export/exportParentJobs';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
@@ -143,6 +144,8 @@ export default function CustomerJobsPage() {
   type JobSourceModeUi = 'HYBRID' | 'EXTERNAL_ONLY' | 'INTERNAL_ONLY';
   const [jobSourceMode, setJobSourceMode] = useState<JobSourceModeUi>('HYBRID');
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const parentExport = useSingleFlight();
+  const variationExport = useSingleFlight();
   const [variationImportModalOpen, setVariationImportModalOpen] = useState(false);
   const [quickEditJob, setQuickEditJob] = useState<Job | null>(null);
   const [promoteJob, setPromoteJob] = useState<Job | null>(null);
@@ -337,15 +340,18 @@ export default function CustomerJobsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={async () => {
-                const allJobs = await fetchJobsForExport().unwrap();
-                const count = exportParentJobsToXlsx(allJobs);
-                if (count === 0) {
-                  toast.error('No parent jobs to export');
-                  return;
-                }
-                toast.success(`Exported ${count} parent job(s)`);
-              }}
+              loading={parentExport.pending}
+              onClick={() =>
+                void parentExport.run(async () => {
+                  const allJobs = await fetchJobsForExport().unwrap();
+                  const count = exportParentJobsToXlsx(allJobs);
+                  if (count === 0) {
+                    toast.error('No parent jobs to export');
+                    return;
+                  }
+                  toast.success(`Exported ${count} parent job(s)`);
+                })
+              }
             >
               Export parents
             </Button>
@@ -360,15 +366,18 @@ export default function CustomerJobsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={async () => {
-                const allJobs = await fetchJobsForExport().unwrap();
-                const count = exportJobVariationsToXlsx(allJobs);
-                if (count === 0) {
-                  toast.error('No job variations to export');
-                  return;
-                }
-                toast.success(`Exported ${count} variation(s)`);
-              }}
+              loading={variationExport.pending}
+              onClick={() =>
+                void variationExport.run(async () => {
+                  const allJobs = await fetchJobsForExport().unwrap();
+                  const count = exportJobVariationsToXlsx(allJobs);
+                  if (count === 0) {
+                    toast.error('No job variations to export');
+                    return;
+                  }
+                  toast.success(`Exported ${count} variation(s)`);
+                })
+              }
             >
               Export variations
             </Button>

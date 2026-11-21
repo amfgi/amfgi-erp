@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 
 import { Button } from '@/components/ui/shadcn/button';
@@ -88,6 +88,11 @@ export default function EntityImportModal<T extends MappedImportRow>({
   const [importProgress, setImportProgress] = useState<{ processed: number; total: number } | null>(
     null
   );
+  const submitLock = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) submitLock.current = false;
+  }, [isOpen]);
   const mappableFields = fields.filter((f) => f.key !== '__skip__');
   const [step, setStep] = useState(0);
   const [rawRows, setRawRows] = useState<(string | number | boolean | null)[][]>([]);
@@ -233,10 +238,12 @@ export default function EntityImportModal<T extends MappedImportRow>({
   const previewLabel = (row: ImportPreviewRow<T>) => String(row[previewLabelKey] ?? '—');
 
   const handleSubmit = async () => {
+    if (submitLock.current) return;
     if (newRows.length === 0 && selectedForUpdate.length === 0) {
       toast.error('No rows to import. Add new rows or select duplicates to update.');
       return;
     }
+    submitLock.current = true;
     const total = newRows.length + selectedForUpdate.length;
     setImportProgress({ processed: 0, total });
     try {
@@ -250,6 +257,7 @@ export default function EntityImportModal<T extends MappedImportRow>({
       resetState();
       onClose();
     } catch {
+      submitLock.current = false;
       setImportProgress(null);
     }
   };
@@ -553,7 +561,8 @@ export default function EntityImportModal<T extends MappedImportRow>({
               </Button>
               <Button
                 type="button"
-                onClick={handleSubmit}
+                onClick={() => void handleSubmit()}
+                loading={isImporting}
                 disabled={isImporting || (newRows.length === 0 && selectedForUpdate.length === 0)}
                 className="flex-1"
               >

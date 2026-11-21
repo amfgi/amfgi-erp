@@ -42,14 +42,12 @@ export async function POST(req: Request) {
 
   const fields = readFineFormFields(formData);
   if (!fields.employeeId) return errorResponse('Select an employee', 400);
-  if (!fields.fineDate) return errorResponse('Enter a date', 400);
   if (!fields.description) return errorResponse('Enter a description', 400);
   if (!fields.amount) return errorResponse('Enter a fine amount greater than 0', 400);
 
   const result = await createEmployeeFine({
     companyId: ctx.companyId,
     employeeId: fields.employeeId,
-    fineDate: fields.fineDate,
     description: fields.description,
     amount: fields.amount,
     createdById: ctx.session.user.id ?? null,

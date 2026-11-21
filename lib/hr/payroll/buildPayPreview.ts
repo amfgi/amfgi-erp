@@ -21,6 +21,7 @@ import { resolveHolidayPayTypeConfigForEmployee } from '@/lib/hr/payroll/resolve
 import { isAnnualLeaveCode } from '@/lib/hr/leaveTypes';
 import { resolveLeavePayPercentForDay } from '@/lib/hr/payroll/resolveLeavePayForDay';
 import { monthBounds, monthEndDate, roundMoney } from '@/lib/hr/payroll/calendar';
+import { payrollInstallmentDescription } from '@/lib/hr/payroll/fineInstallments';
 import { parsePayTypeConfig } from '@/lib/hr/payroll/parsePayTypeConfig';
 import { resolveExcludedWeekdays } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import {
@@ -707,18 +708,53 @@ async function fetchApprovedPayrollFines(
 ): Promise<Map<string, PayrollFineDeduction[]>> {
   const { start } = monthBounds(month);
   const monthEnd = monthEndDate(month);
-  const rows = await prisma.employeeFine.findMany({
-    where: {
-      companyId,
-      status: 'APPROVED',
-      fineDate: { gte: start, lte: monthEnd },
-      ...(employeeIds ? { employeeId: { in: employeeIds } } : {}),
-    },
-    select: { id: true, employeeId: true, description: true, amount: true },
-    orderBy: [{ fineDate: 'asc' }, { createdAt: 'asc' }],
-  });
+  const employeeFilter = employeeIds ? { employeeId: { in: employeeIds } } : {};
+  const [installments, legacyRows] = await Promise.all([
+    prisma.employeeFineInstallment.findMany({
+      where: {
+        companyId,
+        payrollMonth: month,
+        fine: { status: 'APPROVED', ...employeeFilter },
+      },
+      select: {
+        fineId: true,
+        amount: true,
+        sequence: true,
+        fine: {
+          select: {
+            employeeId: true,
+            description: true,
+            _count: { select: { installments: true } },
+          },
+        },
+      },
+      orderBy: [{ sequence: 'asc' }, { fineId: 'asc' }],
+    }),
+    prisma.employeeFine.findMany({
+      where: {
+        companyId,
+        status: 'APPROVED',
+        fineDate: { gte: start, lte: monthEnd },
+        installments: { none: {} },
+        ...employeeFilter,
+      },
+      select: { id: true, employeeId: true, description: true, amount: true },
+      orderBy: [{ fineDate: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ]);
   const byEmployee = new Map<string, PayrollFineDeduction[]>();
-  for (const row of rows) {
+  for (const row of installments) {
+    const amount = roundMoney(Number(row.amount));
+    if (amount <= 0) continue;
+    const list = byEmployee.get(row.fine.employeeId) ?? [];
+    list.push({
+      id: row.fineId,
+      description: payrollInstallmentDescription(row.fine.description, row.sequence, row.fine._count.installments),
+      amount,
+    });
+    byEmployee.set(row.fine.employeeId, list);
+  }
+  for (const row of legacyRows) {
     const amount = roundMoney(Number(row.amount));
     if (amount <= 0) continue;
     const list = byEmployee.get(row.employeeId) ?? [];

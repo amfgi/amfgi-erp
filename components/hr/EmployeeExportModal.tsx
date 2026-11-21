@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
@@ -169,6 +170,7 @@ export default function EmployeeExportModal({
   employeeTypeChoices,
 }: Props) {
   const [fetchEmployeesForExport, { isFetching }] = useLazyGetHrEmployeesForExportQuery();
+  const excelExport = useSingleFlight();
 
   const [q, setQ] = useState('');
   const [statusValues, setStatusValues] = useState<string[]>([]);
@@ -315,11 +317,16 @@ export default function EmployeeExportModal({
       size="2xl"
       actions={
         <>
-          <Button type="button" variant="outline" onClick={onClose} disabled={isFetching}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isFetching || excelExport.pending}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => void runExport()} disabled={isFetching}>
-            {isFetching ? 'Preparing…' : 'Download Excel'}
+          <Button
+            type="button"
+            onClick={() => void excelExport.run(runExport)}
+            loading={excelExport.pending}
+            disabled={isFetching}
+          >
+            {excelExport.pending || isFetching ? 'Preparing…' : 'Download Excel'}
           </Button>
         </>
       }

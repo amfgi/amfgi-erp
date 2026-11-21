@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
@@ -75,6 +75,7 @@ export default function MaterialConsumptionPage() {
   const [materialLabel, setMaterialLabel] = useState<MaterialLabelMode>('name');
   const [hasGenerated, setHasGenerated] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const downloadLock = useRef(false);
 
   const dateRangeLabel = useMemo(() => {
     if (!from && !to) return 'All dates';
@@ -112,6 +113,8 @@ export default function MaterialConsumptionPage() {
   };
 
   const handleDownload = async () => {
+    if (downloadLock.current) return;
+    downloadLock.current = true;
     setDownloading(true);
     try {
       const query = buildQueryString(from, to, materialLabel, 'xlsx');
@@ -124,6 +127,7 @@ export default function MaterialConsumptionPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to download Excel');
     } finally {
+      downloadLock.current = false;
       setDownloading(false);
     }
   };

@@ -11,6 +11,14 @@ import SearchSelect from '@/components/ui/SearchSelect';
 import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { EXTRA_FILE_MAX_COUNT } from '@/lib/hr/employeeExtraFiles';
+import { dubaiTodayYmd } from '@/lib/hr/payroll/calendar';
+import {
+  formatDeductionSpan,
+  formatPayrollMonthLabel,
+  planFineInstallments,
+  shiftPayrollMonth,
+  type FineRecoveryInput,
+} from '@/lib/hr/payroll/fineInstallments';
 import { cn } from '@/lib/utils';
 import { readApiJson } from '@/lib/utils/readApiResponse';
 
@@ -25,6 +33,12 @@ type FineFile = {
   mediaUrl: string;
 };
 
+type FineInstallment = {
+  payrollMonth: string;
+  amount: number;
+  sequence: number;
+};
+
 type FineRow = {
   id: string;
   companyId: string;
@@ -36,8 +50,11 @@ type FineRow = {
   description: string;
   amount: number;
   status: FineStatus;
+  installments: FineInstallment[];
   files: FineFile[];
 };
+
+type RecoveryMode = 'fine-month' | 'later-month' | 'range';
 
 type EmployeeOption = {
   id: string;
@@ -62,11 +79,10 @@ function formatMoney(value: number) {
   });
 }
 
-function todayYmd() {
-  const date = new Date();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
+function deductionLabel(fine: FineRow): string {
+  if (fine.status !== 'APPROVED') return '—';
+  if (fine.installments.length === 0) return formatPayrollMonthLabel(fine.fineDate.slice(0, 7));
+  return formatDeductionSpan(fine.installments.map((row) => row.payrollMonth));
 }
 
 function employeeLabel(employee: { employeeCode: string; employeeName?: string; fullName?: string; employeePreferredName?: string | null; preferredName?: string | null }) {
@@ -130,7 +146,8 @@ export default function FineManagementPage() {
         <div>
           <h1 className="text-lg font-semibold">Fine management</h1>
           <p className="text-sm text-muted-foreground">
-            Pending fines stay off payroll. Approve a fine to add its amount to that month&apos;s deduction.
+            Pending fines stay off payroll. The date is today and cannot be changed. On approve, deduct the
+            full amount in the fine month, move it to a later month, or split it across several months.
             Once a fine is approved or rejected, it cannot be changed. Double-click a row to review it.
           </p>
         </div>
@@ -180,12 +197,13 @@ export default function FineManagementPage() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
               <th className="px-3 py-2">Employee</th>
               <th className="px-3 py-2">Date</th>
               <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2">Deduction</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Description</th>
               <th className="px-3 py-2 text-right">Files</th>
@@ -194,7 +212,7 @@ export default function FineManagementPage() {
           <tbody>
             {fines.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="px-3 py-8 text-center text-sm text-muted-foreground">
                   {loading ? 'Loading fines…' : 'No fines in this list.'}
                 </td>
               </tr>
@@ -213,6 +231,7 @@ export default function FineManagementPage() {
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{fine.fineDate}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoney(fine.amount)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{deductionLabel(fine)}</td>
                   <td className="px-3 py-2">
                     <span className={cn('rounded px-2 py-0.5 text-xs font-medium', statusClass(fine.status))}>
                       {fine.status === 'PENDING' ? 'Pending' : fine.status === 'APPROVED' ? 'Approved' : 'Rejected'}
@@ -312,7 +331,6 @@ function AddFineModal({
 }) {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [employeeId, setEmployeeId] = useState('');
-  const [fineDate, setFineDate] = useState(todayYmd);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -345,10 +363,6 @@ function AddFineModal({
       toast.error('Select an employee');
       return;
     }
-    if (!fineDate) {
-      toast.error('Enter a date');
-      return;
-    }
     if (!description.trim()) {
       toast.error('Enter a description');
       return;
@@ -362,7 +376,6 @@ function AddFineModal({
       const body = new FormData();
       body.set('companyId', companyId);
       body.set('employeeId', employeeId);
-      body.set('fineDate', fineDate);
       body.set('description', description.trim());
       body.set('amount', amount.trim());
       for (const file of files) body.append('files', file);
@@ -410,8 +423,9 @@ function AddFineModal({
           required
         />
         <div>
-          <label className="text-xs text-muted-foreground">Date</label>
-          <Input type="date" className="mt-1" value={fineDate} onChange={(event) => setFineDate(event.target.value)} />
+          <p className="text-xs text-muted-foreground">Date</p>
+          <p className="mt-1 text-sm">{dubaiTodayYmd()}</p>
+          <p className="text-xs text-muted-foreground">Today. This date cannot be changed.</p>
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Description</label>
@@ -438,6 +452,135 @@ function AddFineModal({
   );
 }
 
+function DeductionSummary({ fine, fineMonth }: { fine: FineRow; fineMonth: string }) {
+  const rows =
+    fine.installments.length > 0
+      ? fine.installments
+      : fine.status === 'APPROVED'
+        ? [{ payrollMonth: fineMonth, amount: fine.amount, sequence: 1 }]
+        : [];
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">Payroll deduction</p>
+      <ul className="mt-1 space-y-1 text-sm">
+        {rows.map((row) => (
+          <li key={row.payrollMonth} className="flex justify-between gap-3">
+            <span>{formatPayrollMonthLabel(row.payrollMonth)}</span>
+            <span className="tabular-nums">{formatMoney(row.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DeductionChooser({
+  fineMonth,
+  amountLabel,
+  mode,
+  onMode,
+  laterMonth,
+  onLaterMonth,
+  rangeFrom,
+  onRangeFrom,
+  rangeTo,
+  onRangeTo,
+  preview,
+}: {
+  fineMonth: string;
+  amountLabel: string;
+  mode: RecoveryMode;
+  onMode: (mode: RecoveryMode) => void;
+  laterMonth: string;
+  onLaterMonth: (month: string) => void;
+  rangeFrom: string;
+  onRangeFrom: (month: string) => void;
+  rangeTo: string;
+  onRangeTo: (month: string) => void;
+  preview: ReturnType<typeof planFineInstallments>;
+}) {
+  const laterMin = shiftPayrollMonth(fineMonth, 1);
+  const rangeToMin = shiftPayrollMonth(rangeFrom || fineMonth, 1);
+  return (
+    <fieldset className="space-y-2 rounded-md border border-border p-3">
+      <legend className="px-1 text-xs text-muted-foreground">Deduct from payroll</legend>
+      <p className="text-xs text-muted-foreground">
+        Used only when you approve. Each amount is added to that month&apos;s deductions and taken off gross.
+      </p>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="radio"
+          name="fine-recovery"
+          className="mt-1"
+          checked={mode === 'fine-month'}
+          onChange={() => onMode('fine-month')}
+        />
+        <span>
+          Fine month ({formatPayrollMonthLabel(fineMonth)}) — full {amountLabel}
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="radio"
+          name="fine-recovery"
+          className="mt-1"
+          checked={mode === 'later-month'}
+          onChange={() => onMode('later-month')}
+        />
+        <span>One later month — full amount in that month only</span>
+      </label>
+      {mode === 'later-month' ? (
+        <Input type="month" className="ml-6 max-w-[12rem]" min={laterMin} value={laterMonth} onChange={(event) => onLaterMonth(event.target.value)} />
+      ) : null}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="radio"
+          name="fine-recovery"
+          className="mt-1"
+          checked={mode === 'range'}
+          onChange={() => onMode('range')}
+        />
+        <span>Split across months</span>
+      </label>
+      {mode === 'range' ? (
+        <div className="ml-6 flex flex-wrap items-end gap-2">
+          <label className="text-xs text-muted-foreground">
+            From
+            <Input type="month" className="mt-1" min={fineMonth} value={rangeFrom} onChange={(event) => onRangeFrom(event.target.value)} />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            To
+            <Input type="month" className="mt-1" min={rangeToMin} value={rangeTo} onChange={(event) => onRangeTo(event.target.value)} />
+          </label>
+        </div>
+      ) : null}
+      {'error' in preview ? (
+        <p className="text-xs text-rose-700 dark:text-rose-300">{preview.error}</p>
+      ) : (
+        <ul className="space-y-1 border-t border-border pt-2 text-sm">
+          {preview.installments.map((row) => (
+            <li key={row.payrollMonth} className="flex justify-between gap-3">
+              <span>{formatPayrollMonthLabel(row.payrollMonth)}</span>
+              <span className="tabular-nums">{formatMoney(row.amount)}</span>
+            </li>
+          ))}
+          <li className="flex justify-between gap-3 border-t border-border pt-1 font-medium">
+            <span>Total</span>
+            <span className="tabular-nums">{amountLabel}</span>
+          </li>
+        </ul>
+      )}
+    </fieldset>
+  );
+}
+
+function recoveryFromMode(mode: RecoveryMode, fineMonth: string, laterMonth: string, rangeFrom: string, rangeTo: string): FineRecoveryInput | null {
+  if (mode === 'fine-month') return { mode: 'month', month: fineMonth };
+  if (mode === 'later-month') return { mode: 'month', month: laterMonth };
+  return { mode: 'range', from: rangeFrom, to: rangeTo };
+}
+
 function FineDetailModal({
   fine,
   onClose,
@@ -447,24 +590,39 @@ function FineDetailModal({
   onClose: () => void;
   onSaved: (fine: FineRow) => void;
 }) {
-  const [fineDate, setFineDate] = useState(fine.fineDate);
+  const fineMonth = fine.fineDate.slice(0, 7);
   const [description, setDescription] = useState(fine.description);
   const [amount, setAmount] = useState(fine.amount.toFixed(2));
   const [files, setFiles] = useState(fine.files);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('fine-month');
+  const [laterMonth, setLaterMonth] = useState(() => shiftPayrollMonth(fineMonth, 1));
+  const [rangeFrom, setRangeFrom] = useState(fineMonth);
+  const [rangeTo, setRangeTo] = useState(() => shiftPayrollMonth(fineMonth, 1));
 
   const visibleFiles = files.filter((file) => !removedIds.includes(file.id));
   const locked = fine.status !== 'PENDING';
+  const parsedAmount = Number(amount);
+  const recoveryPreview = useMemo(
+    () =>
+      planFineInstallments({
+        fineDate: fine.fineDate,
+        amount: parsedAmount,
+        recovery: recoveryFromMode(recoveryMode, fineMonth, laterMonth, rangeFrom, rangeTo),
+      }),
+    [fine.fineDate, fineMonth, laterMonth, parsedAmount, rangeFrom, rangeTo, recoveryMode]
+  );
+  const approveBlocked = 'error' in recoveryPreview;
 
   async function save(nextStatus?: 'APPROVED' | 'REJECTED') {
     if (locked) {
       toast.error('This fine is already decided and cannot be changed');
       return;
     }
-    if (!fineDate) {
-      toast.error('Enter a date');
+    if (nextStatus === 'APPROVED' && 'error' in recoveryPreview) {
+      toast.error(recoveryPreview.error);
       return;
     }
     if (!description.trim()) {
@@ -519,10 +677,12 @@ function FineDetailModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId: fine.companyId,
-          fineDate,
           description: description.trim(),
           amount: amount.trim(),
           ...(nextStatus ? { status: nextStatus } : {}),
+          ...(nextStatus === 'APPROVED'
+            ? { recovery: recoveryFromMode(recoveryMode, fineMonth, laterMonth, rangeFrom, rangeTo) }
+            : {}),
         }),
       });
       const patchJson = await readApiJson<{ fine: FineRow }>(patchRes);
@@ -560,7 +720,7 @@ function FineDetailModal({
               <Button type="button" variant="outline" onClick={() => void save('REJECTED')} disabled={saving}>
                 Reject
               </Button>
-              <Button type="button" onClick={() => void save('APPROVED')} disabled={saving}>
+              <Button type="button" onClick={() => void save('APPROVED')} disabled={saving || approveBlocked}>
                 Approve
               </Button>
             </>
@@ -580,14 +740,9 @@ function FineDetailModal({
           ) : null}
         </div>
         <div>
-          <label className="text-xs text-muted-foreground">Date</label>
-          <Input
-            type="date"
-            className="mt-1"
-            value={fineDate}
-            disabled={locked}
-            onChange={(event) => setFineDate(event.target.value)}
-          />
+          <p className="text-xs text-muted-foreground">Date</p>
+          <p className="mt-1 text-sm">{fine.fineDate}</p>
+          <p className="text-xs text-muted-foreground">The fine date cannot be changed.</p>
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Description</label>
@@ -609,6 +764,23 @@ function FineDetailModal({
             onChange={(event) => setAmount(event.target.value)}
           />
         </div>
+        {locked ? (
+          <DeductionSummary fine={fine} fineMonth={fineMonth} />
+        ) : (
+          <DeductionChooser
+            fineMonth={fineMonth}
+            amountLabel={Number.isFinite(parsedAmount) ? formatMoney(parsedAmount) : amount}
+            mode={recoveryMode}
+            onMode={setRecoveryMode}
+            laterMonth={laterMonth}
+            onLaterMonth={setLaterMonth}
+            rangeFrom={rangeFrom}
+            onRangeFrom={setRangeFrom}
+            rangeTo={rangeTo}
+            onRangeTo={setRangeTo}
+            preview={recoveryPreview}
+          />
+        )}
         <div>
           <p className="text-xs text-muted-foreground">Documents</p>
           {visibleFiles.length === 0 ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import * as XLSX from 'xlsx';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
@@ -110,6 +110,8 @@ export default function ManualStockAdjustmentsPage() {
   const [importFileName, setImportFileName] = useState('');
   const [importLines, setImportLines] = useState<ManualAdjustmentImportDraftLine[]>([]);
   const [importErrors, setImportErrors] = useState<ManualAdjustmentImportError[]>([]);
+  const applyLock = useRef(false);
+  const [applyingImport, setApplyingImport] = useState<'append' | 'replace' | null>(null);
 
   const activeMaterials = useMemo(
     () => materials.filter((material) => material.isActive),
@@ -166,10 +168,13 @@ export default function ManualStockAdjustmentsPage() {
   }
 
   function applyImportedLines(mode: 'append' | 'replace') {
+    if (applyLock.current) return;
     if (importLines.length === 0) {
       toast.error('No valid rows to apply.');
       return;
     }
+    applyLock.current = true;
+    setApplyingImport(mode);
 
     const nextLines = importLines.map((line) => ({
       id: crypto.randomUUID(),
@@ -462,7 +467,11 @@ export default function ManualStockAdjustmentsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setIsImportOpen(true)}
+                onClick={() => {
+                  applyLock.current = false;
+                  setApplyingImport(null);
+                  setIsImportOpen(true);
+                }}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Paste / Import
@@ -682,10 +691,21 @@ export default function ManualStockAdjustmentsPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => applyImportedLines('append')} disabled={importLines.length === 0}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => applyImportedLines('append')}
+                  loading={applyingImport === 'append'}
+                  disabled={importLines.length === 0 || applyingImport !== null}
+                >
                   Append Valid Rows
                 </Button>
-                <Button type="button" onClick={() => applyImportedLines('replace')} disabled={importLines.length === 0}>
+                <Button
+                  type="button"
+                  onClick={() => applyImportedLines('replace')}
+                  loading={applyingImport === 'replace'}
+                  disabled={importLines.length === 0 || applyingImport !== null}
+                >
                   Replace Grid
                 </Button>
               </div>

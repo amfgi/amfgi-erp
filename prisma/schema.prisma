@@ -97,6 +97,7 @@ model Company {
   employeeWarnings         EmployeeWarning[]
   employeeFines            EmployeeFine[]
   employeeFineFiles        EmployeeFineFile[]
+  employeeFineInstallments EmployeeFineInstallment[]
   workforceExpertises      WorkforceExpertise[]
   employeeMetaOptions      EmployeeMetaOption[]
   materialWarehouseStocks  MaterialWarehouseStock[]
@@ -2106,7 +2107,8 @@ enum EmployeeFineStatus {
   REJECTED
 }
 
-/// HR fine. Only APPROVED rows reduce that month's payroll. The date picks the month.
+/// HR fine. Approved rows reduce payroll. Rows without installments use fineDate's month.
+/// Approvals from the installment flow store one EmployeeFineInstallment per deduction month.
 model EmployeeFine {
   id           String             @id @default(cuid())
   companyId    String
@@ -2121,11 +2123,12 @@ model EmployeeFine {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee   Employee           @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Cascade)
-  createdBy  User?              @relation("EmployeeFineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  reviewedBy User?              @relation("EmployeeFineReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  files      EmployeeFineFile[]
+  company       Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee      Employee                  @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Cascade)
+  createdBy     User?                     @relation("EmployeeFineCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reviewedBy    User?                     @relation("EmployeeFineReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  files         EmployeeFineFile[]
+  installments  EmployeeFineInstallment[]
 
   @@index([companyId, status, fineDate])
   @@index([companyId, employeeId, fineDate])
@@ -2147,6 +2150,23 @@ model EmployeeFineFile {
   fine    EmployeeFine @relation(fields: [fineId], references: [id], onDelete: Cascade)
 
   @@index([companyId, fineId])
+}
+
+/// One approved fine's deduction in a single payroll month. Existing fines have no rows here.
+model EmployeeFineInstallment {
+  id           String   @id @default(cuid())
+  companyId    String
+  fineId       String
+  payrollMonth String
+  amount       Decimal  @db.Decimal(12, 2)
+  sequence     Int
+  createdAt    DateTime @default(now())
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fine    EmployeeFine @relation(fields: [fineId], references: [id], onDelete: Cascade)
+
+  @@unique([fineId, payrollMonth])
+  @@index([companyId, payrollMonth])
 }
 
 model WorkSchedule {

@@ -6,6 +6,7 @@ import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shadcn/alert';
 import { Badge } from '@/components/ui/shadcn/badge';
@@ -728,6 +729,9 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
   const hydratedPlaygroundFormulaIdRef = useRef<string | null>(null);
   const saveInFlightRef = useRef(false);
   const formulaJsonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const formulaImportLock = useRef(false);
+  const formulaExport = useSingleFlight();
+  const [importingFormulaJson, setImportingFormulaJson] = useState(false);
   const historyLimitRef = useRef(80);
   const formulaConstantBackdropRef = useRef<HTMLButtonElement | null>(null);
   const formulaConstantPanelRef = useRef<HTMLDivElement | null>(null);
@@ -1547,7 +1551,9 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
   const importFormulaJson = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || formulaImportLock.current) return;
+    formulaImportLock.current = true;
+    setImportingFormulaJson(true);
 
     try {
       const parsed = JSON.parse(await file.text());
@@ -1561,6 +1567,9 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
       toast.success('Formula JSON imported. Review and save to apply it.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not import formula JSON');
+    } finally {
+      formulaImportLock.current = false;
+      setImportingFormulaJson(false);
     }
   };
 
@@ -1736,10 +1745,22 @@ export function FormulaBuilderEditor({ formulaId }: { formulaId?: string }) {
           <Button size="sm" variant="outline" onClick={() => setVersionHistoryOpen(true)} disabled={!activeFormulaId}>
             Version history
           </Button>
-          <Button size="sm" variant="outline" onClick={exportFormulaJson}>
+          <Button
+            size="sm"
+            variant="outline"
+            loading={formulaExport.pending}
+            onClick={() => void formulaExport.run(exportFormulaJson)}
+          >
             Export JSON
           </Button>
-          <Button size="sm" variant="outline" onClick={() => formulaJsonFileInputRef.current?.click()}>
+          <Button
+            size="sm"
+            variant="outline"
+            loading={importingFormulaJson}
+            onClick={() => {
+              if (!importingFormulaJson) formulaJsonFileInputRef.current?.click();
+            }}
+          >
             Import JSON
           </Button>
           <Button size="sm" onClick={() => void saveFormula({ mode: 'manual' })} disabled={saving}>

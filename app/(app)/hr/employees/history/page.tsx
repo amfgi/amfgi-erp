@@ -99,6 +99,7 @@ export default function EmployeeHistoryPage() {
   const [loading, setLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+  const exportLock = useRef(false);
   const previousCompany = useRef<string | null>(null);
   const pdfSheetRef = useRef<HTMLDivElement>(null);
   const companyJustChanged = previousCompany.current !== null && previousCompany.current !== companyId;
@@ -328,7 +329,8 @@ export default function EmployeeHistoryPage() {
   const visibleReport = employeeId && report?.employee.id === employeeId ? report : null;
 
   async function downloadExcel() {
-    if (!companyId || !employeeId || !visibleReport || dateError || oneDate || exporting) return;
+    if (exportLock.current || !companyId || !employeeId || !visibleReport || dateError || oneDate || exporting) return;
+    exportLock.current = true;
     setExporting('excel');
     setError('');
     try {
@@ -353,12 +355,14 @@ export default function EmployeeHistoryPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not download the workbook');
     } finally {
+      exportLock.current = false;
       setExporting(null);
     }
   }
 
   async function downloadPdf() {
-    if (!companyId || !employeeId || !visibleReport || !pdfSheetRef.current || dateError || oneDate || exporting) return;
+    if (exportLock.current || !companyId || !employeeId || !visibleReport || !pdfSheetRef.current || dateError || oneDate || exporting) return;
+    exportLock.current = true;
     setExporting('pdf');
     setError('');
     try {
@@ -368,6 +372,7 @@ export default function EmployeeHistoryPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not download the PDF');
     } finally {
+      exportLock.current = false;
       setExporting(null);
     }
   }
@@ -551,12 +556,10 @@ export default function EmployeeHistoryPage() {
         size="sm"
       >
         <div className="flex gap-2">
-          <Button type="button" className="flex-1" disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadExcel()}>
-            {exporting === 'excel' ? <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : null}
+          <Button type="button" className="flex-1" loading={exporting === 'excel'} disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadExcel()}>
             Excel
           </Button>
-          <Button type="button" className="flex-1" disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadPdf()}>
-            {exporting === 'pdf' ? <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : null}
+          <Button type="button" className="flex-1" loading={exporting === 'pdf'} disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadPdf()}>
             PDF
           </Button>
         </div>

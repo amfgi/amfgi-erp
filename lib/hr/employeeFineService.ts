@@ -12,6 +12,8 @@ import {
   extraFileStorageName,
   isAllowedExtraFile,
 } from '@/lib/hr/employeeExtraFiles';
+import { dubaiTodayYmd } from '@/lib/hr/payroll/calendar';
+import { formatPayrollMonthLabel, planFineInstallments, type FineRecoveryInput } from '@/lib/hr/payroll/fineInstallments';
 import { dateFromYmd } from '@/lib/hr/workDate';
 import { buildEmployeeDriveFolderName, deleteFromDrive, uploadToDrive } from '@/lib/utils/googleDrive';
 import { driveFileIdToOpenUrl } from '@/lib/utils/googleDriveUrl';
@@ -21,6 +23,10 @@ export const FINE_FILE_MAX_COUNT = EXTRA_FILE_MAX_COUNT;
 
 const fineInclude = {
   employee: { select: { id: true, employeeCode: true, fullName: true, preferredName: true } },
+  installments: {
+    select: { payrollMonth: true, amount: true, sequence: true },
+    orderBy: { sequence: 'asc' as const },
+  },
   files: {
     select: {
       id: true,
@@ -47,6 +53,7 @@ export type EmployeeFineDto = {
   description: string;
   amount: number;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  installments: Array<{ payrollMonth: string; amount: number; sequence: number }>;
   files: Array<{
     id: string;
     fileName: string;
@@ -81,6 +88,11 @@ export function toEmployeeFineDto(row: FineRow): EmployeeFineDto {
     description: row.description,
     amount: Number(row.amount),
     status: row.status,
+    installments: row.installments.map((installment) => ({
+      payrollMonth: installment.payrollMonth,
+      amount: Number(installment.amount),
+      sequence: installment.sequence,
+    })),
     files: row.files.map((file) => ({
       id: file.id,
       fileName: file.fileName,
@@ -204,7 +216,6 @@ async function storeFineFiles(input: {
 export async function createEmployeeFine(input: {
   companyId: string;
   employeeId: string;
-  fineDate: string;
   description: string;
   amount: string;
   createdById: string | null;
@@ -227,7 +238,7 @@ export async function createEmployeeFine(input: {
     data: {
       companyId: input.companyId,
       employeeId: employee.id,
-      fineDate: dateFromYmd(input.fineDate),
+      fineDate: dateFromYmd(dubaiTodayYmd()),
       description: input.description,
       amount: input.amount,
       status: 'PENDING',
@@ -264,10 +275,10 @@ function decidedFineError(status: string): { error: string; status: number } | n
 export async function updateEmployeeFine(input: {
   id: string;
   companyIds: string[];
-  fineDate: string;
   description: string;
   amount: string;
   status?: 'APPROVED' | 'REJECTED';
+  recovery?: FineRecoveryInput | null;
   reviewedById: string | null;
 }): Promise<{ fine: EmployeeFineDto } | { error: string; status: number }> {
   const existing = await findEmployeeFine(input.id, input.companyIds);
@@ -275,22 +286,58 @@ export async function updateEmployeeFine(input: {
   const locked = decidedFineError(existing.status);
   if (locked) return locked;
 
-  const updated = await prisma.employeeFine.update({
-    where: { id: existing.id },
-    data: {
-      fineDate: dateFromYmd(input.fineDate),
-      description: input.description,
-      amount: input.amount,
-      ...(input.status
-        ? {
-            status: input.status,
-            reviewedById: input.reviewedById,
-            reviewedAt: new Date(),
-          }
-        : {}),
-    },
-    include: fineInclude,
+  const approving = input.status === 'APPROVED';
+  const plan = approving
+    ? planFineInstallments({
+        fineDate: ymd(existing.fineDate),
+        amount: Number(input.amount),
+        recovery: input.recovery ?? null,
+      })
+    : null;
+  if (plan && 'error' in plan) return { error: plan.error, status: 400 };
+
+  if (plan && 'installments' in plan) {
+    const months = plan.installments.map((row) => row.payrollMonth);
+    const finalized = await prisma.payRun.findMany({
+      where: { companyId: existing.companyId, month: { in: months } },
+      select: { month: true },
+      orderBy: { month: 'asc' },
+    });
+    if (finalized.length > 0) {
+      const labels = finalized.map((run) => formatPayrollMonthLabel(run.month)).join(' and ');
+      return { error: `Payroll for ${labels} is already finalized`, status: 409 };
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.employeeFine.update({
+      where: { id: existing.id },
+      data: {
+        description: input.description,
+        amount: input.amount,
+        ...(input.status
+          ? {
+              status: input.status,
+              reviewedById: input.reviewedById,
+              reviewedAt: new Date(),
+            }
+          : {}),
+      },
+    });
+    if (plan && 'installments' in plan) {
+      await tx.employeeFineInstallment.createMany({
+        data: plan.installments.map((row) => ({
+          companyId: existing.companyId,
+          fineId: existing.id,
+          payrollMonth: row.payrollMonth,
+          amount: row.amount.toFixed(2),
+          sequence: row.sequence,
+        })),
+      });
+    }
+    return tx.employeeFine.findFirst({ where: { id: existing.id }, include: fineInclude });
   });
+  if (!updated) return { error: 'Fine could not be saved', status: 500 };
   return { fine: toEmployeeFineDto(updated) };
 }
 
