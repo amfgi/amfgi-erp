@@ -665,6 +665,7 @@ html.quotation-editing body,
 .quotation-rich {
   display: flow-root;
   position: relative;
+  z-index: 0;
 }
 
 .quotation-picture {
