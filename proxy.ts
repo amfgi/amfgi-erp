@@ -69,6 +69,10 @@ const SORTED_ROUTE_PERMISSIONS = [...ROUTE_PERMISSIONS].sort(
  * that helper clones `NextResponse.next()` in a way that breaks continuation to
  * App Route handlers, so `/api/auth/*` returns HTML 404 and `signIn()` sees
  * "Unexpected token '<'" (ClientFetchError).
+ *
+ * `/api/auth` is also left out of `config.matcher`. Auth.js must answer those
+ * requests itself. If this proxy runs first and returns `NextResponse.next()`,
+ * the Node proxy can still answer with the HTML 404 page.
  */
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -146,5 +150,6 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  // `api/auth` is excluded so Auth.js route handlers run without this proxy.
+  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
