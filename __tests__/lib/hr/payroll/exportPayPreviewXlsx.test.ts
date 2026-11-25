@@ -256,6 +256,24 @@ describe('buildPayPreviewWorkbookSheets', () => {
     expect(xml).toContain('!A1');
   });
 
+  it('lists each approved payroll fine on the daily sheet', () => {
+    const sheets = buildPayPreviewWorkbookSheets({
+      ...samplePayload,
+      employees: [
+        {
+          ...samplePayload.employees[0]!,
+          salaryComponentDeductions: 150,
+          gross: 3450,
+          payrollFines: [{ id: 'fine-1', description: 'Late arrival', amount: 100 }],
+        },
+      ],
+    });
+    const detail = sheets.find((sheet) => sheet.name === 'Jane Doe');
+    expect(detail?.rows.some((row) => row[0] === 'Fine — Late arrival' && row.includes(100) && row.includes(-100))).toBe(
+      true
+    );
+  });
+
   it('applies workbook styles to title and header cells', () => {
     const workbook = buildPayPreviewWorkbook(samplePayload);
     const summary = workbook.Sheets.Summary;

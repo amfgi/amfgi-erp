@@ -57,6 +57,61 @@ describe('formulaEngine', () => {
     expect(result.gross).toBe(252);
   });
 
+  it('treats only annual leave as unpaid in custom formulas', () => {
+    const lines = [
+      {
+        workDate: '2026-06-01',
+        status: 'PRESENT',
+        leaveType: null,
+        basicHours: 8,
+        workedMinutes: 480,
+        isSunday: false,
+      },
+      {
+        workDate: '2026-06-02',
+        status: 'LEAVE',
+        leaveType: 'ANNUAL' as const,
+        leaveTypeCode: 'ANNUAL',
+        leaveRequestId: 'annual',
+        basicHours: 8,
+        workedMinutes: 0,
+        isSunday: false,
+      },
+      {
+        workDate: '2026-06-03',
+        status: 'LEAVE',
+        leaveType: 'SICK' as const,
+        leaveTypeCode: 'SICK',
+        leaveRequestId: 'sick',
+        leavePayPercent: 50,
+        basicHours: 8,
+        workedMinutes: 0,
+        isSunday: false,
+      },
+    ];
+    const compensation = { monthlyBasic: 3000, monthlyAllowance: 500, dailyRate: 0 };
+    const paid = evaluateCustomFormula({
+      month: '2026-06',
+      config: {
+        mode: 'CUSTOM',
+        formulaScript: 'gross = sum_days(if(is_paid_leave > 0, 100, if(is_present > 0, 40, 0)))',
+      },
+      compensation,
+      lines,
+    });
+    expect(paid.gross).toBe(140);
+    expect(paid.days.find((day) => day.date === '2026-06-02')?.totalSalary).toBe(0);
+    expect(paid.days.find((day) => day.date === '2026-06-03')?.totalSalary).toBe(100);
+
+    const counted = evaluateCustomFormula({
+      month: '2026-06',
+      config: { mode: 'CUSTOM', formulaScript: 'gross = paid_leave_days' },
+      compensation,
+      lines,
+    });
+    expect(counted.gross).toBe(1);
+  });
+
   it('previewPayConfig reports formula errors', () => {
     const preview = previewPayConfig({
       month: '2026-06',

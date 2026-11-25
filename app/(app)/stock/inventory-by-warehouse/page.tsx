@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
@@ -61,6 +61,7 @@ export default function InventoryByWarehousePage() {
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+  const exportLock = useRef(false);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -85,6 +86,8 @@ export default function InventoryByWarehousePage() {
   const pageEnd = Math.min(page * pageSize, totalRows);
 
   async function downloadStocklist(format: 'excel' | 'pdf') {
+    if (exportLock.current) return;
+    exportLock.current = true;
     setExporting(format);
     try {
       const params = new URLSearchParams();
@@ -122,6 +125,7 @@ export default function InventoryByWarehousePage() {
     } catch {
       toast.error('Could not build the stocklist');
     } finally {
+      exportLock.current = false;
       setExporting(null);
     }
   }
@@ -353,11 +357,11 @@ export default function InventoryByWarehousePage() {
             Each item is one row. Every warehouse has a quantity column, and zero is shown as 0, followed by the total quantity, last purchase price, and value.
           </p>
           <div className="mt-5 grid grid-cols-2 gap-2">
-            <Button type="button" variant="outline" disabled={exporting !== null} onClick={() => void downloadStocklist('excel')}>
-              {exporting === 'excel' ? 'Preparing…' : 'Excel'}
+            <Button type="button" variant="outline" loading={exporting === 'excel'} disabled={exporting !== null} onClick={() => void downloadStocklist('excel')}>
+              Excel
             </Button>
-            <Button type="button" disabled={exporting !== null} onClick={() => void downloadStocklist('pdf')}>
-              {exporting === 'pdf' ? 'Preparing…' : 'PDF'}
+            <Button type="button" loading={exporting === 'pdf'} disabled={exporting !== null} onClick={() => void downloadStocklist('pdf')}>
+              PDF
             </Button>
           </div>
         </div>

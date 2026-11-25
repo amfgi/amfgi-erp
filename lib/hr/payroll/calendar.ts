@@ -1,5 +1,10 @@
 const DUBAI_TZ = 'Asia/Dubai';
 
+/** Calendar day in Dubai, YYYY-MM-DD. Payroll months follow this timezone. */
+export function dubaiTodayYmd(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(now);
+}
+
 export function daysInMonth(month: string): number {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('Invalid month YYYY-MM');
   const [y, m] = month.split('-').map(Number);
@@ -58,6 +63,19 @@ export function moneyToCents(n: number): number {
 
 export function centsToMoney(cents: number): number {
   return cents / 100;
+}
+
+/**
+ * Payroll gross is a whole dirham. After normal 2-decimal rounding, a fraction
+ * below 0.75 stays on the lower dirham; 0.75 and above goes to the next one.
+ */
+export function roundGrossToWholeDirham(amount: number): number {
+  const cents = moneyToCents(amount);
+  const sign = cents < 0 ? -1 : 1;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100);
+  const fraction = abs % 100;
+  return sign * (fraction >= 75 ? whole + 1 : whole);
 }
 
 /** Sum money values in integer cents to avoid floating-point drift (e.g. 26 × 46.15). */

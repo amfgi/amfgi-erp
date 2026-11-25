@@ -123,10 +123,90 @@ function sanitizePictureTag(tag: string) {
   const x = pictureNumber(tag, 'data-x', 0, -80, 900);
   const y = pictureNumber(tag, 'data-y', 0, -80, 1400);
   const idRaw = /\sdata-id\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? '';
-  const id = /^[A-Za-z0-9-]{8,80}$/.test(idRaw) ? idRaw : `pic${Math.random().toString(36).slice(2, 12)}`;
+  const id = /^[A-Za-z0-9-]{8,80}$/.test(idRaw) ? idRaw : stablePictureId(src);
   const positioned = anchor === 'page' || layout === 'behind' || layout === 'front';
   const style = positioned ? `width:${width}px;left:${x}px;top:${y}px` : `width:${width}px`;
-  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="${layout}" data-anchor="${anchor}" data-width="${width}" data-x="${x}" data-y="${y}" alt="" draggable="false" contenteditable="false" style="${style}" />`;
+  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="${layout}" data-anchor="${anchor}" data-width="${width}" data-x="${x}" data-y="${y}" alt="" draggable="false" contenteditable="false" style="${style}">`;
+}
+
+/** Same picture bytes always get the same id, so opening a quotation is not a new edit. */
+function stablePictureId(src: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `pic${(hash >>> 0).toString(16).padStart(8, '0')}${src.length.toString(16)}`;
+}
+
+/** Browser serialization that is not a real edit: empty fields, and <img /> versus <img>. */
+function looseHtml(value: string) {
+  const trimmed = value.trim();
+  if (
+    trimmed === ''
+    || trimmed === '<br>'
+    || trimmed === '<br/>'
+    || trimmed === '<br />'
+    || trimmed === '<div><br></div>'
+    || trimmed === '<div><br/></div>'
+    || trimmed === '<div><br /></div>'
+  ) return '';
+  return trimmed.replace(/<img\b([^>]*?)\s*\/>/gi, '<img$1>');
+}
+
+export function sameRichText(a: string | null | undefined, b: string | null | undefined) {
+  return sanitizeRichText(looseHtml(String(a ?? ''))) === sanitizeRichText(looseHtml(String(b ?? '')));
+}
+
+function looseDocument(document: QuotationDocument): QuotationDocument {
+  const text = (value: string | null | undefined) => looseHtml(String(value ?? ''));
+  return {
+    ...document,
+    quoteTitle: text(document.quoteTitle),
+    totalCostWords: text(document.totalCostWords),
+    project: text(document.project),
+    includesLine: text(document.includesLine),
+    blocks: document.blocks.map((block) => {
+      if (block.type === 'terms' || block.type === 'specification') {
+        return {
+          ...block,
+          name: text(block.name),
+          rows: block.rows.map((row) => ({ ...row, label: text(row.label), value: text(row.value) })),
+        };
+      }
+      if (block.type === 'option') {
+        return {
+          ...block,
+          name: text(block.name),
+          rows: block.rows.map((row) => ({
+            ...row,
+            item: text(row.item),
+            description: text(row.description),
+            extras: row.extras
+              ? Object.fromEntries(Object.entries(row.extras).map(([key, value]) => [key, text(value)]))
+              : row.extras,
+          })),
+        };
+      }
+      if (block.type === 'signatures') {
+        const side = (entry: SignatureBlock): SignatureBlock => ({
+          name: text(entry.name),
+          phone: text(entry.phone),
+          title: text(entry.title),
+          email: text(entry.email),
+        });
+        return { ...block, name: text(block.name), left: side(block.left), right: side(block.right) };
+      }
+      return { ...block, name: text(block.name), body: text(block.body) };
+    }),
+  };
+}
+
+/** Ignores picture-tag and empty-field serialization, so a refetch is not another save. */
+export function quotationAutosaveKey(startDate: string, document: QuotationDocument | null) {
+  if (!document) return '';
+  const saved = readQuotationDocument(looseDocument(document));
+  return JSON.stringify({ startDate: startDate || '', quotationDocument: saved });
 }
 
 export function sanitizeRichText(value: string | null | undefined) {
@@ -483,7 +563,18 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
         });
       }
       if (block.type === 'signatures') {
-        return withStoredGap(block);
+        const side = (entry: SignatureBlock): SignatureBlock => ({
+          name: sanitizeRichText(entry.name),
+          phone: sanitizeRichText(entry.phone),
+          title: sanitizeRichText(entry.title),
+          email: sanitizeRichText(entry.email),
+        });
+        return withStoredGap({
+          ...block,
+          name: sanitizeRichText(block.name),
+          left: side(block.left),
+          right: side(block.right),
+        });
       }
       return withStoredGap({
         ...block,

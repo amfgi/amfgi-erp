@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/shadcn/card';
 import { Input } from '@/components/ui/shadcn/input';
 import { Select } from '@/components/ui/shadcn/select';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { useGetJobProfitabilityQuery } from '@/store/hooks';
 import { cn } from '@/lib/utils';
 
@@ -89,6 +90,7 @@ export default function JobProfitabilityPage() {
     skip: !canView,
   });
 
+  const csvExport = useSingleFlight();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [focus, setFocus] = useState('all');
@@ -185,7 +187,14 @@ export default function JobProfitabilityPage() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={handleExport} disabled={filteredRows.length === 0}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void csvExport.run(handleExport)}
+            loading={csvExport.pending}
+            disabled={filteredRows.length === 0}
+          >
             Export CSV
           </Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => void refetch()} disabled={isFetching}>

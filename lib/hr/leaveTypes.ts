@@ -15,6 +15,13 @@ export function isPaidLeaveType(leaveType: AttendanceLeaveType | null | undefine
   return PAID_LEAVE_TYPES.includes(leaveType);
 }
 
+/** Payroll rule matches the leave-type code, not the display name. */
+export function isAnnualLeaveCode(code: string | null | undefined): boolean {
+  return (code ?? '').trim().toUpperCase() === 'ANNUAL';
+}
+
+export const ANNUAL_LEAVE_NOT_ADDED_DETAIL = 'Not added — annual leave is paid in advance';
+
 export function leaveRequestTypeToAttendance(type: LeaveRequestType): AttendanceLeaveType {
   return type;
 }

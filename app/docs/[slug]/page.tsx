@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { UserGuidePageView } from '@/components/docs/UserGuideContent';
 import { UserGuideShell } from '@/components/docs/UserGuideShell';
+import { BreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import { getUserGuidePage, USER_GUIDE_PAGES } from '@/lib/docs/userGuide';
 
 type GuidePageProps = {
@@ -31,6 +32,7 @@ export default async function UserGuideSlugPage({ params }: GuidePageProps) {
 
   return (
     <UserGuideShell activeSlug={slug}>
+      <BreadcrumbLabel label={page.title} />
       <UserGuidePageView page={page} />
     </UserGuideShell>
   );

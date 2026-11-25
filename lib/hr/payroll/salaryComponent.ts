@@ -1,4 +1,5 @@
 import { isPayrollLeaveLine, leavePayFraction } from '@/lib/hr/attendanceLeavePay';
+import { isAnnualLeaveCode } from '@/lib/hr/leaveTypes';
 import { dedupeAllowancesByType } from '@/lib/hr/payroll/allowanceTotals';
 import {
   centsToMoney,
@@ -141,6 +142,7 @@ export function attendanceComponentDayWeight(
   line: PayLineInput,
   config?: PayTypeConfig
 ): number {
+  if (isAnnualLeaveCode(line.leaveTypeCode) && isPayrollLeaveLine(line)) return leavePayFraction(line);
   if (line.isPaidWeeklyOff) return 1;
   if (config && shouldPayExcludedWeekdayWorkAtOtOnly(line, config)) return 0;
   if (isPayrollHolidayLine(line)) return 1;
@@ -220,6 +222,20 @@ function resolveAttendanceEarningsMonthly(
   if (comps.attendanceEarningsMonthly > 0) return comps.attendanceEarningsMonthly;
   const denom = denomDaysExcludingWeekdays(month, excludedWeekdays);
   return roundMoney(comps.attendanceEarningPerDay * denom);
+}
+
+/** Monthly allowance payroll uses for a package: component earnings, or the legacy lump sum. */
+export function monthlyPackageAllowance(
+  compensation: CompensationInput,
+  month: string,
+  excludedWeekdays: number[]
+): number {
+  const comps = compensation.salaryComponents;
+  if (!comps) return roundMoney(Math.max(0, compensation.monthlyAllowance));
+  return roundMoney(
+    Math.max(0, comps.fixedEarnings) +
+      Math.max(0, resolveAttendanceEarningsMonthly(comps, month, excludedWeekdays))
+  );
 }
 
 function resolveAttendanceDeductionsMonthly(

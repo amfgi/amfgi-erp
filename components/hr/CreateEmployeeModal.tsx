@@ -18,6 +18,7 @@ import {
   type VisaHolding,
   type WorkforceEmployeeType,
 } from '@/lib/hr/createEmployeeClient';
+import { isTemporaryEmploymentType } from '@/lib/hr/employeeCodeSettings';
 import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
 import { useAppDispatch } from '@/store/hooks';
@@ -54,7 +55,9 @@ export default function CreateEmployeeModal({
   const [employmentType, setEmploymentType] = useState('');
   const [employeeType, setEmployeeType] = useState<WorkforceEmployeeType>(defaultEmployeeType);
   const [visaHolding, setVisaHolding] = useState<VisaHolding>('COMPANY_PROVIDED');
-  const [proposedCode, setProposedCode] = useState('…');
+  const [companyCode, setCompanyCode] = useState('…');
+  const [temporaryCode, setTemporaryCode] = useState<string | null>(null);
+  const proposedCode = isTemporaryEmploymentType(employmentType) && temporaryCode ? temporaryCode : companyCode;
 
   const labelClass = 'text-xs font-medium uppercase tracking-wider text-muted-foreground';
   const fieldGrid = 'grid gap-3 sm:grid-cols-2';
@@ -92,7 +95,8 @@ export default function CreateEmployeeModal({
 
   useEffect(() => {
     if (!isOpen || !companyId) {
-      setProposedCode('…');
+      setCompanyCode('…');
+      setTemporaryCode(null);
       return;
     }
     let cancelled = false;
@@ -104,16 +108,21 @@ export default function CreateEmployeeModal({
         );
         const json = (await res.json().catch(() => null)) as {
           success?: boolean;
-          data?: { nextCodePreview?: string };
+          data?: { nextCodePreview?: string; nextTemporaryCodePreview?: string | null };
         } | null;
         if (cancelled) return;
         if (res.ok && json?.success && json.data?.nextCodePreview) {
-          setProposedCode(json.data.nextCodePreview);
+          setCompanyCode(json.data.nextCodePreview);
+          setTemporaryCode(json.data.nextTemporaryCodePreview ?? null);
         } else {
-          setProposedCode('Auto');
+          setCompanyCode('Auto');
+          setTemporaryCode(null);
         }
       } catch {
-        if (!cancelled) setProposedCode('Auto');
+        if (!cancelled) {
+          setCompanyCode('Auto');
+          setTemporaryCode(null);
+        }
       }
     })();
     return () => {

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/shadcn/button';
@@ -107,6 +108,7 @@ export default function SupplierEditor({
   const [formDraft, setFormDraft] = useState<SupplierPartyFormState | null>(null);
   const [isActiveDraft, setIsActiveDraft] = useState<boolean | null>(null);
   const form = formDraft ?? baseForm;
+  useBreadcrumbLabel(isEdit ? form.name : null);
   const isActive = isActiveDraft ?? baseIsActive;
 
   const saving = isCreating || isUpdating;
@@ -485,7 +487,7 @@ export default function SupplierEditor({
               <Button type="submit" className="w-full" disabled={saving}>
                 {saving ? 'Saving…' : isEdit ? 'Update Supplier' : 'Create Supplier'}
               </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => router.push('/suppliers')} disabled={saving}>
+              <Button type="button" variant="ghost" className="w-full" data-nav-href="/suppliers" onClick={() => router.push('/suppliers')} disabled={saving}>
                 Cancel
               </Button>
             </div>

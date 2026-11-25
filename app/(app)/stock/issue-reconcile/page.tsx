@@ -314,6 +314,7 @@ export default function IssueReconcilePage() {
               <Button
                 type="button"
                 className="min-w-0 flex-1"
+                data-nav-href={`/stock/issue-reconcile/new?transactionId=${editEntry.id}`}
                 onClick={() => {
                   const targetId = editEntry.id;
                   setEditEntry(null);

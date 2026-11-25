@@ -517,6 +517,71 @@ describe('calculatePayLine', () => {
     expect(restDay?.totalSalary).toBeCloseTo(presentDay?.basicHourSalary! + presentDay?.allowance!, 1);
   });
 
+  it('pays the daily total on a worked fixed-monthly Sunday even when weekly-off OT is enabled', () => {
+    const config: PayTypeConfig = {
+      mode: 'MONTHLY_CALENDAR_DEDUCT',
+      deductDenominator: 'CALENDAR_DAYS',
+      excludedWeekdays: [0],
+      weeklyOffPayRule: 'SANDWICHED',
+      payExcludedWeekdayWorkAtOt: true,
+      otPercent: 125,
+    };
+    const lines = annotatePaidWeeklyOffLines(
+      [
+        {
+          workDate: '2026-08-14',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 8 * 60,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-08-15',
+          status: 'ABSENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-08-16',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 8 * 60,
+          isSunday: true,
+        },
+        {
+          workDate: '2026-08-17',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 8 * 60,
+          isSunday: false,
+        },
+      ],
+      config
+    );
+    const result = calculatePayLine({
+      month: '2026-08',
+      config,
+      compensation: { monthlyBasic: 2500, monthlyAllowance: 500, dailyRate: 0 },
+      lines,
+    });
+    const sunday = result.days.find((day) => day.date === '2026-08-16');
+    const monday = result.days.find((day) => day.date === '2026-08-17');
+    expect(lines.find((entry) => entry.workDate === '2026-08-16')?.isPaidWeeklyOff).toBe(true);
+    expect(sunday?.totalHours).toBe(0);
+    expect(sunday?.otHourSalary).toBe(0);
+    expect(sunday?.basicHourSalary).toBeCloseTo(monday?.basicHourSalary ?? 0, 1);
+    expect(sunday?.allowance).toBeCloseTo(monday?.allowance ?? 0, 1);
+    expect(sunday?.totalSalary).toBeCloseTo(
+      (monday?.basicHourSalary ?? 0) + (monday?.allowance ?? 0),
+      1
+    );
+  });
+
   it('full month on calendar-days + sandwiched weekly off totals monthly basic + allowance', () => {
     const config: PayTypeConfig = {
       mode: 'MONTHLY_CALENDAR_DEDUCT',
@@ -933,5 +998,166 @@ describe('attendanceLinesForPayroll', () => {
     expect(health.allowanceCap).toBe(1200);
     expect(health.issues).toEqual([]);
     expect(health.ok).toBe(true);
+  });
+
+  it('pays nothing for an approved annual leave day and still pays a worked day', () => {
+    const result = calculatePayLine({
+      month: '2026-06',
+      config: { mode: 'DAILY_WAGE' },
+      compensation: { monthlyBasic: 0, monthlyAllowance: 0, dailyRate: 100 },
+      lines: [
+        {
+          workDate: '2026-06-01',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 480,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-06-02',
+          status: 'LEAVE',
+          leaveType: 'ANNUAL',
+          leaveTypeCode: 'ANNUAL',
+          leaveTypeLabel: 'Annual leave',
+          leaveRequestId: 'lr-annual',
+          leavePayPercent: 0,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    const worked = result.days.find((day) => day.date === '2026-06-01');
+    const annual = result.days.find((day) => day.date === '2026-06-02');
+    expect(worked?.totalSalary).toBe(100);
+    expect(annual?.basicHourSalary).toBe(0);
+    expect(annual?.allowance).toBe(0);
+    expect(annual?.totalSalary).toBe(0);
+    expect(annual?.status).toBe('Leave (Annual leave)');
+    expect(annual?.detail).toBe('Not added — annual leave is paid in advance');
+  });
+
+  it('keeps a 0% sick day as unpaid leave', () => {
+    const result = calculatePayLine({
+      month: '2026-06',
+      config: { mode: 'DAILY_WAGE' },
+      compensation: { monthlyBasic: 0, monthlyAllowance: 0, dailyRate: 100 },
+      lines: [
+        {
+          workDate: '2026-06-03',
+          status: 'LEAVE',
+          leaveType: 'SICK',
+          leaveTypeCode: 'SICK',
+          leaveTypeLabel: 'Sick leave',
+          leaveRequestId: 'lr-sick',
+          leavePayPercent: 0,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    expect(result.days[0]?.totalSalary).toBe(0);
+    expect(result.days[0]?.detail).toBe('Unpaid leave');
+    expect(result.days[0]?.status).toBe('Leave (Sick leave)');
+  });
+
+  it('removes each annual leave day from fixed monthly pay and leaves sick leave in the lump', () => {
+    const annual = calculatePayLine({
+      month: '2026-06',
+      config: { mode: 'MONTHLY_FIXED' },
+      compensation: {
+        monthlyBasic: 3000,
+        monthlyAllowance: 0,
+        dailyRate: 0,
+        salaryComponents: {
+          fixedEarnings: 300,
+          fixedDeductions: 0,
+          attendanceEarningPerDay: 0,
+          attendanceDeductionPerDay: 0,
+          attendanceEarningsMonthly: 0,
+          attendanceDeductionsMonthly: 0,
+        },
+      },
+      lines: [
+        {
+          workDate: '2026-06-02',
+          status: 'LEAVE',
+          leaveType: 'ANNUAL',
+          leaveTypeCode: 'ANNUAL',
+          leaveTypeLabel: 'Annual leave',
+          leaveRequestId: 'lr-annual',
+          leavePayPercent: 0,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    expect(annual.gross).toBeCloseTo(3000 + 300 - 3000 / 30 - 300 / 30, 2);
+    expect(annual.days[0]?.totalSalary).toBe(0);
+    expect(annual.days[0]?.detail).toBe('Not added — annual leave is paid in advance');
+
+    const sick = calculatePayLine({
+      month: '2026-06',
+      config: { mode: 'MONTHLY_FIXED' },
+      compensation: { monthlyBasic: 3000, monthlyAllowance: 0, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-06-02',
+          status: 'LEAVE',
+          leaveType: 'SICK',
+          leaveTypeCode: 'SICK',
+          leavePayPercent: 100,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: false,
+        },
+      ],
+    });
+    expect(sick.gross).toBe(3000);
+  });
+
+  it('pays nothing for annual leave even when that Sunday is marked as a paid weekly off', () => {
+    const result = calculatePayLine({
+      month: '2026-07',
+      config: {
+        mode: 'MONTHLY_CALENDAR_DEDUCT',
+        deductDenominator: 'CALENDAR_DAYS',
+        excludedWeekdays: [0],
+        weeklyOffPayRule: 'SANDWICHED',
+      },
+      compensation: { monthlyBasic: 3100, monthlyAllowance: 0, dailyRate: 0 },
+      lines: [
+        {
+          workDate: '2026-07-04',
+          status: 'PRESENT',
+          leaveType: null,
+          basicHours: 8,
+          workedMinutes: 480,
+          isSunday: false,
+        },
+        {
+          workDate: '2026-07-05',
+          status: 'LEAVE',
+          leaveType: 'ANNUAL',
+          leaveTypeCode: 'ANNUAL',
+          leaveTypeLabel: 'Annual leave',
+          leaveRequestId: 'lr-annual',
+          leavePayPercent: 0,
+          basicHours: 8,
+          workedMinutes: 0,
+          isSunday: true,
+          isPaidWeeklyOff: true,
+        },
+      ],
+    });
+    const sunday = result.days.find((day) => day.date === '2026-07-05');
+    expect(sunday?.basicHourSalary).toBe(0);
+    expect(sunday?.allowance).toBe(0);
+    expect(sunday?.totalSalary).toBe(0);
+    expect(sunday?.detail).toBe('Not added — annual leave is paid in advance');
+    expect(result.days.find((day) => day.date === '2026-07-04')?.totalSalary).toBeGreaterThan(0);
   });
 });

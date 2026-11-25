@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/shadcn/button';
@@ -152,6 +152,11 @@ function downloadTemplate() {
 export default function BulkImportModal({ isOpen, onClose, existingMaterials }: Props) {
   const [bulkCreate, { isLoading: isSubmitting }] = useBulkCreateMaterialsMutation();
   const [importProgress, setImportProgress] = useState<{ processed: number; total: number } | null>(null);
+  const submitLock = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) submitLock.current = false;
+  }, [isOpen]);
   const { data: warehouses = [] } = useGetWarehousesQuery();
   const [step, setStep] = useState(0);
   const [rawRows, setRawRows] = useState<(string | number | boolean | null)[][]>([]);
@@ -366,10 +371,12 @@ export default function BulkImportModal({ isOpen, onClose, existingMaterials }: 
   const selectedForUpdate = duplicateRows.filter((row) => row.__action === 'update');
 
   const handleSubmit = async () => {
+    if (submitLock.current) return;
     if (newRows.length === 0 && selectedForUpdate.length === 0) {
       toast.error('No rows to import. Please create or select duplicates to update.');
       return;
     }
+    submitLock.current = true;
 
     const cleanRows = (rows: PreviewRow[]): MaterialRow[] =>
       rows.map(({ __rowIndex, __errors, __isDuplicate, __action, ...rest }) => rest as MaterialRow);
@@ -394,6 +401,7 @@ export default function BulkImportModal({ isOpen, onClose, existingMaterials }: 
       resetState();
       onClose();
     } catch (err: unknown) {
+      submitLock.current = false;
       setImportProgress(null);
       const message =
         typeof err === 'object' &&
@@ -406,6 +414,8 @@ export default function BulkImportModal({ isOpen, onClose, existingMaterials }: 
       toast.error(message);
     }
   };
+
+  const importing = isSubmitting || importProgress !== null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Bulk Import Materials" size="xl">
@@ -744,16 +754,17 @@ export default function BulkImportModal({ isOpen, onClose, existingMaterials }: 
             </div>
 
             <div className="flex gap-3 border-t border-slate-700 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setStep(1)} className="flex-1">
+              <Button type="button" variant="ghost" onClick={() => setStep(1)} className="flex-1" disabled={importing}>
                 Back
               </Button>
               <Button
                 type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting || (newRows.length === 0 && selectedForUpdate.length === 0)}
+                onClick={() => void handleSubmit()}
+                loading={importing}
+                disabled={importing || (newRows.length === 0 && selectedForUpdate.length === 0)}
                 className="flex-1"
               >
-                {isSubmitting
+                {importing
                   ? importProgress
                     ? `Importing ${importProgress.processed}/${importProgress.total}…`
                     : 'Importing…'

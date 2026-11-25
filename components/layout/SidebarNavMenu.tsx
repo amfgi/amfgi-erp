@@ -26,10 +26,14 @@ import {
 import {
   collectSidebarHrefs,
   filterSidebarNavEntries,
+  isSidebarChildGroup,
   isSidebarGroupActive,
   isSidebarPathActive,
   SIDEBAR_NAV_ENTRIES,
   SIDEBAR_SELF_SERVICE_ENTRIES,
+  sidebarChildHrefs,
+  type SidebarNavChild,
+  type SidebarNavChildGroup,
   type SidebarNavEntry,
   type SidebarNavGroup,
   type SidebarNavLink,
@@ -60,6 +64,95 @@ function SidebarNavLinkItem({
   );
 }
 
+function childLinkActive(pathname: string, href: string, siblingHrefs: string[]) {
+  return isSidebarPathActive(pathname, href, siblingHrefs);
+}
+
+function SidebarNavNestedGroup({
+  group,
+  pathname,
+  onNavigate,
+  siblingHrefs,
+}: {
+  group: SidebarNavChildGroup;
+  pathname: string;
+  onNavigate: () => void;
+  siblingHrefs: string[];
+}) {
+  const groupActive = isSidebarGroupActive(pathname, group, siblingHrefs);
+  const [open, setOpen] = useState(groupActive);
+
+  useEffect(() => {
+    if (groupActive) setOpen(true);
+  }, [groupActive]);
+
+  return (
+    <SidebarMenuSubItem>
+      <Collapsible open={open} onOpenChange={setOpen} className="group/leave">
+        <SidebarMenuSubButton asChild isActive={groupActive}>
+          <CollapsibleTrigger>
+            <span className="truncate">{group.label}</span>
+            <ChevronRight className="ml-auto size-3.5 transition-transform duration-200 group-data-[state=open]/leave:rotate-90" />
+          </CollapsibleTrigger>
+        </SidebarMenuSubButton>
+        <CollapsibleContent>
+          <SidebarMenuSub className="mx-0 border-l-0 px-0">
+            {group.children.map((child) => (
+              <SidebarMenuSubItem key={child.href}>
+                <SidebarMenuSubButton
+                  asChild
+                  isActive={childLinkActive(pathname, child.href, siblingHrefs)}
+                  className="pl-4"
+                >
+                  <Link href={child.href} onClick={onNavigate}>
+                    <span>{child.label}</span>
+                  </Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </Collapsible>
+    </SidebarMenuSubItem>
+  );
+}
+
+function SidebarChildItems({
+  items,
+  pathname,
+  onNavigate,
+  siblingHrefs,
+}: {
+  items: SidebarNavChild[];
+  pathname: string;
+  onNavigate: () => void;
+  siblingHrefs: string[];
+}) {
+  return (
+    <>
+      {items.map((child) =>
+        isSidebarChildGroup(child) ? (
+          <SidebarNavNestedGroup
+            key={child.id}
+            group={child}
+            pathname={pathname}
+            onNavigate={onNavigate}
+            siblingHrefs={siblingHrefs}
+          />
+        ) : (
+          <SidebarMenuSubItem key={child.href}>
+            <SidebarMenuSubButton asChild isActive={childLinkActive(pathname, child.href, siblingHrefs)}>
+              <Link href={child.href} onClick={onNavigate}>
+                <span>{child.label}</span>
+              </Link>
+            </SidebarMenuSubButton>
+          </SidebarMenuSubItem>
+        ),
+      )}
+    </>
+  );
+}
+
 function SidebarNavGroupItem({
   group,
   pathname,
@@ -76,9 +169,9 @@ function SidebarNavGroupItem({
   const groupActive = isSidebarGroupActive(pathname, group, siblingHrefs);
   const [open, setOpen] = useState(groupActive);
   const Icon = group.icon;
-  const childHrefs = group.children.map((c) => c.href);
+  const childHrefs = sidebarChildHrefs(group.children);
   const showOverview =
-    Boolean(group.href) && !group.children.some((child) => child.href === group.href);
+    Boolean(group.href) && !group.children.some((child) => !isSidebarChildGroup(child) && child.href === group.href);
 
   useEffect(() => {
     if (groupActive) setOpen(true);
@@ -107,19 +200,39 @@ function SidebarNavGroupItem({
                 </Link>
               </DropdownMenuItem>
             ) : null}
-            {group.children.map((child) => (
-              <DropdownMenuItem key={child.href} asChild>
-                <Link
-                  href={child.href}
-                  onClick={onNavigate}
-                  className={
-                    isSidebarPathActive(pathname, child.href, childHrefs) ? 'bg-accent' : undefined
-                  }
-                >
-                  {child.label}
-                </Link>
-              </DropdownMenuItem>
-            ))}
+            {group.children.map((child, index) =>
+              isSidebarChildGroup(child) ? (
+                <div key={child.id}>
+                  {index > 0 ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuLabel>{child.label}</DropdownMenuLabel>
+                  {child.children.map((link) => (
+                    <DropdownMenuItem key={link.href} asChild>
+                      <Link
+                        href={link.href}
+                        onClick={onNavigate}
+                        className={
+                          isSidebarPathActive(pathname, link.href, childHrefs) ? 'bg-accent' : undefined
+                        }
+                      >
+                        {link.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </div>
+              ) : (
+                <DropdownMenuItem key={child.href} asChild>
+                  <Link
+                    href={child.href}
+                    onClick={onNavigate}
+                    className={
+                      isSidebarPathActive(pathname, child.href, childHrefs) ? 'bg-accent' : undefined
+                    }
+                  >
+                    {child.label}
+                  </Link>
+                </DropdownMenuItem>
+              ),
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
@@ -150,18 +263,12 @@ function SidebarNavGroupItem({
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ) : null}
-            {group.children.map((child) => (
-              <SidebarMenuSubItem key={child.href}>
-                <SidebarMenuSubButton
-                  asChild
-                  isActive={isSidebarPathActive(pathname, child.href, childHrefs)}
-                >
-                  <Link href={child.href} onClick={onNavigate}>
-                    <span>{child.label}</span>
-                  </Link>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
+            <SidebarChildItems
+              items={group.children}
+              pathname={pathname}
+              onNavigate={onNavigate}
+              siblingHrefs={childHrefs}
+            />
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>

@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 
-import { daysInMonth } from '@/lib/hr/payroll/calendar';
+import { daysInMonth, sumMoney } from '@/lib/hr/payroll/calendar';
+import { payrollFineLineLabel, sumPayrollFineAmount } from '@/lib/hr/payroll/payrollFineDeduction';
 import { formatPayMoney } from '@/lib/hr/payroll/payslipFormatting';
 import { isPayPreviewPendingCompensationRow, shouldOmitInactiveEmployeeFromPayExport } from '@/lib/hr/payroll/payPreviewRowStatus';
 import {
@@ -64,6 +65,8 @@ export type PayPreviewExportEmployee = {
   breakdown: Record<string, number>;
   salaryComponentEarnings?: number;
   salaryComponentDeductions?: number;
+  rejectedSickLeaveFine?: { days: number; amount: number } | null;
+  payrollFines?: { id: string; description: string; amount: number }[];
   dayDetails?: PayPreviewExportDayDetail[];
   healthCheck?: {
     ok: boolean;
@@ -104,6 +107,7 @@ const BREAKDOWN_LABELS: Record<string, string> = {
   outsideCapOt: 'Outside-cap OT',
   holidayWorkedOt: 'Holiday worked OT',
   excludedWeekdayOt: 'Weekly off OT',
+  annualLeaveNotAdded: 'Annual leave not added',
 };
 
 const MONEY_SUMMARY_COLUMNS = new Set<PayPreviewSummaryColumnKey>([
@@ -656,7 +660,22 @@ function buildEmployeeDetailSheet(
     rows.push(['Date', ...dayColumns.map((key) => DAY_COLUMN_LABELS[key])]);
     hints.push({ kind: 'tableHeader', cols: dayColumns.length + 1 });
 
-    if (dayRows.length === 0) {
+    const sickFine = row.rejectedSickLeaveFine;
+    const sickAmount = sickFine && sickFine.amount > 0 ? sickFine.amount : 0;
+    const payrollFineRows = (row.payrollFines ?? []).filter((fine) => fine.amount > 0);
+    const extraAmount = sumMoney([sickAmount, sumPayrollFineAmount(payrollFineRows)]);
+    const dayTotalAfterFine = dayTotals.totalSalary - extraAmount;
+    const sheetDayTotals =
+      extraAmount > 0
+        ? {
+            ...dayTotals,
+            deductions: dayTotals.deductions + extraAmount,
+            totalSalary:
+              Math.abs(dayTotalAfterFine - row.gross) < 1 ? row.gross : dayTotalAfterFine,
+          }
+        : dayTotals;
+
+    if (dayRows.length === 0 && extraAmount <= 0) {
       rows.push(['No saved attendance rows for this month.']);
       hints.push({ kind: 'note' });
     } else {
@@ -669,13 +688,48 @@ function buildEmployeeDetailSheet(
           numberCols: dayNumberCols,
         });
       }
-      rows.push(['Day totals', ...dayColumns.map((column) => dayTotalValue(column, dayTotals))]);
+      if (sickAmount > 0 && sickFine) {
+        const label = `Sick leave fine (${sickFine.days} ${sickFine.days === 1 ? 'day' : 'days'})`;
+        rows.push([
+          label,
+          ...dayColumns.map((column) => {
+            if (column === 'deduction') return sickAmount;
+            if (column === 'total') return -sickAmount;
+            if (column === 'status') return 'Deduction';
+            return null;
+          }),
+        ]);
+        hints.push({
+          kind: 'data',
+          cols: dayColumns.length + 1,
+          variant: 'normal',
+          numberCols: dayNumberCols,
+        });
+      }
+      for (const fine of payrollFineRows) {
+        rows.push([
+          payrollFineLineLabel(fine.description),
+          ...dayColumns.map((column) => {
+            if (column === 'deduction') return fine.amount;
+            if (column === 'total') return -fine.amount;
+            if (column === 'status') return 'Deduction';
+            return null;
+          }),
+        ]);
+        hints.push({
+          kind: 'data',
+          cols: dayColumns.length + 1,
+          variant: 'normal',
+          numberCols: dayNumberCols,
+        });
+      }
+      rows.push(['Day totals', ...dayColumns.map((column) => dayTotalValue(column, sheetDayTotals))]);
       hints.push({
         kind: 'totals',
         cols: dayColumns.length + 1,
         numberCols: dayNumberCols,
       });
-      if (summary.allowance > dayTotals.earnings || summary.deduction > dayTotals.deductions) {
+      if (summary.allowance > sheetDayTotals.earnings || summary.deduction > sheetDayTotals.deductions + 0.001) {
         rows.push([
           `Month allowance (${formatPayMoney(summary.allowance)}) and deduction (${formatPayMoney(summary.deduction)}) include fixed monthly salary components not listed per day.`,
         ]);

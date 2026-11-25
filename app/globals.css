@@ -717,6 +717,7 @@ html.quotation-editing body,
 html.quotation-editing .quotation-picture {
   -webkit-user-select: none !important;
   user-select: none !important;
+  cursor: pointer;
 }
 
 html.quotation-editing .quotation-picture[data-layout='behind'],
@@ -726,10 +727,36 @@ html.quotation-editing .quotation-picture[data-anchor='page'] {
   touch-action: none;
 }
 
+.quotation-section {
+  background-color: transparent;
+}
+
 .quotation-section-hot {
-  outline: 2px solid #7eb4ea;
-  outline-offset: 3px;
-  background: rgba(204, 228, 247, 0.55);
+  background-color: rgba(204, 228, 247, 0.55);
+}
+
+.quotation-section.quotation-section-hot {
+  z-index: 1;
+  background-color: transparent;
+}
+
+.quotation-section.quotation-section-hot::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -3mm;
+  pointer-events: none;
+  animation: quotation-section-flash 2s ease-in-out forwards;
+}
+
+[data-quotation-frame]:has(.quotation-section-hot) {
+  overflow: visible;
+}
+
+@keyframes quotation-section-flash {
+  0% { background-color: transparent; }
+  50% { background-color: rgba(204, 228, 247, 0.55); }
+  100% { background-color: transparent; }
 }
 
 html.quotation-editing .quotation-section {
@@ -829,14 +856,24 @@ html.quotation-editing .quotation-section button.quotation-section-grip {
   border-color: #bfbfbf !important;
 }
 
+.quotation-capturing .quotation-pages,
+.quotation-capturing .quotation-sheet {
+  overflow: visible !important;
+}
+
 .quotation-capturing .quotation-edit-only,
 .quotation-capturing .quotation-bubble {
   display: none !important;
 }
 
-.quotation-capturing .quotation-section-hot {
+.quotation-capturing .quotation-section,
+.quotation-capturing .quotation-section-hot,
+.quotation-capturing .quotation-section.quotation-section-hot::after {
   outline: none;
   background: transparent;
+  transition: none;
+  animation: none;
+  content: none;
 }
 
 .quotation-capturing .quotation-draft-box {
@@ -850,13 +887,19 @@ html.quotation-editing .quotation-section button.quotation-section-grip {
     display: none !important;
   }
 
-  .quotation-section-hot {
+  .quotation-section,
+  .quotation-section-hot,
+  .quotation-section.quotation-section-hot::after {
     outline: none;
     background: transparent;
+    transition: none;
+    animation: none;
+    content: none;
   }
 
   .quotation-pages {
     gap: 0 !important;
+    overflow: visible !important;
   }
 
   .quotation-page {

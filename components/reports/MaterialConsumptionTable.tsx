@@ -37,7 +37,7 @@ export default function MaterialConsumptionTable({
           {report.totals.materialCount === 1 ? '' : 's'} with net consumption in {report.dateRangeLabel}. Net cost{' '}
           <span className="font-medium tabular-nums text-foreground">{formatMoney(report.totals.netCost)}</span>.
         </p>
-        <Button type="button" variant="outline" size="sm" onClick={onDownload} disabled={downloading}>
+        <Button type="button" variant="outline" size="sm" onClick={onDownload} loading={downloading} disabled={downloading}>
           {downloading ? 'Preparing…' : 'Download Excel'}
         </Button>
       </div>

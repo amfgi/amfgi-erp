@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/shadcn/select';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
 import { TableSkeleton } from '@/components/ui/skeleton/TableSkeleton';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { cn } from '@/lib/utils';
 import {
   canCreateSuppliers,
@@ -251,6 +252,7 @@ export default function SuppliersPage() {
   const canCreateLocalSupplier = canCreate && supplierSourceMode !== 'EXTERNAL_ONLY';
 
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const supplierExport = useSingleFlight();
   const [fetchSuppliersForExport] = useLazyGetSuppliersForExportQuery();
   const [deleteModal, setDeleteModal] = useState<{
     open: boolean;
@@ -372,6 +374,7 @@ export default function SuppliersPage() {
         if (index < options.length - 1) item.push({ divider: true });
         return item;
       }),
+      canEdit ? `/suppliers/${supplier.id}/edit` : undefined,
     );
   };
 
@@ -426,7 +429,13 @@ export default function SuppliersPage() {
           </div>
 
           <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={handleExport}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              loading={supplierExport.pending}
+              onClick={() => void supplierExport.run(handleExport)}
+            >
               Export
             </Button>
             {canImport ? (
@@ -620,6 +629,7 @@ export default function SuppliersPage() {
               type="button"
               variant="secondary"
               size="sm"
+              data-nav-href={`/suppliers/${detailsSupplier.id}/edit`}
               onClick={() => {
                 router.push(`/suppliers/${detailsSupplier.id}/edit`);
                 setDetailsSupplierId(null);

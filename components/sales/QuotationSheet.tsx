@@ -7,6 +7,7 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  Calendar,
   ChevronDown,
   GripHorizontal,
   Highlighter,
@@ -27,6 +28,7 @@ import {
   PictureChrome,
   clipboardImage,
   findPicture,
+  pictureFromPointer,
   pictureIsPositioned,
   pictureMarkup,
   pictureSource,
@@ -35,6 +37,7 @@ import {
   type PictureAnchor,
   type PictureLayout,
 } from '@/components/sales/quotationPicture';
+import { cleanPastedHtml, pastedPlainTextHtml } from '@/lib/sales/cleanPastedHtml';
 import Modal from '@/components/ui/Modal';
 import Spinner from '@/components/ui/Spinner';
 import { Button } from '@/components/ui/shadcn/button';
@@ -74,6 +77,7 @@ import {
   MIN_SECTION_GAP_MM,
   optionBlocks,
   optionTotal,
+  sameRichText,
   padImageUrl,
   placeBlock,
   plainText,
@@ -445,10 +449,11 @@ function SavedPresetPicker({
       <button
         type="button"
         onClick={onToggle}
-        className={`w-full cursor-pointer rounded-md border px-3 py-2 text-left ${used ? 'quotation-section-used' : 'border-border bg-background hover:bg-muted/50'}`}
+        data-on-page={used ? 'true' : undefined}
+        className="w-full cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
       >
-        <span className="block text-sm font-medium">{used ? label : `+ ${label}`}</span>
-        <span className="block text-[11px] text-muted-foreground">{used ? 'On the page' : hint}</span>
+        <span className="block text-sm font-medium">+ {label}</span>
+        <span className="block text-[11px] text-muted-foreground">{hint}</span>
       </button>
       {open ? (
         <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-background py-1 shadow-lg">
@@ -496,10 +501,66 @@ function displayDate(value: string) {
   return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
+function DocumentDateField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(() => displayDate(value));
+  useEffect(() => {
+    setText(displayDate(value));
+  }, [value]);
+
+  function commit(next: string) {
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(next.trim());
+    if (!match) return false;
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const parsed = new Date(year, month - 1, day);
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return false;
+    const iso = `${match[3]}-${match[2]}-${match[1]}`;
+    if (iso !== value) onChange(iso);
+    setText(`${match[1]}/${match[2]}/${match[3]}`);
+    return true;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        aria-label="Date"
+        value={text}
+        placeholder="dd/mm/yyyy"
+        inputMode="numeric"
+        onChange={(event) => setText(event.target.value)}
+        onBlur={() => {
+          if (!commit(text)) setText(displayDate(value));
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          if (!commit(text)) setText(displayDate(value));
+        }}
+        className="w-[24mm] bg-transparent outline-none"
+      />
+      <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
+        <Calendar className="pointer-events-none size-3.5" aria-hidden />
+        <input
+          type="date"
+          aria-label="Choose date"
+          title="Choose date"
+          value={/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''}
+          onChange={(event) => {
+            if (event.target.value) onChange(event.target.value);
+          }}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </span>
+    </span>
+  );
+}
+
 function normalizedHtml(value: string) {
   const trimmed = value.trim();
   if (trimmed === '' || trimmed === '<br>' || trimmed === '<div><br></div>') return '';
-  return trimmed;
+  // Chrome serializes <img /> as <img>. That difference is not an edit.
+  return trimmed.replace(/<img\b([^>]*?)\s*\/>/gi, '<img$1>');
 }
 
 function caretOffset(root: HTMLElement) {
@@ -522,7 +583,7 @@ function selectionInside(root: HTMLElement) {
   return !!range.startContainer && root.contains(range.startContainer) && !!range.endContainer && root.contains(range.endContainer);
 }
 
-/** True only when Backspace or Delete would leave this field. A failed measurement is not the start. */
+/** True only when Backspace or Delete would leave this field. A line break still belongs to this field. */
 function caretAtEdge(root: HTMLElement, edge: 'start' | 'end') {
   const selection = window.getSelection();
   if (!selection?.rangeCount || !selection.isCollapsed) return false;
@@ -534,7 +595,7 @@ function caretAtEdge(root: HTMLElement, edge: 'start' | 'end') {
     if (edge === 'start') probe.setEnd(range.startContainer, range.startOffset);
     else probe.setStart(range.endContainer, range.endOffset);
     if (probe.toString().replace(/\u200b/g, '').length > 0) return false;
-    return probe.cloneContents().querySelector('img, table, svg') == null;
+    return probe.cloneContents().querySelector('img, table, svg, br') == null;
   } catch {
     return false;
   }
@@ -576,25 +637,51 @@ function lineAtCaretStart(root: HTMLElement, range: Range) {
   return line;
 }
 
+function isBreakChar(value: string | undefined) {
+  return value === '\n' || value === '\r';
+}
+
+/** The line-break character immediately before the caret, if Backspace should remove a line. */
 function breakBeforeCaret(range: Range) {
   const container = range.startContainer;
-  if (container instanceof Text && range.startOffset > 0) {
-    const prev = container.data[range.startOffset - 1];
-    if (prev === '\n' || prev === '\r') return container;
+  if (container instanceof Text && range.startOffset > 0 && isBreakChar(container.data[range.startOffset - 1])) return container;
+  let previous: Node | null = null;
+  if (container instanceof Text && range.startOffset === 0) previous = container.previousSibling;
+  else if (container instanceof Element) previous = container.childNodes[range.startOffset - 1] ?? null;
+  if (!previous) {
+    const element = container instanceof Element ? container : container.parentElement;
+    if (element && range.startOffset === 0) previous = element.previousSibling;
   }
-  if (container instanceof Text && range.startOffset === 0) {
-    const previous = container.previousSibling;
-    if (previous instanceof HTMLBRElement) return previous;
-    if (previous instanceof Text && (previous.data.endsWith('\n') || previous.data.endsWith('\r'))) return previous;
-  }
-  if (container instanceof Element) {
-    const previous = container.childNodes[range.startOffset - 1];
-    if (previous instanceof HTMLBRElement) return previous;
-    if (previous instanceof Text && (previous.data.endsWith('\n') || previous.data.endsWith('\r'))) return previous;
-  }
-  const element = container instanceof Element ? container : container.parentElement;
-  if (element?.previousSibling instanceof HTMLBRElement && range.startOffset === 0) return element.previousSibling;
+  if (previous instanceof HTMLBRElement) return previous;
+  if (previous instanceof Text && isBreakChar(previous.data.at(-1))) return previous;
   return null;
+}
+
+/** Breaks after the caret with nothing else after them. Enter leaves two of these so the empty line shows. */
+function trailingBreaks(range: Range) {
+  const nodes: Array<Text | HTMLBRElement> = [];
+  let container: Node = range.startContainer;
+  let offset = range.startOffset;
+  if (container instanceof Text && offset < container.length) {
+    if (![...container.data.slice(offset)].every(isBreakChar)) return [];
+    nodes.push(container);
+    container = container.parentNode ?? container;
+    offset = [...(container.childNodes ?? [])].indexOf(range.startContainer) + 1;
+  }
+  if (!(container instanceof Element) && container.parentNode) {
+    offset = [...container.parentNode.childNodes].indexOf(container) + 1;
+    container = container.parentNode;
+  }
+  if (!(container instanceof Element)) return nodes;
+  for (let index = offset; index < container.childNodes.length; index += 1) {
+    const child = container.childNodes[index];
+    if (child instanceof HTMLBRElement || (child instanceof Text && [...child.data].every(isBreakChar) && child.data.length > 0)) {
+      nodes.push(child);
+      continue;
+    }
+    return [];
+  }
+  return nodes;
 }
 
 function removeLineBreak(root: HTMLElement, line: HTMLElement) {
@@ -629,6 +716,42 @@ function removeLineBreak(root: HTMLElement, line: HTMLElement) {
   return false;
 }
 
+function trailingBreakChars(nodes: Array<Text | HTMLBRElement>) {
+  return nodes.reduce((total, node) => total + (node instanceof HTMLBRElement ? 1 : node.data.length), 0);
+}
+
+function removeBreakNodes(nodes: Array<Text | HTMLBRElement>, range: Range) {
+  for (const node of nodes) {
+    if (!(node instanceof Text)) {
+      node.remove();
+      continue;
+    }
+    if (node === range.startContainer && range.startOffset > 0 && range.startOffset < node.length) node.deleteData(range.startOffset, node.length - range.startOffset);
+    else node.remove();
+  }
+}
+
+function placeCaretAfterBreak(root: HTMLElement) {
+  const selection = window.getSelection();
+  if (selection?.rangeCount && selection.anchorNode && root.contains(selection.anchorNode)) return;
+  const range = window.document.createRange();
+  range.selectNodeContents(root);
+  range.collapse(false);
+  placeRange(range);
+}
+
+/** One leftover newline does not show a line, but the next Backspace would skip it and delete a letter. */
+function removePlaceholderBreak(root: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !selection.isCollapsed) return;
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer)) return;
+  const leftover = trailingBreaks(range);
+  if (trailingBreakChars(leftover) !== 1) return;
+  removeBreakNodes(leftover, range);
+  placeCaretAfterBreak(root);
+}
+
 /** Removes the Enter line first, then one character. selection.modify skips line breaks and eats the letter instead. */
 function removeBackward(root: HTMLElement, word: boolean) {
   const selection = window.getSelection();
@@ -644,19 +767,27 @@ function removeBackward(root: HTMLElement, word: boolean) {
     emitFieldInput(root, 'backward');
     return;
   }
+  const trailing = trailingBreaks(range);
   const breakNode = breakBeforeCaret(range);
+  if (!breakNode && trailing.length > 0 && trailingBreakChars(trailing) >= 2) {
+    removeBreakNodes(trailing, range);
+    placeCaretAfterBreak(root);
+    emitFieldInput(root, 'backward');
+    return;
+  }
   if (breakNode instanceof HTMLBRElement) {
     const parent = breakNode.parentNode;
     if (!parent) return;
     const index = [...parent.childNodes].indexOf(breakNode);
     breakNode.remove();
     collapseIn(parent, Math.max(0, index));
+    removePlaceholderBreak(root);
     emitFieldInput(root, 'backward');
     return;
   }
   if (breakNode instanceof Text) {
     const offset = range.startContainer === breakNode ? range.startOffset : breakNode.length;
-    if (offset > 0) {
+    if (offset > 0 && isBreakChar(breakNode.data[offset - 1])) {
       breakNode.deleteData(offset - 1, 1);
       if (breakNode.data.length === 0) {
         const parent = breakNode.parentNode;
@@ -664,6 +795,7 @@ function removeBackward(root: HTMLElement, word: boolean) {
         breakNode.remove();
         if (parent) collapseIn(parent, Math.max(0, index));
       } else collapseIn(breakNode, offset - 1);
+      removePlaceholderBreak(root);
       emitFieldInput(root, 'backward');
     }
     return;
@@ -839,7 +971,7 @@ function RichText({
     paintFontSize(node, null, '11', true);
     const cleaned = node.innerHTML;
     emitted.current = cleaned;
-    if (normalizedHtml(cleaned) !== normalizedHtml(next)) onChange?.(cleaned);
+    if (!sameRichText(cleaned, next)) onChange?.(cleaned);
     if (focused) {
       node.focus();
       placeCaret(node, caret.current ?? node.textContent?.length ?? 0);
@@ -850,6 +982,60 @@ function RichText({
     const node = ref.current;
     if (!node) return;
     caret.current = caretOffset(node);
+  }
+
+  function commitField() {
+    const field = ref.current;
+    if (!field) return;
+    paintFontSize(field, null, '11', true);
+    const html = field.innerHTML;
+    emitted.current = html;
+    rememberCaret();
+    onChange?.(html);
+  }
+
+  function insertPastedHtml(html: string) {
+    const field = ref.current;
+    if (!field) return;
+    field.focus();
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && !field.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      const range = window.document.createRange();
+      range.selectNodeContents(field);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    const before = field.innerHTML;
+    let inserted = false;
+    try {
+      inserted = window.document.execCommand('insertHTML', false, html);
+    } catch {
+      inserted = false;
+    }
+    if (!inserted && selection?.rangeCount) {
+      const range = selection.getRangeAt(0);
+      if (field.contains(range.commonAncestorContainer)) {
+        range.deleteContents();
+        const holder = window.document.createElement('div');
+        holder.innerHTML = html;
+        const fragment = window.document.createDocumentFragment();
+        let last: ChildNode | null = null;
+        while (holder.firstChild) {
+          last = holder.firstChild;
+          fragment.appendChild(last);
+        }
+        range.insertNode(fragment);
+        if (last) {
+          range.setStartAfter(last);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+    }
+    if (field.innerHTML === before) return;
+    commitField();
   }
 
   return (
@@ -863,6 +1049,19 @@ function RichText({
       style={style}
       className={`quotation-rich min-h-[1.25rem] outline-none ${allowTable ? '' : 'whitespace-pre-wrap'} ${readOnly ? '' : 'rounded-sm focus:bg-sky-50/80 focus:outline focus:outline-1 focus:outline-sky-400'} ${className ?? ''}`}
       onFocus={(event) => onFocusField?.(event.currentTarget)}
+      onPaste={(event) => {
+        if (readOnly) return;
+        const data = event.clipboardData;
+        if (!data || clipboardImage(data)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const html = data.getData('text/html');
+        const plain = data.getData('text/plain');
+        let next = html ? cleanPastedHtml(html, allowTable) : '';
+        if (!plainText(next)) next = pastedPlainTextHtml(plain);
+        if (!next) return;
+        insertPastedHtml(next);
+      }}
       onBeforeInput={(event) => {
         const inputType = event.nativeEvent.inputType;
         if (inputType === 'historyUndo' || inputType === 'historyRedo') event.preventDefault();
@@ -913,6 +1112,8 @@ function RichText({
         if (!heightRow && !edges?.right) return;
         const table = (heightRow ?? inCell)?.closest('table');
         if (!(table instanceof HTMLTableElement)) return;
+        const activeField = field;
+        const activeTable = table;
         event.preventDefault();
         event.stopPropagation();
         resizingCell.current = true;
@@ -951,14 +1152,14 @@ function RichText({
           }
           if (resizeTable) {
             const next = Math.min(fieldWidth, Math.max(fieldWidth * 0.25, startTable + (moveEvent.clientX - startX)));
-            table.style.width = `${Math.round((next / fieldWidth) * 1000) / 10}%`;
+            activeTable.style.width = `${Math.round((next / fieldWidth) * 1000) / 10}%`;
           }
         }
         function up() {
           window.removeEventListener('pointermove', move);
           window.removeEventListener('pointerup', up);
           resizingCell.current = false;
-          field.style.cursor = '';
+          activeField.style.cursor = '';
           const html = ref.current?.innerHTML ?? '';
           emitted.current = html;
           onChange?.(html);
@@ -1000,7 +1201,7 @@ function ToolButton({
       title={label}
       aria-pressed={pressed}
       disabled={disabled}
-      className="inline-flex h-8 min-w-8 items-center justify-center rounded border px-1 disabled:cursor-default disabled:opacity-40"
+      className="inline-flex h-7 min-w-7 items-center justify-center rounded border px-0.5 disabled:cursor-default disabled:opacity-40"
       onMouseDown={preventToolbarMouseDown}
       onClick={onClick}
     >
@@ -1039,7 +1240,7 @@ function SwatchMenu({
         type="button"
         aria-label={label}
         title={label}
-        className="inline-flex h-8 w-8 flex-col items-center justify-center rounded-l border px-1"
+        className="inline-flex h-7 w-7 flex-col items-center justify-center rounded-l border px-0.5"
         onMouseDown={preventToolbarMouseDown}
         onClick={() => onPick(current)}
       >
@@ -1050,7 +1251,7 @@ function SwatchMenu({
         type="button"
         aria-label={`${label} colors`}
         title={`${label} colors`}
-        className="inline-flex h-8 w-4 items-center justify-center rounded-r border border-l-0"
+        className="inline-flex h-7 w-3.5 items-center justify-center rounded-r border border-l-0"
         onMouseDown={preventToolbarMouseDown}
         onClick={onToggle}
       >
@@ -1107,7 +1308,7 @@ function TableMenu({ disabled, onInsert }: { disabled: boolean; onInsert: (rows:
   return (
     <span ref={rootRef} className="relative">
       <ToolButton label={disabled ? 'Click in the description, then insert a table' : 'Insert table'} onClick={() => { if (!disabled) setOpen((current) => !current); }}>
-        <Table2 className={`size-4 ${disabled ? 'opacity-40' : ''}`} />
+        <Table2 className={`size-3.5 ${disabled ? 'opacity-40' : ''}`} />
       </ToolButton>
       {open ? (
         <div className="absolute left-0 top-full z-50 mt-1 rounded border border-[#d4d4d4] bg-white p-2 shadow-lg" onMouseDown={preventToolbarMouseDown}>
@@ -1177,7 +1378,7 @@ function LineSpacingMenu({
         aria-label="Line spacing"
         title="Line spacing"
         aria-pressed={open}
-        className="inline-flex h-8 items-center gap-0.5 rounded border px-1.5 text-xs tabular-nums"
+        className="inline-flex h-7 items-center gap-0.5 rounded border px-1 text-[11px] tabular-nums"
         onMouseDown={preventToolbarMouseDown}
         onClick={() => setOpen((current) => !current)}
       >
@@ -1275,12 +1476,12 @@ function FormatControls({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="flex flex-wrap items-center gap-1">
+    <div ref={rootRef} className="flex flex-wrap items-center gap-0.5">
       {variant === 'full' ? (
         <>
-          <ToolButton label="Undo" disabled={!canUndo} onClick={() => onFormat('undo')}><Undo2 className="size-4" /></ToolButton>
-          <ToolButton label="Redo" disabled={!canRedo} onClick={() => onFormat('redo')}><Redo2 className="size-4" /></ToolButton>
-          <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
+          <ToolButton label="Undo" disabled={!canUndo} onClick={() => onFormat('undo')}><Undo2 className="size-3.5" /></ToolButton>
+          <ToolButton label="Redo" disabled={!canRedo} onClick={() => onFormat('redo')}><Redo2 className="size-3.5" /></ToolButton>
+          <span className="mx-0.5 h-4 w-px bg-[#d4d4d4]" />
         </>
       ) : null}
       <select
@@ -1289,20 +1490,20 @@ function FormatControls({
         value={marks.heading}
         onMouseDown={onPrepare}
         onChange={(event) => onFormat('heading', event.target.value)}
-        className="h-8 max-w-[8.5rem] rounded border px-1 text-sm"
+        className="h-7 max-w-[6.75rem] rounded border px-1 text-xs"
       >
         {(Object.keys(HEADING_STYLES) as HeadingLevel[]).map((level) => (
           <option key={level} value={level}>{HEADING_STYLES[level].label}</option>
         ))}
       </select>
-      <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
+      <span className="mx-0.5 h-4 w-px bg-[#d4d4d4]" />
       <select
         aria-label="Font"
         title="Font"
         value={marks.fontFamily}
         onMouseDown={onPrepare}
         onChange={(event) => onFormat('fontName', event.target.value)}
-        className="h-8 max-w-[9.5rem] rounded border px-1 text-sm"
+        className="h-7 w-[8.25rem] rounded border px-1 text-xs"
         style={{ fontFamily: marks.fontFamily }}
       >
         {FONTS.map((family) => (
@@ -1315,17 +1516,17 @@ function FormatControls({
         value={marks.fontSize}
         onMouseDown={onPrepare}
         onChange={(event) => onFormat('fontSize', event.target.value)}
-        className="h-8 w-14 rounded border px-1 text-sm"
+        className="h-7 w-12 rounded border px-0.5 text-xs"
       >
         {SIZES.map((size) => (
           <option key={size} value={size}>{size}</option>
         ))}
       </select>
       <LineSpacingMenu value={marks.lineHeight} onPrepare={onPrepare} onApply={(spacing) => onFormat('lineHeight', spacing)} />
-      <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
-      <ToolButton label="Bold" pressed={marks.bold} onClick={() => onFormat('bold')}><Bold className="size-4" /></ToolButton>
-      <ToolButton label="Italic" pressed={marks.italic} onClick={() => onFormat('italic')}><Italic className="size-4" /></ToolButton>
-      <ToolButton label="Underline" pressed={marks.underline} onClick={() => onFormat('underline')}><Underline className="size-4" /></ToolButton>
+      <span className="mx-0.5 h-4 w-px bg-[#d4d4d4]" />
+      <ToolButton label="Bold" pressed={marks.bold} onClick={() => onFormat('bold')}><Bold className="size-3.5" /></ToolButton>
+      <ToolButton label="Italic" pressed={marks.italic} onClick={() => onFormat('italic')}><Italic className="size-3.5" /></ToolButton>
+      <ToolButton label="Underline" pressed={marks.underline} onClick={() => onFormat('underline')}><Underline className="size-3.5" /></ToolButton>
       <SwatchMenu
         label="Font color"
         open={open === 'color'}
@@ -1334,7 +1535,7 @@ function FormatControls({
         colors={TEXT_COLORS}
         current={fontColor}
         automatic="#111111"
-        icon={<span className="text-sm font-semibold leading-none">A</span>}
+        icon={<span className="text-xs font-semibold leading-none">A</span>}
         onPick={(color) => onFormat('foreColor', color)}
       />
       <SwatchMenu
@@ -1345,17 +1546,17 @@ function FormatControls({
         colors={HIGHLIGHTS}
         current={highlight}
         none
-        icon={<Highlighter className="size-3.5" />}
+        icon={<Highlighter className="size-3" />}
         onPick={(color) => onFormat('hiliteColor', color)}
       />
       {variant === 'full' ? (
         <>
-          <span className="mx-0.5 h-6 w-px bg-[#d4d4d4]" />
-          <ToolButton label="Align left" pressed={marks.align === 'left'} onClick={() => onFormat('justifyLeft')}><AlignLeft className="size-4" /></ToolButton>
-          <ToolButton label="Align center" pressed={marks.align === 'center'} onClick={() => onFormat('justifyCenter')}><AlignCenter className="size-4" /></ToolButton>
-          <ToolButton label="Align right" pressed={marks.align === 'right'} onClick={() => onFormat('justifyRight')}><AlignRight className="size-4" /></ToolButton>
-          <ToolButton label="Bullets" onClick={() => onFormat('insertUnorderedList')}><List className="size-4" /></ToolButton>
-          <ToolButton label="Numbering" onClick={() => onFormat('insertOrderedList')}><ListOrdered className="size-4" /></ToolButton>
+          <span className="mx-0.5 h-4 w-px bg-[#d4d4d4]" />
+          <ToolButton label="Align left" pressed={marks.align === 'left'} onClick={() => onFormat('justifyLeft')}><AlignLeft className="size-3.5" /></ToolButton>
+          <ToolButton label="Align center" pressed={marks.align === 'center'} onClick={() => onFormat('justifyCenter')}><AlignCenter className="size-3.5" /></ToolButton>
+          <ToolButton label="Align right" pressed={marks.align === 'right'} onClick={() => onFormat('justifyRight')}><AlignRight className="size-3.5" /></ToolButton>
+          <ToolButton label="Bullets" onClick={() => onFormat('insertUnorderedList')}><List className="size-3.5" /></ToolButton>
+          <ToolButton label="Numbering" onClick={() => onFormat('insertOrderedList')}><ListOrdered className="size-3.5" /></ToolButton>
           {onInsertTable ? <TableMenu disabled={!tableReady} onInsert={onInsertTable} /> : null}
           {onInsertPicture ? (
             <>
@@ -1364,15 +1565,14 @@ function FormatControls({
                 aria-label="Insert picture"
                 title={pictureReady ? 'Insert picture' : 'Click in the text, then insert a picture'}
                 disabled={!pictureReady}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded border px-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-7 min-w-7 items-center justify-center rounded border px-0.5 disabled:cursor-not-allowed disabled:opacity-40"
                 onMouseDown={(event) => {
                   onPrepare();
                   event.preventDefault();
                 }}
                 onClick={() => pictureInputRef.current?.click()}
               >
-                <ImagePlus className="size-4" />
-                Picture
+                <ImagePlus className="size-3.5" />
               </button>
               <input
                 ref={pictureInputRef}
@@ -1436,13 +1636,13 @@ export function QuotationSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const richField = useRef<HTMLElement | null>(null);
   const savedRange = useRef<Range | null>(null);
-  const [bubble, setBubble] = useState<{ top: number; left: number } | null>(null);
   const [marks, setMarks] = useState<FormatMarks>(DEFAULT_MARKS);
   const [highlight, setHighlight] = useState('#ffff00');
   const [fontColor, setFontColor] = useState('#c00000');
   const [tableReady, setTableReady] = useState(false);
   const [pictureReady, setPictureReady] = useState(false);
   const [pictureId, setPictureId] = useState<string | null>(null);
+  const pictureNode = useRef<HTMLImageElement | null>(null);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [pictureMore, setPictureMore] = useState(false);
   const [pictureBox, setPictureBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
@@ -1460,9 +1660,12 @@ export function QuotationSheet({
     parentSectionId: string;
   }>(null);
   const [duplicatePrompt, setDuplicatePrompt] = useState<null | { sectionId: string; versionId?: string }>(null);
-  const [promptTop, setPromptTop] = useState(0);
+  const pendingReveal = useRef<string | null>(null);
   const [highlightBlockId, setHighlightBlockId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [flashSectionId, setFlashSectionId] = useState<string | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const flashToken = useRef(0);
   const [dropTarget, setDropTarget] = useState<{ beforeId: string | null } | null>(null);
   const [pendingRemoveSection, setPendingRemoveSection] = useState<{ id: string; name: string } | null>(null);
   const sectionListRef = useRef<HTMLDivElement>(null);
@@ -1752,6 +1955,33 @@ export function QuotationSheet({
       }
     };
   }, [readOnly]);
+
+  useEffect(() => () => {
+    if (flashTimer.current) window.clearTimeout(flashTimer.current);
+  }, []);
+
+  function jumpToSection(id: string, afterRender = false) {
+    setSelectedSectionId(id);
+    const token = ++flashToken.current;
+    if (flashTimer.current) window.clearTimeout(flashTimer.current);
+    setFlashSectionId(null);
+    window.requestAnimationFrame(() => {
+      if (flashToken.current !== token) return;
+      setFlashSectionId(id);
+      flashTimer.current = window.setTimeout(() => {
+        if (flashToken.current !== token) return;
+        flashTimer.current = null;
+        setFlashSectionId(null);
+      }, 2000);
+    });
+    if (afterRender) {
+      pendingReveal.current = id;
+      return;
+    }
+    pendingReveal.current = null;
+    window.document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   const pages = pagesMatchBlocks(pagesOfIds, blockIds) && pagesOfIds ? pagesOfIds : fallbackPages(blockIds);
 
   useEffect(() => {
@@ -1759,7 +1989,6 @@ export function QuotationSheet({
       const selection = window.getSelection();
       const pad = sheetRef.current;
       if (!selection?.rangeCount || !pad) {
-        setBubble(null);
         setPictureReady(false);
         return;
       }
@@ -1767,27 +1996,17 @@ export function QuotationSheet({
       const element = node instanceof Element ? node : node?.parentElement ?? null;
       const editable = element?.closest('[contenteditable="true"]');
       if (!node || !pad.contains(node) || !(editable instanceof HTMLElement) || !pad.contains(editable)) {
-        setBubble(null);
         setTableReady(false);
         setPictureReady(false);
         return;
       }
+      if (editable.closest('[data-slice-mirror]')) return;
       savedRange.current = selection.getRangeAt(0).cloneRange();
       richField.current = editable;
       setTableReady(editable.dataset.allowTable === 'true');
       setPictureReady(true);
       const nextMarks = readMarks(element);
       setMarks((current) => (sameMarks(current, nextMarks) ? current : nextMarks));
-      if (selection.isCollapsed) {
-        setBubble(null);
-        return;
-      }
-      const rect = selection.getRangeAt(0).getBoundingClientRect();
-      if (!rect.width && !rect.height) {
-        setBubble(null);
-        return;
-      }
-      setBubble({ top: Math.max(8, rect.top - 8), left: rect.left + rect.width / 2 });
     }
     let shortcutTaken = false;
     function shortcutHost(event: Event) {
@@ -1947,6 +2166,13 @@ export function QuotationSheet({
     if (followId) {
       current.querySelector<HTMLElement>(`[data-break="${CSS.escape(followId)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
+    const revealId = pendingReveal.current;
+    if (revealId) {
+      const node = current.querySelector<HTMLElement>(`[data-break="${CSS.escape(revealId)}"]`);
+      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const placed = Boolean(pagesOfIds?.some((page) => page.some((slice) => slice.id === revealId)));
+      if (node && placed) pendingReveal.current = null;
+    }
   }, [blockIds, document, layoutNonce, pagesOfIds, po, quotationNumber, visibleBlocks]);
 
   useLayoutEffect(() => {
@@ -1986,6 +2212,10 @@ export function QuotationSheet({
 
   useEffect(() => {
     if (readOnly) return;
+    function sectionIdFrom(target: EventTarget | null) {
+      if (!(target instanceof Element)) return '';
+      return target.closest('.quotation-section')?.getAttribute('data-block') || '';
+    }
     function clearSection(event: PointerEvent) {
       if (event.button !== 0) return;
       const target = event.target;
@@ -1993,13 +2223,19 @@ export function QuotationSheet({
         setSelectedSectionId(null);
         return;
       }
-      if (target.closest('.quotation-format, .quotation-bubble, [role="dialog"]')) return;
-      const section = target.closest('.quotation-section');
-      const id = section?.getAttribute('data-block') || '';
-      setSelectedSectionId((current) => (current && current !== id ? null : current));
+      if (target.closest('.quotation-format, .quotation-bubble, [role="dialog"], aside')) return;
+      setSelectedSectionId(sectionIdFrom(target) || null);
+    }
+    function followFocus(event: FocusEvent) {
+      const id = sectionIdFrom(event.target);
+      if (id) setSelectedSectionId(id);
     }
     window.addEventListener('pointerdown', clearSection);
-    return () => window.removeEventListener('pointerdown', clearSection);
+    window.addEventListener('focusin', followFocus);
+    return () => {
+      window.removeEventListener('pointerdown', clearSection);
+      window.removeEventListener('focusin', followFocus);
+    };
   }, [readOnly]);
 
   useEffect(() => {
@@ -2007,17 +2243,20 @@ export function QuotationSheet({
     function onPointerDown(event: PointerEvent) {
       if (event.button !== 0) return;
       const target = event.target;
-      if (!(target instanceof Element)) return;
+      if (!(target instanceof Element) || !sheetRef.current) return;
       if (target.closest('.quotation-picture-chrome, .quotation-format')) return;
-      const img = target.closest('img.quotation-picture');
-      if (!(img instanceof HTMLImageElement) || !sheetRef.current?.contains(img)) {
+      const img = pictureFromPointer(sheetRef.current, event);
+      if (!img) {
+        pictureNode.current = null;
         setPictureId(null);
         setLayoutOpen(false);
         return;
       }
       event.preventDefault();
+      event.stopPropagation();
       const id = img.dataset.id || '';
       if (!id) return;
+      pictureNode.current = img;
       setPictureId(id);
       setLayoutOpen(true);
       const field = img.closest('[contenteditable="true"]');
@@ -2074,7 +2313,7 @@ export function QuotationSheet({
       if (!layoutOpen || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return;
-      const img = findPicture(sheetRef.current, pictureId);
+      const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
       const field = img?.closest('[contenteditable="true"]');
       if (!img || !(field instanceof HTMLElement)) return;
       event.preventDefault();
@@ -2084,11 +2323,11 @@ export function QuotationSheet({
       setLayoutOpen(false);
       setPictureBox(null);
     }
-    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('paste', onPaste);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('paste', onPaste);
       window.removeEventListener('keydown', onKey);
     };
@@ -2102,7 +2341,7 @@ export function QuotationSheet({
     let frame = 0;
     let tries = 0;
     function measure() {
-      const img = findPicture(sheetRef.current, pictureId);
+      const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
       if (!img) {
         const pending = sheetRef.current?.innerHTML.includes(`data-id="${pictureId}"`) ?? false;
         if (!pending) {
@@ -2124,7 +2363,7 @@ export function QuotationSheet({
     }
     measure();
     frame = window.requestAnimationFrame(measure);
-    const img = findPicture(sheetRef.current, pictureId);
+    const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
     img?.addEventListener('load', measure);
     window.addEventListener('scroll', measure, true);
     window.addEventListener('resize', measure);
@@ -2243,7 +2482,7 @@ export function QuotationSheet({
   }
 
   function changePicture(patch: { layout?: PictureLayout; anchor?: PictureAnchor; width?: number; x?: number; y?: number }) {
-    const img = findPicture(sheetRef.current, pictureId);
+    const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
     if (!img) return;
     const current = readPicture(img);
     let layout = patch.layout ?? current.layout;
@@ -2273,14 +2512,14 @@ export function QuotationSheet({
   }
 
   function previewPictureWidth(width: number) {
-    const img = findPicture(sheetRef.current, pictureId);
+    const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
     if (!img) return;
     const current = readPicture(img);
     writePicture(img, { ...current, width: Math.min(420, Math.max(40, Math.round(width))) });
   }
 
   function removePicture() {
-    const img = findPicture(sheetRef.current, pictureId);
+    const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
     if (!img) return;
     const field = img.closest('[contenteditable="true"]');
     img.remove();
@@ -2322,7 +2561,7 @@ export function QuotationSheet({
   function resizePicture(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    const img = findPicture(sheetRef.current, pictureId);
+    const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
     if (!img) return;
     const picture = img;
     const startX = event.clientX;
@@ -2348,17 +2587,17 @@ export function QuotationSheet({
   redoEditRef.current = redoEdit;
 
   function addSection(type: (typeof SECTION_CHOICES)[number]['type']) {
-    if (type === 'scope' || type === 'specification') {
-      if (presetAlreadyUsed(document, type)) {
-        window.document.getElementById(document.blocks.find((block) => block.type === type)?.id || '')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
-      }
-      pushHistory();
-      update(insertBlock(document, type === 'scope' ? defaultScope() : defaultSpecification()));
+    if ((type === 'scope' || type === 'specification') && presetAlreadyUsed(document, type)) {
+      const existingId = document.blocks.find((block) => block.type === type)?.id;
+      if (existingId) jumpToSection(existingId);
       return;
     }
+    const block = type === 'option' ? defaultOption() : type === 'scope' ? defaultScope() : type === 'specification' ? defaultSpecification() : defaultBlank();
+    const next = insertBlock(document, block);
+    if (next === document) return;
     pushHistory();
-    update(insertBlock(document, type === 'option' ? defaultOption() : defaultBlank()));
+    jumpToSection(block.id, true);
+    update(next);
   }
 
   function chooseSavedTerms(templateId: string) {
@@ -2366,15 +2605,15 @@ export function QuotationSheet({
     if (!template) return;
     pushHistory();
     const next = applySavedTerms(document, template.rows);
+    const termsId = next.blocks.find((block) => block.type === 'terms')?.id;
+    if (termsId) jumpToSection(termsId, true);
     update(next);
     setPresetMenu(null);
-    const termsId = next.blocks.find((block) => block.type === 'terms')?.id;
-    if (termsId) window.requestAnimationFrame(() => window.document.getElementById(termsId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
   function focusBlock(next: QuotationDocument, type: 'scope' | 'specification') {
     const blockId = next.blocks.find((block) => block.type === type)?.id;
-    if (blockId) window.requestAnimationFrame(() => window.document.getElementById(blockId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    if (blockId) jumpToSection(blockId, true);
   }
 
   function chooseSavedScope(presetId: string) {
@@ -2406,10 +2645,10 @@ export function QuotationSheet({
     pushHistory();
     const previous = new Set(document.blocks.map((block) => block.id));
     const next = insertCustomSection(document, content, sectionId, version?.id);
+    const added = next.blocks.find((block) => !previous.has(block.id));
+    if (added) jumpToSection(added.id, true);
     update(next);
     setPresetMenu(null);
-    const added = next.blocks.find((block) => !previous.has(block.id));
-    if (added) window.requestAnimationFrame(() => window.document.getElementById(added.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
   function placedSectionBlocks(sectionId: string) {
@@ -2424,14 +2663,9 @@ export function QuotationSheet({
     }
     const exact = family.find((block) => (versionId ? block.versionId === versionId : !block.versionId));
     const target = exact ?? family[0];
+    setPresetMenu(null);
     setDuplicatePrompt({ sectionId, versionId });
-    setHighlightBlockId(target.id);
-    window.requestAnimationFrame(() => {
-      const list = sectionListRef.current;
-      const row = list?.querySelector<HTMLElement>(`[data-section-anchor="${sectionId}"]`);
-      if (list && row) setPromptTop(Math.max(0, row.getBoundingClientRect().top - list.getBoundingClientRect().top));
-      window.document.getElementById(target.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    jumpToSection(target.id);
   }
 
   function cancelDuplicate() {
@@ -2589,15 +2823,31 @@ export function QuotationSheet({
     ? customQuery.data?.find((entry) => entry.id === saveSection.parentSectionId)?.name ?? ''
     : '';
   const pad = padImageUrl(letterheadUrl);
-  const selectedPicture = pictureId ? findPicture(sheetRef.current, pictureId) : null;
+  const selectedPicture = pictureId ? findPicture(sheetRef.current, pictureId, pictureNode.current) : null;
   const pictureSettings = selectedPicture ? readPicture(selectedPicture) : null;
 
   return (
-    <div ref={sheetRef} className="quotation-sheet flex items-start gap-4">
+    <div ref={sheetRef} className="quotation-sheet flex w-full min-w-0 max-w-full items-start gap-4">
       {readOnly ? null : (
         <aside className="quotation-edit-only sticky top-0 z-20 w-56 shrink-0 self-start">
           <div ref={sectionListRef} className="relative">
           <div className="max-h-[calc(100dvh-5rem)] space-y-3 overflow-y-auto">
+          <div className="rounded-lg border border-border bg-background p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this quotation</p>
+            <div className="mt-2 flex flex-col gap-1">
+              {visibleBlocks.map((block) => (
+                <button
+                  key={block.id}
+                  type="button"
+                  aria-current={selectedSectionId === block.id ? 'true' : undefined}
+                  className={`cursor-pointer truncate rounded-md px-2 py-1 text-left text-sm ${selectedSectionId === block.id ? 'bg-sky-100 text-sky-950' : 'hover:bg-muted/50'}`}
+                  onClick={() => jumpToSection(block.id)}
+                >
+                  {sectionTitle(block)}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="rounded-lg border border-border bg-background p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add a section</p>
             <p className="mt-1 text-[11px] leading-snug text-muted-foreground">A price option goes under the item list. Other sections stay above the closing.</p>
@@ -2646,10 +2896,10 @@ export function QuotationSheet({
                               <button
                                 type="button"
                                 onClick={() => requestSavedSection(item.id)}
-                                className={`min-w-0 flex-1 cursor-pointer rounded-md border px-3 py-2 text-left ${parentOnPage ? 'quotation-section-used' : 'border-border bg-background hover:bg-muted/50'}`}
+                                className="min-w-0 flex-1 cursor-pointer rounded-md border border-border bg-background px-3 py-2 text-left hover:bg-muted/50"
                               >
-                                <span className="block text-sm font-medium">{parentOnPage ? item.name : `+ ${item.name}`}</span>
-                                <span className="block text-[11px] text-muted-foreground">{parentOnPage ? 'On the page' : 'Saved section'}</span>
+                                <span className="block text-sm font-medium">+ {item.name}</span>
+                                <span className="block text-[11px] text-muted-foreground">Saved section</span>
                               </button>
                               <button type="button" aria-label={`Rename ${item.name}`} title="Rename" className="cursor-pointer rounded-md border border-border px-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground" onClick={() => openRename('section', item.id, item.name)}>
                                 <Pencil className="size-3.5" />
@@ -2716,42 +2966,19 @@ export function QuotationSheet({
             </div>
           </div>
           </div>
-          {duplicatePrompt ? (
-            <div className="absolute left-full z-40 ml-2 w-60 rounded-lg border border-border bg-background p-3 shadow-lg" style={{ top: promptTop }}>
-              <p className="text-sm">This section is already on the page. Add it again?</p>
-              <div className="mt-3 flex justify-end gap-2">
-                <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={cancelDuplicate}>Cancel</button>
-                <button type="button" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white" onClick={confirmDuplicate}>Add</button>
-              </div>
-            </div>
-          ) : null}
           </div>
         </aside>
       )}
 
       <div className="min-w-0 flex-1">
         {readOnly ? null : (
-          <div className="quotation-format quotation-edit-only sticky top-0 z-30 mb-3 flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 shadow-sm">
-            <span className="mr-1 text-xs font-semibold uppercase tracking-wide">Format</span>
+          <div className="quotation-format quotation-edit-only sticky top-0 z-30 mb-2 max-w-full rounded-md border px-1.5 py-1 shadow-sm">
             <FormatControls variant="full" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} canUndo={historyCounts.undo > 0} canRedo={historyCounts.redo > 0} tableReady={tableReady} onInsertTable={insertTable} pictureReady={pictureReady} onInsertPicture={(file) => void insertPicture(file)} />
           </div>
         )}
-        {bubble && !readOnly ? (
-          <div
-            className="quotation-bubble quotation-format fixed z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 -translate-y-full flex-wrap items-center gap-1 rounded-lg border p-1 shadow-lg"
-            style={{ top: bubble.top, left: bubble.left }}
-            onMouseDown={(event) => {
-              const target = event.target;
-              if (target instanceof Element && target.closest('select, option, input, textarea')) return;
-              event.preventDefault();
-            }}
-          >
-            <FormatControls variant="compact" marks={marks} highlight={highlight} fontColor={fontColor} onFormat={format} onPrepare={prepareFormat} />
-          </div>
-        ) : null}
-        <div className="quotation-pages flex flex-col items-center gap-8 overflow-x-auto py-2">
+        <div className="quotation-pages flex w-full max-w-full flex-col gap-8 overflow-x-auto py-2">
           {pages.map((page, pageIndex) => (
-            <article key={pageIndex} className="quotation-page quotation-pad relative shrink-0 overflow-hidden shadow" style={{ width: '210mm', height: '297mm', maxHeight: '297mm', overflow: 'hidden', fontFamily: 'Calibri, Candara, Arial, sans-serif' }}>
+            <article key={pageIndex} className="quotation-page quotation-pad relative mx-auto shrink-0 overflow-hidden shadow" style={{ width: '210mm', height: '297mm', maxHeight: '297mm', overflow: 'hidden', fontFamily: 'Calibri, Candara, Arial, sans-serif' }}>
               <img src={pad} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-fill" />
               <div className="relative z-[1] h-full px-[14mm] pb-[26mm] pt-[40mm]">
                 <div data-quotation-frame className="overflow-hidden" style={{ height: `${PAGE_INNER_MM}mm` }}>
@@ -2767,7 +2994,7 @@ export function QuotationSheet({
                     <div className="mt-2 border border-black text-[11pt]">
                       <div className="grid grid-cols-2 items-start border-b border-black">
                         <div className="border-r border-black px-2 py-1"><span className="font-semibold">Quotation Number:</span> {quotationNumber || 'Assigned when forwarded'}</div>
-                        <div className="flex items-center gap-2 px-2 py-1"><span className="font-semibold">Date:</span> {readOnly ? displayDate(document.date) : <input type="date" value={document.date} onChange={(event) => edit({ ...document, date: event.target.value }, 'date')} className="bg-transparent outline-none" />}</div>
+                        <div className="flex items-center gap-2 px-2 py-1"><span className="font-semibold">Date:</span> {readOnly ? displayDate(document.date) : <DocumentDateField value={document.date} onChange={(date) => edit({ ...document, date }, 'date')} />}</div>
                       </div>
                       <div className="grid grid-cols-2 items-start border-b border-black">
                         <div className="space-y-0.5 border-r border-black px-2 py-1">
@@ -2815,7 +3042,7 @@ export function QuotationSheet({
                     id={isFirst ? block.id : undefined}
                     data-break={isFirst ? block.id : undefined}
                     data-block={block.id}
-                    className={`quotation-section relative ${selectedSectionId === block.id ? 'quotation-section-hot' : ''} ${isFirst && dropTarget?.beforeId === block.id ? 'quotation-drop-before' : ''}`}
+                    className={`quotation-section relative ${flashSectionId === block.id ? 'quotation-section-hot' : ''} ${isFirst && dropTarget?.beforeId === block.id ? 'quotation-drop-before' : ''}`}
                     style={{ marginTop: isFirst ? `${sectionGapMm(block)}mm` : 0 }}
                   >
                     {!isFirst || readOnly ? null : (
@@ -2849,7 +3076,7 @@ export function QuotationSheet({
                         <X className="size-3.5" />
                       </button>
                     )}
-                    <div data-slice-clip style={slice.height > 0 ? { height: slice.height, overflow: 'hidden' } : undefined}>
+                    <div data-slice-clip data-slice-mirror={isFirst ? undefined : ''} inert={isFirst ? undefined : true} style={slice.height > 0 ? { height: slice.height, overflow: 'hidden' } : undefined}>
                     <div className="quotation-block-full" style={slice.top > 0 ? { marginTop: -slice.top } : undefined}>
                     <BlockView
                       block={block}
@@ -2913,6 +3140,20 @@ export function QuotationSheet({
           ))}
         </div>
       </div>
+      <Modal
+        isOpen={Boolean(duplicatePrompt)}
+        onClose={cancelDuplicate}
+        title="Already on this quotation"
+        size="sm"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={cancelDuplicate}>Cancel</Button>
+            <Button type="button" size="sm" onClick={confirmDuplicate}>Add</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">This section is already on the quotation. Add another?</p>
+      </Modal>
       <Modal
         isOpen={Boolean(pendingRemoveSection)}
         onClose={() => setPendingRemoveSection(null)}
@@ -3042,7 +3283,7 @@ export function QuotationSheet({
           onAnchor={(anchor) => changePicture({ anchor })}
           onWidth={previewPictureWidth}
           onCommitWidth={(width) => {
-            const img = findPicture(sheetRef.current, pictureId);
+            const img = findPicture(sheetRef.current, pictureId, pictureNode.current);
             if (!img) return;
             const current = readPicture(img);
             writePicture(img, { ...current, width: Math.min(420, Math.max(40, Math.round(width))) });
@@ -3406,10 +3647,10 @@ function BlockView({
         <div className="flex items-start justify-between gap-2">
           <RichText value={block.name} readOnly={readOnly} className="min-w-0 flex-1 font-semibold" onChange={(name) => onChange({ ...block, name })} />
           {block.type === 'terms' && onSaveTerms ? (
-            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveTerms}>Save</button>
+            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveTerms}>Save for reuse</button>
           ) : null}
           {block.type === 'specification' && onSaveSpecification ? (
-            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSpecification}>Save</button>
+            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSpecification}>Save for reuse</button>
           ) : null}
         </div>
         <div className={`mt-1 grid items-baseline gap-x-2 gap-y-1 ${block.type === 'specification' ? 'grid-cols-[2rem_max-content_auto_minmax(0,1fr)_auto]' : 'grid-cols-[max-content_auto_minmax(0,1fr)_auto]'}`}>
@@ -3434,21 +3675,29 @@ function BlockView({
   }
 
   if (block.type === 'signatures') {
+    const line = (side: 'left' | 'right', key: 'name' | 'phone' | 'title' | 'email', className: string) => (
+      <RichText
+        value={block[side][key]}
+        readOnly={readOnly}
+        className={className}
+        onChange={(value) => onChange({ ...block, [side]: { ...block[side], [key]: value } })}
+      />
+    );
     return (
       <div>
         <RichText value={block.name} readOnly={readOnly} className="italic" onChange={(name) => onChange({ ...block, name })} />
         <div className="mt-1 grid grid-cols-[1fr_38%] items-start gap-x-6">
           <div className="space-y-0.5">
-            <Field className="block font-semibold" value={block.left.name} readOnly={readOnly} onChange={(name) => onChange({ ...block, left: { ...block.left, name } })} />
-            <Field className="block" value={block.left.phone} readOnly={readOnly} onChange={(phone) => onChange({ ...block, left: { ...block.left, phone } })} />
-            <Field className="block" value={block.left.title} readOnly={readOnly} onChange={(title) => onChange({ ...block, left: { ...block.left, title } })} />
-            <Field className="quotation-link block" value={block.left.email} readOnly={readOnly} onChange={(email) => onChange({ ...block, left: { ...block.left, email } })} />
+            {line('left', 'name', 'font-semibold')}
+            {line('left', 'phone', '')}
+            {line('left', 'title', '')}
+            {line('left', 'email', 'quotation-link')}
           </div>
           <div className="space-y-0.5">
-            <Field className="block font-semibold" value={block.right.name} readOnly={readOnly} onChange={(name) => onChange({ ...block, right: { ...block.right, name } })} />
-            <Field className="block" value={block.right.phone} readOnly={readOnly} onChange={(phone) => onChange({ ...block, right: { ...block.right, phone } })} />
-            <Field className="block" value={block.right.title} readOnly={readOnly} onChange={(title) => onChange({ ...block, right: { ...block.right, title } })} />
-            <Field className="quotation-link block" value={block.right.email} readOnly={readOnly} onChange={(email) => onChange({ ...block, right: { ...block.right, email } })} />
+            {line('right', 'name', 'font-semibold')}
+            {line('right', 'phone', '')}
+            {line('right', 'title', '')}
+            {line('right', 'email', 'quotation-link')}
           </div>
         </div>
       </div>
@@ -3465,7 +3714,7 @@ function BlockView({
             {onSaveSection || onSaveSectionAsNew ? (
               <div className="quotation-edit-only flex shrink-0 gap-1">
                 {onSaveSection ? (
-                  <button type="button" className="rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSection}>Save</button>
+                  <button type="button" className="rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSection}>Save for reuse</button>
                 ) : null}
                 {onSaveSectionAsNew ? (
                   <button type="button" className="rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveSectionAsNew}>Save as new template</button>
@@ -3515,7 +3764,7 @@ function BlockView({
         <div className="flex items-start justify-between gap-2">
           <RichText value={block.name} readOnly={readOnly} className="min-w-0 flex-1 font-semibold" onChange={(name) => onChange({ ...block, name })} />
           {block.type === 'scope' && onSaveScope ? (
-            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveScope}>Save</button>
+            <button type="button" className="quotation-edit-only shrink-0 rounded border border-slate-400 px-1.5 py-0.5 text-[10px] leading-tight" onClick={onSaveScope}>Save for reuse</button>
           ) : null}
         </div>
       )}

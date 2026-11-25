@@ -1,7 +1,8 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { Suspense, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import AppBreadcrumb from '@/components/layout/AppBreadcrumb';
 import { signOut, useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { useTheme } from '@/providers/ThemeProvider';
@@ -101,7 +102,12 @@ export default function EmployeePortalLayout({ children }: { children: React.Rea
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-5 sm:py-6">{children}</main>
+      <main className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-5 sm:py-6">
+        <Suspense fallback={null}>
+          <AppBreadcrumb />
+        </Suspense>
+        {children}
+      </main>
     </div>
   );
 }

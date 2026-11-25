@@ -18,8 +18,10 @@ import {
 } from '@/lib/hr/payroll/holidayEmployeeEligibility';
 import { resolveHolidayOtSettingsForEmployee } from '@/lib/hr/payroll/holidayPayTypeLinks';
 import { resolveHolidayPayTypeConfigForEmployee } from '@/lib/hr/payroll/resolveHolidayPayStructure';
+import { isAnnualLeaveCode } from '@/lib/hr/leaveTypes';
 import { resolveLeavePayPercentForDay } from '@/lib/hr/payroll/resolveLeavePayForDay';
 import { monthBounds, monthEndDate, roundMoney } from '@/lib/hr/payroll/calendar';
+import { payrollInstallmentDescription } from '@/lib/hr/payroll/fineInstallments';
 import { parsePayTypeConfig } from '@/lib/hr/payroll/parsePayTypeConfig';
 import { resolveExcludedWeekdays } from '@/lib/hr/payroll/payTypeConfigHelpers';
 import {
@@ -36,6 +38,15 @@ import {
 } from '@/lib/hr/payroll/salaryComponent';
 import { evaluatePayHealthCheck, evaluateTimelinePayHealthCheck, type PayHealthCheck } from '@/lib/hr/payroll/payHealthCheck';
 import {
+  rejectedSickLeaveFineForPackage,
+  type RejectedSickLeaveFine,
+} from '@/lib/hr/payroll/rejectedSickLeaveFine';
+import {
+  applyExtraPayrollDeductions,
+  sumPayrollFineAmount,
+  type PayrollFineDeduction,
+} from '@/lib/hr/payroll/payrollFineDeduction';
+import {
   resolveNoActiveCompensationSkipReason,
 } from '@/lib/hr/payroll/payPreviewRowStatus';
 import {
@@ -46,10 +57,7 @@ import {
   resolveVisaSponsorForPayroll,
   type VisaPeriodSponsorSource,
 } from '@/lib/hr/payroll/resolveVisaSponsorForPayroll';
-import {
-  annotatePaidWeeklyOffLines,
-  resolvePaidWeeklyOffDates,
-} from '@/lib/hr/payroll/weeklyOffPay';
+import { annotateLinesForWeeklyOffPay } from '@/lib/hr/payroll/weeklyOffPay';
 import type { CompensationInput, LinePayContext, PayLineInput, PayLineResult, PayTypeConfig } from '@/lib/hr/payroll/types';
 import { parseWorkforceProfile, workforceEmployeeTypeShortNameFromProfile, workforceVisaHoldingLabelFromProfile } from '@/lib/hr/workforceProfile';
 
@@ -72,6 +80,10 @@ export type EmployeePayPreviewRow = {
   breakdown: Record<string, number>;
   salaryComponentEarnings: number;
   salaryComponentDeductions: number;
+  /** Fine for sick leave rejected in this payroll month. Null when there is nothing to cut. */
+  rejectedSickLeaveFine: RejectedSickLeaveFine | null;
+  /** Approved HR fines whose date falls in this payroll month. */
+  payrollFines: PayrollFineDeduction[];
   dayDetails: PayLineResult['days'];
   healthCheck: PayHealthCheck | null;
   approvedAttendanceRows: number;
@@ -233,39 +245,6 @@ function stripLeaveFromAttendanceRows(rows: AttendanceRow[]): AttendanceRow[] {
   }));
 }
 
-/** Stamp isPaidWeeklyOff so calculatePayLine and health checks see the same annotated lines. */
-function annotateLinesForWeeklyOffPay(
-  lines: PayLineInput[],
-  primaryConfig: PayTypeConfig,
-  resolveLineContext?: (line: PayLineInput) => LinePayContext
-): PayLineInput[] {
-  if (!resolveLineContext) {
-    return annotatePaidWeeklyOffLines(lines, primaryConfig);
-  }
-
-  const paidEligibleDates = new Set<string>();
-  const configsSeen = new Set<string>();
-  for (const line of lines) {
-    const ctx = resolveLineContext(line);
-    const key = `${ctx.config.weeklyOffPayRule ?? 'NONE'}:${(ctx.config.excludedWeekdays ?? []).join(',')}`;
-    if (configsSeen.has(key)) continue;
-    configsSeen.add(key);
-    if (ctx.config.weeklyOffPayRule !== 'SANDWICHED') continue;
-    for (const date of resolvePaidWeeklyOffDates(lines, ctx.config)) {
-      paidEligibleDates.add(date);
-    }
-  }
-
-  return lines.map((line) => {
-    const ctx = resolveLineContext(line);
-    return {
-      ...line,
-      isPaidWeeklyOff:
-        ctx.config.weeklyOffPayRule === 'SANDWICHED' && paidEligibleDates.has(line.workDate),
-    };
-  });
-}
-
 async function buildMergedPayLinesForEmployee(
   companyId: string,
   employeeId: string,
@@ -341,7 +320,8 @@ async function buildMergedPayLinesForEmployee(
       continue;
     }
     const leaveDay = leaveByDate.get(line.workDate);
-    const leavePayPercent = leaveDay
+    const leaveTypeCode = next.leaveTypeCode ?? leaveDay?.leaveTypeCode ?? null;
+    const resolvedPercent = leaveDay
       ? await resolveLeavePayPercentForDay(prisma, {
           companyId,
           employeeId,
@@ -350,10 +330,54 @@ async function buildMergedPayLinesForEmployee(
           rules: leaveDay.rules,
         })
       : 100;
-    enriched.push({ ...next, leavePayPercent });
+    const leavePayPercent = isAnnualLeaveCode(leaveTypeCode) ? 0 : resolvedPercent;
+    enriched.push({ ...next, leaveTypeCode, leavePayPercent });
   }
 
   return enriched;
+}
+
+type RejectedSickLeaveCut = {
+  days: number;
+  startDateYmd: string;
+};
+
+function sumRejectedSickLeaveFine(params: {
+  month: string;
+  cuts: RejectedSickLeaveCut[];
+  monthPackages: CompensationWithPayType[];
+  allowancesByPackageId: Map<string, EmployeeAllowanceItem[]>;
+}): RejectedSickLeaveFine | null {
+  let days = 0;
+  let amount = 0;
+  for (const cut of params.cuts) {
+    if (cut.days <= 0) continue;
+    const pkg = resolveCompensationPackageForDate(params.monthPackages, cut.startDateYmd);
+    if (!pkg) continue;
+    let pkgConfig: PayTypeConfig;
+    try {
+      pkgConfig = parsePayTypeConfig(pkg.payType.config);
+    } catch {
+      continue;
+    }
+    const excludedWeekdays = resolveExcludedWeekdays(pkgConfig);
+    const compensation = buildCompensationInputFromAllowances(
+      pkg,
+      params.allowancesByPackageId.get(pkg.id) ?? [],
+      params.month,
+      excludedWeekdays
+    );
+    days += cut.days;
+    amount += rejectedSickLeaveFineForPackage({
+      days: cut.days,
+      compensation,
+      month: params.month,
+      excludedWeekdays,
+    });
+  }
+  amount = roundMoney(amount);
+  if (days <= 0 || amount <= 0) return null;
+  return { days, amount };
 }
 
 function computeEmployeePayPreviewRow(
@@ -363,7 +387,9 @@ function computeEmployeePayPreviewRow(
   attendanceRowCount: number,
   lines: PayLineInput[],
   allowancesByPackageId: Map<string, EmployeeAllowanceItem[]>,
-  visaPeriods: VisaPeriodSponsorSource[] = []
+  visaPeriods: VisaPeriodSponsorSource[] = [],
+  sickLeaveCuts: RejectedSickLeaveCut[] = [],
+  payrollFines: PayrollFineDeduction[] = []
 ): EmployeePayPreviewRow {
   const name = employee.preferredName || employee.fullName;
   const draftCount = 0;
@@ -392,6 +418,8 @@ function computeEmployeePayPreviewRow(
       breakdown: {},
       salaryComponentEarnings: 0,
       salaryComponentDeductions: 0,
+      rejectedSickLeaveFine: null,
+      payrollFines: [],
       dayDetails: [],
       healthCheck: null,
       approvedAttendanceRows: attendanceRowCount,
@@ -418,6 +446,8 @@ function computeEmployeePayPreviewRow(
       breakdown: {},
       salaryComponentEarnings: 0,
       salaryComponentDeductions: 0,
+      rejectedSickLeaveFine: null,
+      payrollFines: [],
       dayDetails: [],
       healthCheck: null,
       approvedAttendanceRows: attendanceRowCount,
@@ -447,6 +477,8 @@ function computeEmployeePayPreviewRow(
       breakdown: {},
       salaryComponentEarnings: 0,
       salaryComponentDeductions: 0,
+      rejectedSickLeaveFine: null,
+      payrollFines: [],
       dayDetails: [],
       healthCheck: null,
       approvedAttendanceRows: attendanceRowCount,
@@ -572,6 +604,20 @@ function computeEmployeePayPreviewRow(
     salaryComponentDeductions = totals.deductions;
   }
 
+  const rejectedSickLeaveFine = sumRejectedSickLeaveFine({
+    month,
+    cuts: sickLeaveCuts,
+    monthPackages,
+    allowancesByPackageId,
+  });
+  const payableFines = payrollFines.filter((fine) => fine.amount > 0);
+  const applied = applyExtraPayrollDeductions({
+    gross: result.gross,
+    salaryComponentDeductions,
+    sickFineAmount: rejectedSickLeaveFine?.amount ?? 0,
+    payrollFineAmount: sumPayrollFineAmount(payableFines),
+  });
+
   return {
     employeeId: employee.id,
     employeeCode: employee.employeeCode,
@@ -584,10 +630,12 @@ function computeEmployeePayPreviewRow(
     payTypeCode: primaryPackage.payType.code,
     compensationEffectiveFrom: formatCompensationEffectiveLabel(monthPackages, month),
     ...compensationMeta,
-    gross: result.gross,
+    gross: applied.gross,
     breakdown: result.breakdown,
     salaryComponentEarnings,
-    salaryComponentDeductions,
+    salaryComponentDeductions: applied.salaryComponentDeductions,
+    rejectedSickLeaveFine,
+    payrollFines: payableFines,
     dayDetails: result.days,
     healthCheck,
     approvedAttendanceRows: attendanceRowCount,
@@ -616,6 +664,106 @@ async function fetchCompensationPackagesForEmployee(
   );
 }
 
+async function fetchRejectedSickLeaveCuts(
+  companyId: string,
+  month: string,
+  employeeIds?: string[]
+): Promise<Map<string, RejectedSickLeaveCut[]>> {
+  const { start } = monthBounds(month);
+  const monthEnd = monthEndDate(month);
+  const requests = await prisma.leaveRequest.findMany({
+    where: {
+      companyId,
+      status: 'REJECTED',
+      rejectedSalaryDeductionDays: { gt: 0 },
+      startDate: { gte: start, lte: monthEnd },
+      ...(employeeIds?.length ? { employeeId: { in: employeeIds } } : {}),
+      OR: [
+        { leaveTypeRef: { code: { equals: 'SICK', mode: 'insensitive' } } },
+        { leaveTypeId: null, leaveType: 'SICK' },
+      ],
+    },
+    select: {
+      employeeId: true,
+      startDate: true,
+      rejectedSalaryDeductionDays: true,
+    },
+  });
+
+  const byEmployee = new Map<string, RejectedSickLeaveCut[]>();
+  for (const request of requests) {
+    const days = request.rejectedSalaryDeductionDays ?? 0;
+    if (days <= 0) continue;
+    const list = byEmployee.get(request.employeeId) ?? [];
+    list.push({ days, startDateYmd: request.startDate.toISOString().slice(0, 10) });
+    byEmployee.set(request.employeeId, list);
+  }
+  return byEmployee;
+}
+
+async function fetchApprovedPayrollFines(
+  companyId: string,
+  month: string,
+  employeeIds?: string[]
+): Promise<Map<string, PayrollFineDeduction[]>> {
+  const { start } = monthBounds(month);
+  const monthEnd = monthEndDate(month);
+  const employeeFilter = employeeIds ? { employeeId: { in: employeeIds } } : {};
+  const [installments, legacyRows] = await Promise.all([
+    prisma.employeeFineInstallment.findMany({
+      where: {
+        companyId,
+        payrollMonth: month,
+        fine: { status: 'APPROVED', ...employeeFilter },
+      },
+      select: {
+        fineId: true,
+        amount: true,
+        sequence: true,
+        fine: {
+          select: {
+            employeeId: true,
+            description: true,
+            _count: { select: { installments: true } },
+          },
+        },
+      },
+      orderBy: [{ sequence: 'asc' }, { fineId: 'asc' }],
+    }),
+    prisma.employeeFine.findMany({
+      where: {
+        companyId,
+        status: 'APPROVED',
+        fineDate: { gte: start, lte: monthEnd },
+        installments: { none: {} },
+        ...employeeFilter,
+      },
+      select: { id: true, employeeId: true, description: true, amount: true },
+      orderBy: [{ fineDate: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ]);
+  const byEmployee = new Map<string, PayrollFineDeduction[]>();
+  for (const row of installments) {
+    const amount = roundMoney(Number(row.amount));
+    if (amount <= 0) continue;
+    const list = byEmployee.get(row.fine.employeeId) ?? [];
+    list.push({
+      id: row.fineId,
+      description: payrollInstallmentDescription(row.fine.description, row.sequence, row.fine._count.installments),
+      amount,
+    });
+    byEmployee.set(row.fine.employeeId, list);
+  }
+  for (const row of legacyRows) {
+    const amount = roundMoney(Number(row.amount));
+    if (amount <= 0) continue;
+    const list = byEmployee.get(row.employeeId) ?? [];
+    list.push({ id: row.id, description: row.description, amount });
+    byEmployee.set(row.employeeId, list);
+  }
+  return byEmployee;
+}
+
 export async function buildEmployeePayPreview(
   companyId: string,
   employeeId: string,
@@ -639,7 +787,7 @@ export async function buildEmployeePayPreview(
 
   const packages = await fetchCompensationPackagesForEmployee(companyId, employeeId, month);
   const packageIds = packages.map((pkg) => pkg.id);
-  const [attendance, allowancesByPackageId, visaPeriodRows] = await Promise.all([
+  const [attendance, allowancesByPackageId, visaPeriodRows, sickLeaveCuts, payrollFines] = await Promise.all([
     prisma.attendanceEntry.findMany({
       where: { companyId, employeeId, workDate: { gte: start, lt: end } },
       select: attendanceSelect,
@@ -649,6 +797,8 @@ export async function buildEmployeePayPreview(
       where: { companyId, employeeId },
       select: visaPeriodSponsorSelect,
     }),
+    fetchRejectedSickLeaveCuts(companyId, month, [employeeId]),
+    fetchApprovedPayrollFines(companyId, month, [employeeId]),
   ]);
   const visaPeriods = visaPeriodRows.map(({ employeeId: _employeeId, ...period }) => period);
 
@@ -677,7 +827,9 @@ export async function buildEmployeePayPreview(
     attendance.length,
     lines,
     allowancesByPackageId,
-    visaPeriods
+    visaPeriods,
+    sickLeaveCuts.get(employeeId) ?? [],
+    payrollFines.get(employeeId) ?? []
   );
 }
 
@@ -777,12 +929,14 @@ export async function buildPayrollPreview(
   }
 
   const allPackageIds = compensationRows.map((row) => row.id);
-  const [allowancesByPackageId, visaPeriodRows] = await Promise.all([
+  const [allowancesByPackageId, visaPeriodRows, sickLeaveCuts, payrollFines] = await Promise.all([
     fetchAllowancesForCompensationPackageIds(companyId, allPackageIds, month),
     prisma.visaPeriod.findMany({
       where: { companyId, employeeId: { in: [...previewEmployeeIds] } },
       select: visaPeriodSponsorSelect,
     }),
+    fetchRejectedSickLeaveCuts(companyId, month, [...previewEmployeeIds]),
+    fetchApprovedPayrollFines(companyId, month, [...previewEmployeeIds]),
   ]);
 
   const visaPeriodsByEmployee = new Map<string, VisaPeriodSponsorSource[]>();
@@ -824,7 +978,9 @@ export async function buildPayrollPreview(
         rawAttendance.length,
         lines,
         allowancesByPackageId,
-        visaPeriodsByEmployee.get(employeeId) ?? []
+        visaPeriodsByEmployee.get(employeeId) ?? [],
+        sickLeaveCuts.get(employeeId) ?? [],
+        payrollFines.get(employeeId) ?? []
       )
     );
   }

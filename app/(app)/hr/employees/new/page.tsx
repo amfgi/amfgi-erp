@@ -15,6 +15,7 @@ import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { GENDER_OPTIONS, visaHoldingOptions, workforceRoleTypeOptions } from '@/lib/hr/employeeFieldOptions';
 import { createEmployeeRecord } from '@/lib/hr/createEmployeeClient';
+import { isTemporaryEmploymentType } from '@/lib/hr/employeeCodeSettings';
 import { todayYmdLocal } from '@/lib/hr/employeeLeavePeriod';
 import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { invalidateEmployeeCaches } from '@/lib/hr/invalidateEmployeeCaches';
@@ -39,7 +40,9 @@ export default function NewEmployeePage() {
   const [employeeType, setEmployeeType] = useState<'OFFICE_STAFF' | 'HYBRID_STAFF' | 'DRIVER' | 'LABOUR_WORKER'>('LABOUR_WORKER');
   const [visaHolding, setVisaHolding] = useState('');
   const [companyId, setCompanyId] = useState('');
-  const [proposedCode, setProposedCode] = useState<string>('…');
+  const [companyCode, setCompanyCode] = useState('…');
+  const [temporaryCode, setTemporaryCode] = useState<string | null>(null);
+  const proposedCode = isTemporaryEmploymentType(employmentType) && temporaryCode ? temporaryCode : companyCode;
   const { options: companyOptions } = useHrAccessibleCompanies();
 
   useEffect(() => {
@@ -55,7 +58,8 @@ export default function NewEmployeePage() {
 
   useEffect(() => {
     if (!companyId) {
-      setProposedCode('…');
+      setCompanyCode('…');
+      setTemporaryCode(null);
       return;
     }
     let cancelled = false;
@@ -67,16 +71,21 @@ export default function NewEmployeePage() {
         );
         const json = (await res.json().catch(() => null)) as {
           success?: boolean;
-          data?: { nextCodePreview?: string };
+          data?: { nextCodePreview?: string; nextTemporaryCodePreview?: string | null };
         } | null;
         if (cancelled) return;
         if (res.ok && json?.success && json.data?.nextCodePreview) {
-          setProposedCode(json.data.nextCodePreview);
+          setCompanyCode(json.data.nextCodePreview);
+          setTemporaryCode(json.data.nextTemporaryCodePreview ?? null);
         } else {
-          setProposedCode('Auto');
+          setCompanyCode('Auto');
+          setTemporaryCode(null);
         }
       } catch {
-        if (!cancelled) setProposedCode('Auto');
+        if (!cancelled) {
+          setCompanyCode('Auto');
+          setTemporaryCode(null);
+        }
       }
     })();
     return () => {
@@ -306,6 +315,7 @@ export default function NewEmployeePage() {
               <Button
                 type="button"
                 variant="secondary"
+                data-nav-href={readHrEmployeesDirectoryUrl()}
                 onClick={() => router.push(readHrEmployeesDirectoryUrl())}
               >
                 Back to employees

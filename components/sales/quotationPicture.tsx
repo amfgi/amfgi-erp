@@ -36,10 +36,69 @@ export function pictureIsPositioned(layout: string, anchor: string) {
   return anchor === 'page' || layout === 'behind' || layout === 'front';
 }
 
-export function findPicture(root: ParentNode | null, id: string | null) {
+/** The part of a picture that is not clipped by a page or slice. */
+function visiblePictureBox(img: HTMLImageElement) {
+  const rect = img.getBoundingClientRect();
+  let left = rect.left;
+  let right = rect.right;
+  let top = rect.top;
+  let bottom = rect.bottom;
+  let node: HTMLElement | null = img.parentElement;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const box = node.getBoundingClientRect();
+    if (style.overflowX !== 'visible') {
+      left = Math.max(left, box.left);
+      right = Math.min(right, box.right);
+    }
+    if (style.overflowY !== 'visible') {
+      top = Math.max(top, box.top);
+      bottom = Math.min(bottom, box.bottom);
+    }
+    if (node.classList.contains('quotation-sheet')) break;
+    node = node.parentElement;
+  }
+  return { left, right, top, bottom };
+}
+
+export function findPicture(root: ParentNode | null, id: string | null, prefer?: Node | null) {
   if (!root || !id) return null;
-  const img = root.querySelector(`img.quotation-picture[data-id="${CSS.escape(id)}"]`);
-  return img instanceof HTMLImageElement ? img : null;
+  if (prefer instanceof HTMLImageElement && prefer.isConnected && prefer.dataset.id === id && root.contains(prefer) && !prefer.closest('[data-slice-mirror]')) return prefer;
+  const matches = [...root.querySelectorAll(`img.quotation-picture[data-id="${CSS.escape(id)}"]`)].filter((node): node is HTMLImageElement => node instanceof HTMLImageElement && !node.closest('[data-slice-mirror]'));
+  let best: HTMLImageElement | null = null;
+  let bestArea = -1;
+  for (const img of matches) {
+    const box = visiblePictureBox(img);
+    const width = Math.min(box.right, window.innerWidth) - Math.max(box.left, 0);
+    const height = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, 0);
+    const area = Math.max(0, width) * Math.max(0, height);
+    if (area > bestArea) {
+      best = img;
+      bestArea = area;
+    }
+  }
+  return best ?? matches[0] ?? null;
+}
+
+/** The picture under a click, including one drawn over a later line or on the next page slice. */
+export function pictureFromPointer(root: HTMLElement, event: PointerEvent) {
+  const target = event.target;
+  if (target instanceof Element) {
+    const direct = target.closest('img.quotation-picture');
+    if (direct instanceof HTMLImageElement && root.contains(direct) && !direct.closest('[data-slice-mirror]') && (direct.dataset.layout !== 'behind' || event.altKey)) return direct;
+  }
+  let best: HTMLImageElement | null = null;
+  let behind: HTMLImageElement | null = null;
+  for (const node of root.querySelectorAll('img.quotation-picture')) {
+    if (!(node instanceof HTMLImageElement) || node.closest('[data-slice-mirror]')) continue;
+    const isBehind = node.dataset.layout === 'behind';
+    if (isBehind && !event.altKey) continue;
+    const box = visiblePictureBox(node);
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) continue;
+    if (isBehind) behind = node;
+    else if (!best || pictureIsPositioned(node.dataset.layout || '', node.dataset.anchor || '')) best = node;
+  }
+  return event.altKey && behind ? behind : best;
 }
 
 export function readPicture(img: HTMLImageElement): PictureSettings {
@@ -70,7 +129,7 @@ export function writePicture(img: HTMLImageElement, settings: PictureSettings) {
 }
 
 export function pictureMarkup(id: string, src: string, width: number) {
-  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="inline" data-anchor="text" data-width="${width}" data-x="0" data-y="0" alt="" draggable="false" contenteditable="false" style="width:${width}px" />`;
+  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="inline" data-anchor="text" data-width="${width}" data-x="0" data-y="0" alt="" draggable="false" contenteditable="false" style="width:${width}px">`;
 }
 
 export function clipboardImage(data: DataTransfer | null) {
@@ -284,6 +343,9 @@ export function PictureChrome({
               <input type="radio" name={`picture-anchor-${settings.id}`} checked={settings.anchor === 'page'} onChange={() => onAnchor('page')} />
               Fix position on page
             </label>
+            {settings.layout === 'behind' ? (
+              <p style={{ margin: 0, color: '#555', fontSize: 12 }}>Hold Alt and click the picture to select it when text is on top.</p>
+            ) : null}
           </div>
           {more ? (
             <div style={{ borderTop: '1px solid #e5e5e5', padding: 10 }}>

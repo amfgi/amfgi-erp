@@ -14,6 +14,7 @@ import CustomerImportModal from '@/components/customers/CustomerImportModal';
 import JobDeleteModal from '@/components/jobs/JobDeleteModal';
 import DirectoryListPagination from '@/components/ui/DirectoryListPagination';
 import Modal from '@/components/ui/Modal';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { exportCustomersToXlsx } from '@/lib/import-export/exportCustomers';
 import { cn } from '@/lib/utils';
 import {
@@ -255,6 +256,7 @@ export default function CustomersPage() {
   const canCreateLocalCustomer = canCreate && customerSourceMode !== 'EXTERNAL_ONLY';
 
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const customerExport = useSingleFlight();
   const [pageSize, setPageSize] = useState<number>(CUSTOMER_PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -572,6 +574,7 @@ export default function CustomersPage() {
         if (index < options.length - 1) item.push({ divider: true });
         return item;
       }),
+      `/customers/jobs/${job.id}`,
     );
   };
 
@@ -628,19 +631,22 @@ export default function CustomersPage() {
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={async () => {
-                  try {
-                    const all = await fetchCustomersForExport().unwrap();
-                    if (all.length === 0) {
-                      toast.error('No customers to export');
-                      return;
+                loading={customerExport.pending}
+                onClick={() =>
+                  void customerExport.run(async () => {
+                    try {
+                      const all = await fetchCustomersForExport().unwrap();
+                      if (all.length === 0) {
+                        toast.error('No customers to export');
+                        return;
+                      }
+                      exportCustomersToXlsx(all);
+                      toast.success(`Exported ${all.length} customer(s)`);
+                    } catch {
+                      toast.error('Failed to export customers');
                     }
-                    exportCustomersToXlsx(all);
-                    toast.success(`Exported ${all.length} customer(s)`);
-                  } catch {
-                    toast.error('Failed to export customers');
-                  }
-                }}
+                  })
+                }
               >
                 Export
               </Button>
@@ -835,6 +841,7 @@ export default function CustomersPage() {
                     {canCreate ? (
                       <Button
                         type="button"
+                        data-nav-href={`/customers/jobs/form?mode=create&customerId=${selectedCustomer.id}`}
                   onClick={() => router.push(`/customers/jobs/form?mode=create&customerId=${selectedCustomer.id}`)}
                       >
                         Create job

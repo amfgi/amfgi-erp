@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import AppBreadcrumb from '@/components/layout/AppBreadcrumb';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -149,7 +150,12 @@ export function UserGuideShell({
             </nav>
           </aside>
 
-          <main className="min-w-0">{children}</main>
+          <main className="min-w-0">
+            <Suspense fallback={null}>
+              <AppBreadcrumb />
+            </Suspense>
+            {children}
+          </main>
         </div>
       </div>
     </div>

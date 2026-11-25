@@ -6,14 +6,12 @@ import {
   Building,
   Building2,
   Calendar,
-  CalendarCheck,
 	CalendarClock,
 	Contact,
 	LayoutDashboard,
 	Package,
 	Settings,
 	ShieldCheck,
-	SlidersHorizontal,
 	User,
 	UserCog,
 	Users,
@@ -36,6 +34,19 @@ export type SidebarNavLink = SidebarNavPermission & {
   icon: LucideIcon;
 };
 
+export type SidebarNavChildLink = Omit<SidebarNavLink, 'type' | 'icon'>;
+
+/** A submenu inside a sidebar group. Only used under Employees today. */
+export type SidebarNavChildGroup = SidebarNavPermission & {
+  type: 'group';
+  id: string;
+  label: string;
+  href?: string;
+  children: SidebarNavChildLink[];
+};
+
+export type SidebarNavChild = SidebarNavChildLink | SidebarNavChildGroup;
+
 export type SidebarNavGroup = SidebarNavPermission & {
   type: 'group';
   id: string;
@@ -43,8 +54,12 @@ export type SidebarNavGroup = SidebarNavPermission & {
   icon: LucideIcon;
   /** Hub route; also used to detect active section */
   href?: string;
-  children: Omit<SidebarNavLink, 'type' | 'icon'>[];
+  children: SidebarNavChild[];
 };
+
+export function isSidebarChildGroup(child: SidebarNavChild): child is SidebarNavChildGroup {
+  return 'type' in child && child.type === 'group';
+}
 
 export type SidebarNavEntry = SidebarNavLink | SidebarNavGroup;
 
@@ -169,50 +184,64 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 		],
 	},
 	{
-		type: 'link',
-		href: '/hr/employees',
+		type: 'group',
+		id: 'employees',
 		label: 'Employees',
 		icon: Contact,
-		perm: 'hr.employee.view',
-	},
-	{
-		type: 'link',
-		href: '/hr/employee-setup',
-		label: 'Employee Setup',
-		icon: SlidersHorizontal,
 		anyPerms: [
-			'hr.employee.edit',
 			'hr.employee.view',
+			'hr.employee.edit',
 			'hr.settings.employee_types',
 			'hr.settings.expertise_catalog',
 			P.HR_DOCUMENT_TYPE_VIEW,
 			P.HR_SETTINGS_DOC_TYPES,
-		],
-	},
-	{
-		type: 'group',
-		id: 'leave',
-		label: 'Leave Management',
-		icon: CalendarCheck,
-		href: '/hr/leave',
-		anyPerms: [
 			'hr.leave.view',
-			'hr.leave.approve',
-			'hr.leave.edit',
-			'hr.leave.delete',
 			'hr.payroll.settings',
 		],
 		children: [
-			{ href: '/hr/leave', label: 'Leave management', perm: 'hr.leave.view' },
+			{ href: '/hr/employees', label: 'All employees', perm: 'hr.employee.view' },
 			{
-				href: '/hr/leave/balances',
-				label: 'Leave balances',
-				perm: 'hr.leave.view',
+				href: '/hr/employees/history',
+				label: 'Employee History & Reports',
+				perm: 'hr.employee.view',
 			},
 			{
-				href: '/hr/settings/leave-types',
-				label: 'Leave types',
-				perm: 'hr.payroll.settings',
+				href: '/hr/employee-setup',
+				label: 'Employee Setup',
+				anyPerms: [
+					'hr.employee.edit',
+					'hr.employee.view',
+					'hr.settings.employee_types',
+					'hr.settings.expertise_catalog',
+					P.HR_DOCUMENT_TYPE_VIEW,
+					P.HR_SETTINGS_DOC_TYPES,
+				],
+			},
+			{
+				type: 'group',
+				id: 'leave',
+				label: 'Leave Management',
+				href: '/hr/leave',
+				anyPerms: [
+					'hr.leave.view',
+					'hr.leave.approve',
+					'hr.leave.edit',
+					'hr.leave.delete',
+					'hr.payroll.settings',
+				],
+				children: [
+					{ href: '/hr/leave', label: 'Leave management', perm: 'hr.leave.view' },
+					{
+						href: '/hr/leave/balances',
+						label: 'Leave balances',
+						perm: 'hr.leave.view',
+					},
+					{
+						href: '/hr/settings/leave-types',
+						label: 'Leave types',
+						perm: 'hr.payroll.settings',
+					},
+				],
 			},
 		],
 	},
@@ -227,6 +256,11 @@ export const SIDEBAR_NAV_ENTRIES: SidebarNavEntry[] = [
 			{
 				href: '/hr/payroll/preview',
 				label: 'Payroll preview',
+				perm: 'hr.payroll.compensation',
+			},
+			{
+				href: '/hr/payroll/fines',
+				label: 'Fine management',
 				perm: 'hr.payroll.compensation',
 			},
 			{
@@ -378,6 +412,23 @@ function canSeeItem(
   return true;
 }
 
+function filterSidebarChildren(
+  children: SidebarNavChild[],
+  options: SidebarNavVisibility,
+): SidebarNavChild[] {
+  const result: SidebarNavChild[] = [];
+  for (const child of children) {
+    if (isSidebarChildGroup(child)) {
+      const nested = child.children.filter((link) => canSeeItem(link, options));
+      if (nested.length === 0) continue;
+      result.push({ ...child, children: nested });
+      continue;
+    }
+    if (canSeeItem(child, options)) result.push(child);
+  }
+  return result;
+}
+
 export function filterSidebarNavEntries(
   entries: SidebarNavEntry[],
   options: SidebarNavVisibility,
@@ -390,7 +441,7 @@ export function filterSidebarNavEntries(
       continue;
     }
 
-    const children = entry.children.filter((child) => canSeeItem(child, options));
+    const children = filterSidebarChildren(entry.children, options);
     const parentVisible = canSeeItem(entry, options);
     if (children.length === 0 && !parentVisible) continue;
 
@@ -416,6 +467,19 @@ export function isSidebarPathActive(
   return !longerSibling;
 }
 
+export function sidebarChildHrefs(children: SidebarNavChild[]): string[] {
+  const hrefs: string[] = [];
+  for (const child of children) {
+    if (isSidebarChildGroup(child)) {
+      if (child.href) hrefs.push(child.href);
+      for (const link of child.children) hrefs.push(link.href);
+    } else {
+      hrefs.push(child.href);
+    }
+  }
+  return hrefs;
+}
+
 /** Collect every navigable href across entries (group hubs, group children, links). */
 export function collectSidebarHrefs(entries: SidebarNavEntry[]): string[] {
   const hrefs: string[] = [];
@@ -424,7 +488,7 @@ export function collectSidebarHrefs(entries: SidebarNavEntry[]): string[] {
       hrefs.push(entry.href);
     } else {
       if (entry.href) hrefs.push(entry.href);
-      for (const child of entry.children) hrefs.push(child.href);
+      hrefs.push(...sidebarChildHrefs(entry.children));
     }
   }
   return hrefs;
@@ -432,14 +496,15 @@ export function collectSidebarHrefs(entries: SidebarNavEntry[]): string[] {
 
 export function isSidebarGroupActive(
   pathname: string,
-  group: SidebarNavGroup,
+  group: { href?: string; children: SidebarNavChild[] },
   siblingHrefs: string[] = [],
 ): boolean {
   // Include sibling hrefs so a group whose hub is a path prefix of another
   // section (e.g. /hr vs /hr/leave) does not steal the active state.
-  const scopedSiblings = [...group.children.map((c) => c.href), ...siblingHrefs];
+  const scopedSiblings = [...sidebarChildHrefs(group.children), ...siblingHrefs];
   if (group.href && isSidebarPathActive(pathname, group.href, scopedSiblings)) return true;
-  return group.children.some((child) =>
-    isSidebarPathActive(pathname, child.href, scopedSiblings),
-  );
+  return group.children.some((child) => {
+    if (isSidebarChildGroup(child)) return isSidebarGroupActive(pathname, child, siblingHrefs);
+    return isSidebarPathActive(pathname, child.href, scopedSiblings);
+  });
 }

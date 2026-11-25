@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
@@ -97,6 +97,7 @@ export default function MonthlyJobSummaryPage() {
   });
   const [hasGenerated, setHasGenerated] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const downloadLock = useRef(false);
 
   const includeCount = useMemo(
     () => Object.values(include).filter(Boolean).length,
@@ -153,6 +154,8 @@ export default function MonthlyJobSummaryPage() {
   };
 
   const handleDownload = async () => {
+    if (downloadLock.current) return;
+    downloadLock.current = true;
     setDownloading(true);
     try {
       const query = buildQueryString(from, to, groupBy, materialLabel, include, 'xlsx');
@@ -163,6 +166,7 @@ export default function MonthlyJobSummaryPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to download Excel');
     } finally {
+      downloadLock.current = false;
       setDownloading(false);
     }
   };

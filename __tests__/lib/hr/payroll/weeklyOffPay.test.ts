@@ -1,4 +1,5 @@
 import {
+  annotateLinesForWeeklyOffPay,
   annotatePaidWeeklyOffLines,
   isPaidNeighbourDay,
   resolvePaidWeeklyOffDates,
@@ -173,6 +174,19 @@ describe('resolvePaidWeeklyOffDates', () => {
     expect(forMode('CUSTOM')).toEqual([]);
   });
 
+  it('pays a worked fixed-monthly Sunday even when weekly-off OT is enabled', () => {
+    const lines = [
+      line('2026-08-14', 'PRESENT', { isSunday: false }),
+      line('2026-08-15', 'ABSENT', { isSunday: false, workedMinutes: 0 }),
+      line('2026-08-16', 'PRESENT', { isSunday: true }),
+      line('2026-08-17', 'PRESENT', { isSunday: false }),
+    ];
+    expect([...resolvePaidWeeklyOffDates(lines, sandwichedConfig)]).toEqual(['2026-08-16']);
+    expect([
+      ...resolvePaidWeeklyOffDates(lines, { ...sandwichedConfig, payExcludedWeekdayWorkAtOt: true }),
+    ]).toEqual(['2026-08-16']);
+  });
+
   it('leaves a worked weekly off on OT-only pay in hourly and daily wage', () => {
     const lines = [
       line('2026-07-04', 'PRESENT'),
@@ -185,6 +199,25 @@ describe('resolvePaidWeeklyOffDates', () => {
     expect([
       ...resolvePaidWeeklyOffDates(lines, { ...sandwichedConfig, mode: 'DAILY_WAGE' }),
     ]).toEqual([]);
+  });
+});
+
+describe('annotateLinesForWeeklyOffPay', () => {
+  it('keeps a fixed-monthly Sunday paid when an earlier hourly package skips worked Sundays', () => {
+    const lines = [
+      line('2026-08-14', 'PRESENT', { isSunday: false }),
+      line('2026-08-15', 'ABSENT', { isSunday: false, workedMinutes: 0 }),
+      line('2026-08-16', 'PRESENT', { isSunday: true }),
+      line('2026-08-17', 'PRESENT', { isSunday: false }),
+    ];
+    const hourly: PayTypeConfig = { ...sandwichedConfig, mode: 'HOURLY_SPLIT' };
+    const monthly = sandwichedConfig;
+    const annotated = annotateLinesForWeeklyOffPay(lines, hourly, (entry) => ({
+      compensation: { monthlyBasic: 2500, monthlyAllowance: 0, dailyRate: 0 },
+      config: entry.workDate < '2026-08-16' ? hourly : monthly,
+    }));
+    expect(annotated.find((entry) => entry.workDate === '2026-08-16')?.isPaidWeeklyOff).toBe(true);
+    expect(annotated.find((entry) => entry.workDate === '2026-08-14')?.isPaidWeeklyOff).toBe(false);
   });
 });
 
@@ -218,5 +251,39 @@ describe('isPaidNeighbourDay', () => {
       isPaidNeighbourDay(line('2026-07-01', 'ABSENT', { isHoliday: true, holidayPaid: true }))
     ).toBe(true);
     expect(isPaidNeighbourDay(line('2026-07-01', 'ABSENT'))).toBe(false);
+    expect(
+      isPaidNeighbourDay(
+        line('2026-07-06', 'LEAVE', {
+          leaveType: 'ANNUAL',
+          leaveTypeCode: 'ANNUAL',
+          leaveRequestId: 'lr',
+          leavePayPercent: 0,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('does not pay an annual-leave Sunday, and still pays the Sunday beside that leave', () => {
+    const lines = [
+      line('2026-07-04', 'PRESENT'),
+      line('2026-07-05', 'LEAVE', {
+        leaveType: 'ANNUAL',
+        leaveTypeCode: 'ANNUAL',
+        leaveRequestId: 'sun',
+        leavePayPercent: 0,
+      }),
+      line('2026-07-06', 'LEAVE', {
+        leaveType: 'ANNUAL',
+        leaveTypeCode: 'ANNUAL',
+        leaveRequestId: 'mon',
+        leavePayPercent: 0,
+      }),
+      line('2026-07-11', 'PRESENT'),
+      line('2026-07-12', 'ABSENT'),
+      line('2026-07-13', 'PRESENT'),
+    ];
+    const dates = resolvePaidWeeklyOffDates(lines, sandwichedConfig);
+    expect(dates.has('2026-07-05')).toBe(false);
+    expect(dates.has('2026-07-12')).toBe(true);
   });
 });

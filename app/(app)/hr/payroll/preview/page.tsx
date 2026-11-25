@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import { cn } from '@/lib/utils';
 import { daysInMonth, sumMoney } from '@/lib/hr/payroll/calendar';
+import { payrollFineLineLabel, sumPayrollFineAmount } from '@/lib/hr/payroll/payrollFineDeduction';
 import PayPreviewExportModal from '@/components/hr/PayPreviewExportModal';
 import { isPayPreviewPendingCompensationRow } from '@/lib/hr/payroll/payPreviewRowStatus';
 import { readApiJson } from '@/lib/utils/readApiResponse';
@@ -55,6 +56,8 @@ type PreviewEmployee = {
   breakdown: Record<string, number>;
   salaryComponentEarnings?: number;
   salaryComponentDeductions?: number;
+  rejectedSickLeaveFine?: { days: number; amount: number } | null;
+  payrollFines?: { id: string; description: string; amount: number }[];
   dayDetails?: PreviewDayDetail[];
   healthCheck?: {
     ok: boolean;
@@ -178,6 +181,7 @@ function breakdownLabel(key: string) {
     outsideCapOt: 'Outside-cap OT',
     holidayWorkedOt: 'Holiday worked OT',
     excludedWeekdayOt: 'Weekly off OT',
+    annualLeaveNotAdded: 'Annual leave not added',
   };
   return labels[key] ?? key.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
 }
@@ -296,15 +300,28 @@ function PayHealthCheckPanel({
 function DayBreakdownTable({
   rows,
   summary,
+  sickLeaveFine,
+  payrollFines,
+  finalGross,
 }: {
   rows: PreviewDayDetail[];
   summary: EmployeeSummary;
+  sickLeaveFine?: { days: number; amount: number } | null;
+  payrollFines?: { id: string; description: string; amount: number }[];
+  finalGross?: number;
 }) {
-  if (rows.length === 0) {
+  const sickAmount = sickLeaveFine && sickLeaveFine.amount > 0 ? sickLeaveFine.amount : 0;
+  const fineRows = (payrollFines ?? []).filter((fine) => fine.amount > 0);
+  const extraAmount = sumMoney([sickAmount, sumPayrollFineAmount(fineRows)]);
+  if (rows.length === 0 && extraAmount <= 0) {
     return <p className="text-xs text-muted-foreground">No saved attendance rows for this month.</p>;
   }
 
   const dayTotals = summarizeDayComponentTotals(rows);
+  const footerDeductions = dayTotals.deductions + extraAmount;
+  const dayTotalAfterFine = dayTotals.totalSalary - extraAmount;
+  const footerTotal =
+    finalGross != null && Math.abs(dayTotalAfterFine - finalGross) < 1 ? finalGross : dayTotalAfterFine;
 
   return (
     <div className="overflow-x-auto rounded-md border border-border">
@@ -346,6 +363,26 @@ function DayBreakdownTable({
           ))}
         </tbody>
         <tfoot>
+          {sickAmount > 0 && sickLeaveFine ? (
+            <tr className="border-t bg-rose-50/60 text-rose-800 dark:bg-rose-950/20 dark:text-rose-200">
+              <td className="px-2 py-2" colSpan={8}>
+                Sick leave fine ({sickLeaveFine.days} {sickLeaveFine.days === 1 ? 'day' : 'days'})
+              </td>
+              <td className="px-2 py-2 text-right tabular-nums">{formatMoney(sickAmount)}</td>
+              <td className="px-2 py-2 text-right tabular-nums">{formatMoney(-sickAmount)}</td>
+              <td className="px-2 py-2">Deduction</td>
+            </tr>
+          ) : null}
+          {fineRows.map((fine) => (
+            <tr key={fine.id} className="border-t bg-rose-50/60 text-rose-800 dark:bg-rose-950/20 dark:text-rose-200">
+              <td className="px-2 py-2" colSpan={8} title={fine.description}>
+                {payrollFineLineLabel(fine.description)}
+              </td>
+              <td className="px-2 py-2 text-right tabular-nums">{formatMoney(fine.amount)}</td>
+              <td className="px-2 py-2 text-right tabular-nums">{formatMoney(-fine.amount)}</td>
+              <td className="px-2 py-2">Deduction</td>
+            </tr>
+          ))}
           <tr className="border-t bg-muted/20 font-medium">
             <td className="px-2 py-2">Day totals</td>
             <td className="px-2 py-2" colSpan={3} />
@@ -356,12 +393,12 @@ function DayBreakdownTable({
               {formatMoney(dayTotals.earnings)}
             </td>
             <td className="px-2 py-2 text-right tabular-nums text-rose-700 dark:text-rose-300">
-              {formatMoney(dayTotals.deductions)}
+              {formatMoney(footerDeductions)}
             </td>
-            <td className="px-2 py-2 text-right tabular-nums">{formatMoney(dayTotals.totalSalary)}</td>
+            <td className="px-2 py-2 text-right tabular-nums">{formatMoney(footerTotal)}</td>
             <td className="px-2 py-2" />
           </tr>
-          {(summary.allowance > dayTotals.earnings || summary.deduction > dayTotals.deductions) && (
+          {(summary.allowance > dayTotals.earnings || summary.deduction > footerDeductions + 0.001) && (
             <tr className="border-t bg-muted/10 text-muted-foreground">
               <td className="px-2 py-2" colSpan={11}>
                 Month allowance ({formatMoney(summary.allowance)}) and deduction ({formatMoney(summary.deduction)})
@@ -517,7 +554,13 @@ function EmployeeBreakdownModal({
             Allowance shows earning-type components. Deduction shows deduction-type components.
             Fixed monthly components are included in month totals when not listed per day.
           </p>
-          <DayBreakdownTable rows={dayRows} summary={summary} />
+          <DayBreakdownTable
+            rows={dayRows}
+            summary={summary}
+            sickLeaveFine={row.rejectedSickLeaveFine}
+            payrollFines={row.payrollFines}
+            finalGross={row.gross}
+          />
         </div>
       </div>
     </Modal>
