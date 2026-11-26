@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/shadcn/button';
 import { Input } from '@/components/ui/shadcn/input';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
-import type { LeaveReturnResult } from '@/lib/hr/leaveReturn';
 import { deductFromBalanceFromRules, parseLeaveTypeRules } from '@/lib/hr/leaveTypeRules';
 import { resolveDefaultHrCompanyId, writeHrPreferredCompanyId } from '@/lib/hr/hrCompanyPreference';
 import { cn } from '@/lib/utils';
@@ -33,7 +32,6 @@ type LeaveRow = {
   reviewedAt: string | null;
   dayCount: number;
   returnDate?: string | null;
-  returnResult?: LeaveReturnResult | null;
   extraDays?: number | null;
   leaveTypeRef?: { id: string; name: string; code: string; rules?: unknown } | null;
   employee: { id: string; fullName: string; preferredName: string | null; employeeCode: string };
@@ -70,31 +68,6 @@ type EmployeeOption = {
 
 type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
 type LeaveSort = 'submitted' | 'startDesc' | 'startAsc';
-type ReturnFilter = 'ALL' | 'LATE' | 'NOT_RETURNED' | 'NOT_MARKED';
-
-function returnResultLabel(result: LeaveReturnResult): string {
-  const labels: Record<LeaveReturnResult, string> = {
-    ON_TIME: 'On time',
-    LATE: 'Late',
-    STILL_ON_LEAVE: 'Still on leave',
-    NOT_RETURNED: 'Not returned',
-    NOT_MARKED: 'Not marked',
-    ANOTHER_LEAVE: 'Another leave',
-  };
-  return labels[result];
-}
-
-function returnResultClass(result: LeaveReturnResult): string {
-  const map: Record<LeaveReturnResult, string> = {
-    ON_TIME: 'bg-emerald-500/15 text-emerald-900 dark:text-emerald-200',
-    LATE: 'bg-red-500/15 text-red-900 dark:text-red-200',
-    STILL_ON_LEAVE: 'bg-sky-500/15 text-sky-900 dark:text-sky-200',
-    NOT_RETURNED: 'bg-amber-500/15 text-amber-900 dark:text-amber-200',
-    NOT_MARKED: 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
-    ANOTHER_LEAVE: 'bg-violet-500/15 text-violet-900 dark:text-violet-200',
-  };
-  return map[result];
-}
 
 function statusBadgeClass(status: string) {
   const map: Record<string, string> = {
@@ -171,7 +144,6 @@ export default function HrLeavePage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [filterLeaveTypeId, setFilterLeaveTypeId] = useState('');
-  const [returnFilter, setReturnFilter] = useState<ReturnFilter>('ALL');
   const [sort, setSort] = useState<LeaveSort>('submitted');
   const [requests, setRequests] = useState<LeaveRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -363,12 +335,11 @@ export default function HrLeavePage() {
   const dateRangeInvalid = Boolean(fromDate && toDate && fromDate > toDate);
   const hasDateFilter = Boolean(fromDate && toDate && !dateRangeInvalid);
   const extraFiltersActive =
-    Boolean(month || fromDate || toDate || filterLeaveTypeId) || sort !== 'submitted' || returnFilter !== 'ALL';
+    Boolean(month || fromDate || toDate || filterLeaveTypeId) || sort !== 'submitted';
 
   const visibleRequests = useMemo(() => {
     const q = search.trim().toLowerCase();
     return requests.filter((row) => {
-      if (returnFilter !== 'ALL' && row.returnResult !== returnFilter) return false;
       if (!q) return true;
       return [
         row.employee.fullName,
@@ -382,7 +353,7 @@ export default function HrLeavePage() {
         .toLowerCase()
         .includes(q);
     });
-  }, [requests, returnFilter, search]);
+  }, [requests, search]);
 
   const selectedLeaveType = leaveTypes.find((t) => t.id === recordLeaveTypeId);
   const recordDayCount = useMemo(() => {
@@ -632,17 +603,6 @@ export default function HrLeavePage() {
                 {key === 'PENDING' ? 'Pending' : key === 'APPROVED' ? 'Approved' : key === 'REJECTED' ? 'Rejected' : 'All'}
               </Button>
             ))}
-            <select
-              className="flex h-8 rounded-md border border-input bg-transparent px-2 text-sm"
-              value={returnFilter}
-              onChange={(event) => setReturnFilter(event.target.value as ReturnFilter)}
-              aria-label="Return"
-            >
-              <option value="ALL">All returns</option>
-              <option value="LATE">Late</option>
-              <option value="NOT_RETURNED">Not returned</option>
-              <option value="NOT_MARKED">Not marked</option>
-            </select>
           </div>
           <Input
             value={search}
@@ -735,7 +695,6 @@ export default function HrLeavePage() {
                 setFromDate('');
                 setToDate('');
                 setFilterLeaveTypeId('');
-                setReturnFilter('ALL');
                 setSort('submitted');
               }}
             >
@@ -772,7 +731,6 @@ export default function HrLeavePage() {
                   <th className="px-4 py-3 font-medium">Leave type</th>
                   <th className="px-4 py-3 font-medium">Dates</th>
                   <th className="px-4 py-3 font-medium">Return</th>
-                  <th className="px-4 py-3 font-medium">Result</th>
                   <th className="px-4 py-3 font-medium">Extra days</th>
                   <th className="px-4 py-3 font-medium">Days</th>
                   <th className="px-4 py-3 font-medium">Balance left</th>
@@ -798,15 +756,6 @@ export default function HrLeavePage() {
                     <td className="px-4 py-3 tabular-nums">{formatDateRange(row.startDate, row.endDate)}</td>
                     <td className="px-4 py-3 tabular-nums">
                       {row.returnDate ? String(row.returnDate).slice(0, 10) : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {row.returnResult ? (
-                        <Badge className={cn('font-medium', returnResultClass(row.returnResult))}>
-                          {returnResultLabel(row.returnResult)}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
                       {row.extraDays == null ? <span className="text-muted-foreground">—</span> : row.extraDays}

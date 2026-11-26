@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
-import { buildEmployeeHistory, monthOverlapsRange, payRangeIsWholeMonths } from '@/lib/hr/employeeHistory';
-import { assembleEmployeeHistoryReport, type EmployeeHistoryReport } from '@/lib/hr/employeeHistoryReport';
+import { buildEmployeeHistory, monthOverlapsRange, payRangeIsWholeMonths, selectCurrentVisaPeriod } from '@/lib/hr/employeeHistory';
+import { assembleEmployeeHistoryReport, buildLeaveTypeCounts, type EmployeeHistoryReport, type LeaveTypeCount } from '@/lib/hr/employeeHistoryReport';
+import { parseLeaveTypeRules } from '@/lib/hr/leaveTypeRules';
 import { displayNationalityCountryName } from '@/lib/hr/countryNames';
 import { documentOverlapsHistoryRange } from '@/lib/hr/employeeHistorySections';
 import { dubaiTodayYmd } from '@/lib/hr/leaveReturn';
@@ -109,6 +110,7 @@ export async function loadEmployeeHistory(input: {
     documents: boolean;
   };
   includeAttendanceDays: boolean;
+  preferVisaRange?: boolean;
 }): Promise<EmployeeHistoryReport | { error: string; status: number }> {
   const employee = await prisma.employee.findFirst({
     where: { id: input.employeeId, companyId: input.companyId },
@@ -174,10 +176,37 @@ export async function loadEmployeeHistory(input: {
   if (hasCustomRange && input.from! > input.to!) {
     return { error: 'From date must be on or before the to date.', status: 400 };
   }
-  const from = hasCustomRange
+  const visaSelect = { id: true, label: true, startDate: true, endDate: true, status: true } as const;
+  let preloadedVisas: Array<{
+    id: string;
+    label: string;
+    startDate: Date | string;
+    endDate: Date | string;
+    status: string;
+  }> | null = null;
+  let from = hasCustomRange
     ? input.from!
     : hireDate ?? (await earliestRecordDate(input.companyId, employee.id)) ?? defaultEnd;
-  const to = hasCustomRange ? input.to! : defaultEnd;
+  let to = hasCustomRange ? input.to! : defaultEnd;
+  if (!hasCustomRange && input.preferVisaRange) {
+    preloadedVisas = await prisma.visaPeriod.findMany({
+      where: { companyId: input.companyId, employeeId: employee.id },
+      orderBy: { startDate: 'asc' },
+      select: visaSelect,
+    });
+    const current = selectCurrentVisaPeriod(
+      preloadedVisas.map((row) => ({
+        status: row.status,
+        startDate: ymdFromDb(row.startDate) ?? '',
+        endDate: ymdFromDb(row.endDate) ?? '',
+      })),
+      today,
+    );
+    if (current && current.startDate && current.endDate && current.startDate <= current.endDate) {
+      from = current.startDate;
+      to = current.endDate;
+    }
+  }
   if (from > to) {
     const empty = buildEmployeeHistory({ from: '2026-01-02', to: '2026-01-01', attendance: [], leaves: [] });
     return assembleEmployeeHistoryReport({
@@ -269,16 +298,13 @@ export async function loadEmployeeHistory(input: {
       where: { companyId: input.companyId, employeeId: employee.id, warningDate: { gte: fromDate, lte: toDate } },
       orderBy: [{ warningDate: 'desc' }, { createdAt: 'desc' }],
     }),
-    prisma.visaPeriod.findMany({
-      where: {
-        companyId: input.companyId,
-        employeeId: employee.id,
-        startDate: { lte: toDate },
-        endDate: { gte: fromDate },
-      },
-      orderBy: { startDate: 'asc' },
-      select: { id: true, label: true, startDate: true, endDate: true, status: true },
-    }),
+    preloadedVisas
+      ? Promise.resolve(preloadedVisas)
+      : prisma.visaPeriod.findMany({
+          where: { companyId: input.companyId, employeeId: employee.id },
+          orderBy: { startDate: 'asc' },
+          select: visaSelect,
+        }),
     input.access.documents
       ? prisma.employeeDocument.findMany({
           where: { companyId: input.companyId, employeeId: employee.id },
@@ -452,5 +478,31 @@ export async function loadEmployeeHistory(input: {
     },
     access: input.access,
     includeAttendanceDays: input.includeAttendanceDays,
+    leaveTypeCounts: input.access.attendanceAndLeave
+      ? await leaveTypeCountsForReport(input.companyId, counts.leaves.map((row) => ({
+          typeName: row.typeName,
+          days: row.days,
+          typeCode: leaves.find((leave) => leave.id === row.id)?.leaveTypeRef?.code ?? null,
+        })))
+      : [],
   });
+}
+
+async function leaveTypeCountsForReport(
+  companyId: string,
+  leaves: Array<{ typeName: string; days: number; typeCode?: string | null }>,
+): Promise<LeaveTypeCount[]> {
+  const types = await prisma.leaveType.findMany({
+    where: { companyId, isActive: true },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { name: true, code: true, rules: true },
+  });
+  return buildLeaveTypeCounts(
+    types.map((type) => ({
+      name: type.name,
+      code: type.code,
+      entitlementDays: parseLeaveTypeRules(type.rules).entitlementDays ?? null,
+    })),
+    leaves,
+  );
 }

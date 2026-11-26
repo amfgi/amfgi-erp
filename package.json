@@ -43,6 +43,7 @@
 		"bcryptjs": "^3.0.3",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"docx": "^9.16.0",
 		"googleapis": "^171.4.0",
 		"html2canvas-pro": "^2.5.2",
 		"jspdf": "^4.2.1",

@@ -42,7 +42,7 @@ function report(): EmployeeHistoryReport {
     range: { from, to },
     rangeNote: null,
     attendanceAndLeaveMessage: null,
-    attendanceAndLeave: counts,
+    attendanceAndLeave: { ...counts, leaveTypeCounts: [] },
     pay: { wholeMonths: true, lines: [] },
     salaryStructure: { packages: [] },
     advances: { total: 0, rows: [] },
@@ -94,7 +94,8 @@ describe('allowedHistorySections', () => {
     });
     expect(sections).not.toContain('documents');
     expect(sections).not.toContain('visa');
-    expect(sections).toContain('attendance');
+    expect(sections).toContain('absent');
+    expect(sections).not.toContain('attendance');
     expect(sections).toContain('warnings');
     expect(sections).toContain('fines');
   });
@@ -119,16 +120,33 @@ describe('history workbook sections', () => {
     expect(parseHistorySections('none')).toEqual([]);
   });
 
+  it('opens the absent section when an old link still asks for attendance', () => {
+    expect(parseHistorySections('attendance,leave')).toEqual(['absent', 'leave']);
+  });
+
   it('writes only the summary when no section is selected', () => {
     expect(sheetNames(report(), [])).toEqual(['Summary']);
     expect(sheetNames(report(), parseHistorySections('none'))).toEqual(['Summary']);
   });
 
-  it('omits the attendance day sheet when only leave is selected', () => {
+  it('drops the attendance day section from old links', () => {
+    expect(parseHistorySections('attendanceDays,leave')).toEqual(['leave']);
+    expect(sheetNames(report(), 'all')).not.toContain('Attendance');
+  });
+
+  it('omits the absent sheet when only leave is selected', () => {
     const names = sheetNames(report(), ['leave']);
     expect(names).toContain('Leave');
     expect(names).not.toContain('Attendance');
+    expect(names).not.toContain('Absent');
+  });
+
+  it('writes total absent days on the absent sheet', () => {
+    const names = sheetNames(report(), parseHistorySections('attendance'));
+    expect(names).toContain('Absent');
     expect(names).not.toContain('Attendance totals');
+    const rows = XLSX.utils.sheet_to_json(XLSX.read(buildEmployeeHistoryWorkbook(report(), ['absent'])).Sheets.Absent, { header: 1 });
+    expect(rows[0]).toEqual(['Total absent days', 0]);
   });
 
   it('writes approved fines with their total columns', () => {
@@ -161,7 +179,7 @@ describe('history workbook sections', () => {
     };
     const rows = XLSX.utils.sheet_to_json(XLSX.read(buildEmployeeHistoryWorkbook(withLine, ['pay'])).Sheets['Pay runs'], { header: 1 });
     expect(rows[0]).toEqual(['Full finalized month, not cut to the selected days.']);
-    expect(rows[1]).toEqual(['Month', 'Gross', 'Absent days in this pay run', 'Overtime pay']);
+    expect(rows[1]).toEqual(['Month', 'Absent days in this pay run', 'Overtime pay', 'Gross']);
     expect(rows[2]?.[0]).toBe('2026-10');
   });
 

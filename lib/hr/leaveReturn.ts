@@ -3,7 +3,6 @@ import { dateFromYmd } from '@/lib/hr/workDate';
 
 export const LEAVE_RETURN_RESULTS = [
   'ON_TIME',
-  'LATE',
   'STILL_ON_LEAVE',
   'NOT_RETURNED',
   'NOT_MARKED',
@@ -162,7 +161,7 @@ export function assessLeaveReturn(
   if (returnDate) {
     return finish({
       returnDate,
-      returnResult: extraDays > 0 ? 'LATE' : 'ON_TIME',
+      returnResult: 'ON_TIME',
       extraDays,
     });
   }

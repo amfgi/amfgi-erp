@@ -1,7 +1,6 @@
 export const HISTORY_SECTIONS = [
   'personal',
-  'attendance',
-  'attendanceDays',
+  'absent',
   'leave',
   'salary',
   'deductions',
@@ -16,7 +15,7 @@ export const HISTORY_SECTIONS = [
 export type HistorySection = (typeof HISTORY_SECTIONS)[number];
 
 export const DEFAULT_HISTORY_SECTIONS: HistorySection[] = [
-  'attendance',
+  'absent',
   'leave',
   'salary',
   'deductions',
@@ -38,7 +37,8 @@ export function parseHistorySections(value: string | null): HistorySectionSelect
   if (!trimmed || trimmed === 'none') return [];
   const picked: HistorySection[] = [];
   for (const part of trimmed.split(',')) {
-    const id = part.trim();
+    const raw = part.trim();
+    const id = raw === 'attendance' ? 'absent' : raw;
     if (SECTION_SET.has(id) && !picked.includes(id as HistorySection)) picked.push(id as HistorySection);
   }
   return picked;
@@ -60,7 +60,7 @@ export function allowedHistorySections(access: {
   documents: boolean;
 }): HistorySection[] {
   return HISTORY_SECTIONS.filter((section) => {
-    if (section === 'attendance' || section === 'attendanceDays' || section === 'leave') return access.attendanceAndLeave;
+    if (section === 'absent' || section === 'leave') return access.attendanceAndLeave;
     if (section === 'pay' || section === 'advances' || section === 'fines') return access.payroll;
     if (section === 'salary') return access.compensation;
     if (section === 'deductions') return access.compensation || access.payroll;

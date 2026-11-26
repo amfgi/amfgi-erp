@@ -1,13 +1,9 @@
 'use client';
 
 import { absentDateRows } from '@/lib/hr/employeeHistory';
-import type { EmployeeHistoryReport } from '@/lib/hr/employeeHistoryReport';
+import { formatLeaveTypeCount, type EmployeeHistoryReport } from '@/lib/hr/employeeHistoryReport';
 import { sectionSelected, type HistorySectionSelection } from '@/lib/hr/employeeHistorySections';
 import { dubaiTodayYmd } from '@/lib/hr/leaveReturn';
-
-function hours(minutes: number): string {
-  return `${Math.round((minutes / 60) * 100) / 100} h`;
-}
 
 function prettyLabel(value: string) {
   return value
@@ -21,10 +17,16 @@ export function EmployeeHistoryReportView({
   report,
   mode = 'screen',
   sections = 'all',
+  hideIntro = false,
+  hideAbsentDays = false,
+  hideAbsentStats = false,
 }: {
   report: EmployeeHistoryReport;
   mode?: 'screen' | 'print';
   sections?: HistorySectionSelection;
+  hideIntro?: boolean;
+  hideAbsentDays?: boolean;
+  hideAbsentStats?: boolean;
 }) {
   const print = mode === 'print';
   const employee = report.employee;
@@ -46,6 +48,15 @@ export function EmployeeHistoryReportView({
 
   return (
     <div className={print ? 'flex flex-col gap-2 text-[11px] leading-snug' : 'flex flex-col gap-4'}>
+      {hideIntro ? (
+        employee.terminationDate || report.rangeNote || employee.adminNotes ? (
+          <section className={panel}>
+            {employee.terminationDate ? <p className={`text-xs ${muted}`}>Termination {employee.terminationDate}</p> : null}
+            {report.rangeNote ? <p className={`text-xs ${print ? 'text-amber-800' : 'text-amber-200'}`}>{report.rangeNote}</p> : null}
+            {employee.adminNotes ? <p className={`whitespace-pre-wrap text-xs ${body}`}>{employee.adminNotes}</p> : null}
+          </section>
+        ) : null
+      ) : (
       <section className={panel}>
         {print ? <p className="mb-1.5 text-lg font-bold leading-tight text-slate-900">{employee.companyName}</p> : null}
         <h2 className={print ? 'text-base font-semibold text-slate-900' : 'text-base font-semibold text-white'}>
@@ -67,10 +78,11 @@ export function EmployeeHistoryReportView({
         {report.rangeNote ? <p className={`mt-1 text-xs ${print ? 'text-amber-800' : 'text-amber-200'}`}>{report.rangeNote}</p> : null}
         <p className={`mt-1 text-[11px] ${muted}`}>
           Service is from joining to {employee.terminationDate && employee.terminationDate <= dubaiTodayYmd() ? 'the termination date' : 'today'}.
-          {show('attendance') || show('leave') ? ' Totals below are for this period.' : ''}
+          {show('absent') || show('leave') ? ' Totals below are for this period.' : ''}
         </p>
         {employee.adminNotes ? <p className={`mt-2 whitespace-pre-wrap text-xs ${body}`}>{employee.adminNotes}</p> : null}
       </section>
+      )}
 
       {show('personal') ? (
         <section className={panel}>
@@ -103,20 +115,16 @@ export function EmployeeHistoryReportView({
         </p>
       ) : null}
 
-      {block && (show('attendance') || show('leave') || show('attendanceDays')) ? (
+      {block && (show('absent') || show('leave')) ? (
         <>
-          {show('attendance') ? (
+          {show('absent') ? (
             <>
-              <div className={print ? 'grid grid-cols-4 gap-1 sm:grid-cols-7' : 'grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7'}>
-                <Stat print={print} label="Worked days" value={block.workedDays.toFixed(1)} hint={block.halfDays ? `${block.halfDays} half day${block.halfDays === 1 ? '' : 's'}` : undefined} />
-                <Stat print={print} label="Total absent" value={block.absentDays} hint="Unauthorised + overstay" />
-                <Stat print={print} label="Unauthorised" value={block.unauthorisedDays} hint="Part of total absent" />
-                <Stat print={print} label="Overstay" value={block.overstayDays} hint="Part of total absent" />
-                <Stat print={print} label="Late" value={block.lateDays} hint={`${block.lateMinutes} min`} />
-                <Stat print={print} label="Early" value={block.earlyDays} hint={`${block.earlyMinutes} min`} />
-                <Stat print={print} label="Overtime" value={hours(block.overtimeMinutes)} />
-                <Stat print={print} label="Missing punch" value={block.missingPunchDays} />
-              </div>
+              {hideAbsentStats ? null : (
+                <div className={print ? 'grid grid-cols-2 gap-1' : 'grid grid-cols-2 gap-2.5'}>
+                  <Stat print={print} label="Total absent days" value={block.absentDays} />
+                  <Stat print={print} label="Unauthorised" value={block.unauthorisedDays} hint="Part of total absent" />
+                </div>
+              )}
               {absentDates.length > 0 ? (
                 <SimpleTable
                   print={print}
@@ -125,57 +133,50 @@ export function EmployeeHistoryReportView({
                   empty=""
                 />
               ) : null}
-              {show('leave') ? null : <p className={`text-[11px] ${muted}`}>Approved leave is not counted as worked or absent.</p>}
-              <section className={panel}>
-                <SectionTitle print={print}>Exceptions</SectionTitle>
-                <SimpleTable
-                  print={print}
-                  headers={['Kind', 'Date', 'Status', 'Minutes']}
-                  rows={[
-                    ...block.exceptions.late.map((row) => ['Late', row.date, prettyLabel(row.status), String(row.lateMinutes)]),
-                    ...block.exceptions.early.map((row) => ['Early', row.date, prettyLabel(row.status), String(row.earlyLeaveMinutes)]),
-                    ...block.exceptions.unauthorised.map((row) => ['Unauthorised', row.date, prettyLabel(row.status), '']),
-                    ...block.exceptions.missingPunch.map((row) => ['Missing punch', row.date, prettyLabel(row.status), '']),
-                    ...block.exceptions.overstay.map((row) => ['Overstay', row.date, prettyLabel(row.status), '']),
-                  ]}
-                  empty="No late, early, unauthorised, missing punch, or overstay days."
-                />
-              </section>
+              {show('leave') ? null : <p className={`text-[11px] ${muted}`}>Approved leave is not counted as absent.</p>}
+              {hideAbsentDays ? null : (
+                <section className={panel}>
+                  <SectionTitle print={print}>Absent days</SectionTitle>
+                  <SimpleTable
+                    print={print}
+                    headers={['Kind', 'Date', 'Status']}
+                    rows={[
+                      ...block.exceptions.unauthorised.map((row) => ['Unauthorised', row.date, prettyLabel(row.status)]),
+                      ...block.exceptions.overstay.map((row) => ['Absent', row.date, prettyLabel(row.status)]),
+                    ]}
+                    empty="No absent days."
+                  />
+                </section>
+              )}
             </>
-          ) : null}
-          {show('attendanceDays') ? (
-            <section className={panel}>
-              <SectionTitle print={print}>Attendance days</SectionTitle>
-              <SimpleTable
-                print={print}
-                headers={['Date', 'Status', 'Counted as', 'Late', 'Early', 'Overtime', 'Note']}
-                rows={(block.attendanceDays ?? []).map((row) => [row.date, prettyLabel(row.status), row.countedAs, String(row.lateMinutes), String(row.earlyLeaveMinutes), String(row.overtimeMinutes), row.remark ?? ''])}
-                empty="No attendance rows in this period."
-              />
-            </section>
           ) : null}
           {show('leave') ? (
-            <>
-              <div className={print ? 'grid grid-cols-4 gap-1 sm:grid-cols-5' : 'grid grid-cols-2 gap-2.5 sm:grid-cols-5'}>
-                <Stat print={print} label="Sick" value={block.sickDays} />
-                <Stat print={print} label="Paid" value={block.paidDays} />
-                <Stat print={print} label="Unpaid" value={block.unpaidDays} />
-                <Stat print={print} label="Annual" value={block.annualDays} />
-                <Stat print={print} label="Return not marked" value={block.returnNotMarked} hint="Leaves, not days" />
+            <section className={panel}>
+              <SectionTitle print={print}>Leave</SectionTitle>
+              <div className={print ? 'mt-1 grid grid-cols-4 items-start gap-1' : 'mt-2 grid grid-cols-2 items-start gap-2.5 sm:grid-cols-4'}>
+                {block.leaveTypeCounts.length > 0 ? (
+                  block.leaveTypeCounts.map((row) => (
+                    <Stat key={row.label} print={print} compact label={row.label} value={formatLeaveTypeCount(row.usedDays, row.allowance)} />
+                  ))
+                ) : (
+                  <>
+                    <Stat print={print} compact label="Sick" value={block.sickDays} />
+                    <Stat print={print} compact label="Paid" value={block.paidDays} />
+                    <Stat print={print} compact label="Unpaid" value={block.unpaidDays} />
+                    <Stat print={print} compact label="Annual" value={block.annualDays} />
+                  </>
+                )}
               </div>
-              {block.otherLeave.length > 0 ? (
-                <p className={`text-xs ${body}`}>Other leave: {block.otherLeave.map((row) => `${row.name} ${row.days}`).join(', ')}</p>
+              {block.leaveTypeCounts.length === 0 && block.otherLeave.length > 0 ? (
+                <p className={`mt-1 text-xs ${body}`}>Other leave: {block.otherLeave.map((row) => `${row.name} ${row.days}`).join(', ')}</p>
               ) : null}
-              <section className={panel}>
-                <SectionTitle print={print}>Leave</SectionTitle>
-                <SimpleTable
-                  print={print}
-                  headers={['Type', 'Start', 'End', 'Days', 'Reason']}
-                  rows={block.leaves.map((row) => [row.typeName, row.startDate, row.endDate, String(row.days), row.notes.map((note) => `${note.date} ${note.note}`).join('; ')])}
-                  empty="No approved leave in this period."
-                />
-              </section>
-            </>
+              <SimpleTable
+                print={print}
+                headers={['Type', 'Start', 'End', 'Days', 'Reason']}
+                rows={block.leaves.map((row) => [row.typeName, row.startDate, row.endDate, String(row.days), row.notes.map((note) => `${note.date} ${note.note}`).join('; ')])}
+                empty="No approved leave in this period."
+              />
+            </section>
           ) : null}
         </>
       ) : null}
@@ -191,12 +192,12 @@ export function EmployeeHistoryReportView({
           </p>
           <SimpleTable
             print={print}
-            headers={['Month', 'Gross', 'Absent days in this pay run', 'Overtime pay']}
+            headers={['Month', 'Absent days in this pay run', 'Overtime pay', 'Gross']}
             rows={report.pay.lines.map((row) => [
               row.month,
-              String(row.gross),
               row.unpaidAbsentDays == null ? '—' : String(row.unpaidAbsentDays),
               row.otPay == null ? '—' : String(row.otPay),
+              String(row.gross),
             ])}
             empty="No finalized pay run in this period."
           />
@@ -337,14 +338,23 @@ function Stat({
   value,
   hint,
   print,
+  compact = false,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   print: boolean;
+  compact?: boolean;
 }) {
+  const box = print
+    ? compact
+      ? 'border border-slate-300 bg-white px-2 pt-1 pb-0'
+      : 'border border-slate-300 bg-white px-2 py-1'
+    : compact
+      ? 'rounded-md border border-white/10 bg-slate-900/50 px-2.5 pt-2 pb-0.5'
+      : 'rounded-md border border-white/10 bg-slate-900/50 px-2.5 py-2';
   return (
-    <div className={print ? 'border border-slate-300 bg-white px-2 py-1' : 'rounded-md border border-white/10 bg-slate-900/50 px-2.5 py-2'}>
+    <div className={box}>
       <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
       <p className={print ? 'text-sm font-semibold leading-tight text-slate-900' : 'text-sm font-semibold leading-tight text-white'}>{value}</p>
       {hint ? <p className={print ? 'text-[10px] leading-tight text-slate-500' : 'text-[10px] leading-tight text-slate-400'}>{hint}</p> : null}

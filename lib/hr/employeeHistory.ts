@@ -71,6 +71,16 @@ export type EmployeeHistoryCounts = {
   };
 };
 
+/** Visa covering today, otherwise the active period with the latest end date. */
+export function selectCurrentVisaPeriod<T extends { status: string; startDate: string; endDate: string }>(
+  periods: T[],
+  today: string,
+): T | null {
+  const open = periods.filter((row) => row.status !== 'CANCELLED' && row.startDate <= today && row.endDate >= today);
+  const pool = open.length > 0 ? open : periods.filter((row) => row.status === 'ACTIVE');
+  return [...pool].sort((a, b) => b.endDate.localeCompare(a.endDate))[0] ?? null;
+}
+
 export function absentDateRows(counts: Pick<EmployeeHistoryCounts, 'exceptions'>): Array<{ date: string; note: string }> {
   return [...counts.exceptions.unauthorised, ...counts.exceptions.overstay]
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -337,7 +347,7 @@ export function buildEmployeeHistory(input: {
       excludedWeekdaysForDate,
       includeExtraDates: true,
     });
-    if (assessment.returnResult === 'LATE' || assessment.returnResult === 'NOT_RETURNED') {
+    if ((assessment.extraDays ?? 0) > 0) {
       for (const date of assessment.extraDates) {
         if (date >= from && date <= to && absentDates.has(date)) overstayDates.add(date);
       }

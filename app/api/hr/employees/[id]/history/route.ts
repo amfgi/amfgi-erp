@@ -22,6 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const from = searchParams.get('from')?.trim() || null;
   const to = searchParams.get('to')?.trim() || null;
+  const preferVisaRange = !from && !to && searchParams.get('visaRange') === '1';
   const user = ctx.session.user;
   const access = {
     attendanceAndLeave: hasPerm(user, P.HR_ATTENDANCE_VIEW) && hasPerm(user, P.HR_LEAVE_VIEW),
@@ -30,7 +31,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     visa: canHrVisaView(user),
     documents: canHrDocumentView(user),
   };
-  const includeAttendanceDays = access.attendanceAndLeave;
+  const includeAttendanceDays = false;
 
   const report = await loadEmployeeHistory({
     companyId,
@@ -39,6 +40,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     to,
     access,
     includeAttendanceDays,
+    preferVisaRange,
   });
   if ('error' in report) return errorResponse(report.error, report.status);
 

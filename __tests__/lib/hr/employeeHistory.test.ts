@@ -1,4 +1,4 @@
-import { absenceCountRange, absentDateRows, buildEmployeeHistory, payRangeIsWholeMonths } from '@/lib/hr/employeeHistory';
+import { absenceCountRange, absentDateRows, buildEmployeeHistory, payRangeIsWholeMonths, selectCurrentVisaPeriod } from '@/lib/hr/employeeHistory';
 
 const from = '2026-10-01';
 const to = '2026-10-31';
@@ -347,5 +347,22 @@ describe('absenceCountRange', () => {
         today,
       })
     ).toBeNull();
+  });
+});
+
+describe('selectCurrentVisaPeriod', () => {
+  const periods = [
+    { status: 'EXPIRED', startDate: '2022-01-01', endDate: '2023-12-31' },
+    { status: 'ACTIVE', startDate: '2024-01-01', endDate: '2025-12-31' },
+    { status: 'ACTIVE', startDate: '2026-01-01', endDate: '2027-12-31' },
+    { status: 'CANCELLED', startDate: '2026-01-01', endDate: '2028-01-01' },
+  ];
+
+  it('uses the period covering today', () => {
+    expect(selectCurrentVisaPeriod(periods, '2026-06-01')).toEqual(periods[2]);
+  });
+
+  it('falls back to the active period with the latest end', () => {
+    expect(selectCurrentVisaPeriod(periods, '2028-02-01')).toEqual(periods[2]);
   });
 });

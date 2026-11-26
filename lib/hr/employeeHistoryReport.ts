@@ -19,6 +19,77 @@ export type HistorySalaryPackage = {
   deductions: Array<{ name: string; amount: number; applicationMode: string }>;
 };
 
+export type LeaveTypeCount = {
+  label: string;
+  usedDays: number;
+  allowance: number | null;
+};
+
+export function buildLeaveTypeCounts(
+  types: Array<{ name: string; code: string; entitlementDays: number | null }>,
+  leaves: Array<{ typeName: string; days: number; typeCode?: string | null }>,
+): LeaveTypeCount[] {
+  const claimed = new Set<number>();
+  const rows = types.map((type) => {
+    const code = type.code.trim().toUpperCase();
+    const name = type.name.trim().toLowerCase();
+    let usedDays = 0;
+    leaves.forEach((leave, index) => {
+      if (claimed.has(index)) return;
+      const leaveCode = leave.typeCode?.trim().toUpperCase() ?? '';
+      const leaveName = leave.typeName.trim().toLowerCase();
+      const sameType = (leaveCode !== '' && leaveCode === code) || leaveName === name || leaveName === code.toLowerCase();
+      if (!sameType) return;
+      usedDays += leave.days;
+      claimed.add(index);
+    });
+    return {
+      label: type.name.trim() || type.code.trim(),
+      usedDays,
+      allowance: type.entitlementDays,
+    };
+  });
+  const extra = new Map<string, { label: string; days: number }>();
+  leaves.forEach((leave, index) => {
+    if (claimed.has(index)) return;
+    const label = leave.typeName.trim() || 'Leave';
+    const key = label.toLowerCase();
+    const current = extra.get(key);
+    if (current) current.days += leave.days;
+    else extra.set(key, { label, days: leave.days });
+  });
+  for (const row of extra.values()) {
+    rows.push({ label: row.label, usedDays: row.days, allowance: null });
+  }
+  return rows;
+}
+
+function formatLeaveDays(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+/** Report-range days, with the entitlement saved on the leave type when one is set. */
+export function formatLeaveTypeCount(used: number, allowance: number | null | undefined): string {
+  const usedLabel = formatLeaveDays(used);
+  if (allowance == null) return usedLabel;
+  return `${usedLabel}/${formatLeaveDays(allowance)}`;
+}
+
+export function leaveTypeCountNote(block: {
+  leaveTypeCounts: LeaveTypeCount[];
+  sickDays: number;
+  paidDays: number;
+  unpaidDays: number;
+  annualDays: number;
+}): string {
+  if (block.leaveTypeCounts.length > 0) {
+    return `${block.leaveTypeCounts.map((row) => `${row.label} ${formatLeaveTypeCount(row.usedDays, row.allowance)}`).join('. ')}.`;
+  }
+  return `Sick ${formatLeaveTypeCount(block.sickDays, null)}. Paid ${formatLeaveTypeCount(block.paidDays, null)}. Unpaid ${formatLeaveTypeCount(block.unpaidDays, null)}. Annual ${formatLeaveTypeCount(block.annualDays, null)}.`;
+}
+
 export type EmployeeHistoryReport = {
   employee: {
     id: string;
@@ -69,6 +140,7 @@ export type EmployeeHistoryReport = {
     paidDays: number;
     unpaidDays: number;
     annualDays: number;
+    leaveTypeCounts: LeaveTypeCount[];
     otherLeave: Array<{ name: string; days: number }>;
     returnNotMarked: number;
     lateDays: number;
@@ -110,6 +182,7 @@ export function assembleEmployeeHistoryReport(input: {
     documents: boolean;
   };
   includeAttendanceDays: boolean;
+  leaveTypeCounts?: LeaveTypeCount[];
 }): EmployeeHistoryReport {
   const { counts, access } = input;
   return {
@@ -131,6 +204,7 @@ export function assembleEmployeeHistoryReport(input: {
           paidDays: counts.paidDays,
           unpaidDays: counts.unpaidDays,
           annualDays: counts.annualDays,
+          leaveTypeCounts: input.leaveTypeCounts ?? [],
           otherLeave: counts.otherLeave,
           returnNotMarked: counts.returnNotMarked,
           lateDays: counts.lateDays,

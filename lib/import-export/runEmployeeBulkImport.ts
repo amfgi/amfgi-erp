@@ -1,6 +1,13 @@
 import { Prisma, type EmployeeStatus, type PrismaClient } from '@prisma/client';
 
-import { allocateNextEmployeeCode, lockEmployeeCodeAllocation } from '@/lib/hr/allocateEmployeeCode';
+import {
+  allocateNextEmployeeCode,
+  loadEmployeeCodeSettings,
+  lockEmployeeCodeAllocation,
+  resolveEmployeeCodeForTypeChange,
+  syncPayRunEmployeeCode,
+} from '@/lib/hr/allocateEmployeeCode';
+import { codeSettingsForEmploymentType, parseEmployeeCode } from '@/lib/hr/employeeCodeSettings';
 
 import {
   normalizeImportedExpertises,
@@ -18,6 +25,7 @@ import type { EmployeeImportRow } from '@/lib/import-export/employeeFields';
 type ExistingEmployee = {
   id: string;
   employeeCode: string;
+  employmentType: string | null;
   status: EmployeeStatus;
   profileExtension: unknown;
   userLink: { id: string } | null;
@@ -162,6 +170,7 @@ export async function runEmployeeBulkImport(
     select: {
       id: true,
       employeeCode: true,
+      employmentType: true,
       status: true,
       profileExtension: true,
       userLink: { select: { id: true } },
@@ -256,6 +265,7 @@ export async function runEmployeeBulkImport(
       byId.set(emp.id, {
         id: emp.id,
         employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
         status: emp.status,
         profileExtension: emp.profileExtension,
         userLink: null,
@@ -263,6 +273,7 @@ export async function runEmployeeBulkImport(
       byCode.set(emp.employeeCode.trim().toLowerCase(), {
         id: emp.id,
         employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
         status: emp.status,
         profileExtension: emp.profileExtension,
         userLink: null,
@@ -278,14 +289,36 @@ export async function runEmployeeBulkImport(
     }
 
     try {
-      const emp = await prisma.employee.update({
-        where: { id: match.id },
-        data: employeeUpdateData(row, match, patch, nationality),
+      const emp = await prisma.$transaction(async (tx) => {
+        const data = employeeUpdateData(row, match, patch, nationality);
+        if (row.employmentType !== undefined) {
+          const nextType = row.employmentType?.trim() || null;
+          const settings = await loadEmployeeCodeSettings(tx, companyId);
+          const parsed = parseEmployeeCode(match.employeeCode, settings);
+          const nextPrefix = codeSettingsForEmploymentType(settings, nextType).prefix;
+          if (parsed && parsed.prefix.toLowerCase() !== nextPrefix.toLowerCase()) {
+            await lockEmployeeCodeAllocation(tx, companyId);
+            const resolved = await resolveEmployeeCodeForTypeChange(
+              tx,
+              companyId,
+              match.id,
+              match.employeeCode,
+              nextType,
+            );
+            if (resolved !== match.employeeCode) data.employeeCode = resolved;
+          }
+        }
+        const updated = await tx.employee.update({ where: { id: match.id }, data });
+        if (typeof data.employeeCode === 'string') {
+          await syncPayRunEmployeeCode(tx, companyId, match.id, data.employeeCode);
+        }
+        return updated;
       });
       byCode.delete(match.employeeCode.trim().toLowerCase());
       byCode.set(emp.employeeCode.trim().toLowerCase(), {
         id: emp.id,
         employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
         status: emp.status,
         profileExtension: emp.profileExtension,
         userLink: match.userLink,
@@ -293,6 +326,7 @@ export async function runEmployeeBulkImport(
       byId.set(emp.id, {
         id: emp.id,
         employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
         status: emp.status,
         profileExtension: emp.profileExtension,
         userLink: match.userLink,

@@ -189,15 +189,41 @@ export function extractMaxSequenceFromCodes(
   return max;
 }
 
+/** Company prefix, plus the temporary prefix when it is set and not the same text. */
+export function employeeCodeSeriesPrefixes(settings: EmployeeCodeSettings): string[] {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  const prefixes = [normalized.prefix];
+  const temporary = normalized.temporaryPrefix;
+  if (temporary && temporary.toLowerCase() !== normalized.prefix.toLowerCase()) prefixes.push(temporary);
+  return prefixes;
+}
+
+/** Highest number on either prefix for the same separator and period. Pass the original settings, not a prefix-swapped copy. */
+export function extractSharedMaxSequence(
+  codes: string[],
+  settings: EmployeeCodeSettings,
+  referenceDate = new Date(),
+): number | null {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  let max: number | null = null;
+  for (const prefix of employeeCodeSeriesPrefixes(normalized)) {
+    const seriesMax = extractMaxSequenceFromCodes(codes, { ...normalized, prefix }, referenceDate);
+    if (seriesMax === null) continue;
+    max = max === null ? seriesMax : Math.max(max, seriesMax);
+  }
+  return max;
+}
+
 export function nextEmployeeCodeFromExisting(
   codes: string[],
   settings: EmployeeCodeSettings,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  employmentType?: string | null,
 ): string {
   const normalized = normalizeEmployeeCodeSettings(settings);
-  const max = extractMaxSequenceFromCodes(codes, normalized, referenceDate);
+  const max = extractSharedMaxSequence(codes, normalized, referenceDate);
   const next = max === null ? normalized.startFrom : max + 1;
-  return formatEmployeeCode(normalized, next, referenceDate);
+  return formatEmployeeCode(codeSettingsForEmploymentType(normalized, employmentType), next, referenceDate);
 }
 
 /** Example preview for the settings UI (uses startFrom, not live DB). */
@@ -240,47 +266,24 @@ function compareArrival(a: EmployeeCodeRenumberSource, b: EmployeeCodeRenumberSo
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-function numberSeries(
-  employees: EmployeeCodeRenumberSource[],
-  settings: EmployeeCodeSettings,
-  referenceDate: Date,
-): EmployeeCodeRenumberRow[] {
-  return [...employees].sort(compareArrival).map((employee, index) => ({
-    id: employee.id,
-    fullName: employee.fullName,
-    employmentType: employee.employmentType?.trim() || null,
-    oldCode: employee.employeeCode,
-    newCode: formatEmployeeCode(settings, settings.startFrom + index, referenceDate),
-  }));
-}
-
-/** Whoever arrived earlier gets the smaller number. One date or both is enough. */
+/** Whoever arrived earlier gets the smaller number. One date or both is enough. Prefix follows employment type; the number is one series. */
 export function planEmployeeCodeRenumber(
   employees: EmployeeCodeRenumberSource[],
   settings: EmployeeCodeSettings,
   referenceDate = new Date()
 ): EmployeeCodeRenumberRow[] {
   const normalized = normalizeEmployeeCodeSettings(settings);
-  const separateTemporarySeries = normalized.temporaryPrefix.length > 0;
-  const temporaryPeople = separateTemporarySeries
-    ? employees.filter((employee) => isTemporaryEmploymentType(employee.employmentType))
-    : [];
-  const companyPeople = separateTemporarySeries
-    ? employees.filter((employee) => !isTemporaryEmploymentType(employee.employmentType))
-    : employees;
-  const rows = [
-    ...numberSeries(companyPeople, normalized, referenceDate),
-    ...numberSeries(
-      temporaryPeople,
-      { ...normalized, prefix: normalized.temporaryPrefix },
+  return [...employees].sort(compareArrival).map((employee, index) => ({
+    id: employee.id,
+    fullName: employee.fullName,
+    employmentType: employee.employmentType?.trim() || null,
+    oldCode: employee.employeeCode,
+    newCode: formatEmployeeCode(
+      codeSettingsForEmploymentType(normalized, employee.employmentType),
+      normalized.startFrom + index,
       referenceDate,
     ),
-  ];
-  const byId = new Map(rows.map((row) => [row.id, row]));
-  return [...employees].sort(compareArrival).flatMap((employee) => {
-    const row = byId.get(employee.id);
-    return row ? [row] : [];
-  });
+  }));
 }
 
 export function employeeCodeRenumberClash(rows: EmployeeCodeRenumberRow[]): string | null {
@@ -297,4 +300,104 @@ export function employeeCodeRenumberClash(rows: EmployeeCodeRenumberRow[]): stri
 
 export function temporaryEmployeeCode(employeeId: string): string {
   return `__tmp__${employeeId}`;
+}
+
+type ParsedEmployeeCode = {
+  prefix: string;
+  separator: string;
+  period: string | null;
+  sequence: number;
+};
+
+const CODE_SEPARATORS = ['-', '_', '/', '.', ''] as const;
+
+function periodShape(style: EmployeeCodeCountingStyle): string | null {
+  if (style === 'YEARLY') return '\\d{4}';
+  if (style === 'MONTHLY') return '\\d{6}';
+  return null;
+}
+
+function separatorsToTry(settings: EmployeeCodeSettings): string[] {
+  const current = normalizeEmployeeCodeSettings(settings).separator;
+  return [current, ...CODE_SEPARATORS.filter((separator) => separator !== current)];
+}
+
+/** Reads a code with this company's prefix. The separator already in the code is kept, even if settings now use another one. */
+export function parseEmployeeCode(code: string, settings: EmployeeCodeSettings): ParsedEmployeeCode | null {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  const period = periodShape(normalized.countingStyle);
+  const raw = String(code ?? '').trim();
+  for (const separator of separatorsToTry(normalized)) {
+    const sep = escapeRegExp(separator);
+    for (const prefix of employeeCodeSeriesPrefixes(normalized)) {
+      const prefixRe = escapeRegExp(prefix);
+      const re = period
+        ? new RegExp(`^${prefixRe}${sep}(${period})${sep}(\\d+)$`, 'i')
+        : new RegExp(`^${prefixRe}${sep}(\\d+)$`, 'i');
+      const match = raw.match(re);
+      if (!match) continue;
+      const sequence = Number(period ? match[2] : match[1]);
+      if (!Number.isFinite(sequence)) continue;
+      return { prefix, separator, period: period ? match[1]! : null, sequence };
+    }
+  }
+  return null;
+}
+
+function formatEmployeeCodeWithPeriod(
+  settings: EmployeeCodeSettings,
+  sequence: number,
+  period: string | null,
+  separator: string,
+): string {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  const padded = String(Math.max(0, Math.round(sequence))).padStart(normalized.padLength, '0');
+  const parts = [normalized.prefix];
+  if (period) parts.push(period);
+  parts.push(padded);
+  return parts.join(separator);
+}
+
+/**
+ * Visible code after an employment-type change. The hidden employee id is not involved.
+ * Keeps the number when the new prefix is free. Otherwise steps ahead, then back, inside the same period.
+ * The person's own code must not be included in otherCodes.
+ */
+export function employeeCodeForEmploymentType(
+  currentCode: string,
+  employmentType: string | null | undefined,
+  settings: EmployeeCodeSettings,
+  otherCodes: string[],
+): string {
+  const normalized = normalizeEmployeeCodeSettings(settings);
+  const current = String(currentCode ?? '').trim();
+  const parsed = parseEmployeeCode(current, normalized);
+  if (!parsed) return current;
+
+  const target = codeSettingsForEmploymentType(normalized, employmentType);
+  if (target.prefix.toLowerCase() === parsed.prefix.toLowerCase()) return current;
+
+  const periodKey = parsed.period ?? '';
+  const used = new Set<number>();
+  for (const code of otherCodes) {
+    const row = parseEmployeeCode(code, normalized);
+    if (!row || row.separator !== parsed.separator || (row.period ?? '') !== periodKey) continue;
+    used.add(row.sequence);
+  }
+
+  const preferred = formatEmployeeCodeWithPeriod(target, parsed.sequence, parsed.period, parsed.separator);
+  const preferredTaken = otherCodes.some((code) => code.trim().toLowerCase() === preferred.toLowerCase());
+  if (!preferredTaken) return preferred;
+
+  const highest = Math.max(parsed.sequence, ...used, 0);
+  const limit = highest + used.size + 1;
+  for (let step = 1; step <= limit; step++) {
+    const ahead = parsed.sequence + step;
+    if (!used.has(ahead)) return formatEmployeeCodeWithPeriod(target, ahead, parsed.period, parsed.separator);
+    const behind = parsed.sequence - step;
+    if (behind >= 1 && !used.has(behind)) {
+      return formatEmployeeCodeWithPeriod(target, behind, parsed.period, parsed.separator);
+    }
+  }
+  return preferred;
 }

@@ -283,7 +283,7 @@ export default function EmployeeCodeSettingsPage() {
                   className="font-mono"
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Used only when Employment Type is Temporary. Leave blank to keep the company prefix.
+                  Used only when Employment Type is Temporary. The number is shared and only the prefix differs. Leave blank to keep the company prefix.
                 </p>
               </label>
               <label className="block space-y-1.5">

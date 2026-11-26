@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 
 import { absentDateRows } from '@/lib/hr/employeeHistory';
-import type { EmployeeHistoryReport } from '@/lib/hr/employeeHistoryReport';
+import { formatLeaveTypeCount, type EmployeeHistoryReport } from '@/lib/hr/employeeHistoryReport';
 import { sectionSelected, type HistorySectionSelection } from '@/lib/hr/employeeHistorySections';
 
 function addSheet(workbook: XLSX.WorkBook, name: string, rows: Array<Array<string | number | null>>) {
@@ -55,57 +55,37 @@ export function buildEmployeeHistoryWorkbook(
   }
 
   const block = report.attendanceAndLeave;
-  if (show('attendance') && block) {
-    const totals: Array<Array<string | number | null>> = [
-      ['Worked days', block.workedDays],
-      ['Half days', block.halfDays],
-      ['Total absent', block.absentDays],
-      ...(absentDateRows(block).length > 0
-        ? [['Absent date', 'Note'], ...absentDateRows(block).map((row) => [row.date, row.note])]
-        : []),
+  if (show('absent') && block) {
+    const rows: Array<Array<string | number | null>> = [
+      ['Total absent days', block.absentDays],
       ['Unauthorised', block.unauthorisedDays],
-      ['Overstay', block.overstayDays],
-      ['Missing punch days', block.missingPunchDays],
-      ['Late days', block.lateDays],
-      ['Late minutes', block.lateMinutes],
-      ['Early days', block.earlyDays],
-      ['Early minutes', block.earlyMinutes],
-      ['Overtime minutes', block.overtimeMinutes],
     ];
-    if (!show('leave')) totals.push(['Note', 'Approved leave is not counted as worked or absent.']);
-    addSheet(workbook, 'Attendance totals', totals);
-    const exceptionRows: Array<Array<string | number | null>> = [];
-    for (const [type, rows] of [
-      ['Late', block.exceptions.late],
-      ['Early', block.exceptions.early],
-      ['Unauthorised', block.exceptions.unauthorised],
-      ['Missing punch', block.exceptions.missingPunch],
-      ['Overstay', block.exceptions.overstay],
-    ] as const) {
-      for (const row of rows) {
-        exceptionRows.push([type, row.date, row.status, row.lateMinutes, row.earlyLeaveMinutes, row.overtimeMinutes]);
-      }
+    if (absentDateRows(block).length > 0) {
+      rows.push(['Absent date', 'Note']);
+      for (const row of absentDateRows(block)) rows.push([row.date, row.note]);
     }
-    addDataSheet(workbook, 'Exceptions', ['Type', 'Date', 'Status', 'Late minutes', 'Early minutes', 'Overtime minutes'], exceptionRows);
-  }
-
-  if (show('attendanceDays') && block?.attendanceDays) {
-    addDataSheet(
-      workbook,
-      'Attendance',
-      ['Date', 'Status', 'Counted as', 'Late minutes', 'Early minutes', 'Overtime minutes', 'Note'],
-      block.attendanceDays.map((row) => [row.date, row.status, row.countedAs, row.lateMinutes, row.earlyLeaveMinutes, row.overtimeMinutes, row.remark])
-    );
+    for (const [type, days] of [
+      ['Unauthorised', block.exceptions.unauthorised],
+      ['Absent', block.exceptions.overstay],
+    ] as const) {
+      for (const day of days) rows.push([type, day.date, day.status, day.remark]);
+    }
+    if (!show('leave')) rows.push(['Note', 'Approved leave is not counted as absent.']);
+    addSheet(workbook, 'Absent', rows);
   }
 
   if (show('leave') && block) {
+    const typeRows = block.leaveTypeCounts.length > 0
+      ? block.leaveTypeCounts.map((row) => [row.label, '', '', formatLeaveTypeCount(row.usedDays, row.allowance)])
+      : [
+          ['Sick days', '', '', block.sickDays],
+          ['Paid days', '', '', block.paidDays],
+          ['Unpaid days', '', '', block.unpaidDays],
+          ['Annual days', '', '', block.annualDays],
+        ];
     const leaveRows: Array<Array<string | number | null>> = [
-      ['Sick days', '', '', block.sickDays],
-      ['Paid days', '', '', block.paidDays],
-      ['Unpaid days', '', '', block.unpaidDays],
-      ['Annual days', '', '', block.annualDays],
-      ['Return not marked', '', '', block.returnNotMarked],
-      ...block.otherLeave.map((row) => [row.name, '', '', row.days]),
+      ...typeRows,
+      ...(block.leaveTypeCounts.length === 0 ? block.otherLeave.map((row) => [row.name, '', '', row.days]) : []),
       ...block.leaves.map((row) => [row.typeName, row.startDate, row.endDate, row.days, row.notes.map((note) => `${note.date} ${note.note}`).join('; ')]),
     ];
     addDataSheet(workbook, 'Leave', ['Type', 'Start', 'End', 'Days', 'Reason'], leaveRows.map((row) => {
@@ -137,11 +117,11 @@ export function buildEmployeeHistoryWorkbook(
   }
 
   if (show('pay') && report.pay) {
-    const data = report.pay.lines.map((row) => [row.month, row.gross, row.unpaidAbsentDays, row.otPay]);
+    const data = report.pay.lines.map((row) => [row.month, row.unpaidAbsentDays, row.otPay, row.gross]);
     if (data.length === 0) addSheet(workbook, 'Pay runs', [['No rows']]);
     else {
       const rows: Array<Array<string | number | null>> = [
-        ['Month', 'Gross', 'Absent days in this pay run', 'Overtime pay'],
+        ['Month', 'Absent days in this pay run', 'Overtime pay', 'Gross'],
         ...data,
       ];
       if (!report.pay.wholeMonths) rows.unshift(['Full finalized month, not cut to the selected days.']);

@@ -26,6 +26,13 @@ import {
   employeePatchTouchesAccountFields,
 } from '@/lib/hr/accountAccessPermissions';
 import { parseNationalityInput } from '@/lib/hr/countryNames';
+import {
+  loadEmployeeCodeSettings,
+  lockEmployeeCodeAllocation,
+  resolveEmployeeCodeForTypeChange,
+  syncPayRunEmployeeCode,
+} from '@/lib/hr/allocateEmployeeCode';
+import { codeSettingsForEmploymentType, parseEmployeeCode } from '@/lib/hr/employeeCodeSettings';
 import { z } from 'zod';
 
 /** Empty string or explicit null clears email; valid strings must be emails. */
@@ -186,8 +193,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     try {
       const emp = await prisma.$transaction(async (tx) => {
+        if (d.employmentType !== undefined) {
+          const nextType = d.employmentType?.trim() || null;
+          const settings = await loadEmployeeCodeSettings(tx, companyId);
+          const parsed = parseEmployeeCode(existing.employeeCode, settings);
+          const nextPrefix = codeSettingsForEmploymentType(settings, nextType).prefix;
+          if (parsed && parsed.prefix.toLowerCase() !== nextPrefix.toLowerCase()) {
+            await lockEmployeeCodeAllocation(tx, companyId);
+            const resolved = await resolveEmployeeCodeForTypeChange(
+              tx,
+              companyId,
+              id,
+              existing.employeeCode,
+              nextType,
+            );
+            if (resolved !== existing.employeeCode) data.employeeCode = resolved;
+          }
+        }
+
         if (Object.keys(data).length > 0) {
           await tx.employee.update({ where: { id }, data });
+        }
+        if (typeof data.employeeCode === 'string') {
+          await syncPayRunEmployeeCode(tx, companyId, id, data.employeeCode);
         }
 
         const row = await tx.employee.findUnique({

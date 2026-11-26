@@ -50,7 +50,7 @@ describe('assessLeaveReturn', () => {
     ).toBe(0);
   });
 
-  it('counts a marked absent working day before the return as late', () => {
+  it('counts a marked absent working day before the return without a separate late result', () => {
     expect(
       assess({
         today: monday,
@@ -59,7 +59,7 @@ describe('assessLeaveReturn', () => {
           { workDate: monday, status: 'PRESENT' },
         ],
       })
-    ).toEqual({ returnDate: monday, returnResult: 'LATE', extraDays: 1 });
+    ).toEqual({ returnDate: monday, returnResult: 'ON_TIME', extraDays: 1 });
   });
 
   it('skips Sunday when it is the weekly off', () => {
@@ -72,7 +72,7 @@ describe('assessLeaveReturn', () => {
           { workDate: tuesday, status: 'PRESENT' },
         ],
       })
-    ).toEqual({ returnDate: tuesday, returnResult: 'LATE', extraDays: 1 });
+    ).toEqual({ returnDate: tuesday, returnResult: 'ON_TIME', extraDays: 1 });
   });
 
   it('treats a present weekly off as the return', () => {
@@ -189,7 +189,7 @@ describe('assessLeaveReturn', () => {
         { workDate: monday, status: 'PRESENT' },
       ],
     });
-    expect(hidden).toEqual({ returnDate: monday, returnResult: 'LATE', extraDays: 1 });
+    expect(hidden).toEqual({ returnDate: monday, returnResult: 'ON_TIME', extraDays: 1 });
     expect('extraDates' in hidden).toBe(false);
 
     const shown = assessLeaveReturn({

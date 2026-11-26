@@ -1,8 +1,9 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import {
-  codeSettingsForEmploymentType,
+  employeeCodeForEmploymentType,
   employeeCodeRenumberClash,
+  employeeCodeSeriesPrefixes,
   nextEmployeeCodeFromExisting,
   planEmployeeCodeRenumber,
   readEmployeeCodeSettingsFromCompanyData,
@@ -42,20 +43,56 @@ export async function allocateNextEmployeeCode(
   employmentType?: string | null,
 ): Promise<{ code: string; settings: EmployeeCodeSettings }> {
   const settings = await loadEmployeeCodeSettings(db, companyId);
-  const series = codeSettingsForEmploymentType(settings, employmentType);
+  const prefixes = employeeCodeSeriesPrefixes(settings);
   const rows = await db.employee.findMany({
     where: {
       companyId,
-      employeeCode: { startsWith: series.prefix, mode: 'insensitive' },
+      OR: prefixes.map((prefix) => ({
+        employeeCode: { startsWith: prefix, mode: 'insensitive' as const },
+      })),
     },
     select: { employeeCode: true },
   });
   const code = nextEmployeeCodeFromExisting(
     rows.map((row) => row.employeeCode),
-    series,
-    referenceDate
+    settings,
+    referenceDate,
+    employmentType,
   );
   return { code, settings };
+}
+
+/** Next visible code when employment type changes. Caller must already hold the company row lock. */
+export async function resolveEmployeeCodeForTypeChange(
+  db: DbClient,
+  companyId: string,
+  employeeId: string,
+  currentCode: string,
+  employmentType: string | null | undefined,
+): Promise<string> {
+  const settings = await loadEmployeeCodeSettings(db, companyId);
+  const others = await db.employee.findMany({
+    where: { companyId, NOT: { id: employeeId } },
+    select: { employeeCode: true },
+  });
+  return employeeCodeForEmploymentType(
+    currentCode,
+    employmentType,
+    settings,
+    others.map((row) => row.employeeCode),
+  );
+}
+
+export async function syncPayRunEmployeeCode(
+  db: Pick<PrismaClient, 'payRunLine'>,
+  companyId: string,
+  employeeId: string,
+  employeeCode: string,
+): Promise<void> {
+  await db.payRunLine.updateMany({
+    where: { companyId, employeeId },
+    data: { employeeCode },
+  });
 }
 
 /** Serializes code allocation with a renumber of the same company. Call inside a transaction. */
@@ -124,10 +161,7 @@ export async function applyEmployeeCodeRenumber(
           where: { id: row.id },
           data: { employeeCode: row.newCode },
         });
-        await tx.payRunLine.updateMany({
-          where: { companyId, employeeId: row.id },
-          data: { employeeCode: row.newCode },
-        });
+        await syncPayRunEmployeeCode(tx, companyId, row.id, row.newCode);
       }
       return plan;
     },

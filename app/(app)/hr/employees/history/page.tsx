@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
 import HrCompanySearchSelect, { useHrAccessibleCompanies } from '@/components/hr/HrCompanySearchSelect';
-import { EmployeeHistoryReportView } from '@/components/hr/EmployeeHistoryReportView';
+import { AttendanceDeductionReport, type AttendanceReportHandle } from '@/components/hr/AttendanceDeductionSheet';
+import { attendanceReportFileName } from '@/lib/hr/attendanceDeductionReport';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import { Button } from '@/components/ui/shadcn/button';
@@ -15,7 +16,6 @@ import { canHrDocumentView } from '@/lib/hr/documentPermissions';
 import {
   DEFAULT_HISTORY_SECTIONS,
   allowedHistorySections,
-  historySectionsQuery,
   type HistorySection,
 } from '@/lib/hr/employeeHistorySections';
 import type { AppSessionUser } from '@/lib/hr/requireCompanySession';
@@ -39,8 +39,7 @@ let profileHistoryOpenToken = '';
 
 const SECTION_LABELS: Record<HistorySection, string> = {
   personal: 'Personal',
-  attendance: 'Attendance',
-  attendanceDays: 'Attendance days',
+  absent: 'Absent',
   leave: 'Leave',
   salary: 'Salary',
   deductions: 'Deductions',
@@ -60,14 +59,6 @@ function prettyStatus(status: string) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
-}
-
-function historyDownloadName(report: EmployeeHistoryReport | null, extension: 'xlsx' | 'pdf') {
-  const first = report?.employee.fullName.trim().split(/\s+/)[0] || 'Employee';
-  const id = report?.employee.employeeCode.trim() || 'employee';
-  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date());
-  const safe = `${first} ${id} ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
-  return `${safe}.${extension}`;
 }
 
 export default function EmployeeHistoryPage() {
@@ -98,10 +89,10 @@ export default function EmployeeHistoryPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+  const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+  const attendanceRef = useRef<AttendanceReportHandle>(null);
   const exportLock = useRef(false);
   const previousCompany = useRef<string | null>(null);
-  const pdfSheetRef = useRef<HTMLDivElement>(null);
   const companyJustChanged = previousCompany.current !== null && previousCompany.current !== companyId;
 
   const canView = session?.user?.isSuperAdmin || (session?.user?.permissions ?? []).includes('hr.employee.view');
@@ -119,8 +110,9 @@ export default function EmployeeHistoryPage() {
       documents: canHrDocumentView(user),
     });
   }, [session?.user]);
-  const canSeeAbsence = allowedSections.includes('attendance');
+  const canSeeAbsence = allowedSections.includes('absent');
   const activeSections = sections.filter((section) => allowedSections.includes(section));
+  const visaSelected = activeSections.includes('visa');
   const allDetails = allowedSections.length > 0 && allowedSections.every((section) => activeSections.includes(section));
   const dateError = fromDate && toDate && fromDate > toDate ? 'From date must be on or before the to date.' : '';
   const oneDate = Boolean(fromDate) !== Boolean(toDate);
@@ -300,10 +292,13 @@ export default function EmployeeHistoryPage() {
     setReport(null);
     setLoading(true);
     setError('');
+    const useVisaRange = !fromDate && !toDate && visaSelected;
     const params = new URLSearchParams({ companyId });
     if (fromDate && toDate) {
       params.set('from', fromDate);
       params.set('to', toDate);
+    } else if (useVisaRange) {
+      params.set('visaRange', '1');
     }
     fetch(`/api/hr/employees/${employeeId}/history?${params.toString()}`, { cache: 'no-store' })
       .then(async (res) => {
@@ -323,54 +318,33 @@ export default function EmployeeHistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [canView, companyId, companyJustChanged, dateError, employeeId, fromDate, oneDate, toDate]);
+  }, [canView, companyId, companyJustChanged, dateError, employeeId, fromDate, oneDate, toDate, visaSelected]);
 
   const employeeItems = useMemo(() => employees, [employees]);
   const visibleReport = employeeId && report?.employee.id === employeeId ? report : null;
 
-  async function downloadExcel() {
-    if (exportLock.current || !companyId || !employeeId || !visibleReport || dateError || oneDate || exporting) return;
+  async function downloadAttendance(kind: 'pdf' | 'docx') {
+    const handle = attendanceRef.current;
+    if (exportLock.current || !visibleReport || !handle || exporting || (kind === 'pdf' && !handle.sheet)) return;
     exportLock.current = true;
-    setExporting('excel');
+    setExporting(kind);
     setError('');
     try {
-      const params = new URLSearchParams({ companyId, format: 'xlsx', sections: historySectionsQuery(activeSections) });
-      if (fromDate && toDate) {
-        params.set('from', fromDate);
-        params.set('to', toDate);
+      if (kind === 'pdf' && handle.sheet) {
+        const { downloadAttendanceReportPdf } = await import('@/lib/hr/downloadAttendanceReportPdf');
+        await downloadAttendanceReportPdf(handle.sheet, attendanceReportFileName(visibleReport, 'pdf'));
+      } else {
+        const { downloadAttendanceReportDocx } = await import('@/lib/hr/attendanceDeductionDocx');
+        await downloadAttendanceReportDocx(
+          handle.draft,
+          visibleReport,
+          activeSections,
+          attendanceReportFileName(visibleReport, 'docx'),
+        );
       }
-      const res = await fetch(`/api/hr/employees/${employeeId}/history?${params.toString()}`, { cache: 'no-store' });
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || 'Could not download the workbook');
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = historyDownloadName(visibleReport, 'xlsx');
-      link.click();
-      URL.revokeObjectURL(url);
       setExportOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not download the workbook');
-    } finally {
-      exportLock.current = false;
-      setExporting(null);
-    }
-  }
-
-  async function downloadPdf() {
-    if (exportLock.current || !companyId || !employeeId || !visibleReport || !pdfSheetRef.current || dateError || oneDate || exporting) return;
-    exportLock.current = true;
-    setExporting('pdf');
-    setError('');
-    try {
-      const { downloadEmployeeHistoryPdf } = await import('@/lib/hr/downloadEmployeeHistoryPdf');
-      await downloadEmployeeHistoryPdf(pdfSheetRef.current, historyDownloadName(visibleReport, 'pdf'));
-      setExportOpen(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not download the PDF');
+      setError(err instanceof Error ? err.message : 'Could not download the attendance report');
     } finally {
       exportLock.current = false;
       setExporting(null);
@@ -384,11 +358,13 @@ export default function EmployeeHistoryPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-white">Employee history</h1>
-          <p className="text-xs text-slate-400">Basic details stay. Excel and PDF use the sections checked below.</p>
+          <p className="text-xs text-slate-400">Basic details stay at the top. Word and PDF use the sections checked below.</p>
         </div>
-        <Button type="button" size="sm" onClick={() => setExportOpen(true)} disabled={!visibleReport || loading}>
-          Export
-        </Button>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={() => setExportOpen(true)} disabled={!visibleReport || loading}>
+            Export
+          </Button>
+        </div>
       </div>
       <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-slate-900/35 p-4">
       <div className="grid items-end gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_auto]">
@@ -518,32 +494,8 @@ export default function EmployeeHistoryPage() {
           )}
         </section>
       ) : null}
-      {visibleReport ? <EmployeeHistoryReportView report={visibleReport} sections={activeSections} /> : null}
       {visibleReport ? (
-        <div ref={pdfSheetRef} aria-hidden inert className="history-pdf-sheet pointer-events-none fixed top-0 -left-[1400px] w-[794px] bg-white p-3 text-slate-900">
-          <style>{`
-            html.dark .history-pdf-sheet,
-            html.dark .history-pdf-sheet .bg-white { background-color: #ffffff !important; color: #0f172a !important; }
-            html.dark .history-pdf-sheet .text-slate-900,
-            html.dark .history-pdf-sheet .text-slate-800,
-            html.dark .history-pdf-sheet .text-slate-700 { color: #0f172a !important; }
-            html.dark .history-pdf-sheet .text-slate-600,
-            html.dark .history-pdf-sheet .text-slate-500,
-            html.dark .history-pdf-sheet .text-slate-400,
-            html.dark .history-pdf-sheet .text-slate-300 { color: #475569 !important; }
-            html.dark .history-pdf-sheet .border-slate-400,
-            html.dark .history-pdf-sheet .border-slate-300,
-            html.dark .history-pdf-sheet .border-slate-200,
-            html.dark .history-pdf-sheet .border-emerald-700 { border-color: #94a3b8 !important; }
-            html.dark .history-pdf-sheet .bg-slate-100,
-            html.dark .history-pdf-sheet .bg-emerald-50 { background-color: #f8fafc !important; }
-            html.dark .history-pdf-sheet .bg-emerald-50 { background-color: #ecfdf5 !important; }
-            html.dark .history-pdf-sheet .text-emerald-950,
-            html.dark .history-pdf-sheet .text-emerald-800 { color: #064e3b !important; }
-            html.dark .history-pdf-sheet .text-amber-800 { color: #92400e !important; }
-          `}</style>
-          <EmployeeHistoryReportView report={visibleReport} mode="print" sections={activeSections} />
-        </div>
+        <AttendanceDeductionReport ref={attendanceRef} report={visibleReport} sections={activeSections} />
       ) : null}
       <Modal
         isOpen={exportOpen}
@@ -552,14 +504,14 @@ export default function EmployeeHistoryPage() {
           setExportOpen(false);
         }}
         title="Export"
-        description="Download this history."
+        description="Download this attendance document."
         size="sm"
       >
         <div className="flex gap-2">
-          <Button type="button" className="flex-1" loading={exporting === 'excel'} disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadExcel()}>
-            Excel
+          <Button type="button" variant="secondary" className="flex-1" loading={exporting === 'docx'} disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadAttendance('docx')}>
+            Word
           </Button>
-          <Button type="button" className="flex-1" loading={exporting === 'pdf'} disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadPdf()}>
+          <Button type="button" variant="secondary" className="flex-1" loading={exporting === 'pdf'} disabled={!visibleReport || Boolean(exporting)} onClick={() => void downloadAttendance('pdf')}>
             PDF
           </Button>
         </div>
