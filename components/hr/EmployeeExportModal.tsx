@@ -226,7 +226,7 @@ export default function EmployeeExportModal({
     if (!isOpen) return;
     resetFilterState(directoryFilters);
     setSelectedColumns(DEFAULT_EMPLOYEE_EXPORT_COLUMN_KEYS);
-    setSortBy('fullName');
+    setSortBy('employeeCode');
     setSortDirection('asc');
     setIncludeInstructions(true);
   }, [isOpen, directoryFilters]);

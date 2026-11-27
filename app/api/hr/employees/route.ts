@@ -20,7 +20,6 @@ import {
   filterEmployeesByWorkforceFilters,
   readEmployeeDirectoryFiltersFromSearchParams,
   sortEmployeesByCodeSerial,
-  sortEmployeesByName,
 } from '@/lib/hr/employeeListQuery';
 import { batchCurrentCompensationForEmployees } from '@/lib/import-export/employeeCompensationServer';
 import { canHrCompensationView } from '@/lib/hr/compensationPermissions';
@@ -153,7 +152,7 @@ export async function GET(req: Request) {
       select: exportSelect,
     });
     const filtered = filterEmployeesByWorkforceFilters(list, directoryFilters);
-    const sorted = sortEmployeesByName(filtered);
+    const sorted = sortEmployeesByCodeSerial(filtered);
     const compensationByEmployee = await batchCurrentCompensationForEmployees(
       prisma,
       companyIds,
