@@ -2,7 +2,9 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import { useSession } from 'next-auth/react';
+import FileInput from '@/components/ui/FileInput';
 import { Button } from '@/components/ui/shadcn/button';
 import Modal from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/Badge';
@@ -10,6 +12,8 @@ import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import { CatalogSearchSelect } from '@/components/hr/CatalogSearchSelect';
 import { DocumentPortalSelfServiceFields } from '@/components/hr/DocumentPortalSelfServiceFields';
 import EmployeeCompensationPanel from '@/components/hr/EmployeeCompensationPanel';
+import EmployeeExtraFiles from '@/components/hr/EmployeeExtraFiles';
+import { EmployeeRecords } from '@/components/hr/EmployeeRecords';
 import EmployeeDeleteModal from '@/components/hr/EmployeeDeleteModal';
 import { EmployeeMetaSelect } from '@/components/hr/EmployeeMetaSelect';
 import { NationalitySearchSelect } from '@/components/hr/NationalitySearchSelect';
@@ -65,7 +69,7 @@ import { cn } from '@/lib/utils';
 import { driveStoredUrlToOpenUrl } from '@/lib/utils/googleDriveUrl';
 import toast from 'react-hot-toast';
 
-type Tab = 'overview' | 'visa' | 'documents' | 'compensation' | 'access';
+type Tab = 'overview' | 'visa' | 'documents' | 'compensation' | 'access' | 'records';
 
 interface CatalogDocType {
   id: string;
@@ -291,6 +295,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   const { data: session, update } = useSession();
   const { openMenu } = useGlobalContextMenu();
   const [emp, setEmp] = useState<EmployeeRecord | null>(null);
+  useBreadcrumbLabel(emp?.fullName);
   const [catalogDocTypes, setCatalogDocTypes] = useState<CatalogDocType[]>([]);
   const [expertiseCatalog, setExpertiseCatalog] = useState<string[]>([]);
   const [selectedExpertises, setSelectedExpertises] = useState<string[]>([]);
@@ -330,6 +335,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
   const canView = isSA || perms.includes('hr.employee.view');
   const canEdit = isSA || perms.includes('hr.employee.edit');
   const canDelete = isSA || perms.includes('hr.employee.delete');
+  const canPayroll = isSA || perms.includes('hr.payroll.compensation');
   const canCompensation = session?.user ? canHrCompensationView(session.user) : false;
   const canCompensationAdd = session?.user ? canHrCompensationAddPackage(session.user) : false;
   const canCompensationRecordChange = session?.user ? canHrCompensationRecordChange(session.user) : false;
@@ -987,6 +993,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
     ...(canAccountAccess
       ? [{ id: 'access' as const, label: 'Account access', hint: 'Portal login & Google sign-in' }]
       : []),
+    { id: 'records', label: 'Records', hint: 'Warnings and advances' },
   ];
 
   const fieldClass =
@@ -1057,12 +1064,25 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
             <Button
               type="button"
               variant="secondary"
+              data-nav-href={readHrEmployeesDirectoryUrl()}
               onClick={() => {
                 if (!confirmOverviewLeave()) return;
                 router.push(readHrEmployeesDirectoryUrl());
               }}
             >
               Back to directory
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              data-nav-href={`/hr/employees/history${emp.companyId ? `?companyId=${encodeURIComponent(emp.companyId)}` : ''}`}
+              onClick={() => {
+                const company = emp.companyId ? `?companyId=${encodeURIComponent(emp.companyId)}` : '';
+                sessionStorage.setItem('hr-history-open-employee', `${employeeId}\n${Date.now()}`);
+                router.push(`/hr/employees/history${company}`);
+              }}
+            >
+              History report
             </Button>
             {canDelete ? (
               <Button
@@ -1138,7 +1158,14 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                   </label>
                   <label className="block">
                     <span className={labelClass}>Employee code</span>
-                    <input name="employeeCode" required defaultValue={emp.employeeCode} disabled={!canEdit} className={fieldClass} />
+                    <input
+                      name="employeeCode"
+                      defaultValue={emp.employeeCode}
+                      readOnly
+                      disabled
+                      className={fieldClass}
+                    />
+                    <span className="mt-1 block text-[11px] text-slate-500">Assigned by the system from Employee ID format.</span>
                   </label>
                   <label className="block">
                     <span className={labelClass}>Nationality (country)</span>
@@ -1577,6 +1604,7 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                     <Button
                       type="button"
                       variant="secondary"
+                      data-nav-href="/hr/settings/document-types"
                       onClick={() => {
                         if (!confirmOverviewLeave()) return;
                         router.push('/hr/settings/document-types');
@@ -1810,10 +1838,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                       onPortalDownloadChange={setEditPortalDownloadEnabled}
                       labelClass={labelClass}
                     />
-                    <label className="block sm:col-span-2">
+                    <div className="block sm:col-span-2">
                       <span className={labelClass}>Replace file (PDF / JPEG / PNG / WebP)</span>
-                      <input name="documentEditFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
-                    </label>
+                      <FileInput name="documentEditFile" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
+                    </div>
                     </div>
                     <div className="flex justify-end gap-2">
                       <Button type="button" variant="ghost" disabled={isBusy} onClick={() => setEditingDoc(null)}>
@@ -1915,10 +1943,10 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                       onPortalDownloadChange={setAddPortalDownloadEnabled}
                       labelClass={labelClass}
                     />
-                    <label className="block sm:col-span-2">
+                    <div className="block sm:col-span-2">
                       <span className={labelClass}>Upload scan (PDF / JPEG / PNG / WebP)</span>
-                      <input name="documentFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
-                    </label>
+                      <FileInput name="documentFile" accept=".pdf,image/jpeg,image/png,image/webp" className={fieldClass} />
+                    </div>
                     </div>
                     )}
                     <div className="flex justify-end gap-2">
@@ -2001,7 +2029,18 @@ export function EmployeeProfileView({ employeeId }: { employeeId: string }) {
                   </div>
                 </div>
               )}
+
+              <EmployeeExtraFiles
+                employeeId={employeeId}
+                canView={canDocView}
+                canCreate={canDocCreate}
+                canDelete={canDocDelete}
+              />
             </div>
+          )}
+
+          {tab === 'records' && (
+            <EmployeeRecords employeeId={employeeId} canEditWarnings={canEdit} canPayroll={canPayroll} />
           )}
 
           {tab === 'compensation' && canCompensation && (

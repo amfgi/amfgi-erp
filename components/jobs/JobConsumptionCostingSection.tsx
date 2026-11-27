@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import { Button } from '@/components/ui/shadcn/button';
 import Spinner from '@/components/ui/Spinner';
 import toast from 'react-hot-toast';
@@ -162,6 +163,7 @@ export default function JobConsumptionCostingSection({
   const { data: jobs = [] } = useGetJobsQuery();
   const [calculateCostEngine, costEngineState] = useCalculateJobCostEngineMutation();
 
+  const excelExport = useSingleFlight();
   const [loading, setLoading] = useState(true);
   const [costingMethod, setCostingMethod] = useState<UICostingMethod>('FIFO');
   const [data, setData] = useState<CostingData | null>(null);
@@ -490,7 +492,12 @@ export default function JobConsumptionCostingSection({
           <Button variant="secondary" type="button" onClick={handlePrint} disabled={!data}>
             Print
           </Button>
-          <Button type="button" onClick={handleExportExcel} disabled={!data}>
+          <Button
+            type="button"
+            onClick={() => void excelExport.run(handleExportExcel)}
+            loading={excelExport.pending}
+            disabled={!data}
+          >
             Export Excel
           </Button>
         </div>

@@ -1,4 +1,5 @@
 import { isLeavePaidForPay } from '@/lib/hr/attendanceLeavePay';
+import { ANNUAL_LEAVE_NOT_ADDED_DETAIL, isAnnualLeaveCode } from '@/lib/hr/leaveTypes';
 import { roundMoney } from '@/lib/hr/payroll/calendar';
 import { lineBasicHours } from '@/lib/hr/payroll/lineBasicHours';
 import { formatPayDayStatus } from '@/lib/hr/payroll/payDayStatus';
@@ -110,7 +111,9 @@ export function buildLeavePayDayRow(
       otHourSalary: 0,
       allowance: 0,
       totalSalary: 0,
-      detail: 'Unpaid leave',
+      detail: isAnnualLeaveCode(line.leaveTypeCode)
+        ? ANNUAL_LEAVE_NOT_ADDED_DETAIL
+        : 'Unpaid leave',
     });
   }
 

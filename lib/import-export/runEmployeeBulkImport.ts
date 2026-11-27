@@ -1,4 +1,13 @@
-import type { EmployeeStatus, Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type EmployeeStatus, type PrismaClient } from '@prisma/client';
+
+import {
+  allocateNextEmployeeCode,
+  loadEmployeeCodeSettings,
+  lockEmployeeCodeAllocation,
+  resolveEmployeeCodeForTypeChange,
+  syncPayRunEmployeeCode,
+} from '@/lib/hr/allocateEmployeeCode';
+import { codeSettingsForEmploymentType, parseEmployeeCode } from '@/lib/hr/employeeCodeSettings';
 
 import {
   normalizeImportedExpertises,
@@ -16,6 +25,7 @@ import type { EmployeeImportRow } from '@/lib/import-export/employeeFields';
 type ExistingEmployee = {
   id: string;
   employeeCode: string;
+  employmentType: string | null;
   status: EmployeeStatus;
   profileExtension: unknown;
   userLink: { id: string } | null;
@@ -48,13 +58,14 @@ function employeeCreateData(
   companyId: string,
   row: EmployeeImportRow,
   workforcePatch: WorkforceImportPatch,
-  nationality: string | null
+  nationality: string | null,
+  employeeCode: string
 ): Prisma.EmployeeCreateInput {
   const emailNorm = row.email?.trim() ? row.email.trim().toLowerCase() : null;
   const status = row.status ?? 'ACTIVE';
   return {
     company: { connect: { id: companyId } },
-    employeeCode: row.employeeCode.trim(),
+    employeeCode,
     fullName: row.fullName.trim(),
     preferredName: row.preferredName?.trim() || null,
     email: emailNorm,
@@ -91,7 +102,6 @@ function employeeUpdateData(
   nationality: string | null | undefined
 ): Prisma.EmployeeUpdateInput {
   const data: Prisma.EmployeeUpdateInput = {
-    employeeCode: row.employeeCode.trim(),
     fullName: row.fullName.trim(),
   };
 
@@ -160,6 +170,7 @@ export async function runEmployeeBulkImport(
     select: {
       id: true,
       employeeCode: true,
+      employmentType: true,
       status: true,
       profileExtension: true,
       userLink: { select: { id: true } },
@@ -226,33 +237,48 @@ export async function runEmployeeBulkImport(
         return;
       }
 
-      try {
-        const emp = await prisma.employee.create({
-          data: employeeCreateData(companyId, row, patch, nationality ?? null),
-        });
-        byId.set(emp.id, {
-          id: emp.id,
-          employeeCode: emp.employeeCode,
-          status: emp.status,
-          profileExtension: emp.profileExtension,
-          userLink: null,
-        });
-        byCode.set(emp.employeeCode.trim().toLowerCase(), {
-          id: emp.id,
-          employeeCode: emp.employeeCode,
-          status: emp.status,
-          profileExtension: emp.profileExtension,
-          userLink: null,
-        });
-        created += 1;
-      } catch (e) {
-        if (e instanceof Error && e.message.includes('Unique constraint')) {
-          skipped += 1;
-          warnings.push(`Could not create "${row.employeeCode}" — duplicate code or email`);
-          return;
+      let emp: Awaited<ReturnType<PrismaClient['employee']['create']>> | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          emp = await prisma.$transaction(async (tx) => {
+            await lockEmployeeCodeAllocation(tx, companyId);
+            const { code } = await allocateNextEmployeeCode(tx, companyId, new Date(), row.employmentType);
+            return tx.employee.create({
+              data: employeeCreateData(companyId, row, patch, nationality ?? null, code),
+            });
+          });
+          break;
+        } catch (e) {
+          const isUnique =
+            e instanceof Prisma.PrismaClientKnownRequestError
+              ? e.code === 'P2002'
+              : e instanceof Error && e.message.includes('Unique constraint');
+          if (!isUnique) throw e;
         }
-        throw e;
       }
+      if (!emp) {
+        skipped += 1;
+        warnings.push(`Could not create "${row.employeeCode}" — duplicate code or email`);
+        return;
+      }
+
+      byId.set(emp.id, {
+        id: emp.id,
+        employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
+        status: emp.status,
+        profileExtension: emp.profileExtension,
+        userLink: null,
+      });
+      byCode.set(emp.employeeCode.trim().toLowerCase(), {
+        id: emp.id,
+        employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
+        status: emp.status,
+        profileExtension: emp.profileExtension,
+        userLink: null,
+      });
+      created += 1;
       return;
     }
 
@@ -263,14 +289,36 @@ export async function runEmployeeBulkImport(
     }
 
     try {
-      const emp = await prisma.employee.update({
-        where: { id: match.id },
-        data: employeeUpdateData(row, match, patch, nationality),
+      const emp = await prisma.$transaction(async (tx) => {
+        const data = employeeUpdateData(row, match, patch, nationality);
+        if (row.employmentType !== undefined) {
+          const nextType = row.employmentType?.trim() || null;
+          const settings = await loadEmployeeCodeSettings(tx, companyId);
+          const parsed = parseEmployeeCode(match.employeeCode, settings);
+          const nextPrefix = codeSettingsForEmploymentType(settings, nextType).prefix;
+          if (parsed && parsed.prefix.toLowerCase() !== nextPrefix.toLowerCase()) {
+            await lockEmployeeCodeAllocation(tx, companyId);
+            const resolved = await resolveEmployeeCodeForTypeChange(
+              tx,
+              companyId,
+              match.id,
+              match.employeeCode,
+              nextType,
+            );
+            if (resolved !== match.employeeCode) data.employeeCode = resolved;
+          }
+        }
+        const updated = await tx.employee.update({ where: { id: match.id }, data });
+        if (typeof data.employeeCode === 'string') {
+          await syncPayRunEmployeeCode(tx, companyId, match.id, data.employeeCode);
+        }
+        return updated;
       });
       byCode.delete(match.employeeCode.trim().toLowerCase());
       byCode.set(emp.employeeCode.trim().toLowerCase(), {
         id: emp.id,
         employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
         status: emp.status,
         profileExtension: emp.profileExtension,
         userLink: match.userLink,
@@ -278,6 +326,7 @@ export async function runEmployeeBulkImport(
       byId.set(emp.id, {
         id: emp.id,
         employeeCode: emp.employeeCode,
+        employmentType: emp.employmentType,
         status: emp.status,
         profileExtension: emp.profileExtension,
         userLink: match.userLink,

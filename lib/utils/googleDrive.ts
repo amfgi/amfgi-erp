@@ -338,18 +338,22 @@ export async function uploadToDrive(
       supportsAllDrives: true,
     });
 
-    if (res.data.id) {
+    const id = res.data.id?.trim();
+    if (!id) throw new Error('Google Drive did not return a file id.');
+    try {
       await drive.permissions.create({
-        fileId: res.data.id,
+        fileId: id,
         requestBody: { role: 'reader', type: 'anyone' },
         supportsAllDrives: true,
       });
+    } catch (permissionError) {
+      await drive.files.delete({ fileId: id, supportsAllDrives: true }).catch(() => undefined);
+      throw permissionError;
     }
 
-    const id = res.data.id!;
     return {
       id,
-      webViewLink: res.data.webViewLink!,
+      webViewLink: res.data.webViewLink ?? '',
       viewerUrl: driveFileIdToDisplayUrl(id) ?? '',
     };
   };

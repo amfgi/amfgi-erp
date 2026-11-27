@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db/prisma';
 import { publishLiveUpdate } from '@/lib/live-updates/server';
 import type { Employee, Prisma } from '@prisma/client';
 import { Prisma as PrismaNS } from '@prisma/client';
-import { allocateNextEmployeeCode } from '@/lib/hr/allocateEmployeeCode';
+import { allocateNextEmployeeCode, lockEmployeeCodeAllocation } from '@/lib/hr/allocateEmployeeCode';
 import { provisionEmployeeUser } from '@/lib/hr/provisionEmployeeUser';
 import {
   checkEmployeeEmailUserConflict,
@@ -70,6 +70,25 @@ const CreateSchema = z.object({
 });
 
 const companySelect = { id: true, name: true, slug: true } as const;
+
+async function loadDesignationChoices(companyIds: string[]) {
+  const rows = await prisma.employee.findMany({
+    where: companyIdWhere(companyIds),
+    select: { designation: true },
+    distinct: ['designation'],
+  });
+  const names = new Set<string>();
+  let blank = false;
+  for (const row of rows) {
+    const name = row.designation?.trim();
+    if (name) names.add(name);
+    else blank = true;
+  }
+  return {
+    designations: [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
+    designationBlank: blank,
+  };
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -216,11 +235,14 @@ export async function GET(req: Request) {
     const needsTypeFilter = Boolean(employeeType && employeeType !== 'ALL');
 
     if (needsTypeFilter) {
-      const allRows = await prisma.employee.findMany({
-        where,
-        orderBy: [{ fullName: 'asc' }],
-        include: { company: { select: companySelect } },
-      });
+      const [allRows, designationChoices] = await Promise.all([
+        prisma.employee.findMany({
+          where,
+          orderBy: [{ fullName: 'asc' }],
+          include: { company: { select: companySelect } },
+        }),
+        loadDesignationChoices(companyIds),
+      ]);
       const filtered = applyEmployeeTypeFilter(allRows);
       const items = await attachCompensationToItems(filtered.slice(offset, offset + limit).map(mapEmployee));
       const employeeTypes = Array.from(
@@ -235,11 +257,13 @@ export async function GET(req: Request) {
         items,
         total: filtered.length,
         employeeTypes,
+        designations: designationChoices.designations,
+        designationBlank: designationChoices.designationBlank,
         stats: computeEmployeeDirectoryStats(filtered),
       });
     }
 
-    const [total, list, typeRows, stats] = await Promise.all([
+    const [total, list, typeRows, stats, designationChoices] = await Promise.all([
       prisma.employee.count({ where }),
       prisma.employee.findMany({
         where,
@@ -254,6 +278,7 @@ export async function GET(req: Request) {
         take: 2000,
       }),
       countEmployeeDirectoryStats(prisma, where),
+      loadDesignationChoices(companyIds),
     ]);
 
     const employeeTypes = Array.from(
@@ -268,6 +293,8 @@ export async function GET(req: Request) {
       items: await attachCompensationToItems(list.map(mapEmployee)),
       total,
       employeeTypes,
+      designations: designationChoices.designations,
+      designationBlank: designationChoices.designationBlank,
       stats,
     });
   }
@@ -321,17 +348,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const requestedCode = d.employeeCode?.trim() || '';
-    const autoAllocate = !requestedCode;
     let lastError: unknown = null;
 
-    for (let attempt = 0; attempt < (autoAllocate ? 5 : 1); attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const employeeCode = autoAllocate
-          ? (await allocateNextEmployeeCode(prisma, companyId)).code
-          : requestedCode;
-
         const result = await prisma.$transaction(async (tx) => {
+          await lockEmployeeCodeAllocation(tx, companyId);
+          const employeeCode = (await allocateNextEmployeeCode(tx, companyId, new Date(), d.employmentType)).code;
           const emp = await tx.employee.create({
             data: {
               companyId,
@@ -409,7 +432,7 @@ export async function POST(req: Request) {
           e instanceof PrismaNS.PrismaClientKnownRequestError
             ? e.code === 'P2002'
             : e instanceof Error && e.message.includes('Unique constraint');
-        if (!autoAllocate || !isUnique) throw e;
+        if (!isUnique) throw e;
       }
     }
 

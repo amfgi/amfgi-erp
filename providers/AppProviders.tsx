@@ -4,6 +4,7 @@ import { Toaster }         from 'react-hot-toast';
 import ReduxProvider        from './ReduxProvider';
 import SessionProvider      from './SessionProvider';
 import { ContextMenuProvider } from './ContextMenuProvider';
+import { BreadcrumbLabelProvider } from '@/components/layout/BreadcrumbLabel';
 import DoubleClickSelectionGuard from './DoubleClickSelectionGuard';
 import NumberInputSpinGuard from './NumberInputSpinGuard';
 import ThemeProvider, { useTheme } from './ThemeProvider';
@@ -24,9 +25,11 @@ export default function AppProviders({
         <NumberInputSpinGuard />
         <ThemeProvider>
         <ContextMenuProvider>
-          <DoubleClickSelectionGuard />
-          {children}
-          <ThemeAwareToaster />
+          <BreadcrumbLabelProvider>
+            <DoubleClickSelectionGuard />
+            {children}
+            <ThemeAwareToaster />
+          </BreadcrumbLabelProvider>
         </ContextMenuProvider>
         </ThemeProvider>
       </ReduxProvider>

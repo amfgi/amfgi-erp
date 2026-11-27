@@ -14,6 +14,7 @@ const PatchSchema = z.object({
   action: z.enum(['approve', 'reject']),
   reviewNote: z.string().max(2000).optional(),
   allowInsufficientBalance: z.boolean().optional(),
+  salaryDeductionDays: z.number().int().min(0).optional(),
 });
 
 const PutSchema = z.object({
@@ -97,6 +98,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             requestId: id,
             reviewerId: session.user.id,
             reviewNote: parsed.data.reviewNote,
+            salaryDeductionDays: parsed.data.salaryDeductionDays,
           })
         : await approveLeaveRequest(prisma, {
             companyId: existing.companyId,

@@ -5,14 +5,19 @@ import type { ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import JobSerialModal from '@/components/jobs/JobSerialModal';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
+import { canChangeJobSerial } from '@/lib/jobs/jobSerial';
 import { StatusBadge } from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
+import QuotationDocumentLinks from '@/components/sales/QuotationDocumentLinks';
 import JobConsumptionCostingSection from '@/components/jobs/JobConsumptionCostingSection';
 import JobScopeFilter, { type JobScopeOption } from '@/components/jobs/JobScopeFilter';
 import TransactionLedger from '@/components/transactions/TransactionLedger';
-import { useGetCustomersQuery, useGetJobByIdQuery, useGetJobMaterialsQuery, useGetJobsQuery } from '@/store/hooks';
+import { useGetCustomersQuery, useGetJobByIdQuery, useGetJobMaterialsQuery, useGetJobQuotationDocumentsQuery, useGetJobsQuery } from '@/store/hooks';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 
 const JobCostEnginePage = dynamic(() => import('@/app/(app)/jobs/[id]/cost-engine/page'), {
   ssr: false,
@@ -98,14 +103,20 @@ function InfoCard({ label, value, note }: { label: string; value: ReactNode; not
 export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const { data: session } = useSession();
+  const [serialOpen, setSerialOpen] = useState(false);
 
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(id);
+  const quotationDocumentsQuery = useGetJobQuotationDocumentsQuery(id);
+  useBreadcrumbLabel(job?.jobNumber);
   const { data: customers = [] } = useGetCustomersQuery();
   const { data: jobs = [] } = useGetJobsQuery();
 
   const [activeTab, setActiveTab] = useState<LedgerTabId>('costing');
 
   const isVariation = Boolean(job?.parentJobId);
+  const canEditJob = Boolean(session?.user?.isSuperAdmin) || ((session?.user?.permissions ?? []) as string[]).includes('job.edit');
+  const serialEditable = canChangeJobSerial(job, canEditJob);
   const variations = useMemo(
     () => (job && !job.parentJobId ? jobs.filter((entry) => entry.parentJobId === id) : []),
     [job, jobs, id],
@@ -206,7 +217,15 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
             Customers / Jobs / Ledger
           </Link>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">{job.jobNumber}</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              {serialEditable ? (
+                <button type="button" className="hover:underline" onClick={() => setSerialOpen(true)}>
+                  {job.jobNumber}
+                </button>
+              ) : (
+                job.jobNumber
+              )}
+            </h1>
             <StatusBadge status={job.status} />
             <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {isVariation ? 'Variation' : 'Parent job'}
@@ -219,7 +238,7 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
 
         <div className="flex shrink-0 flex-wrap gap-2">
           {isVariation ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/stock/job-budget/${id}`)}>
+            <Button type="button" variant="secondary" size="sm" data-nav-href={`/stock/job-budget/${id}`} onClick={() => router.push(`/stock/job-budget/${id}`)}>
               Costing & Budget
             </Button>
           ) : (
@@ -227,6 +246,7 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
               type="button"
               variant="secondary"
               size="sm"
+              data-nav-href={`/customers/jobs/form?mode=variation&parentJobId=${id}&customerId=${job.customerId}`}
               onClick={() =>
                 router.push(`/customers/jobs/form?mode=variation&parentJobId=${id}&customerId=${job.customerId}`)
               }
@@ -261,6 +281,16 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
           <p className="mt-1 text-xs text-muted-foreground">LPO {String((job as { lpoNumber?: string | null }).lpoNumber ?? '-')}</p>
         </div>
       </div>
+
+      {quotationDocumentsQuery.data?.linked ? (
+        <section className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-4 shadow-sm">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Quotation documents</p>
+            <p className="mt-1 text-sm text-muted-foreground">Latest file of each type from the quotation. View and download only.</p>
+          </div>
+          <QuotationDocumentLinks files={quotationDocumentsQuery.data.documents} />
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4">
         <div className="flex flex-wrap gap-2">
@@ -412,6 +442,14 @@ export default function CustomerJobLedgerPage({ params }: { params: Promise<{ id
         </aside>
       </div>
 
+      {serialEditable ? (
+        <JobSerialModal
+          jobId={id}
+          jobNumber={job.jobNumber}
+          isOpen={serialOpen}
+          onClose={() => setSerialOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

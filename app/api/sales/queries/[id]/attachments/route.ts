@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { successResponse } from '@/lib/utils/apiResponse';
-import { uploadToDrive } from '@/lib/utils/googleDrive';
+import { deleteFromDrive, uploadToDrive } from '@/lib/utils/googleDrive';
 import { getEffectiveGoogleDriveRootFolderId } from '@/lib/utils/globalSettings';
 import { requireSalesSession, salesErrorResponse } from '@/lib/sales/http';
 import { assertSalesUpload, assertUploadFile, SalesError } from '@/lib/sales/service';
@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const kind: SalesAttachmentKind = kindRaw === 'PO' ? 'PO' : 'CLIENT';
     if (!(file instanceof File)) throw new SalesError('File is required');
     assertSalesUpload({ access: session.access, stage: record.stage, closure: record.closure, kind });
-    assertUploadFile(file);
+    const mimeType = assertUploadFile(file);
 
     const folderId = await getEffectiveGoogleDriveRootFolderId();
     if (!folderId) throw new SalesError('Google Drive folder not configured');
@@ -32,28 +32,39 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const kindFolder = kind === 'PO'
       ? { key: `drive-folder:sales-query:${record.id}:po`, name: 'Purchase order' }
       : { key: `drive-folder:sales-query:${record.id}:client`, name: 'Client files' };
-    const uploaded = await uploadToDrive(buffer, file.name, file.type, {
-      companyId: session.companyId,
-      rootFolderId: folderId,
-      folderPath: [
-        { key: 'drive-folder:sales-root', name: 'Sales' },
-        { key: `drive-folder:sales-query:${record.id}`, name: `${record.queryNumber} - ${record.id}` },
-        kindFolder,
-      ],
-    });
-
-    const attachment = await prisma.salesAttachment.create({
-      data: {
+    let uploaded: Awaited<ReturnType<typeof uploadToDrive>>;
+    try {
+      uploaded = await uploadToDrive(buffer, file.name, mimeType, {
         companyId: session.companyId,
-        salesQueryId: record.id,
-        kind,
-        fileName: file.name,
-        mimeType: file.type,
-        driveFileId: uploaded.id,
-        viewerUrl: uploaded.viewerUrl,
-        uploadedById: session.userId,
-      },
-    });
+        rootFolderId: folderId,
+        folderPath: [
+          { key: 'drive-folder:sales-root', name: 'Sales' },
+          { key: `drive-folder:sales-query:${record.id}`, name: `${record.queryNumber} - ${record.id}` },
+          kindFolder,
+        ],
+      });
+    } catch (error) {
+      throw new SalesError(error instanceof Error ? error.message : 'Could not upload the file to Google Drive', 502);
+    }
+
+    let attachment;
+    try {
+      attachment = await prisma.salesAttachment.create({
+        data: {
+          companyId: session.companyId,
+          salesQueryId: record.id,
+          kind,
+          fileName: file.name,
+          mimeType,
+          driveFileId: uploaded.id,
+          viewerUrl: uploaded.viewerUrl,
+          uploadedById: session.userId,
+        },
+      });
+    } catch (error) {
+      await deleteFromDrive(uploaded.id, session.companyId).catch(() => undefined);
+      throw error;
+    }
     await writeSalesWorkLog(prisma, {
       companyId: session.companyId,
       salesQueryId: record.id,

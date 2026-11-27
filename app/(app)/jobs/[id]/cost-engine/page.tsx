@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import Modal from '@/components/ui/Modal';
 import SearchSelect from '@/components/ui/SearchSelect';
 import Spinner from '@/components/ui/Spinner';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import { DynamicAreaInstanceTable } from '@/components/job-costing/DynamicAreaInstanceTable';
 import { GlobalFormulaValuesTable } from '@/components/job-costing/GlobalFormulaValuesTable';
 import { JobLevelInputsTable } from '@/components/job-costing/JobLevelInputsTable';
@@ -1078,6 +1079,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
   const canEdit = (session?.user?.isSuperAdmin ?? false) || perms.includes('job.edit');
 
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(jobId, { skip: !jobId });
+  useBreadcrumbLabel(job?.jobNumber);
   const { data: jobItemsData, isLoading: itemsLoading } = useGetJobItemsQuery(jobId, { skip: !jobId || !canViewJob });
   const { data: formulas = [] } = useGetFormulaLibrariesQuery(undefined, { skip: !canViewMaterialBudget });
   const { data: materials = [] } = useGetMaterialsQuery(undefined, { skip: !canViewMaterialBudget });
@@ -2235,7 +2237,7 @@ export default function JobCostEnginePage({ embeddedTab, hiddenTabs }: JobCostEn
             <Link href="/stock/job-budget/formulas" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
               Formula Library
             </Link>
-            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/jobs/${jobId}`)}>
+            <Button type="button" variant="secondary" size="sm" data-nav-href={`/customers/jobs/${jobId}`} onClick={() => router.push(`/jobs/${jobId}`)}>
               Back to Job
             </Button>
           </div>

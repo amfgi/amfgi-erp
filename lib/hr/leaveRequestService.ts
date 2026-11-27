@@ -197,13 +197,26 @@ export async function rejectLeaveRequest(
     requestId: string;
     reviewerId: string;
     reviewNote?: string | null;
+    salaryDeductionDays?: number | null;
   }
 ) {
   const existing = await prisma.leaveRequest.findFirst({
     where: { id: params.requestId, companyId: params.companyId },
+    include: { leaveTypeRef: { select: { code: true } } },
   });
   if (!existing) throw new Error('Not found');
   if (existing.status !== 'PENDING') throw new Error('Request is not pending');
+
+  const leaveCode = (existing.leaveTypeRef?.code ?? existing.leaveType).trim().toUpperCase();
+  const isSick = leaveCode === 'SICK';
+  let rejectedSalaryDeductionDays: number | null = null;
+  if (isSick) {
+    const days = params.salaryDeductionDays;
+    if (days == null || !Number.isInteger(days) || days < 0) {
+      throw new Error('Enter how many days of salary should be cut');
+    }
+    rejectedSalaryDeductionDays = days;
+  }
 
   return prisma.leaveRequest.update({
     where: { id: params.requestId },
@@ -212,6 +225,7 @@ export async function rejectLeaveRequest(
       reviewedById: params.reviewerId,
       reviewedAt: new Date(),
       reviewNote: params.reviewNote?.trim() || null,
+      rejectedSalaryDeductionDays,
     },
   });
 }

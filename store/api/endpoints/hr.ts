@@ -185,6 +185,8 @@ export type HrEmployeesListResponse = {
   items: HrEmployee[];
   total: number;
   employeeTypes: string[];
+  designations?: string[];
+  designationBlank?: boolean;
   stats: {
     active: number;
     onLeave: number;

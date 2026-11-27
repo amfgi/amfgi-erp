@@ -571,6 +571,15 @@ export const jobsApi = appApi.injectEndpoints({
       providesTags: [{ type: 'Job', id: 'LIST' }],
     }),
 
+    getJobQuotationDocuments: builder.query<
+      { linked: boolean; documents: Array<{ id: string; typeId: string; typeName: string; fileName: string; viewerUrl: string; note: string | null; createdAt: string }> },
+      string
+    >({
+      query: (id) => `/jobs/${id}/quotation-documents`,
+      transformResponse: (response: { data: { linked: boolean; documents: Array<{ id: string; typeId: string; typeName: string; fileName: string; viewerUrl: string; note: string | null; createdAt: string }> } }) => response.data,
+      providesTags: (_result, _error, id) => [{ type: 'Job', id }, { type: 'QuotationDocument', id }],
+    }),
+
     getJobById: builder.query<JobWithMaterials, string>({
       query: (id) => `/jobs/${id}`,
       transformResponse: (r: { data: JobWithMaterials }) => r.data,
@@ -1053,6 +1062,38 @@ export const jobsApi = appApi.injectEndpoints({
       },
     }),
 
+    checkJobSerial: builder.query<{ number: string; available: boolean }, { id: string; serial: string }>({
+      query: ({ id, serial }) => `/jobs/${id}/job-number?serial=${encodeURIComponent(serial)}`,
+      transformResponse: (r: { data: { number: string; available: boolean } }) => r.data,
+    }),
+
+    changeJobSerial: builder.mutation<
+      { id: string; jobNumber: string; variationsUpdated: number; assignmentsUpdated: number; affectedJobIds: string[] },
+      { id: string; serial: string }
+    >({
+      query: ({ id, serial }) => ({
+        url: `/jobs/${id}/job-number`,
+        method: 'POST',
+        body: { serial },
+      }),
+      transformResponse: (r: {
+        data: { id: string; jobNumber: string; variationsUpdated: number; assignmentsUpdated: number; affectedJobIds: string[] };
+      }) => r.data,
+      invalidatesTags: (result, _error, arg) => [
+        ...jobListInvalidationTags(result?.affectedJobIds ?? [arg.id]),
+        { type: 'SalesQuery' },
+      ],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          invalidateJobCaches(dispatch, data.affectedJobIds);
+          notifyJobLiveUpdate({ action: 'updated' });
+        } catch {
+          /* mutation failed — skip live notify */
+        }
+      },
+    }),
+
     promoteProvisionalJob: builder.mutation<
       { job: Job; assignmentsUpdated: number; variationsUpdated: number; affectedJobIds: string[] },
       { id: string; customerId: string; note?: string | null }
@@ -1143,6 +1184,7 @@ export const {
   useLazyGetJobsForExportQuery,
   useGetJobsForExportQuery,
   useGetJobByIdQuery,
+  useGetJobQuotationDocumentsQuery,
   useGetJobMaterialsQuery,
   useGetJobItemsQuery,
   useAddJobItemMutation,
@@ -1178,6 +1220,8 @@ export const {
   useGetDispatchBudgetWarningMutation,
   useCreateJobMutation,
   useUpdateJobMutation,
+  useCheckJobSerialQuery,
+  useChangeJobSerialMutation,
   usePromoteProvisionalJobMutation,
   useDeleteJobMutation,
   useBulkImportParentJobsMutation,

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 
+import { useSingleFlight } from '@/hooks/useSingleFlight';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/shadcn/button';
 import {
@@ -105,6 +106,7 @@ function FieldCheckboxGroup<T extends string>({
 }
 
 export default function PayPreviewExportModal({ isOpen, onClose, payload }: Props) {
+  const excelExport = useSingleFlight();
   const [summaryColumns, setSummaryColumns] = useState<PayPreviewSummaryColumnKey[]>(
     DEFAULT_PAY_PREVIEW_EXPORT_OPTIONS.summaryColumns
   );
@@ -199,10 +201,15 @@ export default function PayPreviewExportModal({ isOpen, onClose, payload }: Prop
       size="2xl"
       actions={
         <>
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={excelExport.pending}>
             Cancel
           </Button>
-          <Button type="button" onClick={runExport} disabled={!payload}>
+          <Button
+            type="button"
+            onClick={() => void excelExport.run(runExport)}
+            loading={excelExport.pending}
+            disabled={!payload}
+          >
             Download Excel
           </Button>
         </>

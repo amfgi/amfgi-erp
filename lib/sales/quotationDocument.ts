@@ -23,14 +23,28 @@ export type SignatureBlock = {
   email: string;
 };
 
-export type QuotationBlock =
+export const MIN_SECTION_GAP_MM = 2;
+export const MAX_SECTION_GAP_MM = 80;
+export const MIN_BLANK_HEIGHT_MM = 6;
+export const MAX_BLANK_HEIGHT_MM = 160;
+export const DEFAULT_BLANK_HEIGHT_MM = 6;
+
+type QuotationBlockShape =
   | { id: string; type: 'terms'; name: string; rows: LabelRow[] }
   | { id: string; type: 'scope'; name: string; body: RichText }
   | { id: string; type: 'specification'; name: string; rows: LabelRow[] }
-  | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number; sectionId?: string }
-  | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rows: PriceRow[] }
+  | { id: string; type: 'blank'; name: string; body: RichText; minHeightMm?: number; widthPercent?: number; sectionId?: string; versionId?: string }
+  | { id: string; type: 'option'; name: string; titleCustomized: boolean; columns?: PriceColumn[]; widths?: Record<string, number>; rowHeights?: Record<string, number>; rows: PriceRow[] }
   | { id: string; type: 'closing'; name: string; body: RichText }
   | { id: string; type: 'signatures'; name: string; left: SignatureBlock; right: SignatureBlock };
+
+export type QuotationBlock = QuotationBlockShape & { gapMm?: number };
+
+export function sectionGapMm(block: { gapMm?: number }) {
+  const number = Number(block.gapMm);
+  if (!Number.isFinite(number)) return MIN_SECTION_GAP_MM;
+  return Math.min(MAX_SECTION_GAP_MM, Math.max(MIN_SECTION_GAP_MM, Math.round(number)));
+}
 
 export type QuotationCustomer = {
   name: string;
@@ -81,12 +95,127 @@ export function plainText(value: string | null | undefined) {
     .trim();
 }
 
+export function quotationIncludesLine(projectDescription: string | null | undefined) {
+  const description = plainText(projectDescription).replace(/[.\s]+$/g, '').trim();
+  if (!description) return '';
+  return `THIS QUOTATION INCLUDES ${description}.`.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+const RICH_TEXT_TAGS = 'b|strong|i|em|u|span|font|br|p|div|h1|h2|h3|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col|img';
+const PICTURE_LAYOUTS = new Set(['inline', 'square', 'tight', 'through', 'top-bottom', 'behind', 'front']);
+
+function pictureNumber(tag: string, name: string, fallback: number, min: number, max: number) {
+  const raw = new RegExp(`\\s${name}\\s*=\\s*"(-?\\d+)"`, 'i').exec(tag)?.[1];
+  const number = Number(raw);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+function sanitizePictureTag(tag: string) {
+  const srcMatch = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+  const src = (srcMatch?.[1] ?? srcMatch?.[2] ?? '').replace(/\s/g, '');
+  if (!/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src) || src.length > 1_500_000) return '';
+  const layoutRaw = /\sdata-layout\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? 'inline';
+  const layout = PICTURE_LAYOUTS.has(layoutRaw) ? layoutRaw : 'inline';
+  const anchorRaw = /\sdata-anchor\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? 'text';
+  const anchor = layout === 'inline' || anchorRaw !== 'page' ? 'text' : 'page';
+  const width = pictureNumber(tag, 'data-width', 140, 40, 420);
+  const x = pictureNumber(tag, 'data-x', 0, -80, 900);
+  const y = pictureNumber(tag, 'data-y', 0, -80, 1400);
+  const idRaw = /\sdata-id\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? '';
+  const id = /^[A-Za-z0-9-]{8,80}$/.test(idRaw) ? idRaw : stablePictureId(src);
+  const positioned = anchor === 'page' || layout === 'behind' || layout === 'front';
+  const style = positioned ? `width:${width}px;left:${x}px;top:${y}px` : `width:${width}px`;
+  return `<img class="quotation-picture" data-id="${id}" src="${src}" data-layout="${layout}" data-anchor="${anchor}" data-width="${width}" data-x="${x}" data-y="${y}" alt="" draggable="false" contenteditable="false" style="${style}">`;
+}
+
+/** Same picture bytes always get the same id, so opening a quotation is not a new edit. */
+function stablePictureId(src: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `pic${(hash >>> 0).toString(16).padStart(8, '0')}${src.length.toString(16)}`;
+}
+
+/** Browser serialization that is not a real edit: empty fields, and <img /> versus <img>. */
+function looseHtml(value: string) {
+  const trimmed = value.trim();
+  if (
+    trimmed === ''
+    || trimmed === '<br>'
+    || trimmed === '<br/>'
+    || trimmed === '<br />'
+    || trimmed === '<div><br></div>'
+    || trimmed === '<div><br/></div>'
+    || trimmed === '<div><br /></div>'
+  ) return '';
+  return trimmed.replace(/<img\b([^>]*?)\s*\/>/gi, '<img$1>');
+}
+
+export function sameRichText(a: string | null | undefined, b: string | null | undefined) {
+  return sanitizeRichText(looseHtml(String(a ?? ''))) === sanitizeRichText(looseHtml(String(b ?? '')));
+}
+
+function looseDocument(document: QuotationDocument): QuotationDocument {
+  const text = (value: string | null | undefined) => looseHtml(String(value ?? ''));
+  return {
+    ...document,
+    quoteTitle: text(document.quoteTitle),
+    totalCostWords: text(document.totalCostWords),
+    project: text(document.project),
+    includesLine: text(document.includesLine),
+    blocks: document.blocks.map((block) => {
+      if (block.type === 'terms' || block.type === 'specification') {
+        return {
+          ...block,
+          name: text(block.name),
+          rows: block.rows.map((row) => ({ ...row, label: text(row.label), value: text(row.value) })),
+        };
+      }
+      if (block.type === 'option') {
+        return {
+          ...block,
+          name: text(block.name),
+          rows: block.rows.map((row) => ({
+            ...row,
+            item: text(row.item),
+            description: text(row.description),
+            extras: row.extras
+              ? Object.fromEntries(Object.entries(row.extras).map(([key, value]) => [key, text(value)]))
+              : row.extras,
+          })),
+        };
+      }
+      if (block.type === 'signatures') {
+        const side = (entry: SignatureBlock): SignatureBlock => ({
+          name: text(entry.name),
+          phone: text(entry.phone),
+          title: text(entry.title),
+          email: text(entry.email),
+        });
+        return { ...block, name: text(block.name), left: side(block.left), right: side(block.right) };
+      }
+      return { ...block, name: text(block.name), body: text(block.body) };
+    }),
+  };
+}
+
+/** Ignores picture-tag and empty-field serialization, so a refetch is not another save. */
+export function quotationAutosaveKey(startDate: string, document: QuotationDocument | null) {
+  if (!document) return '';
+  const saved = readQuotationDocument(looseDocument(document));
+  return JSON.stringify({ startDate: startDate || '', quotationDocument: saved });
+}
+
 export function sanitizeRichText(value: string | null | undefined) {
   return String(value ?? '')
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
     .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/javascript:/gi, '')
-    .replace(/<(?!\/?(b|strong|i|em|u|span|font|br|p|div|h1|h2|h3|ul|ol|li|table|thead|tbody|tfoot|tr|th|td|colgroup|col)\b)[^>]*>/gi, '');
+    .replace(new RegExp(`<(?!\\/?(?:${RICH_TEXT_TAGS})\\b)[^>]*>`, 'gi'), '')
+    .replace(/<img\b[^>]*>/gi, (tag) => sanitizePictureTag(tag));
 }
 
 function moneyWordsUnderThousand(value: number): string {
@@ -193,7 +322,7 @@ export function defaultOption(): QuotationBlock {
 }
 
 export function defaultBlank(): QuotationBlock {
-  return { id: id(), type: 'blank', name: '', body: '', minHeightMm: 36, widthPercent: 100 };
+  return { id: id(), type: 'blank', name: '', body: '', minHeightMm: DEFAULT_BLANK_HEIGHT_MM, widthPercent: 100 };
 }
 
 export function quotationFileName(document: Pick<QuotationDocument, 'fileName' | 'fileNameCustomized' | 'customer'>, quotationNumber: string) {
@@ -247,7 +376,7 @@ export function emptyQuotationDocument(input?: {
     quoteTitle: input?.quoteTitle?.trim() || '',
     totalCostWords: '',
     project: input?.project?.trim() || '',
-    includesLine: 'THIS QUOTATION INCLUDES SUPPLY AND INSTALLATION OF GRP PANEL TYPE WATER TANKS.',
+    includesLine: quotationIncludesLine(input?.quoteTitle),
     blocks: [defaultOption(), defaultTerms(), defaultScope(), defaultSpecification(), defaultClosing(), defaultSignatures()],
   };
 }
@@ -269,6 +398,11 @@ function clampNumber(value: number | undefined, min: number, max: number, fallba
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+function withStoredGap<T extends QuotationBlock>(block: T): T {
+  if (block.gapMm == null) return block;
+  return { ...block, gapMm: clampNumber(block.gapMm, MIN_SECTION_GAP_MM, MAX_SECTION_GAP_MM, MIN_SECTION_GAP_MM) };
+}
+
 const DEFAULT_PRICE_WIDTH: Record<string, number> = {
   sl: 8,
   item: 20,
@@ -288,6 +422,19 @@ export function priceColumnWidths(block: Extract<QuotationBlock, { type: 'option
   });
   const sum = values.reduce((total, value) => total + value, 0) || 1;
   return Object.fromEntries(keys.map((key, index) => [key, (values[index] / sum) * 100]));
+}
+
+function sanitizeRowHeights(heights: Record<string, number> | undefined, rowIds: string[]) {
+  if (!heights || typeof heights !== 'object') return undefined;
+  const allowed = new Set(['header', 'total', ...rowIds]);
+  const next: Record<string, number> = {};
+  for (const [key, value] of Object.entries(heights)) {
+    if (!allowed.has(key)) continue;
+    const number = Number(value);
+    if (!Number.isFinite(number)) continue;
+    next[key] = Math.min(80, Math.max(6, Math.round(number * 10) / 10));
+  }
+  return Object.keys(next).length ? next : undefined;
 }
 
 function sanitizePriceWidths(widths: Record<string, number> | undefined, columnIds: string[]) {
@@ -317,6 +464,60 @@ function sanitizePriceColumns(columns: PriceColumn[] | undefined): PriceColumn[]
   return next;
 }
 
+const EMPTY_TEMPLATE_CUSTOMER: QuotationCustomer = {
+  name: '',
+  city: '',
+  tel: '',
+  fax: '',
+  contactName: '',
+  contactNumber: '',
+  email: '',
+};
+
+/** Stored template: header details stay empty so a later quotation can fill them, and item prices are blank. */
+export function quotationTemplateDocument(document: QuotationDocument): QuotationDocument {
+  const saved = sanitizeDocument(document);
+  return {
+    ...saved,
+    trn: '',
+    date: '',
+    customer: { ...EMPTY_TEMPLATE_CUSTOMER },
+    quoteTitle: '',
+    totalCostWords: '',
+    project: '',
+    includesLine: '',
+    fileName: '',
+    fileNameCustomized: false,
+    blocks: saved.blocks.map((block) => (
+      block.type === 'option'
+        ? { ...block, rows: block.rows.map((row) => ({ ...row, unitPrice: '', quantity: '' })) }
+        : block
+    )),
+  };
+}
+
+/** Stable comparison key for template content. Header details, unit price, and quantity are ignored. */
+export function quotationTemplateKey(document: QuotationDocument): string {
+  return JSON.stringify(quotationTemplateDocument(document));
+}
+
+/** Puts the current quotation's number-side details back on a saved template. Prices stay blank. */
+export function applyQuotationTemplate(current: QuotationDocument, template: QuotationDocument): QuotationDocument {
+  const body = quotationTemplateDocument(template);
+  return sanitizeDocument({
+    ...body,
+    trn: current.trn,
+    date: current.date,
+    customer: { ...current.customer },
+    quoteTitle: current.quoteTitle,
+    totalCostWords: current.totalCostWords,
+    project: current.project,
+    includesLine: current.includesLine,
+    fileName: current.fileName,
+    fileNameCustomized: current.fileNameCustomized,
+  });
+}
+
 export function sanitizeDocument(document: QuotationDocument): QuotationDocument {
   return {
     ...document,
@@ -341,15 +542,16 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
       block.type === 'terms' || block.type === 'scope' || block.type === 'specification' || block.type === 'blank' || block.type === 'option' || block.type === 'closing' || block.type === 'signatures'
     )).map((block) => {
       if (block.type === 'terms' || block.type === 'specification') {
-        return { ...block, name: block.name.slice(0, 120), rows: block.rows.map((entry) => ({ ...entry, label: sanitizeRichText(entry.label), value: sanitizeRichText(entry.value) })) };
+        return withStoredGap({ ...block, name: block.name.slice(0, 120), rows: block.rows.map((entry) => ({ ...entry, label: sanitizeRichText(entry.label), value: sanitizeRichText(entry.value) })) });
       }
       if (block.type === 'option') {
         const columns = sanitizePriceColumns(block.columns);
-        return {
+        return withStoredGap({
           ...block,
           name: block.name.slice(0, 160),
           columns,
           widths: sanitizePriceWidths(block.widths, columns.map((column) => column.id)),
+          rowHeights: sanitizeRowHeights(block.rowHeights, block.rows.map((entry) => entry.id)),
           rows: block.rows.map((entry) => ({
             ...entry,
             item: sanitizeRichText(entry.item),
@@ -358,22 +560,35 @@ export function sanitizeDocument(document: QuotationDocument): QuotationDocument
             quantity: String(entry.quantity ?? '').slice(0, 20),
             extras: Object.fromEntries(columns.map((column) => [column.id, sanitizeRichText(entry.extras?.[column.id])])),
           })),
-        };
+        });
       }
       if (block.type === 'signatures') {
-        return block;
+        const side = (entry: SignatureBlock): SignatureBlock => ({
+          name: sanitizeRichText(entry.name),
+          phone: sanitizeRichText(entry.phone),
+          title: sanitizeRichText(entry.title),
+          email: sanitizeRichText(entry.email),
+        });
+        return withStoredGap({
+          ...block,
+          name: sanitizeRichText(block.name),
+          left: side(block.left),
+          right: side(block.right),
+        });
       }
-      return {
+      return withStoredGap({
         ...block,
         name: block.name.slice(0, 120),
         body: sanitizeRichText(block.body),
         ...(block.type === 'blank'
           ? {
-              minHeightMm: clampNumber(block.minHeightMm, 24, 160, 36),
+              minHeightMm: clampNumber(block.minHeightMm, MIN_BLANK_HEIGHT_MM, MAX_BLANK_HEIGHT_MM, DEFAULT_BLANK_HEIGHT_MM),
               widthPercent: clampNumber(block.widthPercent, 45, 100, 100),
+              ...(block.sectionId ? { sectionId: block.sectionId.slice(0, 80) } : { sectionId: undefined }),
+              ...(block.versionId ? { versionId: block.versionId.slice(0, 80) } : { versionId: undefined }),
             }
           : {}),
-      };
+      });
     }),
   };
 }
@@ -459,15 +674,17 @@ export function insertCustomSection(
   document: QuotationDocument,
   content: { name: string; body: string; minHeightMm?: number; widthPercent?: number },
   sectionId?: string,
+  versionId?: string,
 ): QuotationDocument {
   return insertBlock(document, {
     id: id(),
     type: 'blank',
     name: content.name,
     body: content.body,
-    minHeightMm: content.minHeightMm ?? 36,
+    minHeightMm: content.minHeightMm ?? DEFAULT_BLANK_HEIGHT_MM,
     widthPercent: content.widthPercent ?? 100,
     ...(sectionId ? { sectionId } : {}),
+    ...(versionId ? { versionId } : {}),
   });
 }
 
@@ -528,6 +745,29 @@ export function moveBlock(document: QuotationDocument, blockId: string, directio
   return { ...document, blocks };
 }
 
+export function placeBlock(document: QuotationDocument, blockId: string, beforeId: string | null): QuotationDocument {
+  if (beforeId === blockId) return document;
+  const from = document.blocks.findIndex((block) => block.id === blockId);
+  if (from < 0) return document;
+  const moving = document.blocks[from];
+  const movingFooter = FOOTER_TYPES.has(moving.type);
+  const blocks = document.blocks.filter((block) => block.id !== blockId);
+  let insertAt = blocks.length;
+  if (beforeId) {
+    const target = blocks.findIndex((block) => block.id === beforeId);
+    if (target < 0) return document;
+    if (FOOTER_TYPES.has(blocks[target].type) !== movingFooter) return document;
+    insertAt = target;
+  } else if (!movingFooter) {
+    const footerAt = blocks.findIndex((block) => FOOTER_TYPES.has(block.type));
+    insertAt = footerAt < 0 ? blocks.length : footerAt;
+  }
+  const next = [...blocks];
+  next.splice(insertAt, 0, moving);
+  if (next.every((block, index) => block.id === document.blocks[index]?.id)) return document;
+  return { ...document, blocks: next };
+}
+
 export function removeBlock(document: QuotationDocument, blockId: string): QuotationDocument {
   const removed = document.blocks.find((block) => block.id === blockId);
   const next = syncTotalCostWords({ ...document, blocks: document.blocks.filter((block) => block.id !== blockId) });
@@ -557,8 +797,9 @@ type HydrateSource = {
 };
 
 export function documentFromRecord(source: HydrateSource): QuotationDocument {
+  const includesLine = quotationIncludesLine(source.projectDescription);
   const saved = readQuotationDocument(source.quotationDocument);
-  if (saved) return saved;
+  if (saved) return includesLine ? { ...saved, includesLine } : saved;
   const base = emptyQuotationDocument({
     customerName: source.customer?.name || source.customerName,
     phone: source.customer?.phone,

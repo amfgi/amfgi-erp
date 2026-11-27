@@ -17,6 +17,7 @@ import {
   requireHrSession,
 } from '@/lib/hr/requireHrSession';
 import { successResponse, errorResponse } from '@/lib/utils/apiResponse';
+import { deleteFromDrive } from '@/lib/utils/googleDrive';
 import { mergeProfileExtensionForStatusChange } from '@/lib/hr/employeeLeavePeriod';
 import {
   assertCanPatchEmployeeAccountFields,
@@ -25,6 +26,13 @@ import {
   employeePatchTouchesAccountFields,
 } from '@/lib/hr/accountAccessPermissions';
 import { parseNationalityInput } from '@/lib/hr/countryNames';
+import {
+  loadEmployeeCodeSettings,
+  lockEmployeeCodeAllocation,
+  resolveEmployeeCodeForTypeChange,
+  syncPayRunEmployeeCode,
+} from '@/lib/hr/allocateEmployeeCode';
+import { codeSettingsForEmploymentType, parseEmployeeCode } from '@/lib/hr/employeeCodeSettings';
 import { z } from 'zod';
 
 /** Empty string or explicit null clears email; valid strings must be emails. */
@@ -149,7 +157,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     const data: Prisma.EmployeeUpdateInput = {};
-    if (d.employeeCode !== undefined) data.employeeCode = d.employeeCode.trim();
     if (d.fullName !== undefined) data.fullName = d.fullName.trim();
     if (d.preferredName !== undefined) data.preferredName = d.preferredName?.trim() || null;
     if (d.email !== undefined) data.email = emailNorm === undefined ? undefined : emailNorm ?? null;
@@ -186,8 +193,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     try {
       const emp = await prisma.$transaction(async (tx) => {
+        if (d.employmentType !== undefined) {
+          const nextType = d.employmentType?.trim() || null;
+          const settings = await loadEmployeeCodeSettings(tx, companyId);
+          const parsed = parseEmployeeCode(existing.employeeCode, settings);
+          const nextPrefix = codeSettingsForEmploymentType(settings, nextType).prefix;
+          if (parsed && parsed.prefix.toLowerCase() !== nextPrefix.toLowerCase()) {
+            await lockEmployeeCodeAllocation(tx, companyId);
+            const resolved = await resolveEmployeeCodeForTypeChange(
+              tx,
+              companyId,
+              id,
+              existing.employeeCode,
+              nextType,
+            );
+            if (resolved !== existing.employeeCode) data.employeeCode = resolved;
+          }
+        }
+
         if (Object.keys(data).length > 0) {
           await tx.employee.update({ where: { id }, data });
+        }
+        if (typeof data.employeeCode === 'string') {
+          await syncPayRunEmployeeCode(tx, companyId, id, data.employeeCode);
         }
 
         const row = await tx.employee.findUnique({
@@ -286,6 +314,18 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const eligibility = await checkEmployeeDeleteEligibility(prisma, companyId, id);
   if (!eligibility.canDelete) {
     return errorResponse(formatEmployeeDeleteBlockMessage(eligibility), 400);
+  }
+
+  const extraFiles = await prisma.employeeExtraFile.findMany({
+    where: { companyId, employeeId: id },
+    select: { driveFileId: true },
+  });
+  for (const file of extraFiles) {
+    try {
+      await deleteFromDrive(file.driveFileId, companyId);
+    } catch (error) {
+      console.error('Failed to delete extra employee file from Drive:', error);
+    }
   }
 
   await prisma.employee.delete({ where: { id } });

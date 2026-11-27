@@ -290,7 +290,12 @@ export function PrintFormatSettingsPanel() {
                       danger: true,
                     },
                   ];
-                  openContextMenu(e.clientX, e.clientY, options);
+                  openContextMenu(
+                    e.clientX,
+                    e.clientY,
+                    options,
+                    `/settings/print-template/edit?id=${encodeURIComponent(tpl.id)}`,
+                  );
                 }}
               >
                 <div className="flex-1">
@@ -304,6 +309,7 @@ export function PrintFormatSettingsPanel() {
                   type="button"
                   size="sm"
                   variant="secondary"
+                  data-nav-href={`/settings/print-template/edit?id=${encodeURIComponent(tpl.id)}`}
                   onClick={() => router.push(`/settings/print-template/edit?id=${encodeURIComponent(tpl.id)}`)}
                   disabled={tplSaving}
                 >

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import JobCostEnginePage from '@/app/(app)/jobs/[id]/cost-engine/page';
 import Spinner from '@/components/ui/Spinner';
 import { useGetJobByIdQuery } from '@/store/hooks';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 
 /**
  * Stock workspace always opens the **parent contract** job for budgeting.
@@ -15,6 +16,7 @@ export default function StockJobBudgetByIdPage() {
   const router = useRouter();
   const jobId = typeof params?.id === 'string' ? params.id : '';
   const { data: job, isLoading, isFetching, isError } = useGetJobByIdQuery(jobId, { skip: !jobId });
+  useBreadcrumbLabel(job?.jobNumber);
   const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {

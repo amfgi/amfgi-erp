@@ -12,11 +12,15 @@ const LABELS: Record<string, string> = {
   FORWARDED: 'Forwarded to quotation',
   EDITED_QUOTATION: 'Edited the quotation',
   REVISED: 'Issued a revision',
+  NUMBER_CHANGED: 'Changed the quotation number',
   PO_RECEIVED: 'Received the purchase order',
   SAVED_PO: 'Saved the purchase order',
   JOB_CREATED: 'Created the job',
   STATUS: 'Updated the status',
   FILE_UPLOADED: 'Uploaded a file',
+  DOCUMENT_UPLOADED: 'Uploaded a quotation document',
+  DOCUMENT_NOTE: 'Changed a quotation document note',
+  DOCUMENT_REMOVED: 'Removed a quotation document',
 };
 
 export function salesWorkLabel(action: string) {

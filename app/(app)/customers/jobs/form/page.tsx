@@ -8,10 +8,13 @@ import toast from 'react-hot-toast';
 import { Button, buttonVariants } from '@/components/ui/shadcn/button';
 import { cn } from '@/lib/utils';
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import JobSerialModal from '@/components/jobs/JobSerialModal';
 import SearchSelect from '@/components/ui/SearchSelect';
+import { canChangeJobSerial } from '@/lib/jobs/jobSerial';
 import { emptyJobContactRow, jobContactsToRows, primaryJobContactPersonFromRows, rowsToJobContactsPayload, type JobContactRow } from '@/lib/jobContactFormUi';
 import { WORKFORCE_EXPERTISE_OPTIONS } from '@/lib/hr/workforceProfile';
 import { useCreateJobMutation, useGetCustomersQuery, useGetJobsQuery, useUpdateJobMutation } from '@/store/hooks';
+import { useBreadcrumbLabel } from '@/components/layout/BreadcrumbLabel';
 import type { Job } from '@/store/api/endpoints/jobs';
 
 type FormMode = 'create' | 'edit' | 'variation';
@@ -206,6 +209,7 @@ export default function CustomerJobFormPage() {
   const [createJob, { isLoading: isCreating }] = useCreateJobMutation();
   const [updateJob, { isLoading: isUpdating }] = useUpdateJobMutation();
   const [isProvisional, setIsProvisional] = useState(false);
+  const [serialOpen, setSerialOpen] = useState(false);
 
   const mode = getMode(searchParams.get('mode'));
   const jobId = searchParams.get('id');
@@ -266,6 +270,7 @@ export default function CustomerJobFormPage() {
 
   const isVariation = mode === 'variation' || Boolean(currentJob?.parentJobId);
   const pageTitle = mode === 'edit' ? 'Edit customer job' : mode === 'variation' ? 'Create job variation' : 'Create customer job';
+  useBreadcrumbLabel(mode === 'create' ? null : form.jobNumber || null);
   const primaryActionLabel = mode === 'edit' ? 'Update Job' : mode === 'variation' ? 'Create Variation' : 'Create Job';
   const selectedCustomerName = customerNameById.get(form.customerId) ?? 'No customer selected';
 
@@ -273,6 +278,7 @@ export default function CustomerJobFormPage() {
   const perms = (session?.user?.permissions ?? []) as string[];
   const canCreate = isSA || perms.includes('job.create');
   const canEdit = isSA || perms.includes('job.edit');
+  const serialEditable = mode === 'edit' && Boolean(jobId) && canChangeJobSerial(currentJob, canEdit);
 
   useEffect(() => {
     if (!session?.user?.activeCompanyId) return;
@@ -419,7 +425,7 @@ export default function CustomerJobFormPage() {
         <p className="text-sm text-muted-foreground">
           This company is set to external-only parent jobs. Create parent jobs from the Project Management API, then add local variations from the customer jobs list.
         </p>
-        <Button type="button" variant="secondary" onClick={() => router.push('/customers/jobs')}>
+        <Button type="button" variant="secondary" data-nav-href="/customers/jobs" onClick={() => router.push('/customers/jobs')}>
           Back to Customer Jobs
         </Button>
       </div>
@@ -450,7 +456,7 @@ export default function CustomerJobFormPage() {
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {mode === 'edit' && currentJob?.parentJobId ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
+            <Button type="button" variant="secondary" size="sm" data-nav-href={`/stock/job-budget/${currentJob.id}`} onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
               View Budget
             </Button>
           ) : null}
@@ -514,12 +520,26 @@ export default function CustomerJobFormPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <label className={LABEL_CLASS}>
                   Job number
-                  <input
-                    value={mode === 'edit' ? form.jobNumber : 'Assigned when you save'}
-                    disabled
-                    className={INPUT_CLASS}
-                  />
-                  {mode === 'create' ? (
+                  {serialEditable && jobId ? (
+                    <button
+                      type="button"
+                      onClick={() => setSerialOpen(true)}
+                      className={`${INPUT_CLASS} text-left hover:underline`}
+                    >
+                      {form.jobNumber}
+                    </button>
+                  ) : (
+                    <input
+                      value={mode === 'edit' ? form.jobNumber : 'Assigned when you save'}
+                      disabled
+                      className={INPUT_CLASS}
+                    />
+                  )}
+                  {serialEditable ? (
+                    <p className="mt-2 text-xs normal-case tracking-normal text-muted-foreground">
+                      Change the serial. The prefix stays the same, and variations follow the new number.
+                    </p>
+                  ) : mode === 'create' ? (
                     <p className="mt-2 text-xs normal-case tracking-normal text-muted-foreground">
                       Format J26-0001. The year and the next serial are assigned when you save.
                     </p>
@@ -735,7 +755,7 @@ export default function CustomerJobFormPage() {
               <div className="rounded-md border border-border bg-card px-3 py-2">3. Add formula items and costing</div>
             </div>
             {mode === 'edit' && currentJob?.parentJobId ? (
-              <Button type="button" className="mt-4 w-full" variant="secondary" onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
+              <Button type="button" className="mt-4 w-full" variant="secondary" data-nav-href={`/stock/job-budget/${currentJob.id}`} onClick={() => router.push(`/stock/job-budget/${currentJob.id}`)}>
                 Open Budget
               </Button>
             ) : null}
@@ -753,13 +773,24 @@ export default function CustomerJobFormPage() {
               <Button type="submit" className="w-full" disabled={saving}>
                 {saving ? 'Saving…' : primaryActionLabel}
               </Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => router.push('/customers/jobs')}>
+              <Button type="button" variant="ghost" className="w-full" data-nav-href="/customers/jobs" onClick={() => router.push('/customers/jobs')}>
                 Back to Jobs
               </Button>
             </div>
           </div>
         </aside>
       </div>
+      {serialEditable && jobId ? (
+        <JobSerialModal
+          jobId={jobId}
+          jobNumber={form.jobNumber}
+          isOpen={serialOpen}
+          onClose={() => setSerialOpen(false)}
+          onChanged={(jobNumber) => {
+            setFormDraft((current) => (current ? { ...current, jobNumber } : null));
+          }}
+        />
+      ) : null}
     </form>
   );
 }
