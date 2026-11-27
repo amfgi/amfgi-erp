@@ -200,6 +200,46 @@ export function sortEmployeesByName<T extends Pick<Employee, 'fullName'> & { pre
   return [...rows].sort(compareEmployeesBySortLabel);
 }
 
+type EmployeeCodeSerialSource = Pick<Employee, 'fullName'> & {
+  preferredName?: string | null;
+  employeeCode?: string | null;
+};
+
+/** Trailing digits are the shared serial. The text before them is the prefix. */
+export function employeeCodeSerialParts(code: string | null | undefined): {
+  sequence: number | null;
+  prefix: string;
+} {
+  const trimmed = String(code ?? '').trim();
+  const match = /^(.*?)(\d+)$/.exec(trimmed);
+  if (!match) return { sequence: null, prefix: trimmed };
+  const sequence = Number(match[2]);
+  if (!Number.isFinite(sequence)) return { sequence: null, prefix: trimmed };
+  return { sequence, prefix: match[1] };
+}
+
+/** Number first, then prefix, then name. Codes with no trailing number sort last. */
+export function compareEmployeesByCodeSerial(a: EmployeeCodeSerialSource, b: EmployeeCodeSerialSource): number {
+  const aParts = employeeCodeSerialParts(a.employeeCode);
+  const bParts = employeeCodeSerialParts(b.employeeCode);
+  if (aParts.sequence === null || bParts.sequence === null) {
+    if (aParts.sequence === null && bParts.sequence === null) {
+      const prefixCmp = aParts.prefix.localeCompare(bParts.prefix, undefined, { sensitivity: 'base' });
+      if (prefixCmp !== 0) return prefixCmp;
+      return compareEmployeesBySortLabel(a, b);
+    }
+    return aParts.sequence === null ? 1 : -1;
+  }
+  if (aParts.sequence !== bParts.sequence) return aParts.sequence - bParts.sequence;
+  const prefixCmp = aParts.prefix.localeCompare(bParts.prefix, undefined, { sensitivity: 'base' });
+  if (prefixCmp !== 0) return prefixCmp;
+  return compareEmployeesBySortLabel(a, b);
+}
+
+export function sortEmployeesByCodeSerial<T extends EmployeeCodeSerialSource>(rows: T[]): T[] {
+  return [...rows].sort(compareEmployeesByCodeSerial);
+}
+
 export function readEmployeeDirectoryFiltersFromSearchParams(
   searchParams: URLSearchParams
 ): EmployeeListFilterParams {

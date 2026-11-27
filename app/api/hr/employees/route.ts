@@ -19,6 +19,7 @@ import {
   countEmployeeDirectoryStats,
   filterEmployeesByWorkforceFilters,
   readEmployeeDirectoryFiltersFromSearchParams,
+  sortEmployeesByCodeSerial,
   sortEmployeesByName,
 } from '@/lib/hr/employeeListQuery';
 import { batchCurrentCompensationForEmployees } from '@/lib/import-export/employeeCompensationServer';
@@ -233,6 +234,44 @@ export async function GET(req: Request) {
     const offset = parseListOffset(searchParams.get('offset'));
 
     const needsTypeFilter = Boolean(employeeType && employeeType !== 'ALL');
+
+    if (searchParams.get('sort') === 'code') {
+      const [allRows, typeRows, directoryStats, designationChoices] = await Promise.all([
+        prisma.employee.findMany({
+          where,
+          orderBy: [{ fullName: 'asc' }],
+          include: { company: { select: companySelect } },
+        }),
+        needsTypeFilter
+          ? Promise.resolve([] as Array<{ profileExtension: unknown }>)
+          : prisma.employee.findMany({
+              where: scope,
+              select: { profileExtension: true },
+              take: 2000,
+            }),
+        needsTypeFilter ? Promise.resolve(null) : countEmployeeDirectoryStats(prisma, where),
+        loadDesignationChoices(companyIds),
+      ]);
+      const filtered = applyEmployeeTypeFilter(allRows);
+      const ordered = sortEmployeesByCodeSerial(filtered);
+      const typeSource = needsTypeFilter ? allRows : typeRows;
+      const employeeTypes = Array.from(
+        new Set(
+          typeSource
+            .map((row) => employeeTypeFromProfileExtension(row.profileExtension)?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+
+      return successResponse({
+        items: await attachCompensationToItems(ordered.slice(offset, offset + limit).map(mapEmployee)),
+        total: ordered.length,
+        employeeTypes,
+        designations: designationChoices.designations,
+        designationBlank: designationChoices.designationBlank,
+        stats: needsTypeFilter || directoryStats == null ? computeEmployeeDirectoryStats(filtered) : directoryStats,
+      });
+    }
 
     if (needsTypeFilter) {
       const [allRows, designationChoices] = await Promise.all([

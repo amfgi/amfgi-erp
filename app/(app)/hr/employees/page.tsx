@@ -245,6 +245,7 @@ function EmployeeGridCard({
       <div className="flex flex-col items-center border-b border-border bg-muted/20 px-4 pb-4 pt-5 text-center">
         <EmployeeAvatar name={employee.fullName} photoUrl={employee.photoUrl} size="lg" />
         <h3 className="mt-4 line-clamp-2 text-sm font-semibold text-foreground">{employee.fullName}</h3>
+        <p className="mt-1 font-mono text-xs text-muted-foreground">{employee.employeeCode}</p>
       </div>
       <div className="flex flex-1 flex-col gap-2 px-4 py-3 text-sm">
         <p className="line-clamp-1 text-muted-foreground">{employee.company?.name || 'No company'}</p>
@@ -819,11 +820,10 @@ export default function HrEmployeesPage() {
                         <EmployeeAvatar name={employee.fullName} photoUrl={employee.photoUrl} size="sm" />
                         <div className="min-w-0">
                           <p className="font-medium text-foreground">{employee.fullName}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {employee.preferredName && employee.preferredName !== employee.fullName
-                              ? `Preferred: ${employee.preferredName}`
-                              : 'Employee profile'}
-                          </p>
+                          <p className="mt-1 font-mono text-xs text-muted-foreground">{employee.employeeCode}</p>
+                          {employee.preferredName && employee.preferredName !== employee.fullName ? (
+                            <p className="mt-1 text-xs text-muted-foreground">Preferred: {employee.preferredName}</p>
+                          ) : null}
                         </div>
                       </div>
                     </td>

@@ -1,3 +1,4 @@
+import { compareEmployeesByCodeSerial } from '@/lib/hr/employeeListQuery';
 import { parseWorkforceProfile } from '@/lib/hr/workforceProfile';
 import type { HrEmployeeExportRecord } from '@/store/api/endpoints/hr';
 
@@ -114,6 +115,9 @@ export function sortEmployeeExportRecords(
   direction: 'asc' | 'desc'
 ): HrEmployeeExportRecord[] {
   const factor = direction === 'asc' ? 1 : -1;
+  if (sortBy === 'employeeCode') {
+    return [...rows].sort((a, b) => compareEmployeesByCodeSerial(a, b) * factor);
+  }
   return [...rows].sort((a, b) => {
     const cmp = sortValue(a, sortBy).localeCompare(sortValue(b, sortBy), undefined, {
       numeric: true,
