@@ -194,7 +194,7 @@ export default function EmployeeExportModal({
   });
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(DEFAULT_EMPLOYEE_EXPORT_COLUMN_KEYS);
-  const [sortBy, setSortBy] = useState<EmployeeExportSortKey>('fullName');
+  const [sortBy, setSortBy] = useState<EmployeeExportSortKey>('employeeCode');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [includeInstructions, setIncludeInstructions] = useState(true);
 

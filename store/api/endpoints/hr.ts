@@ -247,6 +247,7 @@ export const hrApi = appApi.injectEndpoints({
         const params = new URLSearchParams();
         params.set('limit', String(limit));
         params.set('offset', String(offset));
+        params.set('sort', 'code');
         appendEmployeeDirectorySearchParams(params, filters);
         return `/hr/employees?${params.toString()}`;
       },

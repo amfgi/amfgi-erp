@@ -572,6 +572,7 @@ export default function StockLiveUpdates() {
         const searchParams = new URLSearchParams();
         searchParams.set('limit', String(params.limit));
         searchParams.set('offset', String(params.offset));
+        searchParams.set('sort', 'code');
         if (params.q?.trim()) searchParams.set('q', params.q.trim());
         if (params.status && params.status !== 'ALL') searchParams.set('status', params.status);
         if (params.employeeType && params.employeeType !== 'ALL') {
